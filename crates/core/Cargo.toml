@@ -53,6 +53,7 @@ mchprs_blocks = { path = "../blocks" }
 mchprs_world = { path = "../world" }
 mchprs_utils = { path = "../utils" }
 mchprs_network = { path = "../network" }
+mchprs_redrouter = { path = "../redrouter" }
 
 [features]
 jit_cranelift = ["cranelift", "cranelift-jit", "cranelift-module"]

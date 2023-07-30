@@ -651,6 +651,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "derive_utils"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1217,6 +1228,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "lexpr"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a84de6a9df442363b08f5dbf0cd5b92edc70097b89c4ce4bfea4679fe48bc67"
+dependencies = [
+ "itoa",
+ "lexpr-macros",
+ "ryu",
+]
+
+[[package]]
+name = "lexpr-macros"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36b5cb8bb985c81a8ac1a0f8b5c4865214f574ddd64397ef7a99c236e21f35bb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.137"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1341,6 +1373,7 @@ dependencies = [
  "mchprs_blocks",
  "mchprs_network",
  "mchprs_proc_macros",
+ "mchprs_redrouter",
  "mchprs_save_data",
  "mchprs_utils",
  "mchprs_world",
@@ -1382,6 +1415,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mchprs_redrouter"
+version = "0.1.0"
+dependencies = [
+ "hematite-nbt",
+ "mchprs_utils",
+ "mcircuit",
+ "path-finding",
+ "petgraph",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mchprs_save_data"
 version = "0.1.0"
 dependencies = [
@@ -1403,6 +1449,21 @@ version = "0.1.0"
 dependencies = [
  "mchprs_blocks",
  "serde",
+]
+
+[[package]]
+name = "mcircuit"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8cd4eb2f556fc33b7ae3b35b0b823709b849cdc9dfb8f42965772f391e811ac"
+dependencies = [
+ "bincode",
+ "lexpr",
+ "num-traits",
+ "rand",
+ "serde",
+ "serde_json",
+ "variant_count",
 ]
 
 [[package]]
@@ -1688,6 +1749,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-float"
+version = "3.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13a384337e997e6860ffbaa83708b2ef329fd8c54cb67a5f64d421e0f943254f"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "os_str_bytes"
 version = "6.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1710,6 +1780,17 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-sys 0.42.0",
+]
+
+[[package]]
+name = "path-finding"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f66437cc08d0c91d7a086f80721924be118718aac6461407ab32e01c0c662055"
+dependencies = [
+ "derivative",
+ "ordered-float",
+ "priority-queue",
 ]
 
 [[package]]
@@ -1794,6 +1875,16 @@ name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
+
+[[package]]
+name = "priority-queue"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ca9c6be70d989d21a136eb86c2d83e4b328447fac4a88dace2143c179c86267"
+dependencies = [
+ "autocfg",
+ "indexmap",
+]
 
 [[package]]
 name = "proc-macro-hack"
@@ -2577,6 +2668,16 @@ name = "valuable"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
+
+[[package]]
+name = "variant_count"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aae2faf80ac463422992abf4de234731279c058aaf33171ca70277c98406b124"
+dependencies = [
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "vcpkg"

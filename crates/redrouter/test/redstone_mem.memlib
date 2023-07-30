@@ -1,0 +1,12 @@
+ram distributed $__unspecifiedredstoneram_distributed_ {
+    # Has 13 address bits in the base (most narrow) data width.
+    abits 8;
+    # The width selection is per-port.
+    width 8;
+    cost 100;
+    # Maybe init should be zero or any idk
+    init zero;
+    port arsw "A" {
+        clock posedge;
+    }
+}

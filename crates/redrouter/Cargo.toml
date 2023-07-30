@@ -1,0 +1,20 @@
+[package]
+name = "mchprs_redrouter"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "1"
+serde_json = "1.0"
+
+hematite-nbt = "0.5"
+mchprs_utils = { path = "../utils" }
+petgraph = "0.6"
+path-finding = "0.5"
+# hierarchical_pathfinding = "0.5" # Already in path-finding
+# jps = "1.1" # Jump Point Search Pathfinding 
+# luka = "0.4" # Alternative to petgraph maybe
+
+mcircuit = "0.1"
