@@ -7,6 +7,7 @@ mod export_graph;
 mod identify_nodes;
 mod input_search;
 mod prune_orphans;
+mod scc_seperation;
 mod tail_coalesce;
 mod unreachable_output;
 
@@ -27,8 +28,9 @@ pub const fn make_default_pass_manager<'w, W: World>() -> PassManager<'w, W> {
         &unreachable_output::UnreachableOutput,
         &constant_coalesce::ConstantCoalesce,
         &coalesce::Coalesce,
-        &prune_orphans::PruneOrphans,
-        &tail_coalesce::TailCoalesce,
+        //        &prune_orphans::PruneOrphans,
+        //        &tail_coalesce::TailCoalesce,
+        //        &scc_seperation::SccSeperation,
         &export_graph::ExportGraph,
     ])
 }

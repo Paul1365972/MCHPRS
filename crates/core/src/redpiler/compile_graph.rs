@@ -1,6 +1,8 @@
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::BlockPos;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
+use petgraph::visit::Dfs;
+use rustc_hash::FxHashSet;
 use std::fmt;
 
 pub type NodeIdx = NodeIndex;
@@ -18,6 +20,8 @@ pub enum NodeType {
     Wire,
     Constant,
     Buffer(u8),
+    SubgraphInput(NodeIdx),
+    SubgraphOutput(NodeIdx),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -95,6 +99,8 @@ impl fmt::Display for CompileNode {
                 NodeType::Wire => format!("Wire"),
                 NodeType::Constant => format!("Constant"),
                 NodeType::Buffer(delay) => format!("Buffer({})", delay),
+                NodeType::SubgraphOutput(idx) => format!("SubgraphOutput({:?})", idx),
+                NodeType::SubgraphInput(idx) => format!("SubgraphInput({:?})", idx),
             }
         )
     }
@@ -147,3 +153,27 @@ impl fmt::Display for CompileLink {
 }
 
 pub type CompileGraph = StableGraph<CompileNode, CompileLink>;
+
+pub fn weakly_connected_components(graph: &CompileGraph) -> Vec<Vec<NodeIndex>> {
+    let mut visited = FxHashSet::with_capacity_and_hasher(graph.node_count(), Default::default());
+    let mut components = Vec::new();
+
+    for node in graph.node_indices() {
+        if !visited.contains(&node) {
+            visited.insert(node);
+            let mut component = vec![node];
+            let mut index = 0;
+            while component.len() > index {
+                for neighbor in graph.neighbors_undirected(component[index]) {
+                    if !visited.contains(&neighbor) {
+                        visited.insert(neighbor);
+                        component.push(neighbor);
+                    }
+                }
+                index += 1;
+            }
+            components.push(component);
+        }
+    }
+    components
+}

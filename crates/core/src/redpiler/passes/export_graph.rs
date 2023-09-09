@@ -57,6 +57,8 @@ fn convert_node(
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
             CNodeType::Buffer(delay) => NodeType::Buffer(delay),
+            CNodeType::SubgraphInput(_) => NodeType::SubgraphInput,
+            CNodeType::SubgraphOutput(_) => NodeType::SubgraphOutput,
         },
         block: node.block.map(|(pos, id)| {
             (

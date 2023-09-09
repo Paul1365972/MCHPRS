@@ -167,8 +167,8 @@ impl Compiler {
         }
     }
 
-    pub fn tick(&mut self) {
-        self.backend().tick();
+    pub fn tick(&mut self, ticks: u64) {
+        self.backend().tick(ticks);
     }
 
     pub fn on_use_block(&mut self, pos: BlockPos) {

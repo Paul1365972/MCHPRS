@@ -205,6 +205,7 @@ impl Node {
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
             CNodeType::Buffer(delay) => NodeType::Buffer(delay),
+            _ => panic!("Unsupported compile node: {}", node),
         };
 
         Node {
@@ -391,102 +392,104 @@ impl JITBackend for DirectBackend {
         }
     }
 
-    fn tick(&mut self) {
-        let mut queues = self.scheduler.queues_this_tick();
+    fn tick(&mut self, ticks: u64) {
+        for _ in 0..ticks {
+            let mut queues = self.scheduler.queues_this_tick();
 
-        for node_id in queues.drain_iter() {
-            self.nodes[node_id].pending_tick = false;
-            let node = &self.nodes[node_id];
+            for node_id in queues.drain_iter() {
+                self.nodes[node_id].pending_tick = false;
+                let node = &self.nodes[node_id];
 
-            match node.ty {
-                NodeType::Repeater(delay) => {
-                    if node.locked {
-                        continue;
-                    }
+                match node.ty {
+                    NodeType::Repeater(delay) => {
+                        if node.locked {
+                            continue;
+                        }
 
-                    let should_be_powered = get_bool_input(node, &self.nodes);
-                    if node.powered && !should_be_powered {
-                        self.set_node(node_id, false, 0);
-                    } else if !node.powered {
-                        self.set_node(node_id, true, 15);
-                        if !should_be_powered {
-                            let node = &mut self.nodes[node_id];
-                            schedule_tick(
-                                &mut self.scheduler,
-                                node_id,
-                                node,
-                                delay as usize,
-                                TickPriority::Higher,
-                            );
+                        let should_be_powered = get_bool_input(node, &self.nodes);
+                        if node.powered && !should_be_powered {
+                            self.set_node(node_id, false, 0);
+                        } else if !node.powered {
+                            self.set_node(node_id, true, 15);
+                            if !should_be_powered {
+                                let node = &mut self.nodes[node_id];
+                                schedule_tick(
+                                    &mut self.scheduler,
+                                    node_id,
+                                    node,
+                                    delay as usize,
+                                    TickPriority::Higher,
+                                );
+                            }
                         }
                     }
-                }
-                NodeType::SimpleRepeater(delay) => {
-                    let should_be_powered = get_bool_input(node, &self.nodes);
-                    if node.powered && !should_be_powered {
-                        self.set_node(node_id, false, 0);
-                    } else if !node.powered {
-                        self.set_node(node_id, true, 15);
-                        if !should_be_powered {
-                            let node = &mut self.nodes[node_id];
-                            schedule_tick(
-                                &mut self.scheduler,
-                                node_id,
-                                node,
-                                delay as usize,
-                                TickPriority::Higher,
-                            );
+                    NodeType::SimpleRepeater(delay) => {
+                        let should_be_powered = get_bool_input(node, &self.nodes);
+                        if node.powered && !should_be_powered {
+                            self.set_node(node_id, false, 0);
+                        } else if !node.powered {
+                            self.set_node(node_id, true, 15);
+                            if !should_be_powered {
+                                let node = &mut self.nodes[node_id];
+                                schedule_tick(
+                                    &mut self.scheduler,
+                                    node_id,
+                                    node,
+                                    delay as usize,
+                                    TickPriority::Higher,
+                                );
+                            }
                         }
                     }
-                }
-                NodeType::Torch => {
-                    let should_be_off = get_bool_input(node, &self.nodes);
-                    let lit = node.powered;
-                    if lit && should_be_off {
-                        self.set_node(node_id, false, 0);
-                    } else if !lit && !should_be_off {
-                        self.set_node(node_id, true, 15);
-                    }
-                }
-                NodeType::Comparator(mode) => {
-                    let (mut input_power, side_input_power) = get_all_input(node, &self.nodes);
-                    if let Some(far_override) = node.comparator_far_input {
-                        if input_power < 15 {
-                            input_power = far_override;
+                    NodeType::Torch => {
+                        let should_be_off = get_bool_input(node, &self.nodes);
+                        let lit = node.powered;
+                        if lit && should_be_off {
+                            self.set_node(node_id, false, 0);
+                        } else if !lit && !should_be_off {
+                            self.set_node(node_id, true, 15);
                         }
                     }
-                    let old_strength = node.output_power;
-                    let new_strength =
-                        calculate_comparator_output(mode, input_power, side_input_power);
-                    if new_strength != old_strength {
-                        self.set_node(node_id, new_strength > 0, new_strength);
+                    NodeType::Comparator(mode) => {
+                        let (mut input_power, side_input_power) = get_all_input(node, &self.nodes);
+                        if let Some(far_override) = node.comparator_far_input {
+                            if input_power < 15 {
+                                input_power = far_override;
+                            }
+                        }
+                        let old_strength = node.output_power;
+                        let new_strength =
+                            calculate_comparator_output(mode, input_power, side_input_power);
+                        if new_strength != old_strength {
+                            self.set_node(node_id, new_strength > 0, new_strength);
+                        }
                     }
-                }
-                NodeType::Lamp => {
-                    let should_be_lit = get_bool_input(node, &self.nodes);
-                    if node.powered && !should_be_lit {
-                        self.set_node(node_id, false, 0);
+                    NodeType::Lamp => {
+                        let should_be_lit = get_bool_input(node, &self.nodes);
+                        if node.powered && !should_be_lit {
+                            self.set_node(node_id, false, 0);
+                        }
                     }
-                }
-                NodeType::Button => {
-                    if node.powered {
-                        self.set_node(node_id, false, 0);
+                    NodeType::Button => {
+                        if node.powered {
+                            self.set_node(node_id, false, 0);
+                        }
                     }
-                }
-                NodeType::Buffer(_) => {
-                    let node = &mut self.nodes[node_id];
-                    node.buffer_state >>= 4;
-                    node.buffer_index -= 1;
-                    let new_strength = node.buffer_state as u8 & 0b1111;
-                    if new_strength != node.output_power {
-                        self.set_node(node_id, new_strength > 0, new_strength);
+                    NodeType::Buffer(_) => {
+                        let node = &mut self.nodes[node_id];
+                        node.buffer_state >>= 4;
+                        node.buffer_index -= 1;
+                        let new_strength = node.buffer_state as u8 & 0b1111;
+                        if new_strength != node.output_power {
+                            self.set_node(node_id, new_strength > 0, new_strength);
+                        }
                     }
+                    _ => warn!("Node {:?} should not be ticked!", node.ty),
                 }
-                _ => warn!("Node {:?} should not be ticked!", node.ty),
             }
-        }
 
-        self.scheduler.end_tick(queues);
+            self.scheduler.end_tick(queues);
+        }
     }
 
     fn compile(&mut self, graph: CompileGraph, ticks: Vec<TickEntry>) {

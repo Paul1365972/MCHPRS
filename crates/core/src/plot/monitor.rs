@@ -125,8 +125,8 @@ impl TimingsMonitor {
         self.data.too_slow.store(false, Ordering::Relaxed);
     }
 
-    pub fn tick(&self) {
-        self.data.ticks_passed.fetch_add(1, Ordering::Relaxed);
+    pub fn tick(&self, ticks: u64) {
+        self.data.ticks_passed.fetch_add(ticks, Ordering::Relaxed);
     }
 
     pub fn is_running_behind(&self) -> bool {

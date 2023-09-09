@@ -1358,6 +1358,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "criterion",
+ "crossbeam",
  "ctrlc",
  "enum_dispatch",
  "hematite-nbt",

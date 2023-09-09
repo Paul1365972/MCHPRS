@@ -263,22 +263,24 @@ impl World for PlotWorld {
 }
 
 impl Plot {
-    fn tick(&mut self) {
-        self.timings.tick();
+    fn tick(&mut self, ticks: u64) {
         if self.redpiler.is_active() {
-            self.redpiler.tick();
+            self.timings.tick(ticks);
+            self.redpiler.tick(ticks);
             return;
         }
-
-        self.world
-            .to_be_ticked
-            .sort_by_key(|e| (e.ticks_left, e.tick_priority));
-        for pending in &mut self.world.to_be_ticked {
-            pending.ticks_left = pending.ticks_left.saturating_sub(1);
-        }
-        while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
-            let entry = self.world.to_be_ticked.remove(0);
-            redstone::tick(self.world.get_block(entry.pos), &mut self.world, entry.pos);
+        for _ in 0..ticks {
+            self.timings.tick(1);
+            self.world
+                .to_be_ticked
+                .sort_by_key(|e| (e.ticks_left, e.tick_priority));
+            for pending in &mut self.world.to_be_ticked {
+                pending.ticks_left = pending.ticks_left.saturating_sub(1);
+            }
+            while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
+                let entry = self.world.to_be_ticked.remove(0);
+                redstone::tick(self.world.get_block(entry.pos), &mut self.world, entry.pos);
+            }
         }
     }
 
@@ -834,7 +836,7 @@ impl Plot {
                                     ticks_completed = i;
                                     break;
                                 }
-                                self.tick();
+                                self.tick(1);
                             }
                             if ticks_completed > 0 {
                                 self.last_nspt =
@@ -865,9 +867,7 @@ impl Plot {
                             if batch_size != 0 {
                                 // Redpiler is either already running or will not be automatically started,
                                 // so there's nothing special to do here, just run the batch
-                                for _ in 0..batch_size {
-                                    self.tick();
-                                }
+                                self.tick(batch_size);
                                 self.lag_time -= dur_per_tick * batch_size as u32;
                                 self.last_nspt =
                                     Some(self.last_update_time.elapsed() / (batch_size as u32));
@@ -895,9 +895,7 @@ impl Plot {
                     } as u64;
                     if batch_size != 0 {
                         let batch_size = batch_size.min(50000) as u32;
-                        for _ in 0..batch_size {
-                            self.tick();
-                        }
+                        self.tick(batch_size as u64);
                         self.last_nspt = Some(self.last_update_time.elapsed() / batch_size);
                     }
                 }

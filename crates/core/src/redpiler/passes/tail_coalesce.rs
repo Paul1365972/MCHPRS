@@ -173,7 +173,7 @@ where
         if predicate(cur, &graph[cur]) && is_line(graph, cur, false, true) {
             line.push(cur);
         }
-        
+
         // Mark all nodes that are part of the line as visited (nodes can only ever be part of a single line)
         visited.extend(line.iter());
         lines.push(line);

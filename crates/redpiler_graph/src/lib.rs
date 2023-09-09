@@ -42,6 +42,8 @@ pub enum NodeType {
     Wire,
     Constant,
     Buffer(u8),
+    SubgraphInput,
+    SubgraphOutput,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]

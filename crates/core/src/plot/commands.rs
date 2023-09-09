@@ -338,9 +338,7 @@ impl Plot {
                     return false;
                 };
                 let start_time = Instant::now();
-                for _ in 0..ticks {
-                    self.tick();
-                }
+                self.tick(ticks as u64);
                 self.players[player].send_system_message(&format!(
                     "Plot has been advanced by {} ticks ({:?})",
                     ticks,

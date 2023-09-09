@@ -52,6 +52,7 @@ smallvec = "1.9.0"
 petgraph = "0.6"
 rustc-hash = "1.1"
 phf = { version = "0.11", features = ["macros"] }
+crossbeam = "0.8"
 redpiler_graph = { path = "../redpiler_graph" }
 mchprs_save_data = { path = "../save_data" }
 mchprs_blocks = { path = "../blocks" }

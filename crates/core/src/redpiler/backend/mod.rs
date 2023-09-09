@@ -1,4 +1,5 @@
 pub mod direct;
+pub mod threaded;
 
 use super::compile_graph::CompileGraph;
 use crate::world::World;
@@ -9,7 +10,7 @@ use mchprs_world::TickEntry;
 #[enum_dispatch]
 pub trait JITBackend {
     fn compile(&mut self, graph: CompileGraph, ticks: Vec<TickEntry>);
-    fn tick(&mut self);
+    fn tick(&mut self, ticks: u64);
     fn on_use_block(&mut self, pos: BlockPos);
     fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool);
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool);
@@ -21,10 +22,12 @@ pub trait JITBackend {
 #[cfg(feature = "jit_cranelift")]
 use cranelift::CraneliftBackend;
 use direct::DirectBackend;
+use threaded::ThreadedBackend;
 
 #[enum_dispatch(JITBackend)]
 pub enum BackendDispatcher {
     DirectBackend,
+    ThreadedBackend,
     #[cfg(feature = "jit_cranelift")]
     CraneliftBackend,
 }
