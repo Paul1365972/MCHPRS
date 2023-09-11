@@ -1,4 +1,7 @@
 pub mod direct;
+pub mod parallel;
+
+use std::num::{NonZeroUsize, NonZeroU8};
 
 use super::compile_graph::CompileGraph;
 use crate::world::World;
@@ -21,10 +24,12 @@ pub trait JITBackend {
 #[cfg(feature = "jit_cranelift")]
 use cranelift::CraneliftBackend;
 use direct::DirectBackend;
+use parallel::ParallelBackend;
 
 #[enum_dispatch(JITBackend)]
 pub enum BackendDispatcher {
     DirectBackend,
+    ParallelBackend,
     #[cfg(feature = "jit_cranelift")]
     CraneliftBackend,
 }
@@ -32,5 +37,18 @@ pub enum BackendDispatcher {
 impl Default for BackendDispatcher {
     fn default() -> Self {
         Self::DirectBackend(Default::default())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct NonMaxU8(NonZeroU8);
+
+impl NonMaxU8 {
+    fn new(n: u8) -> Option<Self> {
+        Some(Self(NonZeroU8::new(n.wrapping_add(1))?))
+    }
+
+    fn get(self) -> u8 {
+        self.0.get() - 1
     }
 }
