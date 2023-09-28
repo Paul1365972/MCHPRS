@@ -1,23 +1,22 @@
 //! The direct backend does not do code generation and operates on the `CompileNode` graph directly
 
 use super::JITBackend;
-use crate::redpiler::compile_graph::{self, CompileGraph, CompileLink, LinkType, NodeIdx};
+use crate::redpiler::compile_graph::{self, CompileGraph, LinkType, NodeIdx};
 use crate::redpiler::{block_powered_mut, bool_to_ss};
 use crate::world::World;
 use crossbeam::channel::{Receiver, Sender};
 use itertools::Itertools;
-use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, ComparatorMode};
 use mchprs_blocks::BlockPos;
 use mchprs_world::{TickEntry, TickPriority};
 use nodes::{NodeId, Nodes};
-use petgraph::visit::{EdgeRef, IntoEdgeReferences, IntoNodeReferences};
+use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-use std::collections::BTreeMap;
-use std::{fmt, mem};
-use tracing::{debug, trace, warn};
+use std::thread::JoinHandle;
+use std::{mem, thread};
+use tracing::{trace, warn};
 
 #[derive(Debug, Default)]
 struct FinalGraphStats {
@@ -336,7 +335,7 @@ impl TickScheduler {
 
 #[derive(Default)]
 pub struct ThreadedBackend {
-    subgraphs: Vec<Subgraph>,
+    handles: Vec<JoinHandle<()>>,
     roots: Vec<Sender<Message>>,
     changes: Option<Receiver<Vec<(BlockPos, Block)>>>,
     pos_map: FxHashMap<BlockPos, (SubgraphId, NodeId)>,
@@ -463,32 +462,34 @@ impl JITBackend for ThreadedBackend {
                 subgraph.nodes[*nid].pending_tick = true;
             }
         }
+
+        self.handles = subgraphs.into_iter().map(|mut subgraph| thread::spawn(move || subgraph.run())).collect();
     }
 
     fn tick(&mut self, ticks: u64) {
         let data = vec![Default::default(); ticks as usize];
         for root in self.roots.iter() {
-            root.send(Message::Updates(data.clone()));
+            root.send(Message::Updates(data.clone())).unwrap();
         }
     }
 
     fn on_use_block(&mut self, pos: BlockPos) {
         let (sid, nid) = self.pos_map[&pos];
         for root in self.roots.iter() {
-            root.send(Message::UseBlock(sid, nid));
+            root.send(Message::UseBlock(sid, nid)).unwrap();
         }
     }
 
     fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
         let (sid, nid) = self.pos_map[&pos];
         for root in self.roots.iter() {
-            root.send(Message::PressurePlate(sid, nid, powered));
+            root.send(Message::PressurePlate(sid, nid, powered)).unwrap();
         }
     }
 
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {
         for root in self.roots.iter() {
-            root.send(Message::Flush { io_only });
+            root.send(Message::Flush { io_only }).unwrap();
         }
         while let Ok(data) = self.changes.as_ref().unwrap().try_recv() {
             for (pos, block) in data {
@@ -499,8 +500,11 @@ impl JITBackend for ThreadedBackend {
 
     fn reset<W: World>(&mut self, world: &mut W, io_only: bool) {
         for root in self.roots.iter() {
-            root.send(Message::Close);
+            root.send(Message::Flush { io_only: false }).unwrap();
+            root.send(Message::Close).unwrap();
         }
+        self.handles.drain(..).for_each(|handle| handle.join().unwrap());
+        // TODO: Changes messages may not have arrived yet here?
         for data in self.changes.as_ref().unwrap() {
             for (pos, block) in data {
                 world.set_block(pos, block);
@@ -561,7 +565,7 @@ impl Subgraph {
                     }
                 }
                 for ouput in self.outputs.iter() {
-                    ouput.send(Message::UseBlock(sid, node_id));
+                    ouput.send(Message::UseBlock(sid, node_id)).unwrap();
                 }
             }
             Message::PressurePlate(sid, node_id, powered) => {
@@ -579,7 +583,7 @@ impl Subgraph {
                     _ => warn!("Tried to set pressure plate state for a {:?}", node.ty),
                 }
                 for ouput in self.outputs.iter() {
-                    ouput.send(Message::PressurePlate(sid, node_id, powered));
+                    ouput.send(Message::PressurePlate(sid, node_id, powered)).unwrap();
                 }
             }
             Message::Flush { io_only } => {
@@ -620,9 +624,9 @@ impl Subgraph {
                     node.changed = false;
                 }
                 for output in self.outputs.iter() {
-                    output.send(Message::Flush { io_only });
+                    output.send(Message::Flush { io_only }).unwrap();
                 }
-                self.changes.as_ref().unwrap().send(changes);
+                self.changes.as_ref().unwrap().send(changes).unwrap();
             }
             Message::Close => {
                 for other in inputs {
@@ -631,7 +635,7 @@ impl Subgraph {
                 }
 
                 for output in self.outputs.iter() {
-                    output.send(Message::Close);
+                    output.send(Message::Close).unwrap();
                 }
                 self.inputs.clear();
                 self.outputs.clear();
@@ -654,7 +658,7 @@ impl Subgraph {
                     match node.ty {
                         NodeType::Repeater {
                             delay,
-                            facing_diode,
+                            facing_diode: _,
                             locked,
                         } => {
                             if locked {
@@ -680,7 +684,7 @@ impl Subgraph {
                         }
                         NodeType::SimpleRepeater {
                             delay,
-                            facing_diode,
+                            facing_diode: _,
                         } => {
                             let should_be_powered = get_bool_input(node, &self.nodes);
                             if node.powered && !should_be_powered {
@@ -711,7 +715,7 @@ impl Subgraph {
                         NodeType::Comparator {
                             mode,
                             comparator_far_input,
-                            facing_diode,
+                            facing_diode: _,
                         } => {
                             let (mut input_power, side_input_power) =
                                 get_all_input(node, &self.nodes);
