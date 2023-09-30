@@ -28,7 +28,7 @@ pub const fn make_default_pass_manager<'w, W: World>() -> PassManager<'w, W> {
         &constant_coalesce::ConstantCoalesce,
         &coalesce::Coalesce,
         &prune_orphans::PruneOrphans,
-        &tail_coalesce::TailCoalesce,
+//        &tail_coalesce::TailCoalesce,
         &export_graph::ExportGraph,
     ])
 }

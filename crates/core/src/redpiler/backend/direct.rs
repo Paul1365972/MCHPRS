@@ -327,15 +327,14 @@ impl DirectBackend {
 }
 
 impl JITBackend for DirectBackend {
-    fn inspect(&mut self, pos: BlockPos) -> Option<(bool, u8)> {
+    fn inspect(&mut self, pos: BlockPos) {
         let Some(node_id) = self.pos_map.get(&pos) else {
             debug!("could not find node at pos {}", pos);
-            return None;
+            return;
         };
 
         let node = &self.nodes[*node_id];
         debug!("Node {:?}: {:#?}", node_id, node);
-        return Some((node.powered, node.output_power));
     }
 
     fn reset<W: World>(&mut self, world: &mut W, io_only: bool) {

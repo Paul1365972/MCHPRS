@@ -1,7 +1,7 @@
 pub mod direct;
 pub mod parallel;
 
-use std::num::{NonZeroUsize, NonZeroU8};
+use std::num::NonZeroU8;
 
 use super::compile_graph::CompileGraph;
 use crate::world::World;
@@ -18,7 +18,7 @@ pub trait JITBackend {
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool);
     fn reset<W: World>(&mut self, world: &mut W, io_only: bool);
     /// Inspect block for debugging
-    fn inspect(&mut self, pos: BlockPos) -> Option<(bool, u8)>;
+    fn inspect(&mut self, pos: BlockPos);
 }
 
 #[cfg(feature = "jit_cranelift")]
@@ -36,7 +36,8 @@ pub enum BackendDispatcher {
 
 impl Default for BackendDispatcher {
     fn default() -> Self {
-        Self::DirectBackend(Default::default())
+        // Self::DirectBackend(Default::default())
+        Self::ParallelBackend(Default::default())
     }
 }
 

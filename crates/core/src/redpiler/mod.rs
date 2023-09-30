@@ -112,7 +112,7 @@ impl Compiler {
 
         // TODO: Remove this once there is proper backend switching
         if self.jit.is_none() {
-            self.use_jit(Default::default());
+            self.use_jit(BackendDispatcher::default());
         }
 
         if let Some(jit) = &mut self.jit {
@@ -184,12 +184,11 @@ impl Compiler {
         self.backend().flush(world, io_only);
     }
 
-    pub fn inspect(&mut self, pos: BlockPos) -> Option<(bool, u8)> {
+    pub fn inspect(&mut self, pos: BlockPos) {
         if let Some(backend) = &mut self.jit {
-            return backend.inspect(pos);
+            backend.inspect(pos);
         } else {
             debug!("cannot inspect when backend is not running");
-            return None;
         }
     }
 }
