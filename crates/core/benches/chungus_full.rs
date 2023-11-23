@@ -39,13 +39,15 @@ fn init_compiler() -> Compiler {
     compiler
 }
 
-fn chungus_mandelbrot(c: &mut Criterion) {
+fn mandelbrot_full(_c: &mut Criterion) {
+    println!("Running full chungus mandelbrot, this can take a while!");
     let mut compiler = init_compiler();
-
-    c.bench_function("chungus-mandelbrot-tick", |b| {
-        b.iter(|| compiler.tick());
-    });
+    let start = Instant::now();
+    for _ in 0..12411975 {
+        compiler.tick();
+    }
+    println!("Mandelbrot benchmark completed in {:?}", start.elapsed());
 }
 
-criterion_group!(chungus, chungus_mandelbrot);
-criterion_main!(chungus);
+criterion_group!(chungus_full, mandelbrot_full);
+criterion_main!(chungus_full);

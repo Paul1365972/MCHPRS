@@ -75,6 +75,11 @@ fn for_pos<W: World>(ignore_wires: bool, world: &W, graph: &mut CompileGraph, po
 
         facing_diode,
         comparator_far_input: None,
+        is_input: matches!(
+            ty,
+            NodeType::Button | NodeType::Lever | NodeType::PressurePlate
+        ),
+        is_output: matches!(ty, NodeType::Trapdoor | NodeType::Lamp),
     });
 }
 

@@ -1,6 +1,7 @@
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::BlockPos;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
+use std::fmt::Display;
 
 pub type NodeIdx = NodeIndex;
 
@@ -16,12 +17,6 @@ pub enum NodeType {
     Trapdoor,
     Wire,
     Constant,
-}
-
-impl NodeType {
-    pub fn is_output(self) -> bool {
-        matches!(self, NodeType::Lamp | NodeType::Trapdoor)
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -72,6 +67,35 @@ pub struct CompileNode {
 
     pub facing_diode: bool,
     pub comparator_far_input: Option<u8>,
+    pub is_input: bool,
+    pub is_output: bool,
+}
+
+impl Display for CompileNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self.ty {
+                NodeType::Repeater(delay) => format!("Repeater({})", delay),
+                NodeType::Torch => format!("Torch"),
+                NodeType::Comparator(mode) => format!(
+                    "Comparator({})",
+                    match mode {
+                        ComparatorMode::Compare => "Cmp",
+                        ComparatorMode::Subtract => "Sub",
+                    }
+                ),
+                NodeType::Lamp => format!("Lamp"),
+                NodeType::Button => format!("Button"),
+                NodeType::Lever => format!("Lever"),
+                NodeType::PressurePlate => format!("PressurePlate"),
+                NodeType::Trapdoor => format!("Trapdoor"),
+                NodeType::Wire => format!("Wire"),
+                NodeType::Constant => format!("Constant"),
+            }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +127,20 @@ impl CompileLink {
             ty: LinkType::Side,
             ss,
         }
+    }
+}
+
+impl Display for CompileLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            match self.ty {
+                LinkType::Default => "",
+                LinkType::Side => "S",
+            },
+            self.ss
+        )
     }
 }
 

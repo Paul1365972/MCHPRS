@@ -16,6 +16,10 @@ harness = false
 name = "chungus"
 harness = false
 
+[[bench]]
+name = "chungus_full"
+harness = false
+
 [dependencies]
 mchprs_proc_macros = { path = "../proc_macros" }
 toml = "0.7"
