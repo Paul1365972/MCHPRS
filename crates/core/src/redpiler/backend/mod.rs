@@ -1,4 +1,5 @@
 pub mod direct;
+pub mod util;
 
 use super::compile_graph::CompileGraph;
 use crate::world::World;

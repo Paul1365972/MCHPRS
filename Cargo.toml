@@ -1,3 +1,5 @@
+cargo-features = ["profile-rustflags"]
+
 [workspace]
 members = ["crates/proc_macros", "crates/redpiler_graph"]
 
@@ -23,8 +25,13 @@ include = [
 opt-level = 1
 
 [profile.release]
-# This seems to speed up Redpiler compile times
+lto = "thin"
+
+[profile.bench]
 lto = "fat"
+codegen-units = 1
+rustflags = ["-Ctarget-cpu=native"]
+panic = "abort"
 
 [dependencies]
 mchprs_core = { path = "./crates/core" }
