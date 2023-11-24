@@ -1,6 +1,6 @@
 use crate::chat::{ChatComponentBuilder, ColorCode};
 use crate::player::{PacketSender, Player};
-use crate::redpiler::CompilerOptions;
+use crate::redpiler::{BackendVariant, CompilerOptions};
 use mchprs_network::packets::clientbound::{
     CDisplayScoreboard, CScoreboardObjective, CUpdateScore, ClientBoundPacket,
 };
@@ -122,6 +122,9 @@ impl Scoreboard {
         }
         if options.io_only {
             flags.push("§b- io only");
+        }
+        if options.backend_variant == BackendVariant::Threading {
+            flags.push("§b- threading");
         }
 
         if !flags.is_empty() {

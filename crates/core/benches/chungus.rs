@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Instant;
 
 use criterion::*;
 use mchprs_blocks::BlockPos;

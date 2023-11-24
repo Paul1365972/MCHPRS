@@ -4,7 +4,7 @@
 //! Eventually this module might help recover currupted plot data.
 //!
 //! In the future it might be nice to have this as an optional dependency or
-//! seperate download. As our save format changes in the future, the fixer
+//! separate download. As our save format changes in the future, the fixer
 //! module may become quite big.
 
 use super::{PlotData, PlotLoadError};
@@ -42,9 +42,8 @@ pub fn try_fix<const NUM_SECTIONS: usize>(
         FixInfo::InvalidHeader => {
             let data = fs::read(&path)?;
             pre_header::try_fix(&data)
-        }
-        // We don't have old versions yet
-        // FixInfo::OldVersion(_) => None,
+        } // We don't have old versions yet
+          // FixInfo::OldVersion(_) => None,
     };
 
     Ok(match result {

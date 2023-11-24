@@ -1,6 +1,9 @@
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::BlockPos;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
+use rustc_hash::FxHashSet;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::fmt::Display;
 
 pub type NodeIdx = NodeIndex;
@@ -17,6 +20,8 @@ pub enum NodeType {
     Trapdoor,
     Wire,
     Constant,
+    ExternalInput,
+    ExternalOutput { target_idx: NodeIdx, delay: u32 },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -59,6 +64,11 @@ impl NodeState {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct Annotations {
+    pub separate: Option<u32>,
+}
+
 #[derive(Debug)]
 pub struct CompileNode {
     pub ty: NodeType,
@@ -69,6 +79,7 @@ pub struct CompileNode {
     pub comparator_far_input: Option<u8>,
     pub is_input: bool,
     pub is_output: bool,
+    pub annotations: Annotations,
 }
 
 impl Display for CompileNode {
@@ -93,6 +104,8 @@ impl Display for CompileNode {
                 NodeType::Trapdoor => format!("Trapdoor"),
                 NodeType::Wire => format!("Wire"),
                 NodeType::Constant => format!("Constant"),
+                NodeType::ExternalInput => format!("ExternalInput"),
+                NodeType::ExternalOutput { .. } => format!("ExternalOutput"),
             }
         )
     }
@@ -145,3 +158,65 @@ impl Display for CompileLink {
 }
 
 pub type CompileGraph = StableGraph<CompileNode, CompileLink>;
+
+pub fn weakly_connected_components(graph: &CompileGraph) -> Vec<Vec<NodeIdx>> {
+    let mut visited = FxHashSet::with_capacity_and_hasher(graph.node_count(), Default::default());
+    let mut components = vec![];
+
+    for node in graph.node_indices() {
+        if !visited.contains(&node) {
+            visited.insert(node);
+
+            let mut component = vec![node];
+            let mut index = 0;
+            while component.len() > index {
+                for neighbor in graph.neighbors_undirected(component[index]) {
+                    if !visited.contains(&neighbor) {
+                        visited.insert(neighbor);
+                        component.push(neighbor);
+                    }
+                }
+                index += 1;
+            }
+            components.push(component);
+        }
+    }
+    components
+}
+
+pub fn merge_small_groups(components: Vec<Vec<NodeIdx>>, size: usize) -> Vec<Vec<NodeIdx>> {
+    let mut component_groups = vec![];
+    let mut small_component_group = vec![];
+    for component in components {
+        if component.len() <= size {
+            small_component_group.extend(component);
+        } else {
+            component_groups.push(component);
+        }
+    }
+    if !small_component_group.is_empty() {
+        component_groups.push(small_component_group);
+    }
+    component_groups
+}
+
+// Merge groups into `k` bins using a greedy algorithm for the multiway number partitioning problem.
+// TODO: In the future a higher quality algorithm should be used here.
+pub fn multiway_number_partitioning(mut groups: Vec<Vec<NodeIdx>>, k: usize) -> Vec<Vec<NodeIdx>> {
+    if groups.len() <= k {
+        return groups;
+    }
+    groups.sort_by_key(|group| Reverse(group.len()));
+
+    let mut bins: BinaryHeap<(Reverse<usize>, Vec<NodeIdx>)> = BinaryHeap::with_capacity(k);
+    for _ in 0..k {
+        bins.push((Reverse(0), vec![]));
+    }
+
+    for group in groups {
+        let (_, mut bin) = bins.pop().unwrap();
+        bin.extend(group);
+        bins.push((Reverse(bin.len()), bin));
+    }
+    bins.into_iter().map(|(_, bin)| bin).collect()
+}

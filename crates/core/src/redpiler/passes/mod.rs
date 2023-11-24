@@ -1,3 +1,4 @@
+mod apply_separators;
 mod clamp_weights;
 mod coalesce;
 mod constant_coalesce;
@@ -20,13 +21,14 @@ pub const fn make_default_pass_manager<'w, W: World>() -> PassManager<'w, W> {
     PassManager::new(&[
         &identify_nodes::IdentifyNodes,
         &input_search::InputSearch,
+        &apply_separators::ApplySeparators,
         &clamp_weights::ClampWeights,
         &dedup_links::DedupLinks,
         &constant_fold::ConstantFold,
         &unreachable_output::UnreachableOutput,
         &constant_coalesce::ConstantCoalesce,
         &coalesce::Coalesce,
-        //&prune_orphans::PruneOrphans,
+        &prune_orphans::PruneOrphans,
         &export_graph::ExportGraph,
     ])
 }

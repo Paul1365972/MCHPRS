@@ -56,6 +56,9 @@ fn convert_node(
             CNodeType::Trapdoor => NodeType::Trapdoor,
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
+            // TODO Add new node types to the other crate as well
+            CNodeType::ExternalInput => NodeType::Wire,
+            CNodeType::ExternalOutput { .. } => NodeType::Wire,
         },
         block: node.block.map(|(pos, id)| {
             (

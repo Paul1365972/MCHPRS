@@ -182,11 +182,11 @@ pub fn get_state_for_placement(
         Item::Sign { sign_type } => match context.block_face {
             BlockFace::Bottom => Block::Air {},
             BlockFace::Top => Block::Sign {
-                sign_type: SignType(sign_type),
+                sign_type: SignType::from_item_type(sign_type),
                 rotation: (((180.0 + context.player.yaw) * 16.0 / 360.0) + 0.5).floor() as u32 & 15,
             },
             _ => Block::WallSign {
-                sign_type: SignType(sign_type),
+                sign_type: SignType::from_item_type(sign_type),
                 facing: context.block_face.unwrap_direction(),
             },
         },
@@ -437,13 +437,19 @@ pub fn use_item_on_block(
 
         match block {
             Block::Sign { .. } | Block::WallSign { .. } => {
-                let open_sign_editor = COpenSignEditor {
-                    pos_x: block_pos.x,
-                    pos_y: block_pos.y,
-                    pos_z: block_pos.z,
+                if !item
+                    .nbt
+                    .as_ref()
+                    .is_some_and(|blob| blob.content.contains_key("BlockEntityTag"))
+                {
+                    let open_sign_editor = COpenSignEditor {
+                        pos_x: block_pos.x,
+                        pos_y: block_pos.y,
+                        pos_z: block_pos.z,
+                    }
+                    .encode();
+                    ctx.player.client.send_packet(&open_sign_editor);
                 }
-                .encode();
-                ctx.player.client.send_packet(&open_sign_editor);
             }
             _ => {}
         }
