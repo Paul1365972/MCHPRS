@@ -1,6 +1,8 @@
+mod analog_repeaters;
 mod apply_separators;
 mod clamp_weights;
 mod coalesce;
+mod comparator_merge;
 mod constant_coalesce;
 mod constant_fold;
 mod dedup_links;
@@ -21,13 +23,15 @@ pub const fn make_default_pass_manager<'w, W: World>() -> PassManager<'w, W> {
     PassManager::new(&[
         &identify_nodes::IdentifyNodes,
         &input_search::InputSearch,
-        &apply_separators::ApplySeparators,
         &clamp_weights::ClampWeights,
+        &apply_separators::ApplySeparators,
         &dedup_links::DedupLinks,
+        &analog_repeaters::AnalogRepeaters,
         &constant_fold::ConstantFold,
         &unreachable_output::UnreachableOutput,
         &constant_coalesce::ConstantCoalesce,
         &coalesce::Coalesce,
+        &comparator_merge::ComparatorMerge,
         &prune_orphans::PruneOrphans,
         &export_graph::ExportGraph,
     ])

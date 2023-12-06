@@ -1,18 +1,20 @@
-use super::common::{calculate_comparator_output, NonMaxU8};
+use super::common::{calculate_comparator_output, ForwardLink, NodeId, NodeIdWithSS, NonMaxU8};
 use super::JITBackend;
 use crate::redpiler::compile_graph::{self, CompileGraph, LinkType, NodeIdx};
 use crate::redpiler::{block_powered_mut, bool_to_ss};
 use crate::world::World;
-use crossbeam_channel::{Receiver, Sender};
+use itertools::Itertools;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, ComparatorMode};
 use mchprs_blocks::BlockPos;
 use mchprs_world::{TickEntry, TickPriority};
-use nodes::{NodeId, Nodes};
+use nodes::Nodes;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
+use realtime_channel::{Receiver, RingBuffer, Sender};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+use std::cmp::Reverse;
 use std::fmt::Debug;
 use std::thread::JoinHandle;
 use std::{fmt, mem};
@@ -20,7 +22,8 @@ use thread_priority::{ThreadBuilder, ThreadPriority};
 use tracing::{debug, trace, warn};
 
 const WORK_CHANNEL_SIZE: usize = 1 << 8;
-const UPDATES_CHANNEL_SIZE: usize = 1 << 16;
+const UPDATES_CHANNEL_SIZE: usize = 1 << 20;
+const CHANGES_CHANNEL_SIZE: usize = 1 << 20;
 const FLUSH_OFFSET: usize = 2;
 
 #[derive(Debug, Default)]
@@ -32,22 +35,10 @@ struct FinalGraphStats {
 }
 
 mod nodes {
+    use crate::redpiler::backend::common::NodeId;
+
     use super::Node;
     use std::ops::{Index, IndexMut};
-
-    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-    pub struct NodeId(u32);
-
-    impl NodeId {
-        pub fn index(self) -> usize {
-            self.0 as usize
-        }
-
-        /// Safety: index must be within bounds of nodes array
-        pub unsafe fn from_index(index: usize) -> NodeId {
-            NodeId(index as u32)
-        }
-    }
 
     // This is Pretty Bad:tm: because one can create a NodeId using another instance of Nodes,
     // but at least some type system protection is better than none.
@@ -65,12 +56,12 @@ mod nodes {
             &self.nodes
         }
 
-        pub fn inner_mut(&mut self) -> &mut [Node] {
-            &mut self.nodes
-        }
-
         pub fn into_inner(self) -> Box<[Node]> {
             self.nodes
+        }
+
+        pub fn len(&self) -> usize {
+            self.nodes.len()
         }
     }
 
@@ -79,44 +70,14 @@ mod nodes {
 
         // The index here MUST have been created by this instance, otherwise scary things will happen !
         fn index(&self, index: NodeId) -> &Self::Output {
-            unsafe { self.nodes.get_unchecked(index.0 as usize) }
+            unsafe { self.nodes.get_unchecked(index.index()) }
         }
     }
 
     impl IndexMut<NodeId> for Nodes {
         fn index_mut(&mut self, index: NodeId) -> &mut Self::Output {
-            unsafe { self.nodes.get_unchecked_mut(index.0 as usize) }
+            unsafe { self.nodes.get_unchecked_mut(index.index()) }
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ForwardLink {
-    data: u32,
-}
-
-impl ForwardLink {
-    pub fn new(id: NodeId, side: bool, ss: u8) -> Self {
-        assert!(id.index() < (1 << 27));
-        assert!(ss < (1 << 4));
-        Self {
-            data: (id.index() as u32) << 5 | if side { 1 << 4 } else { 0 } | ss as u32,
-        }
-    }
-
-    pub fn node(self) -> NodeId {
-        unsafe {
-            // safety: ForwardLink is contructed using a NodeId
-            NodeId::from_index((self.data >> 5) as usize)
-        }
-    }
-
-    pub fn side(self) -> bool {
-        self.data & (1 << 4) != 0
-    }
-
-    pub fn ss(self) -> u8 {
-        (self.data & 0b1111) as u8
     }
 }
 
@@ -150,6 +111,10 @@ enum NodeType {
         output_index: u8,
         target_id: NodeId,
     },
+    ComparatorLine {
+        delay: u8,
+        last_strength: u8,
+    },
 }
 
 // struct is 128 bytes to fit nicely into cachelines
@@ -181,6 +146,11 @@ impl Node {
     ) -> Self {
         let node = &graph[node_idx];
 
+        const MAX_INPUTS: usize = 255;
+
+        let mut default_input_count = 0;
+        let mut side_input_count = 0;
+
         let mut default_inputs = [0; 16];
         let mut side_inputs = [0; 16];
         for edge in graph.edges_directed(node_idx, Direction::Incoming) {
@@ -189,13 +159,30 @@ impl Node {
             let source = edge.source();
             let ss = graph[source].state.output_strength.saturating_sub(distance);
             match weight.ty {
-                LinkType::Default => default_inputs[ss as usize] += 1,
-                LinkType::Side => side_inputs[ss as usize] += 1,
+                LinkType::Default => {
+                    if default_input_count >= MAX_INPUTS {
+                        panic!(
+                            "Exceeded the maximum number of default inputs {}",
+                            MAX_INPUTS
+                        );
+                    }
+                    default_input_count += 1;
+                    default_inputs[ss as usize] += 1;
+                }
+                LinkType::Side => {
+                    if side_input_count >= MAX_INPUTS {
+                        panic!("Exceeded the maximum number of side inputs {}", MAX_INPUTS);
+                    }
+                    side_input_count += 1;
+                    side_inputs[ss as usize] += 1;
+                }
             }
         }
+        stats.default_link_count += default_input_count;
+        stats.side_link_count += side_input_count;
 
         use crate::redpiler::compile_graph::NodeType as CNodeType;
-        let updates: SmallVec<[ForwardLink; 18]> = if node.ty != CNodeType::Constant {
+        let updates = if node.ty != CNodeType::Constant {
             graph
                 .edges_directed(node_idx, Direction::Outgoing)
                 .map(|edge| {
@@ -210,19 +197,17 @@ impl Node {
             SmallVec::new()
         };
         stats.update_link_count += updates.len();
-        stats.default_link_count += updates.iter().filter(|link| !link.side()).count();
-        stats.side_link_count += updates.iter().filter(|link| link.side()).count();
 
-        let ty = match node.ty {
+        let ty = match &node.ty {
             CNodeType::Repeater(delay) => {
-                if side_inputs.is_empty() {
+                if side_input_count == 0 {
                     NodeType::SimpleRepeater {
-                        delay,
+                        delay: *delay,
                         facing_diode: node.facing_diode,
                     }
                 } else {
                     NodeType::Repeater {
-                        delay,
+                        delay: *delay,
                         facing_diode: node.facing_diode,
                         locked: node.state.repeater_locked,
                     }
@@ -230,7 +215,7 @@ impl Node {
             }
             CNodeType::Torch => NodeType::Torch,
             CNodeType::Comparator(mode) => NodeType::Comparator {
-                mode,
+                mode: *mode,
                 comparator_far_input: node.comparator_far_input.map(|x| NonMaxU8::new(x).unwrap()),
                 facing_diode: node.facing_diode,
             },
@@ -243,21 +228,26 @@ impl Node {
             CNodeType::Constant => NodeType::Constant,
             CNodeType::ExternalInput => NodeType::ExternalInput,
             CNodeType::ExternalOutput { target_idx, delay } => {
-                let (worker_id, target_id) = nodes_map[&target_idx];
+                let (worker_id, target_id) = nodes_map[target_idx];
                 let output_index = output_indicies
                     .iter()
                     .position(|(id, _)| *id == worker_id)
                     .unwrap_or_else(|| {
-                        output_indicies.push((worker_id, delay));
+                        output_indicies.push((worker_id, *delay));
                         output_indicies.len() - 1
                     })
                     .try_into()
                     .unwrap();
+                assert_eq!(output_indicies[output_index as usize].1, *delay);
                 NodeType::ExternalOutput {
                     output_index,
                     target_id,
                 }
             }
+            CNodeType::ComparatorLine { states } => NodeType::ComparatorLine {
+                delay: states.len().try_into().unwrap(),
+                last_strength: node.state.output_strength,
+            },
         };
 
         Node {
@@ -275,17 +265,25 @@ impl Node {
 }
 
 #[derive(Default, Clone)]
-struct Queues([Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
+struct Queues([Vec<NodeIdWithSS>; TickScheduler::NUM_PRIORITIES]);
 
-#[derive(Default)]
 struct TickScheduler {
     queues_deque: [Queues; Self::NUM_QUEUES],
     pos: usize,
 }
 
+impl Default for TickScheduler {
+    fn default() -> Self {
+        Self {
+            queues_deque: std::array::from_fn(|_| Queues::default()),
+            pos: 0,
+        }
+    }
+}
+
 impl TickScheduler {
     const NUM_PRIORITIES: usize = 4;
-    const NUM_QUEUES: usize = 16;
+    const NUM_QUEUES: usize = 64;
 
     fn reset<W: World>(&mut self, world: &mut W, blocks: &[Option<(BlockPos, Block)>]) {
         for (idx, queues) in self.queues_deque.iter().enumerate() {
@@ -312,8 +310,19 @@ impl TickScheduler {
     }
 
     fn schedule_tick(&mut self, node: NodeId, delay: usize, priority: TickPriority) {
+        self.schedule_tick_with_ss(node, 0, delay, priority);
+    }
+
+    fn schedule_tick_with_ss(
+        &mut self,
+        node: NodeId,
+        ss: u8,
+        delay: usize,
+        priority: TickPriority,
+    ) {
+        assert!(delay < Self::NUM_QUEUES);
         self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES].0[Self::priority_index(priority)]
-            .push(node);
+            .push(NodeIdWithSS::new(node, ss));
     }
 
     fn queues_this_tick(&mut self) -> Queues {
@@ -367,6 +376,7 @@ struct Worker {
     nodes: Nodes,
     scheduler: TickScheduler,
     blocks: Vec<Option<(BlockPos, Block)>>,
+    last_io_index: usize,
 }
 
 enum UpdateMessage {
@@ -405,7 +415,7 @@ impl Worker {
         node.output_power = new_power;
         for i in 0..node.updates.len() {
             let node = &self.nodes[node_id];
-            let update_link = node.updates[i];
+            let update_link = unsafe { *node.updates.get_unchecked(i) };
             let side = update_link.side();
             let distance = update_link.ss();
             let update = update_link.node();
@@ -419,7 +429,12 @@ impl Worker {
             inputs[old_power.saturating_sub(distance) as usize] -= 1;
             inputs[new_power.saturating_sub(distance) as usize] += 1;
 
-            update_node(&mut self.scheduler, &self.outputs, &mut self.nodes, update);
+            update_node(
+                &mut self.scheduler,
+                &mut self.outputs,
+                &mut self.nodes,
+                update,
+            );
         }
     }
 }
@@ -430,22 +445,20 @@ impl JITBackend for ThreadingBackend {
             debug!("could not find node at pos {}", pos);
             return;
         };
-        self.work_senders[worker_id.0 as usize]
-            .send(WorkerMessage::Inspect { node_id })
-            .unwrap();
+        self.work_senders[worker_id.0 as usize].send(WorkerMessage::Inspect { node_id });
     }
 
     fn reset<W: World>(&mut self, world: &mut W, io_only: bool) {
         for _ in 0..FLUSH_OFFSET {
-            for recv in self.change_receivers.iter() {
-                while let ChangeMessage::Change { pos, block } = recv.recv().unwrap() {
+            for recv in self.change_receivers.iter_mut() {
+                while let ChangeMessage::Change { pos, block } = recv.recv() {
                     world.set_block(pos, block);
                 }
             }
         }
 
-        for worker in self.work_senders.iter() {
-            worker.send(WorkerMessage::Reset).unwrap();
+        for worker in self.work_senders.iter_mut() {
+            worker.send(WorkerMessage::Reset);
         }
         for handle in self.handles.drain(..) {
             let mut worker = handle.join().unwrap();
@@ -478,44 +491,72 @@ impl JITBackend for ThreadingBackend {
 
     fn on_use_block(&mut self, pos: BlockPos) {
         let (worker_id, node_id) = self.pos_map[&pos];
-        self.work_senders[worker_id.0 as usize]
-            .send(WorkerMessage::UseBlock { node_id })
-            .unwrap();
+        self.work_senders[worker_id.0 as usize].send(WorkerMessage::UseBlock { node_id });
     }
 
     fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
         let (worker_id, node_id) = self.pos_map[&pos];
         self.work_senders[worker_id.0 as usize]
-            .send(WorkerMessage::PressurePlate { node_id, powered })
-            .unwrap();
+            .send(WorkerMessage::PressurePlate { node_id, powered });
     }
 
     fn tick(&mut self) {
-        for worker in self.work_senders.iter() {
-            worker.send(WorkerMessage::Tick).unwrap();
+        for worker in self.work_senders.iter_mut() {
+            worker.send(WorkerMessage::Tick);
         }
     }
 
-    fn compile(&mut self, mut graph: CompileGraph, ticks: Vec<TickEntry>) {
-        graph.retain_edges(|g, edge| g[edge].ss <= 15);
+    fn compile(&mut self, graph: CompileGraph, ticks: Vec<TickEntry>) {
         let groups = compile_graph::weakly_connected_components(&graph);
-        let groups = compile_graph::merge_small_groups(groups, 1);
-        let thread_count = (std::thread::available_parallelism().unwrap().get() - 1).max(1);
-        let groups = compile_graph::multiway_number_partitioning(groups, thread_count);
+        let big_group_count = groups
+            .iter()
+            .filter(|group| group.len() > graph.node_count() / 10_000)
+            .count();
+
+        trace!(
+            "Found groups. Big groups: {}, Small groups: {}",
+            big_group_count,
+            groups.len()
+        );
+
+        trace!(
+            "Partitioned groups. Count: {}, Sizes: {:?}",
+            groups.len(),
+            groups
+                .iter()
+                .map(|group| group.len())
+                .sorted()
+                .collect_vec()
+        );
+
+        let thread_count = std::thread::available_parallelism().unwrap().get() - 1;
+        let mut groups = compile_graph::multiway_number_partitioning(
+            groups,
+            big_group_count.min(thread_count).max(1),
+        );
+        trace!(
+            "Partitioned groups. Count: {}, Sizes: {:?}",
+            groups.len(),
+            groups.iter().map(|group| group.len()).collect_vec()
+        );
 
         let mut workers = vec![];
+
+        for group in groups.iter_mut() {
+            group.sort_by_key(|&idx| Reverse(graph[idx].is_io_and_flushable()));
+        }
 
         let nodes_map: FxHashMap<NodeIdx, (WorkerId, NodeId)> = groups
             .iter()
             .enumerate()
             .flat_map(|(worker_id, group)| {
-                group.iter().enumerate().map(move |(nid, idx)| {
-                    (*idx, unsafe {
-                        (
-                            WorkerId(worker_id.try_into().unwrap()),
-                            NodeId::from_index(nid),
-                        )
-                    })
+                group.iter().enumerate().map(move |(node_id, node_idx)| {
+                    (
+                        *node_idx,
+                        (WorkerId(worker_id.try_into().unwrap()), unsafe {
+                            NodeId::from_index(node_id)
+                        }),
+                    )
                 })
             })
             .collect();
@@ -527,6 +568,7 @@ impl JITBackend for ThreadingBackend {
             let mut nodes = vec![];
             let mut blocks = vec![];
             let mut output_indicies = vec![];
+            let mut last_io_index = 0;
 
             for node_idx in group.iter() {
                 let (worker_id, node_id) = nodes_map[node_idx];
@@ -537,6 +579,10 @@ impl JITBackend for ThreadingBackend {
                     self.pos_map.insert(pos, (worker_id, node_id));
                 } else {
                     blocks.push(None);
+                }
+
+                if node.is_io_and_flushable() {
+                    last_io_index = last_io_index.max(node_id.index());
                 }
 
                 nodes.push(Node::from_compile_node(
@@ -550,14 +596,13 @@ impl JITBackend for ThreadingBackend {
             stats.nodes_bytes = nodes.len() * std::mem::size_of::<Node>();
             trace!("{:#?}", stats);
 
-            // TODO: Possibly safer to use crossbeam_channel::bounded(1 << 20);
-            let (change_sender, change_receiver) = crossbeam_channel::unbounded();
+            let (mut change_sender, change_receiver) = RingBuffer::new(CHANGES_CHANNEL_SIZE);
             for _ in 0..FLUSH_OFFSET {
-                change_sender.send(ChangeMessage::ChangesEnd).unwrap();
+                change_sender.send(ChangeMessage::ChangesEnd);
             }
             self.change_receivers.push(change_receiver);
 
-            let (work_sender, work_receiver) = crossbeam_channel::bounded(WORK_CHANNEL_SIZE);
+            let (work_sender, work_receiver) = RingBuffer::new(WORK_CHANNEL_SIZE);
             self.work_senders.push(work_sender);
 
             let worker = Worker {
@@ -569,6 +614,7 @@ impl JITBackend for ThreadingBackend {
                 nodes: Nodes::new(nodes.into_boxed_slice()),
                 scheduler: TickScheduler::default(),
                 blocks,
+                last_io_index,
             };
             // Dot file output
             // println!("{}", worker);
@@ -577,11 +623,11 @@ impl JITBackend for ThreadingBackend {
         }
 
         for worker_id in 0..workers.len() {
-            for (target_id, delay) in worker_output_indicies[worker_id].iter() {
-                assert_ne!(*delay, 0);
-                let (sender, receiver) = crossbeam_channel::bounded(UPDATES_CHANNEL_SIZE);
-                for _ in 0..(*delay as usize * TickScheduler::NUM_PRIORITIES) {
-                    sender.send(UpdateMessage::UpdatesEnd).unwrap();
+            for &(target_id, delay) in worker_output_indicies[worker_id].iter() {
+                assert_ne!(delay, 0);
+                let (mut sender, receiver) = RingBuffer::new(UPDATES_CHANNEL_SIZE);
+                for _ in 0..(delay as usize * TickScheduler::NUM_PRIORITIES) {
+                    sender.send(UpdateMessage::UpdatesEnd);
                 }
                 workers[worker_id].outputs.push(sender);
                 workers[target_id.0 as usize].inputs.push(receiver);
@@ -612,11 +658,11 @@ impl JITBackend for ThreadingBackend {
     }
 
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {
-        for root in self.work_senders.iter() {
-            root.send(WorkerMessage::Flush { io_only }).unwrap();
+        for root in self.work_senders.iter_mut() {
+            root.send(WorkerMessage::Flush { io_only });
         }
-        for recv in self.change_receivers.iter() {
-            while let ChangeMessage::Change { pos, block } = recv.recv().unwrap() {
+        for recv in self.change_receivers.iter_mut() {
+            while let ChangeMessage::Change { pos, block } = recv.recv() {
                 world.set_block(pos, block);
             }
         }
@@ -624,182 +670,214 @@ impl JITBackend for ThreadingBackend {
 }
 
 impl Worker {
+    fn tick_node(&mut self, node_data: NodeIdWithSS) {
+        let node_id = node_data.node();
+        self.nodes[node_id].pending_tick = false;
+        let node = &self.nodes[node_id];
+
+        match node.ty {
+            NodeType::Repeater { delay, locked, .. } => {
+                if locked {
+                    return;
+                }
+
+                let should_be_powered = get_bool_input(node);
+                if node.powered && !should_be_powered {
+                    self.set_node(node_id, false, 0);
+                } else if !node.powered {
+                    self.set_node(node_id, true, 15);
+                    if !should_be_powered {
+                        let node = &mut self.nodes[node_id];
+                        schedule_tick(
+                            &mut self.scheduler,
+                            node_id,
+                            node,
+                            delay as usize,
+                            TickPriority::Higher,
+                        );
+                    }
+                }
+            }
+            NodeType::SimpleRepeater { delay, .. } => {
+                let should_be_powered = get_bool_input(node);
+                if node.powered && !should_be_powered {
+                    self.set_node(node_id, false, 0);
+                } else if !node.powered {
+                    self.set_node(node_id, true, 15);
+                    if !should_be_powered {
+                        let node = &mut self.nodes[node_id];
+                        schedule_tick(
+                            &mut self.scheduler,
+                            node_id,
+                            node,
+                            delay as usize,
+                            TickPriority::Higher,
+                        );
+                    }
+                }
+            }
+            NodeType::Torch => {
+                let should_be_off = get_bool_input(node);
+                let lit = node.powered;
+                if lit && should_be_off {
+                    self.set_node(node_id, false, 0);
+                } else if !lit && !should_be_off {
+                    self.set_node(node_id, true, 15);
+                }
+            }
+            NodeType::Comparator {
+                mode,
+                comparator_far_input,
+                ..
+            } => {
+                let mut input_power = get_analog_input(node);
+                let side_input_power = get_analog_side(node);
+                if let Some(far_override) = comparator_far_input {
+                    if input_power < 15 {
+                        input_power = far_override.get();
+                    }
+                }
+                let old_strength = node.output_power;
+                let new_strength = calculate_comparator_output(mode, input_power, side_input_power);
+                if new_strength != old_strength {
+                    self.set_node(node_id, new_strength > 0, new_strength);
+                }
+            }
+            NodeType::Lamp => {
+                let should_be_lit = get_bool_input(node);
+                if node.powered && !should_be_lit {
+                    self.set_node(node_id, false, 0);
+                }
+            }
+            NodeType::Button => {
+                if node.powered {
+                    self.set_node(node_id, false, 0);
+                }
+            }
+            NodeType::ComparatorLine { .. } => {
+                let new_strength = node_data.ss();
+                if new_strength != node.output_power {
+                    self.set_node(node_id, new_strength > 0, new_strength);
+                }
+            }
+            _ => warn!("Node {:?} should not be ticked!", node.ty),
+        }
+    }
+
+    fn handle_tick(&mut self) {
+        let mut queues = self.scheduler.queues_this_tick();
+
+        for sender in self.outputs.iter_mut() {
+            sender.begin_commit(1024);
+        }
+
+        for queue in queues.0.iter_mut() {
+            let mut inputs = std::mem::take(&mut self.inputs);
+            for input in inputs.iter_mut() {
+                while let UpdateMessage::Update {
+                    node_id,
+                    signal_strength,
+                } = input.recv()
+                {
+                    self.set_node(node_id, signal_strength > 0, signal_strength);
+                }
+            }
+            self.inputs = inputs;
+
+            for node_data in queue.drain(..) {
+                self.tick_node(node_data);
+            }
+
+            for output in self.outputs.iter_mut() {
+                output.send_unsafe(UpdateMessage::UpdatesEnd);
+            }
+        }
+
+        for sender in self.outputs.iter_mut() {
+            sender.end_commit();
+        }
+
+        self.scheduler.end_tick(queues);
+    }
+
+    fn handle_use_block(&mut self, node_id: NodeId) {
+        let node = &self.nodes[node_id];
+        match node.ty {
+            NodeType::Button => {
+                if !node.powered {
+                    self.schedule_tick(node_id, 10, TickPriority::Normal);
+                    self.set_node(node_id, true, 15);
+                }
+            }
+            NodeType::Lever => {
+                self.set_node(node_id, !node.powered, bool_to_ss(!node.powered));
+            }
+            _ => warn!("Tried to use a {:?} redpiler node", node.ty),
+        }
+    }
+
+    fn handle_pressure_plate(&mut self, node_id: NodeId, powered: bool) {
+        let node = &self.nodes[node_id];
+        match node.ty {
+            NodeType::PressurePlate => {
+                self.set_node(node_id, powered, bool_to_ss(powered));
+            }
+            _ => warn!("Tried to set pressure plate state for a {:?}", node.ty),
+        }
+    }
+
+    fn handle_flush(&mut self, io_only: bool) {
+        let num = if io_only {
+            self.last_io_index
+        } else {
+            self.nodes.len()
+        };
+        self.change_sender.begin_commit(num + 1);
+
+        for i in 0..num {
+            let Some((pos, block)) = &mut self.blocks[i] else {
+                continue;
+            };
+            let idx = unsafe { NodeId::from_index(i) };
+            let node = &mut self.nodes[idx];
+            if node.changed {
+                if let Some(powered) = block_powered_mut(block) {
+                    *powered = node.powered
+                }
+                if let Block::RedstoneWire { wire, .. } = block {
+                    wire.power = node.output_power
+                };
+                if let Block::RedstoneRepeater { repeater } = block {
+                    repeater.locked = match node.ty {
+                        NodeType::Repeater { locked, .. } => locked,
+                        NodeType::SimpleRepeater { .. } => false,
+                        _ => panic!("Underlying block type is not repeater anymore"),
+                    };
+                }
+                self.change_sender.send_unsafe(ChangeMessage::Change {
+                    pos: *pos,
+                    block: *block,
+                });
+                node.changed = false;
+            }
+        }
+        self.change_sender.send_unsafe(ChangeMessage::ChangesEnd);
+        self.change_sender.end_commit();
+    }
+
     fn run(mut self) -> Self {
         loop {
-            match self.work_receiver.recv().unwrap() {
-                WorkerMessage::Tick => {
-                    let mut queues = self.scheduler.queues_this_tick();
-
-                    for queue in queues.0.iter_mut() {
-                        let inputs = std::mem::take(&mut self.inputs);
-                        for input in inputs.iter() {
-                            while let Ok(UpdateMessage::Update {
-                                node_id,
-                                signal_strength,
-                            }) = input.recv()
-                            {
-                                self.set_node(node_id, signal_strength > 0, signal_strength);
-                            }
-                        }
-                        self.inputs = inputs;
-
-                        for node_id in queue.drain(..) {
-                            self.nodes[node_id].pending_tick = false;
-                            let node = &self.nodes[node_id];
-
-                            match node.ty {
-                                NodeType::Repeater { delay, locked, .. } => {
-                                    if locked {
-                                        continue;
-                                    }
-
-                                    let should_be_powered = get_bool_input(node);
-                                    if node.powered && !should_be_powered {
-                                        self.set_node(node_id, false, 0);
-                                    } else if !node.powered {
-                                        self.set_node(node_id, true, 15);
-                                        if !should_be_powered {
-                                            let node = &mut self.nodes[node_id];
-                                            schedule_tick(
-                                                &mut self.scheduler,
-                                                node_id,
-                                                node,
-                                                delay as usize,
-                                                TickPriority::Higher,
-                                            );
-                                        }
-                                    }
-                                }
-                                NodeType::SimpleRepeater { delay, .. } => {
-                                    let should_be_powered = get_bool_input(node);
-                                    if node.powered && !should_be_powered {
-                                        self.set_node(node_id, false, 0);
-                                    } else if !node.powered {
-                                        self.set_node(node_id, true, 15);
-                                        if !should_be_powered {
-                                            let node = &mut self.nodes[node_id];
-                                            schedule_tick(
-                                                &mut self.scheduler,
-                                                node_id,
-                                                node,
-                                                delay as usize,
-                                                TickPriority::Higher,
-                                            );
-                                        }
-                                    }
-                                }
-                                NodeType::Torch => {
-                                    let should_be_off = get_bool_input(node);
-                                    let lit = node.powered;
-                                    if lit && should_be_off {
-                                        self.set_node(node_id, false, 0);
-                                    } else if !lit && !should_be_off {
-                                        self.set_node(node_id, true, 15);
-                                    }
-                                }
-                                NodeType::Comparator {
-                                    mode,
-                                    comparator_far_input,
-                                    ..
-                                } => {
-                                    let (mut input_power, side_input_power) = get_all_input(node);
-                                    if let Some(far_override) = comparator_far_input {
-                                        if input_power < 15 {
-                                            input_power = far_override.get();
-                                        }
-                                    }
-                                    let old_strength = node.output_power;
-                                    let new_strength = calculate_comparator_output(
-                                        mode,
-                                        input_power,
-                                        side_input_power,
-                                    );
-                                    if new_strength != old_strength {
-                                        self.set_node(node_id, new_strength > 0, new_strength);
-                                    }
-                                }
-                                NodeType::Lamp => {
-                                    let should_be_lit = get_bool_input(node);
-                                    if node.powered && !should_be_lit {
-                                        self.set_node(node_id, false, 0);
-                                    }
-                                }
-                                NodeType::Button => {
-                                    if node.powered {
-                                        self.set_node(node_id, false, 0);
-                                    }
-                                }
-                                _ => warn!("Node {:?} should not be ticked!", node.ty),
-                            }
-                        }
-
-                        for output in self.outputs.iter() {
-                            output.send(UpdateMessage::UpdatesEnd).unwrap();
-                        }
-                    }
-
-                    self.scheduler.end_tick(queues);
-                }
-                WorkerMessage::UseBlock { node_id } => {
-                    let node = &self.nodes[node_id];
-                    match node.ty {
-                        NodeType::Button => {
-                            if !node.powered {
-                                self.schedule_tick(node_id, 10, TickPriority::Normal);
-                                self.set_node(node_id, true, 15);
-                            }
-                        }
-                        NodeType::Lever => {
-                            self.set_node(node_id, !node.powered, bool_to_ss(!node.powered));
-                        }
-                        _ => warn!("Tried to use a {:?} redpiler node", node.ty),
-                    }
-                }
+            match self.work_receiver.recv() {
+                WorkerMessage::Tick => self.handle_tick(),
+                WorkerMessage::UseBlock { node_id } => self.handle_use_block(node_id),
                 WorkerMessage::PressurePlate { node_id, powered } => {
-                    let node = &self.nodes[node_id];
-                    match node.ty {
-                        NodeType::PressurePlate => {
-                            self.set_node(node_id, powered, bool_to_ss(powered));
-                        }
-                        _ => warn!("Tried to set pressure plate state for a {:?}", node.ty),
-                    }
+                    self.handle_pressure_plate(node_id, powered)
                 }
                 WorkerMessage::Inspect { node_id } => {
-                    debug!("Node {:?}: {:#?}", node_id, self.nodes[node_id]);
+                    debug!("Node {:?}: {:#?}", node_id, self.nodes[node_id])
                 }
-                WorkerMessage::Flush { io_only } => {
-                    for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
-                        let Some((pos, block)) = &mut self.blocks[i] else {
-                            continue;
-                        };
-                        if node.changed && (!io_only || node.is_io) {
-                            if let Some(powered) = block_powered_mut(block) {
-                                *powered = node.powered
-                            }
-                            if let Block::RedstoneWire { wire, .. } = block {
-                                wire.power = node.output_power
-                            };
-                            if let Block::RedstoneRepeater { repeater } = block {
-                                repeater.locked = match node.ty {
-                                    NodeType::Repeater { locked, .. } => locked,
-                                    NodeType::SimpleRepeater { .. } => false,
-                                    _ => panic!("Underlying block type is not repeater anymore"),
-                                };
-                            }
-                            self.change_sender
-                                .send(ChangeMessage::Change {
-                                    pos: *pos,
-                                    block: *block,
-                                })
-                                .unwrap();
-                        }
-                        node.changed = false;
-                    }
-                    self.change_sender.send(ChangeMessage::ChangesEnd).unwrap();
-                }
-                WorkerMessage::Reset => {
-                    return self;
-                }
+                WorkerMessage::Flush { io_only } => self.handle_flush(io_only),
+                WorkerMessage::Reset => return self,
             }
         }
     }
@@ -813,18 +891,17 @@ fn set_node(node: &mut Node, powered: bool) {
 }
 
 fn set_node_locked(node: &mut Node, locked: bool) {
-    if let NodeType::Repeater {
+    let NodeType::Repeater {
         locked: ref mut inner,
         ..
     } = node.ty
-    {
-        *inner = locked;
-    } else {
+    else {
         unreachable!();
         // unsafe {
         //     std::hint::unreachable_unchecked();
         // }
-    }
+    };
+    *inner = locked;
     node.changed = true;
 }
 
@@ -861,21 +938,22 @@ fn last_index_positive(array: &[u8; 16]) -> u32 {
     }
 }
 
-fn get_all_input(node: &Node) -> (u8, u8) {
-    let input_power = last_index_positive(&node.default_inputs) as u8;
+fn get_analog_input(node: &Node) -> u8 {
+    last_index_positive(&node.default_inputs) as u8
+}
 
-    let side_input_power = last_index_positive(&node.side_inputs) as u8;
-    (input_power, side_input_power)
+fn get_analog_side(node: &Node) -> u8 {
+    last_index_positive(&node.side_inputs) as u8
 }
 
 #[inline(always)]
 fn update_node(
     scheduler: &mut TickScheduler,
-    outputs: &[Sender<UpdateMessage>],
+    outputs: &mut [Sender<UpdateMessage>],
     nodes: &mut Nodes,
     node_id: NodeId,
 ) {
-    let node = &nodes[node_id];
+    let node = &mut nodes[node_id];
 
     match node.ty {
         NodeType::Repeater {
@@ -883,7 +961,6 @@ fn update_node(
             facing_diode,
             locked,
         } => {
-            let node = &mut nodes[node_id];
             let should_be_locked = get_bool_side(node);
             if !locked && should_be_locked {
                 set_node_locked(node, true);
@@ -921,7 +998,6 @@ fn update_node(
                 } else {
                     TickPriority::High
                 };
-                let node = &mut nodes[node_id];
                 schedule_tick(scheduler, node_id, node, delay as usize, priority);
             }
         }
@@ -932,7 +1008,6 @@ fn update_node(
             let should_be_off = get_bool_input(node);
             let lit = node.powered;
             if lit == should_be_off {
-                let node = &mut nodes[node_id];
                 schedule_tick(scheduler, node_id, node, 1, TickPriority::Normal);
             }
         }
@@ -944,7 +1019,8 @@ fn update_node(
             if node.pending_tick {
                 return;
             }
-            let (mut input_power, side_input_power) = get_all_input(node);
+            let mut input_power = get_analog_input(node);
+            let side_input_power = get_analog_side(node);
             if let Some(far_override) = comparator_far_input {
                 if input_power < 15 {
                     input_power = far_override.get();
@@ -958,14 +1034,12 @@ fn update_node(
                 } else {
                     TickPriority::Normal
                 };
-                let node = &mut nodes[node_id];
                 schedule_tick(scheduler, node_id, node, 1, priority);
             }
         }
         NodeType::Lamp => {
             let should_be_lit = get_bool_input(node);
             let lit = node.powered;
-            let node = &mut nodes[node_id];
             if lit && !should_be_lit {
                 schedule_tick(scheduler, node_id, node, 2, TickPriority::Normal);
             } else if !lit && should_be_lit {
@@ -975,14 +1049,12 @@ fn update_node(
         NodeType::Trapdoor => {
             let should_be_powered = get_bool_input(node);
             if node.powered != should_be_powered {
-                let node = &mut nodes[node_id];
                 set_node(node, should_be_powered);
             }
         }
         NodeType::Wire => {
-            let (input_power, _) = get_all_input(node);
+            let input_power = get_analog_input(node);
             if node.output_power != input_power {
-                let node = &mut nodes[node_id];
                 node.output_power = input_power;
                 node.changed = true;
             }
@@ -991,18 +1063,33 @@ fn update_node(
             output_index,
             target_id,
         } => {
-            let (input_power, _) = get_all_input(node);
+            let input_power = get_analog_input(node);
             if node.output_power != input_power {
-                let node = &mut nodes[node_id];
                 node.output_power = input_power;
                 node.changed = true;
 
-                outputs[output_index as usize]
-                    .send(UpdateMessage::Update {
-                        node_id: target_id,
-                        signal_strength: input_power,
-                    })
-                    .unwrap();
+                outputs[output_index as usize].send_unsafe(UpdateMessage::Update {
+                    node_id: target_id,
+                    signal_strength: input_power,
+                });
+            }
+        }
+        NodeType::ComparatorLine {
+            delay,
+            last_strength,
+        } => {
+            let new_strength = get_analog_input(node);
+            if new_strength != last_strength {
+                node.ty = NodeType::ComparatorLine {
+                    delay,
+                    last_strength: new_strength,
+                };
+                scheduler.schedule_tick_with_ss(
+                    node_id,
+                    new_strength,
+                    delay as usize,
+                    TickPriority::Normal,
+                );
             }
         }
         _ => panic!("Node {:?} should not be updated!", node),

@@ -3,13 +3,10 @@
 //! Apply and replace all separator nodes with input and a corresponding output node
 
 use super::Pass;
-use crate::redpiler::compile_graph::{
-    Annotations, CompileGraph, CompileLink, CompileNode, NodeIdx, NodeType,
-};
+use crate::redpiler::compile_graph::{Annotations, CompileGraph, CompileNode, NodeIdx, NodeType};
 use crate::redpiler::{BackendVariant, CompilerInput, CompilerOptions};
 use crate::world::World;
-use itertools::Itertools;
-use petgraph::visit::{EdgeRef, NodeIndexable};
+use petgraph::visit::NodeIndexable;
 use petgraph::Direction;
 
 pub struct ApplySeparators;
@@ -50,20 +47,20 @@ impl<W: World> Pass<W> for ApplySeparators {
                     annotations: Annotations::default(),
                 });
 
-                let incoming_edges = graph
-                    .edges_directed(idx, Direction::Incoming)
-                    .map(|e| (e.source(), e.weight().ty, e.weight().ss))
-                    .collect_vec();
-                for (source, ty, ss) in incoming_edges {
-                    graph.add_edge(source, output_node, CompileLink { ty, ss });
+                let mut incoming_edges =
+                    graph.neighbors_directed(idx, Direction::Incoming).detach();
+                while let Some(edge_idx) = incoming_edges.next_edge(graph) {
+                    let source = graph.edge_endpoints(edge_idx).unwrap().0;
+                    let edge = graph.remove_edge(edge_idx).unwrap();
+                    graph.add_edge(source, output_node, edge);
                 }
 
-                let outgoing_edges = graph
-                    .edges_directed(idx, Direction::Outgoing)
-                    .map(|e| (e.target(), e.weight().ty, e.weight().ss))
-                    .collect_vec();
-                for (target, ty, ss) in outgoing_edges {
-                    graph.add_edge(input_node, target, CompileLink { ty, ss });
+                let mut outgoing_edges =
+                    graph.neighbors_directed(idx, Direction::Outgoing).detach();
+                while let Some(edge_idx) = outgoing_edges.next_edge(graph) {
+                    let target = graph.edge_endpoints(edge_idx).unwrap().1;
+                    let edge = graph.remove_edge(edge_idx).unwrap();
+                    graph.add_edge(input_node, target, edge);
                 }
 
                 graph.remove_node(idx);

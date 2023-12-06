@@ -6,6 +6,7 @@ use super::Pass;
 use crate::redpiler::compile_graph::CompileGraph;
 use crate::redpiler::{CompilerInput, CompilerOptions};
 use crate::world::World;
+use itertools::Itertools;
 use petgraph::Direction;
 use rustc_hash::FxHashSet;
 
@@ -13,24 +14,19 @@ pub struct PruneOrphans;
 
 impl<W: World> Pass<W> for PruneOrphans {
     fn run_pass(&self, graph: &mut CompileGraph, _: &CompilerOptions, _: &CompilerInput<'_, W>) {
-        let mut to_visit = Vec::with_capacity(graph.node_count());
-        for idx in graph.node_indices() {
-            if graph[idx].is_output {
-                to_visit.push(idx);
-            }
-        }
+        let mut to_visit = graph
+            .node_indices()
+            .filter(|&idx| graph[idx].is_input | graph[idx].is_output)
+            .collect_vec();
 
         let mut visited = FxHashSet::default();
         while let Some(idx) = to_visit.pop() {
-            if !visited.contains(&idx) {
-                visited.insert(idx);
-                for neighbor in graph.neighbors_directed(idx, Direction::Incoming) {
-                    to_visit.push(neighbor);
-                }
+            if visited.insert(idx) {
+                to_visit.extend(graph.neighbors_directed(idx, Direction::Incoming));
             }
         }
 
-        graph.retain_nodes(|graph, n| visited.contains(&n) || graph[n].is_input);
+        graph.retain_nodes(|_, idx| visited.contains(&idx));
     }
 
     fn should_run(&self, options: &CompilerOptions) -> bool {

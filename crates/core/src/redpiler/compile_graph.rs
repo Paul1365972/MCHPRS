@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 pub type NodeIdx = NodeIndex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeType {
     Repeater(u8),
     Torch,
@@ -20,6 +20,7 @@ pub enum NodeType {
     Trapdoor,
     Wire,
     Constant,
+    ComparatorLine { states: Vec<u8> },
     ExternalInput,
     ExternalOutput { target_idx: NodeIdx, delay: u32 },
 }
@@ -82,12 +83,22 @@ pub struct CompileNode {
     pub annotations: Annotations,
 }
 
+impl CompileNode {
+    pub fn is_removable(&self) -> bool {
+        !self.is_input && !self.is_output && self.annotations.separate == None
+    }
+
+    pub fn is_io_and_flushable(&self) -> bool {
+        (self.is_input || self.is_output) && self.block.is_some()
+    }
+}
+
 impl Display for CompileNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
-            match self.ty {
+            match &self.ty {
                 NodeType::Repeater(delay) => format!("Repeater({})", delay),
                 NodeType::Torch => format!("Torch"),
                 NodeType::Comparator(mode) => format!(
@@ -106,6 +117,7 @@ impl Display for CompileNode {
                 NodeType::Constant => format!("Constant"),
                 NodeType::ExternalInput => format!("ExternalInput"),
                 NodeType::ExternalOutput { .. } => format!("ExternalOutput"),
+                NodeType::ComparatorLine { states } => format!("ComparatorLine({})", states.len()),
             }
         )
     }
@@ -182,22 +194,6 @@ pub fn weakly_connected_components(graph: &CompileGraph) -> Vec<Vec<NodeIdx>> {
         }
     }
     components
-}
-
-pub fn merge_small_groups(components: Vec<Vec<NodeIdx>>, size: usize) -> Vec<Vec<NodeIdx>> {
-    let mut component_groups = vec![];
-    let mut small_component_group = vec![];
-    for component in components {
-        if component.len() <= size {
-            small_component_group.extend(component);
-        } else {
-            component_groups.push(component);
-        }
-    }
-    if !small_component_group.is_empty() {
-        component_groups.push(small_component_group);
-    }
-    component_groups
 }
 
 // Merge groups into `k` bins using a greedy algorithm for the multiway number partitioning problem.

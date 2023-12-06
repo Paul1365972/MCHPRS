@@ -57,8 +57,9 @@ fn convert_node(
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
             // TODO Add new node types to the other crate as well
-            CNodeType::ExternalInput => NodeType::Wire,
-            CNodeType::ExternalOutput { .. } => NodeType::Wire,
+            CNodeType::ExternalInput => todo!(),
+            CNodeType::ExternalOutput { .. } => todo!(),
+            CNodeType::ComparatorLine { states: _ } => todo!(),
         },
         block: node.block.map(|(pos, id)| {
             (
