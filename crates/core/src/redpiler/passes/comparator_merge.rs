@@ -19,15 +19,19 @@ impl<W: World> Pass<W> for ComparatorMerge {
     fn run_pass(&self, graph: &mut CompileGraph, _: &CompilerOptions, _: &CompilerInput<'_, W>) {
         // Identify all lines
         let comparator_lines = find_lines(graph, |idx| {
-            let node = &graph[idx];
-            matches!(node.ty, NodeType::Comparator(_))
-                && !node.facing_diode
-                && node.comparator_far_input == None
+            matches!(
+                graph[idx].ty,
+                NodeType::Comparator {
+                    far_input: None,
+                    facing_diode: false,
+                    ..
+                }
+            )
         });
 
         let repeater_lines = find_lines(graph, |idx| {
             let node = &graph[idx];
-            matches!(node.ty, NodeType::Repeater(_))
+            matches!(node.ty, NodeType::Repeater { .. })
         });
 
         let histogram = repeater_lines.iter().counts_by(|line| line.len());
@@ -43,61 +47,60 @@ impl<W: World> Pass<W> for ComparatorMerge {
         );
 
         // Replace all valid identified lines with special line nodes
-        for line in comparator_lines {
-            for line in line.chunks(64).filter(|line| line.len() >= 5) {
-                // Keep first comparator as input guard
-                let line = &line[1..line.len()];
+        for line in comparator_lines
+            .iter()
+            .flat_map(|line| line.chunks(64))
+            .filter(|line| line.len() >= 4)
+        {
+            // Merge signal strength falloff
+            let falloff: usize = line
+                .windows(2)
+                .map(|n| graph.find_edge(n[0], n[1]).unwrap())
+                .map(|idx| graph[idx].ss as usize)
+                .sum();
 
-                // Merge signal strength falloff
-                let falloff: usize = line
-                    .windows(2)
-                    .map(|n| graph.find_edge(n[0], n[1]).unwrap())
-                    .map(|idx| graph[idx].ss as usize)
-                    .sum();
-
+            if falloff < 15 {
                 let start = line[0];
                 let end = line[line.len() - 1];
 
-                if falloff < 15 {
-                    let states = line
-                        .iter()
-                        .map(|&idx| graph[idx].state.output_strength)
-                        .collect_vec();
+                let states = line
+                    .iter()
+                    .map(|&idx| graph[idx].state.output_strength)
+                    .collect_vec();
 
-                    let node = CompileNode {
-                        ty: NodeType::ComparatorLine { states },
-                        block: None,
-                        state: graph[end].state.clone(),
-                        facing_diode: false,
-                        comparator_far_input: None,
-                        is_input: false,
-                        is_output: false,
-                        annotations: Annotations::default(),
-                    };
-                    let idx = graph.add_node(node);
+                let node = CompileNode {
+                    ty: NodeType::ComparatorLine {
+                        states: states.into_boxed_slice(),
+                    },
+                    block: None,
+                    state: graph[end].state.clone(),
+                    is_input: false,
+                    is_output: false,
+                    annotations: Annotations::default(),
+                };
+                let idx = graph.add_node(node);
 
-                    let mut incomming = graph
-                        .neighbors_directed(start, Direction::Incoming)
-                        .detach();
-                    while let Some(edge_idx) = incomming.next_edge(graph) {
-                        let source = graph.edge_endpoints(edge_idx).unwrap().0;
-                        let link = graph.remove_edge(edge_idx).unwrap();
-                        let ss = falloff as u8 + link.ss;
-                        if ss < 15 {
-                            graph.add_edge(source, idx, CompileLink::default(ss));
-                        }
-                    }
-                    let mut outgoing = graph.neighbors_directed(end, Direction::Outgoing).detach();
-                    while let Some(edge_idx) = outgoing.next_edge(graph) {
-                        let target = graph.edge_endpoints(edge_idx).unwrap().1;
-                        let link = graph.remove_edge(edge_idx).unwrap();
-                        graph.add_edge(idx, target, link);
+                let mut incomming = graph
+                    .neighbors_directed(start, Direction::Incoming)
+                    .detach();
+                while let Some(edge_idx) = incomming.next_edge(graph) {
+                    let source = graph.edge_endpoints(edge_idx).unwrap().0;
+                    let link = graph.remove_edge(edge_idx).unwrap();
+                    let ss = falloff as u8 + link.ss;
+                    if ss < 15 {
+                        graph.add_edge(source, idx, CompileLink::default(ss));
                     }
                 }
-
-                for &idx in line {
-                    graph.remove_node(idx);
+                let mut outgoing = graph.neighbors_directed(end, Direction::Outgoing).detach();
+                while let Some(edge_idx) = outgoing.next_edge(graph) {
+                    let target = graph.edge_endpoints(edge_idx).unwrap().1;
+                    let link = graph.remove_edge(edge_idx).unwrap();
+                    graph.add_edge(idx, target, link);
                 }
+            }
+
+            for &idx in line {
+                graph.remove_node(idx);
             }
         }
     }

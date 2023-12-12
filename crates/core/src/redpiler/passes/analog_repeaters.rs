@@ -19,7 +19,7 @@ impl<W: World> Pass<W> for AnalogRepeaters {
                 continue;
             }
 
-            if !matches!(graph[start_idx].ty, NodeType::Comparator(_)) {
+            if !matches!(graph[start_idx].ty, NodeType::Comparator { .. }) {
                 continue 'next;
             }
             let repeaters = graph
@@ -29,7 +29,14 @@ impl<W: World> Pass<W> for AnalogRepeaters {
                 continue 'next;
             }
             if !repeaters.iter().all(|&idx| {
-                matches!(graph[idx].ty, NodeType::Repeater(1)) && !graph[idx].facing_diode
+                graph[idx].is_removable()
+                    && matches!(
+                        graph[idx].ty,
+                        NodeType::Repeater {
+                            delay: 1,
+                            facing_diode: false
+                        }
+                    )
             }) {
                 continue 'next;
             }
@@ -76,11 +83,13 @@ impl<W: World> Pass<W> for AnalogRepeaters {
 
             let state = graph[start_idx].state.clone();
             let new_comparator = graph.add_node(CompileNode {
-                ty: NodeType::Comparator(ComparatorMode::Compare),
+                ty: NodeType::Comparator {
+                    mode: ComparatorMode::Compare,
+                    far_input: None,
+                    facing_diode: false,
+                },
                 block: None,
                 state,
-                facing_diode: false,
-                comparator_far_input: None,
                 is_input: true,
                 is_output: false,
                 annotations: Annotations::default(),

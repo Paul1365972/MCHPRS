@@ -10,9 +10,16 @@ pub type NodeIdx = NodeIndex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeType {
-    Repeater(u8),
+    Repeater {
+        delay: u8,
+        facing_diode: bool,
+    },
     Torch,
-    Comparator(ComparatorMode),
+    Comparator {
+        mode: ComparatorMode,
+        far_input: Option<u8>,
+        facing_diode: bool,
+    },
     Lamp,
     Button,
     Lever,
@@ -20,9 +27,14 @@ pub enum NodeType {
     Trapdoor,
     Wire,
     Constant,
-    ComparatorLine { states: Vec<u8> },
+    ComparatorLine {
+        states: Vec<u8>,
+    },
     ExternalInput,
-    ExternalOutput { target_idx: NodeIdx, delay: u32 },
+    ExternalOutput {
+        target_idx: NodeIdx,
+        delay: u32,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -76,8 +88,6 @@ pub struct CompileNode {
     pub block: Option<(BlockPos, u32)>,
     pub state: NodeState,
 
-    pub facing_diode: bool,
-    pub comparator_far_input: Option<u8>,
     pub is_input: bool,
     pub is_output: bool,
     pub annotations: Annotations,
@@ -91,6 +101,18 @@ impl CompileNode {
     pub fn is_io_and_flushable(&self) -> bool {
         (self.is_input || self.is_output) && self.block.is_some()
     }
+
+    pub fn can_be_ticked(&self) -> bool {
+        matches!(
+            self.ty,
+            NodeType::Repeater { .. }
+                | NodeType::Comparator { .. }
+                | NodeType::Torch
+                | NodeType::Button
+                | NodeType::Lamp
+                | NodeType::ComparatorLine { .. }
+        )
+    }
 }
 
 impl Display for CompileNode {
@@ -99,9 +121,9 @@ impl Display for CompileNode {
             f,
             "{}",
             match &self.ty {
-                NodeType::Repeater(delay) => format!("Repeater({})", delay),
+                NodeType::Repeater { delay, .. } => format!("Repeater({})", delay),
                 NodeType::Torch => format!("Torch"),
-                NodeType::Comparator(mode) => format!(
+                NodeType::Comparator { mode, .. } => format!(
                     "Comparator({})",
                     match mode {
                         ComparatorMode::Compare => "Cmp",

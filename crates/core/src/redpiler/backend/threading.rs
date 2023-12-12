@@ -1,4 +1,4 @@
-use super::common::{calculate_comparator_output, ForwardLink, NodeId, NodeIdWithSS, NonMaxU8};
+use super::common::{calculate_comparator_output, ForwardLink, NodeId, NodeIdWithData, NonMaxU8};
 use super::JITBackend;
 use crate::redpiler::compile_graph::{self, CompileGraph, LinkType, NodeIdx};
 use crate::redpiler::{block_powered_mut, bool_to_ss};
@@ -21,7 +21,7 @@ use std::{fmt, mem};
 use thread_priority::{ThreadBuilder, ThreadPriority};
 use tracing::{debug, trace, warn};
 
-const WORK_CHANNEL_SIZE: usize = 1 << 8;
+const WORK_CHANNEL_SIZE: usize = 1 << 10;
 const UPDATES_CHANNEL_SIZE: usize = 1 << 20;
 const CHANGES_CHANNEL_SIZE: usize = 1 << 20;
 const FLUSH_OFFSET: usize = 2;
@@ -113,7 +113,6 @@ enum NodeType {
     },
     ComparatorLine {
         delay: u8,
-        last_strength: u8,
     },
 }
 
@@ -245,8 +244,11 @@ impl Node {
                 }
             }
             CNodeType::ComparatorLine { states } => NodeType::ComparatorLine {
-                delay: states.len().try_into().unwrap(),
-                last_strength: node.state.output_strength,
+                delay: {
+                    let delay = states.len();
+                    assert!(delay >= 2 && delay < TickScheduler::NUM_QUEUES);
+                    delay.try_into().unwrap()
+                },
             },
         };
 
@@ -265,7 +267,7 @@ impl Node {
 }
 
 #[derive(Default, Clone)]
-struct Queues([Vec<NodeIdWithSS>; TickScheduler::NUM_PRIORITIES]);
+struct Queues([Vec<NodeIdWithData>; TickScheduler::NUM_PRIORITIES]);
 
 struct TickScheduler {
     queues_deque: [Queues; Self::NUM_QUEUES],
@@ -309,20 +311,9 @@ impl TickScheduler {
         }
     }
 
-    fn schedule_tick(&mut self, node: NodeId, delay: usize, priority: TickPriority) {
-        self.schedule_tick_with_ss(node, 0, delay, priority);
-    }
-
-    fn schedule_tick_with_ss(
-        &mut self,
-        node: NodeId,
-        ss: u8,
-        delay: usize,
-        priority: TickPriority,
-    ) {
-        assert!(delay < Self::NUM_QUEUES);
+    fn schedule_tick(&mut self, node_data: NodeIdWithData, delay: usize, priority: TickPriority) {
         self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES].0[Self::priority_index(priority)]
-            .push(NodeIdWithSS::new(node, ss));
+            .push(node_data);
     }
 
     fn queues_this_tick(&mut self) -> Queues {
@@ -402,10 +393,6 @@ enum ChangeMessage {
 }
 
 impl Worker {
-    fn schedule_tick(&mut self, node_id: NodeId, delay: usize, priority: TickPriority) {
-        self.scheduler.schedule_tick(node_id, delay, priority);
-    }
-
     fn set_node(&mut self, node_id: NodeId, powered: bool, new_power: u8) {
         let node = &mut self.nodes[node_id];
         let old_power = node.output_power;
@@ -638,7 +625,7 @@ impl JITBackend for ThreadingBackend {
             if let Some((worker_id, node_id)) = self.pos_map.get(&entry.pos) {
                 let worker = &mut workers[worker_id.0 as usize];
                 worker.scheduler.schedule_tick(
-                    *node_id,
+                    NodeIdWithData::new(*node_id),
                     entry.ticks_left as usize,
                     entry.tick_priority,
                 );
@@ -670,7 +657,7 @@ impl JITBackend for ThreadingBackend {
 }
 
 impl Worker {
-    fn tick_node(&mut self, node_data: NodeIdWithSS) {
+    fn tick_node(&mut self, node_data: NodeIdWithData) {
         let node_id = node_data.node();
         self.nodes[node_id].pending_tick = false;
         let node = &self.nodes[node_id];
@@ -690,7 +677,7 @@ impl Worker {
                         let node = &mut self.nodes[node_id];
                         schedule_tick(
                             &mut self.scheduler,
-                            node_id,
+                            NodeIdWithData::new(node_id),
                             node,
                             delay as usize,
                             TickPriority::Higher,
@@ -708,7 +695,7 @@ impl Worker {
                         let node = &mut self.nodes[node_id];
                         schedule_tick(
                             &mut self.scheduler,
-                            node_id,
+                            NodeIdWithData::new(node_id),
                             node,
                             delay as usize,
                             TickPriority::Higher,
@@ -754,10 +741,25 @@ impl Worker {
                     self.set_node(node_id, false, 0);
                 }
             }
-            NodeType::ComparatorLine { .. } => {
-                let new_strength = node_data.ss();
-                if new_strength != node.output_power {
-                    self.set_node(node_id, new_strength > 0, new_strength);
+            NodeType::ComparatorLine { delay } => {
+                if node_data.bool() {
+                    let new_strength = node_data.ss();
+                    if new_strength != node.output_power {
+                        self.set_node(node_id, new_strength > 0, new_strength);
+                    }
+                } else {
+                    let input_power = get_analog_input(node);
+                    let old_strength = node.output_power;
+                    if input_power != old_strength {
+                        let node = &mut self.nodes[node_id];
+                        schedule_tick(
+                            &mut self.scheduler,
+                            NodeIdWithData::new_with_data(node_id, true, input_power),
+                            node,
+                            delay as usize - 1,
+                            TickPriority::Normal,
+                        );
+                    }
                 }
             }
             _ => warn!("Node {:?} should not be ticked!", node.ty),
@@ -805,7 +807,11 @@ impl Worker {
         match node.ty {
             NodeType::Button => {
                 if !node.powered {
-                    self.schedule_tick(node_id, 10, TickPriority::Normal);
+                    self.scheduler.schedule_tick(
+                        NodeIdWithData::new(node_id),
+                        10,
+                        TickPriority::Normal,
+                    );
                     self.set_node(node_id, true, 15);
                 }
             }
@@ -828,7 +834,7 @@ impl Worker {
 
     fn handle_flush(&mut self, io_only: bool) {
         let num = if io_only {
-            self.last_io_index
+            self.last_io_index + 1
         } else {
             self.nodes.len()
         };
@@ -907,13 +913,13 @@ fn set_node_locked(node: &mut Node, locked: bool) {
 
 fn schedule_tick(
     scheduler: &mut TickScheduler,
-    node_id: NodeId,
+    node_data: NodeIdWithData,
     node: &mut Node,
     delay: usize,
     priority: TickPriority,
 ) {
     node.pending_tick = true;
-    scheduler.schedule_tick(node_id, delay, priority);
+    scheduler.schedule_tick(node_data, delay, priority);
 }
 
 const INPUT_MASK: u128 = u128::from_ne_bytes([
@@ -978,7 +984,13 @@ fn update_node(
                     } else {
                         TickPriority::High
                     };
-                    schedule_tick(scheduler, node_id, node, delay as usize, priority);
+                    schedule_tick(
+                        scheduler,
+                        NodeIdWithData::new(node_id),
+                        node,
+                        delay as usize,
+                        priority,
+                    );
                 }
             }
         }
@@ -998,7 +1010,13 @@ fn update_node(
                 } else {
                     TickPriority::High
                 };
-                schedule_tick(scheduler, node_id, node, delay as usize, priority);
+                schedule_tick(
+                    scheduler,
+                    NodeIdWithData::new(node_id),
+                    node,
+                    delay as usize,
+                    priority,
+                );
             }
         }
         NodeType::Torch => {
@@ -1008,7 +1026,13 @@ fn update_node(
             let should_be_off = get_bool_input(node);
             let lit = node.powered;
             if lit == should_be_off {
-                schedule_tick(scheduler, node_id, node, 1, TickPriority::Normal);
+                schedule_tick(
+                    scheduler,
+                    NodeIdWithData::new(node_id),
+                    node,
+                    1,
+                    TickPriority::Normal,
+                );
             }
         }
         NodeType::Comparator {
@@ -1034,14 +1058,20 @@ fn update_node(
                 } else {
                     TickPriority::Normal
                 };
-                schedule_tick(scheduler, node_id, node, 1, priority);
+                schedule_tick(scheduler, NodeIdWithData::new(node_id), node, 1, priority);
             }
         }
         NodeType::Lamp => {
             let should_be_lit = get_bool_input(node);
             let lit = node.powered;
             if lit && !should_be_lit {
-                schedule_tick(scheduler, node_id, node, 2, TickPriority::Normal);
+                schedule_tick(
+                    scheduler,
+                    NodeIdWithData::new(node_id),
+                    node,
+                    2,
+                    TickPriority::Normal,
+                );
             } else if !lit && should_be_lit {
                 set_node(node, true);
             }
@@ -1074,20 +1104,18 @@ fn update_node(
                 });
             }
         }
-        NodeType::ComparatorLine {
-            delay,
-            last_strength,
-        } => {
-            let new_strength = get_analog_input(node);
-            if new_strength != last_strength {
-                node.ty = NodeType::ComparatorLine {
-                    delay,
-                    last_strength: new_strength,
-                };
-                scheduler.schedule_tick_with_ss(
-                    node_id,
-                    new_strength,
-                    delay as usize,
+        NodeType::ComparatorLine { .. } => {
+            if node.pending_tick {
+                return;
+            }
+            let input_power = get_analog_input(node);
+            let old_strength = node.output_power;
+            if input_power != old_strength {
+                schedule_tick(
+                    scheduler,
+                    NodeIdWithData::new_with_data(node_id, false, 0),
+                    node,
+                    1,
                     TickPriority::Normal,
                 );
             }

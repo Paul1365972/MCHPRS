@@ -246,7 +246,7 @@ impl Node {
         stats.update_link_count += updates.len();
 
         let ty = match node.ty {
-            CNodeType::Repeater(delay) => {
+            CNodeType::Repeater { delay, .. } => {
                 if side_input_count == 0 {
                     NodeType::SimpleRepeater(delay)
                 } else {
@@ -254,7 +254,7 @@ impl Node {
                 }
             }
             CNodeType::Torch => NodeType::Torch,
-            CNodeType::Comparator(mode) => NodeType::Comparator(mode),
+            CNodeType::Comparator { mode, .. } => NodeType::Comparator(mode),
             CNodeType::Lamp => NodeType::Lamp,
             CNodeType::Button => NodeType::Button,
             CNodeType::Lever => NodeType::Lever,
@@ -262,6 +262,22 @@ impl Node {
             CNodeType::Trapdoor => NodeType::Trapdoor,
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
+            CNodeType::ExternalInput
+            | CNodeType::ExternalOutput { .. }
+            | CNodeType::ComparatorLine { .. } => {
+                panic!("Invalid node type for direct backend")
+            }
+        };
+
+        let facing_diode = match node.ty {
+            CNodeType::Repeater { facing_diode, .. }
+            | CNodeType::Comparator { facing_diode, .. } => facing_diode,
+            _ => false,
+        };
+
+        let comparator_far_input = match node.ty {
+            CNodeType::Comparator { far_input, .. } => far_input,
+            _ => None,
         };
 
         Node {
@@ -272,8 +288,8 @@ impl Node {
             powered: node.state.powered,
             output_power: node.state.output_strength,
             locked: node.state.repeater_locked,
-            facing_diode: node.facing_diode,
-            comparator_far_input: node.comparator_far_input,
+            facing_diode,
+            comparator_far_input,
             pending_tick: false,
             changed: false,
         }

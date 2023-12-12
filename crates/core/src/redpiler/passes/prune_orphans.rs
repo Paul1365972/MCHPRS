@@ -16,7 +16,7 @@ impl<W: World> Pass<W> for PruneOrphans {
     fn run_pass(&self, graph: &mut CompileGraph, _: &CompilerOptions, _: &CompilerInput<'_, W>) {
         let mut to_visit = graph
             .node_indices()
-            .filter(|&idx| graph[idx].is_input | graph[idx].is_output)
+            .filter(|&idx| !graph[idx].is_removable())
             .collect_vec();
 
         let mut visited = FxHashSet::default();

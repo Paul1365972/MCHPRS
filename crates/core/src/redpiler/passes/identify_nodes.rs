@@ -16,7 +16,7 @@ use crate::redstone;
 use crate::world::{for_each_block_optimized, World};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::BlockEntity;
-use mchprs_blocks::blocks::{Block, RedstoneComparator, RedstoneRepeater};
+use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use petgraph::Direction;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -83,21 +83,6 @@ fn for_pos<W: World>(
         return;
     };
 
-    let facing_diode = match block {
-        Block::RedstoneRepeater {
-            repeater: RedstoneRepeater { facing, .. },
-            ..
-        }
-        | Block::RedstoneComparator {
-            comparator: RedstoneComparator { facing, .. },
-            ..
-        } => {
-            let facing_block = world.get_block(pos.offset(facing.opposite().block_face()));
-            redstone::is_diode(facing_block)
-        }
-        _ => false,
-    };
-
     let is_input = matches!(
         ty,
         NodeType::Button | NodeType::Lever | NodeType::PressurePlate
@@ -113,8 +98,6 @@ fn for_pos<W: World>(
         block: Some((pos, id)),
         state,
 
-        facing_diode,
-        comparator_far_input: None,
         is_input,
         is_output,
         annotations: Annotations::default(),
@@ -129,11 +112,22 @@ fn identify_block<W: World>(
 ) -> Option<(NodeType, NodeState)> {
     let (ty, state) = match block {
         Block::RedstoneRepeater { repeater } => (
-            NodeType::Repeater(repeater.delay),
+            NodeType::Repeater {
+                delay: repeater.delay,
+                facing_diode: redstone::is_diode(
+                    world.get_block(pos.offset(repeater.facing.opposite().block_face())),
+                ),
+            },
             NodeState::repeater(repeater.powered, repeater.locked),
         ),
         Block::RedstoneComparator { comparator } => (
-            NodeType::Comparator(comparator.mode),
+            NodeType::Comparator {
+                mode: comparator.mode,
+                far_input: redstone::get_comparator_far_input(world, pos, comparator.facing),
+                facing_diode: redstone::is_diode(
+                    world.get_block(pos.offset(comparator.facing.opposite().block_face())),
+                ),
+            },
             NodeState::comparator(
                 comparator.powered,
                 if let Some(BlockEntity::Comparator { output_strength }) =
@@ -249,7 +243,7 @@ impl NodeAnnotation {
                     ));
                 }
                 let node = &mut graph[node_idx];
-                if !matches!(node.ty, NodeType::Comparator(_)) {
+                if !matches!(node.ty, NodeType::Comparator { .. }) {
                     return Err(format!(
                         "Separate annotation only allowed on comparators, not {:?}",
                         node.ty

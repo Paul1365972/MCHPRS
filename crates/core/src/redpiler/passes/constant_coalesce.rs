@@ -14,17 +14,13 @@ impl<W: World> Pass<W> for ConstantCoalesce {
             let mut constant_nodes = FxHashMap::default();
 
             for idx in component {
-                if !graph.contains_node(idx) {
-                    continue;
-                }
-
                 if graph[idx].ty != NodeType::Constant {
                     continue;
                 }
 
                 let ss = graph[idx].state.output_strength;
 
-                match constant_nodes.get(&graph[idx].state.output_strength) {
+                match constant_nodes.get(&ss) {
                     Some(&constant_idx) => {
                         let mut neighbors =
                             graph.neighbors_directed(idx, Direction::Outgoing).detach();

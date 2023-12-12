@@ -47,28 +47,39 @@ impl NodeId {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct NodeIdWithSS {
+pub(super) struct NodeIdWithData {
     data: u32,
 }
 
-impl NodeIdWithSS {
-    pub fn new(id: NodeId, ss: u8) -> Self {
-        assert!(id.index() < (1 << 28));
-        assert!(ss < (1 << 4));
+impl NodeIdWithData {
+    pub fn new(node_id: NodeId) -> Self {
+        debug_assert!(node_id.index() < (1 << 27));
         Self {
-            data: (id.index() as u32) << 4 | ss as u32,
+            data: (node_id.index() as u32) << 5,
         }
     }
 
-    pub fn index(self) -> usize {
-        self.node().index() as usize
+    pub fn new_with_data(node_id: NodeId, bool: bool, ss: u8) -> Self {
+        debug_assert!(node_id.index() < (1 << 27));
+        debug_assert!(ss < (1 << 4));
+        Self {
+            data: (node_id.index() as u32) << 5 | if bool { 1 << 4 } else { 0 } | ss as u32,
+        }
     }
 
     pub fn node(self) -> NodeId {
         unsafe {
-            // safety: NodeIdWithSS is contructed using a NodeId
-            NodeId::from_index((self.data >> 4) as usize)
+            // safety: ForwardLink is contructed using a NodeId
+            NodeId::from_index((self.data >> 5) as usize)
         }
+    }
+
+    pub fn index(self) -> usize {
+        self.node().index()
+    }
+
+    pub fn bool(self) -> bool {
+        self.data & (1 << 4) != 0
     }
 
     pub fn ss(self) -> u8 {
