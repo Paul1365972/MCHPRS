@@ -17,7 +17,7 @@ use smallvec::SmallVec;
 use std::cmp::Reverse;
 use std::fmt::Debug;
 use std::thread::JoinHandle;
-use std::{fmt, mem};
+use std::{array, fmt, mem};
 use thread_priority::{ThreadBuilder, ThreadPriority};
 use tracing::{debug, trace, warn};
 
@@ -96,7 +96,7 @@ enum NodeType {
     Torch,
     Comparator {
         mode: ComparatorMode,
-        comparator_far_input: Option<NonMaxU8>,
+        far_input: Option<NonMaxU8>,
         facing_diode: bool,
     },
     Lamp,
@@ -198,25 +198,32 @@ impl Node {
         stats.update_link_count += updates.len();
 
         let ty = match &node.ty {
-            CNodeType::Repeater(delay) => {
+            CNodeType::Repeater {
+                delay,
+                facing_diode,
+            } => {
                 if side_input_count == 0 {
                     NodeType::SimpleRepeater {
                         delay: *delay,
-                        facing_diode: node.facing_diode,
+                        facing_diode: *facing_diode,
                     }
                 } else {
                     NodeType::Repeater {
                         delay: *delay,
-                        facing_diode: node.facing_diode,
+                        facing_diode: *facing_diode,
                         locked: node.state.repeater_locked,
                     }
                 }
             }
             CNodeType::Torch => NodeType::Torch,
-            CNodeType::Comparator(mode) => NodeType::Comparator {
+            CNodeType::Comparator {
+                mode,
+                far_input,
+                facing_diode,
+            } => NodeType::Comparator {
                 mode: *mode,
-                comparator_far_input: node.comparator_far_input.map(|x| NonMaxU8::new(x).unwrap()),
-                facing_diode: node.facing_diode,
+                far_input: far_input.map(|x| NonMaxU8::new(x).unwrap()),
+                facing_diode: *facing_diode,
             },
             CNodeType::Lamp => NodeType::Lamp,
             CNodeType::Button => NodeType::Button,
@@ -266,26 +273,54 @@ impl Node {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 struct Queues([Vec<NodeIdWithData>; TickScheduler::NUM_PRIORITIES]);
+
+impl Queues {
+    unsafe fn new(capacity: usize) -> Self {
+        Self(array::from_fn(|_| Vec::with_capacity(capacity)))
+    }
+}
 
 struct TickScheduler {
     queues_deque: [Queues; Self::NUM_QUEUES],
     pos: usize,
 }
 
-impl Default for TickScheduler {
-    fn default() -> Self {
-        Self {
-            queues_deque: std::array::from_fn(|_| Queues::default()),
-            pos: 0,
-        }
-    }
-}
-
 impl TickScheduler {
     const NUM_PRIORITIES: usize = 4;
     const NUM_QUEUES: usize = 64;
+
+    unsafe fn new(capacity: usize) -> Self {
+        Self {
+            queues_deque: std::array::from_fn(|_| Queues::new(capacity)),
+            pos: 0,
+        }
+    }
+
+    fn schedule_tick(&mut self, node_data: NodeIdWithData, delay: usize, priority: TickPriority) {
+        debug_assert!(delay < Self::NUM_PRIORITIES);
+        let index = (self.pos + delay) % Self::NUM_QUEUES;
+        let queues = unsafe { self.queues_deque.get_unchecked_mut(index) };
+        let queue = unsafe { queues.0.get_unchecked_mut(priority as usize) };
+        debug_assert!(queue.len() < queue.capacity());
+        unsafe {
+            queue.as_mut_ptr().add(queue.len()).write(node_data);
+            queue.set_len(queue.len() + 1);
+        }
+    }
+
+    fn queues_this_tick(&mut self) -> Queues {
+        self.pos = (self.pos + 1) % Self::NUM_QUEUES;
+        mem::replace(&mut self.queues_deque[self.pos], unsafe { Queues::new(0) })
+    }
+
+    fn end_tick(&mut self, mut queues: Queues) {
+        for queue in &mut queues.0 {
+            queue.clear();
+        }
+        self.queues_deque[self.pos] = queues;
+    }
 
     fn reset<W: World>(&mut self, world: &mut W, blocks: &[Option<(BlockPos, Block)>]) {
         for (idx, queues) in self.queues_deque.iter().enumerate() {
@@ -296,7 +331,7 @@ impl TickScheduler {
             } - self.pos;
             for (entries, priority) in queues.0.iter().zip(Self::priorities()) {
                 for node in entries {
-                    let Some((pos, _)) = blocks[node.index()] else {
+                    let Some((pos, _)) = blocks[node.node().index()] else {
                         warn!("Cannot schedule tick for node {:?} because block information is missing", node);
                         continue;
                     };
@@ -311,23 +346,6 @@ impl TickScheduler {
         }
     }
 
-    fn schedule_tick(&mut self, node_data: NodeIdWithData, delay: usize, priority: TickPriority) {
-        self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES].0[Self::priority_index(priority)]
-            .push(node_data);
-    }
-
-    fn queues_this_tick(&mut self) -> Queues {
-        self.pos = (self.pos + 1) % Self::NUM_QUEUES;
-        mem::take(&mut self.queues_deque[self.pos])
-    }
-
-    fn end_tick(&mut self, mut queues: Queues) {
-        for queue in &mut queues.0 {
-            queue.clear();
-        }
-        self.queues_deque[self.pos] = queues;
-    }
-
     fn priorities() -> [TickPriority; Self::NUM_PRIORITIES] {
         [
             TickPriority::Highest,
@@ -335,15 +353,6 @@ impl TickScheduler {
             TickPriority::High,
             TickPriority::Normal,
         ]
-    }
-
-    fn priority_index(priority: TickPriority) -> usize {
-        match priority {
-            TickPriority::Highest => 0,
-            TickPriority::Higher => 1,
-            TickPriority::High => 2,
-            TickPriority::Normal => 3,
-        }
     }
 }
 
@@ -413,15 +422,12 @@ impl Worker {
             } else {
                 &mut update_ref.default_inputs
             };
-            inputs[old_power.saturating_sub(distance) as usize] -= 1;
-            inputs[new_power.saturating_sub(distance) as usize] += 1;
+            unsafe {
+                *inputs.get_unchecked_mut(old_power.saturating_sub(distance) as usize) -= 1;
+                *inputs.get_unchecked_mut(new_power.saturating_sub(distance) as usize) += 1;
+            }
 
-            update_node(
-                &mut self.scheduler,
-                &mut self.outputs,
-                &mut self.nodes,
-                update,
-            );
+            update_node(&mut self.scheduler, &mut self.outputs, update, update_ref);
         }
     }
 }
@@ -556,6 +562,7 @@ impl JITBackend for ThreadingBackend {
             let mut blocks = vec![];
             let mut output_indicies = vec![];
             let mut last_io_index = 0;
+            let mut tickable_nodes = 0;
 
             for node_idx in group.iter() {
                 let (worker_id, node_id) = nodes_map[node_idx];
@@ -570,6 +577,10 @@ impl JITBackend for ThreadingBackend {
 
                 if node.is_io_and_flushable() {
                     last_io_index = last_io_index.max(node_id.index());
+                }
+
+                if node.can_be_ticked() {
+                    tickable_nodes += 1;
                 }
 
                 nodes.push(Node::from_compile_node(
@@ -592,6 +603,8 @@ impl JITBackend for ThreadingBackend {
             let (work_sender, work_receiver) = RingBuffer::new(WORK_CHANNEL_SIZE);
             self.work_senders.push(work_sender);
 
+            let scheduler = unsafe { TickScheduler::new(tickable_nodes) };
+
             let worker = Worker {
                 id: WorkerId(worker_id.try_into().unwrap()),
                 inputs: vec![],
@@ -599,7 +612,7 @@ impl JITBackend for ThreadingBackend {
                 work_receiver,
                 change_sender,
                 nodes: Nodes::new(nodes.into_boxed_slice()),
-                scheduler: TickScheduler::default(),
+                scheduler,
                 blocks,
                 last_io_index,
             };
@@ -713,13 +726,11 @@ impl Worker {
                 }
             }
             NodeType::Comparator {
-                mode,
-                comparator_far_input,
-                ..
+                mode, far_input, ..
             } => {
                 let mut input_power = get_analog_input(node);
                 let side_input_power = get_analog_side(node);
-                if let Some(far_override) = comparator_far_input {
+                if let Some(far_override) = far_input {
                     if input_power < 15 {
                         input_power = far_override.get();
                     }
@@ -902,10 +913,9 @@ fn set_node_locked(node: &mut Node, locked: bool) {
         ..
     } = node.ty
     else {
-        unreachable!();
-        // unsafe {
-        //     std::hint::unreachable_unchecked();
-        // }
+        unsafe {
+            std::hint::unreachable_unchecked();
+        }
     };
     *inner = locked;
     node.changed = true;
@@ -956,11 +966,9 @@ fn get_analog_side(node: &Node) -> u8 {
 fn update_node(
     scheduler: &mut TickScheduler,
     outputs: &mut [Sender<UpdateMessage>],
-    nodes: &mut Nodes,
     node_id: NodeId,
+    node: &mut Node,
 ) {
-    let node = &mut nodes[node_id];
-
     match node.ty {
         NodeType::Repeater {
             delay,
@@ -968,10 +976,8 @@ fn update_node(
             locked,
         } => {
             let should_be_locked = get_bool_side(node);
-            if !locked && should_be_locked {
-                set_node_locked(node, true);
-            } else if locked && !should_be_locked {
-                set_node_locked(node, false);
+            if locked != should_be_locked {
+                set_node_locked(node, should_be_locked);
             }
 
             if !should_be_locked && !node.pending_tick {
@@ -1037,7 +1043,7 @@ fn update_node(
         }
         NodeType::Comparator {
             mode,
-            comparator_far_input,
+            far_input,
             facing_diode,
         } => {
             if node.pending_tick {
@@ -1045,7 +1051,7 @@ fn update_node(
             }
             let mut input_power = get_analog_input(node);
             let side_input_power = get_analog_side(node);
-            if let Some(far_override) = comparator_far_input {
+            if let Some(far_override) = far_input {
                 if input_power < 15 {
                     input_power = far_override.get();
                 }

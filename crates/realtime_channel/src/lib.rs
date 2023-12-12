@@ -109,7 +109,7 @@ impl<T> Sender<T> {
         let capacity = self.buffer.write.capacity;
         let write_idx = self.buffer.write.idx.load(Ordering::Relaxed);
 
-        assert!(write_idx + self.uncommited < self.read_idx_cached + capacity);
+        debug_assert!(write_idx + self.uncommited < self.read_idx_cached + capacity);
         unsafe {
             self.buffer
                 .write
@@ -173,7 +173,7 @@ impl<T> Receiver<T> {
         let capacity = self.buffer.read.capacity;
         let read_idx = self.buffer.read.idx.load(Ordering::Relaxed);
 
-        assert!(read_idx + self.uncommited < self.write_idx_cached);
+        debug_assert!(read_idx + self.uncommited < self.write_idx_cached);
 
         let value = unsafe {
             self.buffer

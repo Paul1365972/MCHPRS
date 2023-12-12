@@ -74,10 +74,6 @@ impl NodeIdWithData {
         }
     }
 
-    pub fn index(self) -> usize {
-        self.node().index()
-    }
-
     pub fn bool(self) -> bool {
         self.data & (1 << 4) != 0
     }
