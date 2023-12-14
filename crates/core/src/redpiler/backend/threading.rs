@@ -86,12 +86,6 @@ enum NodeType {
     Repeater {
         delay: u8,
         facing_diode: bool,
-        locked: bool,
-    },
-    /// A non-locking repeater
-    SimpleRepeater {
-        delay: u8,
-        facing_diode: bool,
     },
     Torch,
     Comparator {
@@ -125,6 +119,8 @@ pub struct Node {
     ty: NodeType,
     default_inputs: [u8; 16],
     side_inputs: [u8; 16],
+    default_power: u8,
+    side_power: u8,
     updates: SmallVec<[ForwardLink; 18]>,
     is_io: bool,
 
@@ -152,6 +148,8 @@ impl Node {
 
         let mut default_inputs = [0; 16];
         let mut side_inputs = [0; 16];
+        let mut default_input = 0;
+        let mut side_input = 0;
         for edge in graph.edges_directed(node_idx, Direction::Incoming) {
             let weight = edge.weight();
             let distance = weight.ss;
@@ -166,14 +164,23 @@ impl Node {
                         );
                     }
                     default_input_count += 1;
-                    default_inputs[ss as usize] += 1;
+                    if node.is_analog() {
+                        default_inputs[ss as usize] += 1;
+                    } else if ss > 0 {
+                        default_input += 1;
+                    }
                 }
                 LinkType::Side => {
                     if side_input_count >= MAX_INPUTS {
                         panic!("Exceeded the maximum number of side inputs {}", MAX_INPUTS);
                     }
                     side_input_count += 1;
-                    side_inputs[ss as usize] += 1;
+
+                    if node.is_analog() {
+                        side_inputs[ss as usize] += 1;
+                    } else if ss > 0 {
+                        side_input += 1;
+                    }
                 }
             }
         }
@@ -197,24 +204,20 @@ impl Node {
         };
         stats.update_link_count += updates.len();
 
+        if node.is_analog() {
+            default_input = last_index_positive(&default_inputs);
+            side_input = last_index_positive(&side_inputs);
+        }
+
         let ty = match &node.ty {
             CNodeType::Repeater {
                 delay,
                 facing_diode,
-            } => {
-                if side_input_count == 0 {
-                    NodeType::SimpleRepeater {
-                        delay: *delay,
-                        facing_diode: *facing_diode,
-                    }
-                } else {
-                    NodeType::Repeater {
-                        delay: *delay,
-                        facing_diode: *facing_diode,
-                        locked: node.state.repeater_locked,
-                    }
-                }
-            }
+            } => NodeType::Repeater {
+                delay: *delay,
+                facing_diode: *facing_diode,
+            },
+
             CNodeType::Torch => NodeType::Torch,
             CNodeType::Comparator {
                 mode,
@@ -250,6 +253,7 @@ impl Node {
                     target_id,
                 }
             }
+            //CNodeType::ComparatorLine { .. } => unreachable!(),
             CNodeType::ComparatorLine { states } => NodeType::ComparatorLine {
                 delay: {
                     let delay = states.len();
@@ -269,7 +273,19 @@ impl Node {
             pending_tick: false,
             changed: false,
             is_io: node.is_input || node.is_output,
+            default_power: default_input,
+            side_power: side_input,
         }
+    }
+
+    fn is_analog(&self) -> bool {
+        matches!(
+            self.ty,
+            NodeType::Comparator { .. }
+                | NodeType::Wire
+                | NodeType::ExternalOutput { .. }
+                | NodeType::ComparatorLine { .. }
+        )
     }
 }
 
@@ -299,10 +315,9 @@ impl TickScheduler {
     }
 
     fn schedule_tick(&mut self, node_data: NodeIdWithData, delay: usize, priority: TickPriority) {
-        debug_assert!(delay < Self::NUM_PRIORITIES);
-        let index = (self.pos + delay) % Self::NUM_QUEUES;
-        let queues = unsafe { self.queues_deque.get_unchecked_mut(index) };
-        let queue = unsafe { queues.0.get_unchecked_mut(priority as usize) };
+        debug_assert!(delay < Self::NUM_QUEUES);
+        let queues_index = (self.pos + delay) % Self::NUM_QUEUES;
+        let queue = &mut self.queues_deque[queues_index].0[priority as usize];
         debug_assert!(queue.len() < queue.capacity());
         unsafe {
             queue.as_mut_ptr().add(queue.len()).write(node_data);
@@ -312,14 +327,13 @@ impl TickScheduler {
 
     fn queues_this_tick(&mut self) -> Queues {
         self.pos = (self.pos + 1) % Self::NUM_QUEUES;
-        mem::replace(&mut self.queues_deque[self.pos], unsafe { Queues::new(0) })
+        let dummy = Queues([vec![], vec![], vec![], vec![]]);
+        mem::replace(&mut self.queues_deque[self.pos], dummy)
     }
 
-    fn end_tick(&mut self, mut queues: Queues) {
-        for queue in &mut queues.0 {
-            queue.clear();
-        }
-        self.queues_deque[self.pos] = queues;
+    fn end_tick(&mut self, queues: Queues) {
+        let dummy = mem::replace(&mut self.queues_deque[self.pos % Self::NUM_QUEUES], queues);
+        mem::forget(dummy);
     }
 
     fn reset<W: World>(&mut self, world: &mut W, blocks: &[Option<(BlockPos, Block)>]) {
@@ -417,17 +431,77 @@ impl Worker {
             let update = update_link.node();
 
             let update_ref = &mut self.nodes[update];
-            let inputs = if side {
-                &mut update_ref.side_inputs
-            } else {
-                &mut update_ref.default_inputs
-            };
-            unsafe {
-                *inputs.get_unchecked_mut(old_power.saturating_sub(distance) as usize) -= 1;
-                *inputs.get_unchecked_mut(new_power.saturating_sub(distance) as usize) += 1;
-            }
+            if update_ref.is_analog() {
+                let old_power = old_power.saturating_sub(distance);
+                let new_power = new_power.saturating_sub(distance);
+                if old_power == new_power {
+                    continue;
+                }
 
-            update_node(&mut self.scheduler, &mut self.outputs, update, update_ref);
+                let (input, inputs) = if side {
+                    (&mut update_ref.side_power, &mut update_ref.side_inputs)
+                } else {
+                    (
+                        &mut update_ref.default_power,
+                        &mut update_ref.default_inputs,
+                    )
+                };
+
+                unsafe {
+                    *inputs.get_unchecked_mut(old_power as usize) -= 1;
+                    *inputs.get_unchecked_mut(new_power as usize) += 1;
+                }
+
+                let power = last_index_positive(inputs);
+
+                if *input == power {
+                    continue;
+                }
+                *input = power;
+
+                if side {
+                    update_node_side_analog(&mut self.scheduler, update, update_ref);
+                } else {
+                    update_node_default_analog(
+                        &mut self.scheduler,
+                        &mut self.outputs,
+                        update,
+                        update_ref,
+                    );
+                }
+            } else {
+                let old_power = old_power > distance;
+                let new_power = new_power > distance;
+
+                if old_power == new_power {
+                    continue;
+                }
+
+                let input = if side {
+                    &mut update_ref.side_power
+                } else {
+                    &mut update_ref.default_power
+                };
+
+                if new_power {
+                    *input += 1;
+                    if *input != 1 {
+                        continue;
+                    }
+                } else {
+                    *input -= 1;
+                    if *input != 0 {
+                        continue;
+                    }
+                }
+
+                if side {
+                    update_node_side_digital(&mut self.scheduler, update, update_ref);
+                } else {
+                    update_node_default_digital(&mut self.scheduler, update, update_ref);
+                }
+            }
+            //update_node(&mut self.scheduler, &mut self.outputs, update, update_ref);
         }
     }
 }
@@ -672,12 +746,15 @@ impl JITBackend for ThreadingBackend {
 impl Worker {
     fn tick_node(&mut self, node_data: NodeIdWithData) {
         let node_id = node_data.node();
-        self.nodes[node_id].pending_tick = false;
-        let node = &self.nodes[node_id];
+        let internal_tick = node_data.internal_tick();
+        let node = &mut self.nodes[node_id];
+        if !internal_tick {
+            node.pending_tick = false;
+        }
 
         match node.ty {
-            NodeType::Repeater { delay, locked, .. } => {
-                if locked {
+            NodeType::Repeater { delay, .. } => {
+                if node.side_power > 0 {
                     return;
                 }
 
@@ -685,9 +762,7 @@ impl Worker {
                 if node.powered && !should_be_powered {
                     self.set_node(node_id, false, 0);
                 } else if !node.powered {
-                    self.set_node(node_id, true, 15);
                     if !should_be_powered {
-                        let node = &mut self.nodes[node_id];
                         schedule_tick(
                             &mut self.scheduler,
                             NodeIdWithData::new(node_id),
@@ -696,24 +771,7 @@ impl Worker {
                             TickPriority::Higher,
                         );
                     }
-                }
-            }
-            NodeType::SimpleRepeater { delay, .. } => {
-                let should_be_powered = get_bool_input(node);
-                if node.powered && !should_be_powered {
-                    self.set_node(node_id, false, 0);
-                } else if !node.powered {
                     self.set_node(node_id, true, 15);
-                    if !should_be_powered {
-                        let node = &mut self.nodes[node_id];
-                        schedule_tick(
-                            &mut self.scheduler,
-                            NodeIdWithData::new(node_id),
-                            node,
-                            delay as usize,
-                            TickPriority::Higher,
-                        );
-                    }
                 }
             }
             NodeType::Torch => {
@@ -753,24 +811,21 @@ impl Worker {
                 }
             }
             NodeType::ComparatorLine { delay } => {
-                if node_data.bool() {
+                if internal_tick {
                     let new_strength = node_data.ss();
                     if new_strength != node.output_power {
                         self.set_node(node_id, new_strength > 0, new_strength);
                     }
                 } else {
                     let input_power = get_analog_input(node);
-                    let old_strength = node.output_power;
-                    if input_power != old_strength {
-                        let node = &mut self.nodes[node_id];
-                        schedule_tick(
-                            &mut self.scheduler,
-                            NodeIdWithData::new_with_data(node_id, true, input_power),
-                            node,
-                            delay as usize - 1,
-                            TickPriority::Normal,
-                        );
-                    }
+                    schedule_tick(
+                        &mut self.scheduler,
+                        NodeIdWithData::new_with_data(node_id, true, input_power),
+                        node,
+                        delay as usize - 1,
+                        TickPriority::Normal,
+                    );
+                    node.pending_tick = false;
                 }
             }
             _ => warn!("Node {:?} should not be ticked!", node.ty),
@@ -780,35 +835,35 @@ impl Worker {
     fn handle_tick(&mut self) {
         let mut queues = self.scheduler.queues_this_tick();
 
-        for sender in self.outputs.iter_mut() {
-            sender.begin_commit(1024);
-        }
+        // for sender in self.outputs.iter_mut() {
+        //     sender.begin_commit(1024);
+        // }
 
         for queue in queues.0.iter_mut() {
-            let mut inputs = std::mem::take(&mut self.inputs);
-            for input in inputs.iter_mut() {
-                while let UpdateMessage::Update {
-                    node_id,
-                    signal_strength,
-                } = input.recv()
-                {
-                    self.set_node(node_id, signal_strength > 0, signal_strength);
-                }
-            }
-            self.inputs = inputs;
+            // let mut inputs = std::mem::take(&mut self.inputs);
+            // for input in inputs.iter_mut() {
+            //     while let UpdateMessage::Update {
+            //         node_id,
+            //         signal_strength,
+            //     } = input.recv()
+            //     {
+            //         self.set_node(node_id, signal_strength > 0, signal_strength);
+            //     }
+            // }
+            // self.inputs = inputs;
 
             for node_data in queue.drain(..) {
                 self.tick_node(node_data);
             }
 
-            for output in self.outputs.iter_mut() {
-                output.send_unsafe(UpdateMessage::UpdatesEnd);
-            }
+            // for output in self.outputs.iter_mut() {
+            //     output.send_unsafe(UpdateMessage::UpdatesEnd);
+            // }
         }
 
-        for sender in self.outputs.iter_mut() {
-            sender.end_commit();
-        }
+        // for sender in self.outputs.iter_mut() {
+        //     sender.end_commit();
+        // }
 
         self.scheduler.end_tick(queues);
     }
@@ -865,11 +920,7 @@ impl Worker {
                     wire.power = node.output_power
                 };
                 if let Block::RedstoneRepeater { repeater } = block {
-                    repeater.locked = match node.ty {
-                        NodeType::Repeater { locked, .. } => locked,
-                        NodeType::SimpleRepeater { .. } => false,
-                        _ => panic!("Underlying block type is not repeater anymore"),
-                    };
+                    repeater.locked = node.side_power > 0;
                 }
                 self.change_sender.send_unsafe(ChangeMessage::Change {
                     pos: *pos,
@@ -907,20 +958,6 @@ fn set_node(node: &mut Node, powered: bool) {
     node.changed = true;
 }
 
-fn set_node_locked(node: &mut Node, locked: bool) {
-    let NodeType::Repeater {
-        locked: ref mut inner,
-        ..
-    } = node.ty
-    else {
-        unsafe {
-            std::hint::unreachable_unchecked();
-        }
-    };
-    *inner = locked;
-    node.changed = true;
-}
-
 fn schedule_tick(
     scheduler: &mut TickScheduler,
     node_data: NodeIdWithData,
@@ -932,83 +969,46 @@ fn schedule_tick(
     scheduler.schedule_tick(node_data, delay, priority);
 }
 
-const INPUT_MASK: u128 = u128::from_ne_bytes([
-    0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-]);
-
 fn get_bool_input(node: &Node) -> bool {
-    u128::from_ne_bytes(node.default_inputs) & INPUT_MASK != 0
+    node.default_power > 0
 }
 
 fn get_bool_side(node: &Node) -> bool {
-    u128::from_ne_bytes(node.side_inputs) & INPUT_MASK != 0
+    node.side_power > 0
 }
 
-fn last_index_positive(array: &[u8; 16]) -> u32 {
+fn last_index_positive(array: &[u8; 16]) -> u8 {
     // Note: this might be slower on big-endian systems
     let value = u128::from_le_bytes(*array);
     if value == 0 {
         0
     } else {
-        15 - (value.leading_zeros() >> 3)
+        15 - (value.leading_zeros() >> 3) as u8
     }
 }
 
 fn get_analog_input(node: &Node) -> u8 {
-    last_index_positive(&node.default_inputs) as u8
+    node.default_power
 }
 
 fn get_analog_side(node: &Node) -> u8 {
-    last_index_positive(&node.side_inputs) as u8
+    node.side_power
 }
 
-#[inline(always)]
-fn update_node(
-    scheduler: &mut TickScheduler,
-    outputs: &mut [Sender<UpdateMessage>],
-    node_id: NodeId,
-    node: &mut Node,
-) {
+//#[inline(never)]
+fn update_node_default_digital(scheduler: &mut TickScheduler, node_id: NodeId, node: &mut Node) {
+    if node.pending_tick {
+        return;
+    }
+    let should_be_powered = get_bool_input(node);
     match node.ty {
         NodeType::Repeater {
             delay,
             facing_diode,
-            locked,
         } => {
-            let should_be_locked = get_bool_side(node);
-            if locked != should_be_locked {
-                set_node_locked(node, should_be_locked);
-            }
+            let locked = get_bool_side(node);
 
-            if !should_be_locked && !node.pending_tick {
-                let should_be_powered = get_bool_input(node);
-                if should_be_powered != node.powered {
-                    let priority = if facing_diode {
-                        TickPriority::Highest
-                    } else if !should_be_powered {
-                        TickPriority::Higher
-                    } else {
-                        TickPriority::High
-                    };
-                    schedule_tick(
-                        scheduler,
-                        NodeIdWithData::new(node_id),
-                        node,
-                        delay as usize,
-                        priority,
-                    );
-                }
-            }
-        }
-        NodeType::SimpleRepeater {
-            delay,
-            facing_diode,
-        } => {
-            if node.pending_tick {
-                return;
-            }
-            let should_be_powered = get_bool_input(node);
-            if node.powered != should_be_powered {
+            if !node.pending_tick && !locked && should_be_powered != node.powered {
                 let priority = if facing_diode {
                     TickPriority::Highest
                 } else if !should_be_powered {
@@ -1026,12 +1026,7 @@ fn update_node(
             }
         }
         NodeType::Torch => {
-            if node.pending_tick {
-                return;
-            }
-            let should_be_off = get_bool_input(node);
-            let lit = node.powered;
-            if lit == should_be_off {
+            if !node.pending_tick && should_be_powered == node.powered {
                 schedule_tick(
                     scheduler,
                     NodeIdWithData::new(node_id),
@@ -1041,6 +1036,35 @@ fn update_node(
                 );
             }
         }
+        NodeType::Lamp => {
+            if should_be_powered && !node.powered {
+                set_node(node, true);
+            } else if !should_be_powered && node.powered {
+                schedule_tick(
+                    scheduler,
+                    NodeIdWithData::new(node_id),
+                    node,
+                    2,
+                    TickPriority::Normal,
+                );
+            }
+        }
+        NodeType::Trapdoor => {
+            set_node(node, should_be_powered);
+        }
+        _ => unsafe { std::hint::unreachable_unchecked() },
+    }
+}
+
+//#[inline(never)]
+fn update_node_default_analog(
+    scheduler: &mut TickScheduler,
+    outputs: &mut [Sender<UpdateMessage>],
+    node_id: NodeId,
+    node: &mut Node,
+) {
+    let input_power = get_analog_input(node);
+    match node.ty {
         NodeType::Comparator {
             mode,
             far_input,
@@ -1067,56 +1091,25 @@ fn update_node(
                 schedule_tick(scheduler, NodeIdWithData::new(node_id), node, 1, priority);
             }
         }
-        NodeType::Lamp => {
-            let should_be_lit = get_bool_input(node);
-            let lit = node.powered;
-            if lit && !should_be_lit {
-                schedule_tick(
-                    scheduler,
-                    NodeIdWithData::new(node_id),
-                    node,
-                    2,
-                    TickPriority::Normal,
-                );
-            } else if !lit && should_be_lit {
-                set_node(node, true);
-            }
-        }
-        NodeType::Trapdoor => {
-            let should_be_powered = get_bool_input(node);
-            if node.powered != should_be_powered {
-                set_node(node, should_be_powered);
-            }
-        }
         NodeType::Wire => {
-            let input_power = get_analog_input(node);
-            if node.output_power != input_power {
-                node.output_power = input_power;
-                node.changed = true;
-            }
+            node.output_power = input_power;
+            node.changed = true;
         }
         NodeType::ExternalOutput {
             output_index,
             target_id,
         } => {
-            let input_power = get_analog_input(node);
-            if node.output_power != input_power {
-                node.output_power = input_power;
-                node.changed = true;
+            node.output_power = input_power;
+            node.changed = true;
 
-                outputs[output_index as usize].send_unsafe(UpdateMessage::Update {
-                    node_id: target_id,
-                    signal_strength: input_power,
-                });
-            }
+            let output = unsafe { outputs.get_unchecked_mut(output_index as usize) };
+            output.send_unsafe(UpdateMessage::Update {
+                node_id: target_id,
+                signal_strength: input_power,
+            });
         }
         NodeType::ComparatorLine { .. } => {
-            if node.pending_tick {
-                return;
-            }
-            let input_power = get_analog_input(node);
-            let old_strength = node.output_power;
-            if input_power != old_strength {
+            if !node.pending_tick {
                 schedule_tick(
                     scheduler,
                     NodeIdWithData::new_with_data(node_id, false, 0),
@@ -1126,7 +1119,72 @@ fn update_node(
                 );
             }
         }
-        _ => panic!("Node {:?} should not be updated!", node),
+        _ => unsafe { std::hint::unreachable_unchecked() },
+    }
+}
+
+//#[inline(never)]
+fn update_node_side_digital(scheduler: &mut TickScheduler, node_id: NodeId, node: &mut Node) {
+    match node.ty {
+        NodeType::Repeater {
+            delay,
+            facing_diode,
+        } => {
+            let locked = get_bool_side(node);
+            node.changed = true;
+
+            let should_be_powered = get_bool_input(node);
+            if !locked && !node.pending_tick && should_be_powered != node.powered {
+                let priority = if facing_diode {
+                    TickPriority::Highest
+                } else if !should_be_powered {
+                    TickPriority::Higher
+                } else {
+                    TickPriority::High
+                };
+                schedule_tick(
+                    scheduler,
+                    NodeIdWithData::new(node_id),
+                    node,
+                    delay as usize,
+                    priority,
+                );
+            }
+        }
+        _ => unsafe { std::hint::unreachable_unchecked() },
+    }
+}
+
+//#[inline(never)]
+fn update_node_side_analog(scheduler: &mut TickScheduler, node_id: NodeId, node: &mut Node) {
+    match node.ty {
+        NodeType::Comparator {
+            mode,
+            far_input,
+            facing_diode,
+        } => {
+            if node.pending_tick {
+                return;
+            }
+            let mut input_power = get_analog_input(node);
+            let side_input_power = get_analog_side(node);
+            if let Some(far_override) = far_input {
+                if input_power < 15 {
+                    input_power = far_override.get();
+                }
+            }
+            let old_strength = node.output_power;
+            let output_power = calculate_comparator_output(mode, input_power, side_input_power);
+            if output_power != old_strength {
+                let priority = if facing_diode {
+                    TickPriority::High
+                } else {
+                    TickPriority::Normal
+                };
+                schedule_tick(scheduler, NodeIdWithData::new(node_id), node, 1, priority);
+            }
+        }
+        _ => unsafe { std::hint::unreachable_unchecked() },
     }
 }
 

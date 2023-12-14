@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 pub type NodeIdx = NodeIndex;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NodeType {
     Repeater {
         delay: u8,
@@ -28,7 +28,7 @@ pub enum NodeType {
     Wire,
     Constant,
     ComparatorLine {
-        states: Vec<u8>,
+        states: Box<[u8]>,
     },
     ExternalInput,
     ExternalOutput {
@@ -110,6 +110,16 @@ impl CompileNode {
                 | NodeType::Torch
                 | NodeType::Button
                 | NodeType::Lamp
+                | NodeType::ComparatorLine { .. }
+        )
+    }
+
+    pub fn is_analog(&self) -> bool {
+        matches!(
+            self.ty,
+            NodeType::Comparator { .. }
+                | NodeType::Wire
+                | NodeType::ExternalOutput { .. }
                 | NodeType::ComparatorLine { .. }
         )
     }

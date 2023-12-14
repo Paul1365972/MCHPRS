@@ -59,11 +59,13 @@ impl NodeIdWithData {
         }
     }
 
-    pub fn new_with_data(node_id: NodeId, bool: bool, ss: u8) -> Self {
+    pub fn new_with_data(node_id: NodeId, internal_tick: bool, ss: u8) -> Self {
         debug_assert!(node_id.index() < (1 << 27));
         debug_assert!(ss < (1 << 4));
         Self {
-            data: (node_id.index() as u32) << 5 | if bool { 1 << 4 } else { 0 } | ss as u32,
+            data: (node_id.index() as u32) << 5
+                | if internal_tick { 1 << 4 } else { 0 }
+                | ss as u32,
         }
     }
 
@@ -74,7 +76,7 @@ impl NodeIdWithData {
         }
     }
 
-    pub fn bool(self) -> bool {
+    pub fn internal_tick(self) -> bool {
         self.data & (1 << 4) != 0
     }
 
