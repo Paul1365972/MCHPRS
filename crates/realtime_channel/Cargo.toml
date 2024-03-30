@@ -1,0 +1,5 @@
+[package]
+name = "realtime_channel"
+version = "0.1.0"
+edition = "2021"
+authors = ["Paul1365972 <paul1365972@gmail.com>"]

@@ -1402,6 +1402,7 @@ dependencies = [
  "once_cell",
  "petgraph",
  "rand",
+ "realtime_channel",
  "redpiler_graph",
  "regex",
  "reqwest",
@@ -1971,6 +1972,10 @@ dependencies = [
  "crossbeam-utils",
  "num_cpus",
 ]
+
+[[package]]
+name = "realtime_channel"
+version = "0.1.0"
 
 [[package]]
 name = "redox_syscall"
