@@ -4,7 +4,7 @@
 //! Eventually this module might help recover currupted plot data.
 //!
 //! In the future it might be nice to have this as an optional dependency or
-//! seperate download. As our save format changes in the future, the fixer
+//! separate download. As our save format changes in the future, the fixer
 //! module may become quite big.
 
 use super::{PlotData, PlotLoadError};
