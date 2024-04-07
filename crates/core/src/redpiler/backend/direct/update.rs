@@ -1,6 +1,9 @@
 use mchprs_world::TickPriority;
 
-use super::node::{NodeId, NodeType};
+use crate::redpiler::backend::common::calculate_comparator_output;
+use crate::redpiler::backend::nodes::NodeId;
+
+use super::node::NodeType;
 use super::*;
 
 #[inline(always)]

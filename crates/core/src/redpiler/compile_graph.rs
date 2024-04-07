@@ -27,6 +27,14 @@ pub enum NodeType {
         instrument: Instrument,
         note: u32,
     },
+    ComparatorLine {
+        states: Box<[u8]>,
+    },
+    ExternalInput,
+    ExternalOutput {
+        target_idx: NodeIdx,
+        delay: u32,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -70,7 +78,9 @@ impl NodeState {
 }
 
 #[derive(Debug, Default)]
-pub struct Annotations {}
+pub struct Annotations {
+    pub separate: Option<u32>,
+}
 
 #[derive(Debug)]
 pub struct CompileNode {
@@ -85,7 +95,33 @@ pub struct CompileNode {
 
 impl CompileNode {
     pub fn is_removable(&self) -> bool {
-        !self.is_input && !self.is_output
+        !self.is_input && !self.is_output && self.annotations.separate.is_none()
+    }
+
+    pub fn is_io_and_flushable(&self) -> bool {
+        (self.is_input || self.is_output) && self.block.is_some()
+    }
+
+    pub fn can_be_ticked(&self) -> bool {
+        matches!(
+            self.ty,
+            NodeType::Repeater { .. }
+                | NodeType::Comparator { .. }
+                | NodeType::Torch
+                | NodeType::Button
+                | NodeType::Lamp
+                | NodeType::ComparatorLine { .. }
+        )
+    }
+
+    pub fn is_analog(&self) -> bool {
+        matches!(
+            self.ty,
+            NodeType::Comparator { .. }
+                | NodeType::Wire
+                | NodeType::ExternalOutput { .. }
+                | NodeType::ComparatorLine { .. }
+        )
     }
 }
 

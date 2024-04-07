@@ -5,6 +5,7 @@ mod node;
 mod tick;
 mod update;
 
+use super::nodes::NodeId;
 use super::JITBackend;
 use crate::redpiler::compile_graph::CompileGraph;
 use crate::redpiler::task_monitor::TaskMonitor;
@@ -16,7 +17,7 @@ use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, ComparatorMode, Instrument};
 use mchprs_blocks::BlockPos;
 use mchprs_world::{TickEntry, TickPriority};
-use node::{Node, NodeId, NodeType, Nodes};
+use node::{Node, NodeType, Nodes};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use std::{fmt, mem};
@@ -294,47 +295,16 @@ fn schedule_tick(
     scheduler.schedule_tick(node_id, delay, priority);
 }
 
-const BOOL_INPUT_MASK: u128 = u128::from_ne_bytes([
-    0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-]);
-
 fn get_bool_input(node: &Node) -> bool {
-    u128::from_le_bytes(node.default_inputs.ss_counts) & BOOL_INPUT_MASK != 0
+    node.default_inputs.get_bool()
 }
 
 fn get_bool_side(node: &Node) -> bool {
-    u128::from_le_bytes(node.side_inputs.ss_counts) & BOOL_INPUT_MASK != 0
-}
-
-fn last_index_positive(array: &[u8; 16]) -> u32 {
-    // Note: this might be slower on big-endian systems
-    let value = u128::from_le_bytes(*array);
-    if value == 0 {
-        0
-    } else {
-        15 - (value.leading_zeros() >> 3)
-    }
+    node.default_inputs.get_bool()
 }
 
 fn get_all_input(node: &Node) -> (u8, u8) {
-    let input_power = last_index_positive(&node.default_inputs.ss_counts) as u8;
-
-    let side_input_power = last_index_positive(&node.side_inputs.ss_counts) as u8;
-
-    (input_power, side_input_power)
-}
-
-// This function is optimized for input values from 0 to 15 and does not work correctly outside that range
-fn calculate_comparator_output(mode: ComparatorMode, input_strength: u8, power_on_sides: u8) -> u8 {
-    let difference = input_strength.wrapping_sub(power_on_sides);
-    if difference <= 15 {
-        match mode {
-            ComparatorMode::Compare => input_strength,
-            ComparatorMode::Subtract => difference,
-        }
-    } else {
-        0
-    }
+    (node.default_inputs.get_ss(), node.side_inputs.get_ss())
 }
 
 impl fmt::Display for DirectBackend {

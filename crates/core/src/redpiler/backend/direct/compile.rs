@@ -1,3 +1,6 @@
+use crate::redpiler::backend::common::{ForwardLink, NodeInput, NonMaxU8};
+use crate::redpiler::backend::direct::node::Nodes;
+use crate::redpiler::backend::nodes::NodeId;
 use crate::redpiler::compile_graph::{CompileGraph, LinkType, NodeIdx};
 use crate::redpiler::{CompilerOptions, TaskMonitor};
 use itertools::Itertools;
@@ -11,7 +14,7 @@ use smallvec::SmallVec;
 use std::sync::Arc;
 use tracing::trace;
 
-use super::node::{ForwardLink, Node, NodeId, NodeInput, NodeType, Nodes, NonMaxU8};
+use super::node::{Node, NodeType};
 use super::DirectBackend;
 
 #[derive(Debug, Default)]
@@ -121,6 +124,9 @@ fn compile_node(
             noteblock_info.push((node.block.unwrap().0, *instrument, *note));
             NodeType::NoteBlock { noteblock_id }
         }
+        CNodeType::ComparatorLine { .. }
+        | CNodeType::ExternalInput
+        | CNodeType::ExternalOutput { .. } => unimplemented!(),
     };
 
     Node {

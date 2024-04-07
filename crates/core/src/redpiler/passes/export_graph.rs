@@ -68,6 +68,10 @@ fn convert_node(
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
             CNodeType::NoteBlock { .. } => NodeType::NoteBlock,
+            // TODO: Threading
+            CNodeType::ExternalInput => todo!(),
+            CNodeType::ExternalOutput { .. } => todo!(),
+            CNodeType::ComparatorLine { states: _ } => todo!(),
         },
         block: node.block.map(|(pos, id)| {
             (
