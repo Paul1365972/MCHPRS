@@ -80,6 +80,7 @@ pub struct CompileNode {
 
     pub is_input: bool,
     pub is_output: bool,
+    #[allow(dead_code)]
     pub annotations: Annotations,
 }
 
