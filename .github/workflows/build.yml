@@ -82,11 +82,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
 
-      - name: Create Preview Release
+      - name: Create preview release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           gh release delete preview --yes || true
           gh release create preview \
@@ -100,11 +101,13 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
 
-      - name: Create Release
+      - name: Create release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          tag: ${{ github.ref_name }}
         run: |
           gh release create "${tag} \
             --title "MCHPRS ${tag#v}" \
