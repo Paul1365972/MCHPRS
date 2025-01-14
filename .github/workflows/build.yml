@@ -82,13 +82,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/download-artifact@v4
         with:
-          path: target
-      - name: Install mmv
-        run: sudo apt-get install -y mmv
+          path: artifacts
       - name: Reorganize artifacts
-        run: mmv -vD "target/*/*" "dist/*-#1.*"
+        run: |
+          mkdir -p dist/
+          find artifacts/ -type f -exec bash -c 'base=$(basename $1); mv $1 dist/$(basename $(dirname $1))${base#${base%.*}}' _ {} \;
 
       - name: Create preview release
         env:
@@ -96,7 +97,6 @@ jobs:
         run: |
           gh release delete preview --yes || true
           gh release create preview \
-            --repo="${GITHUB_REPOSITORY}" \
             --prerelease \
             --title "${GITHUB_REPOSITORY} Preview Build" \
             --notes "🚧 **This is a preview build of the latest commit.**" \
@@ -107,7 +107,14 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Reorganize artifacts
+        run: |
+          mkdir -p dist/
+          find artifacts/ -type f -exec bash -c 'base=$(basename $1); mv $1 dist/$(basename $(dirname $1))${base#${base%.*}}' _ {} \;
 
       - name: Create release
         env:
@@ -115,7 +122,6 @@ jobs:
           tag: ${{ github.ref_name }}
         run: |
           gh release create "${tag} \
-            --repo="${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REPOSITORY} ${tag#v}" \
             --generate-notes
-            **/*
+            dist/*
