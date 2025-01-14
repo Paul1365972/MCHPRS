@@ -82,18 +82,19 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        with:
+          path: target
+      - name: Install mmv
+        run: sudo apt-get install -y mmv
       - name: Reorganize artifacts
-        run: rename -v 's/.+\/(.+?)\/([^\/]+)(\..*)?$/dist\/\2-\1\3/' ./*/*
+        run: mmv "target/*/*" "dist/*-#1.*"
 
       - name: Create preview release
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           gh release delete preview --yes || true
-          ls ./ || true
-          find ./dist/ || true
           gh release create preview \
             --repo="${GITHUB_REPOSITORY}" \
             --prerelease \
@@ -106,7 +107,6 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
 
       - name: Create release
@@ -115,6 +115,7 @@ jobs:
           tag: ${{ github.ref_name }}
         run: |
           gh release create "${tag} \
-            --title "MCHPRS ${tag#v}" \
+            --repo="${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REPOSITORY} ${tag#v}" \
             --generate-notes
             **/*
