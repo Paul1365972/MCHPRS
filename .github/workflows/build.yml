@@ -84,17 +84,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create preview release
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           gh release delete preview --yes || true
+          ls ./ || true
+          find ./dist/ || true
           gh release create preview \
             --prerelease \
             --title "MCHPRS Preview Build" \
             --notes "🚧 **This is a preview build of the latest commit.**" \
-            **/*
+            dist/*
 
   release:
     needs: [build, build-macos-universal]
