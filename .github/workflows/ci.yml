@@ -27,7 +27,6 @@ jobs:
   clippy:
     name: Clippy lints
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +39,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run clippy
-        run: cargo clippy --all-features --all-targets -- -D warnings
+        # If we ever get around to fix everything clippy complains about we can start failing on warning via: -- -D warnings
+        run: cargo clippy --all-features --all-targets
 
   test:
     name: Run tests
