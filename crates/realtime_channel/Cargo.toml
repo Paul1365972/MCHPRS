@@ -1,0 +1,12 @@
+[package]
+name = "realtime_channel"
+version = "0.1.0"
+edition = "2021"
+authors = ["Paul1365972 <paul1365972@gmail.com>"]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "roundtrip"
+harness = false

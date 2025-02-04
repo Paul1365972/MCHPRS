@@ -1,4 +1,7 @@
+#![allow(warnings)]
 mod compile;
+pub mod graph_ops;
+mod realtime_channel;
 
 use super::JITBackend;
 use crate::compile_graph::CompileGraph;

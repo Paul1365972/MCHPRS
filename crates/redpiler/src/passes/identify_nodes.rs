@@ -29,7 +29,7 @@ impl<W: World> Pass<W> for IdentifyNodes {
         options: &CompilerOptions,
         input: &CompilerInput<'_, W>,
     ) {
-        let ignore_wires = options.optimize;
+        let ignore_wires = options.optimize || true; // TODO test
         let plot = input.world;
 
         let mut first_pass = FxHashMap::default();

@@ -5,6 +5,7 @@ mod node;
 mod tick;
 mod update;
 
+use super::threaded::graph_ops;
 use super::JITBackend;
 use crate::compile_graph::CompileGraph;
 use crate::task_monitor::TaskMonitor;
@@ -277,6 +278,10 @@ impl JITBackend for DirectBackend {
         options: &CompilerOptions,
         monitor: Arc<TaskMonitor>,
     ) {
+        // TODO: testy
+        let ccl = graph_ops::partition_graph_ccl(&graph);
+        println!("{}", ccl);
+
         compile::compile(self, graph, ticks, options, monitor);
     }
 
