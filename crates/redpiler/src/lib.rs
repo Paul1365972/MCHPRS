@@ -64,6 +64,7 @@ pub struct CompilerOptions {
 pub enum BackendVariant {
     #[default]
     Direct,
+    FPGA,
 }
 
 impl CompilerOptions {
@@ -85,6 +86,7 @@ impl CompilerOptions {
                 "--wire-cross-out" => self.wire_cross_out = true,
                 "--print-after-all" => self.print_after_all = true,
                 "--print-before-backend" => self.print_before_backend = true,
+                "--fpga" => self.backend_variant = BackendVariant::FPGA,
                 // FIXME: use actual error handling
                 _ => warn!("Unrecognized option: {}", option),
             }
@@ -169,12 +171,16 @@ impl Compiler {
             Some(BackendDispatcher::DirectBackend(_)) => {
                 options.backend_variant != BackendVariant::Direct
             }
+            Some(BackendDispatcher::FPGABackend(_)) => {
+                options.backend_variant != BackendVariant::FPGA
+            }
             None => true,
         };
         if replace_backend {
             debug!("Switching backend to {:?}", options.backend_variant);
             let backend = match options.backend_variant {
                 BackendVariant::Direct => BackendDispatcher::DirectBackend(Default::default()),
+                BackendVariant::FPGA => BackendDispatcher::FPGABackend(Default::default()),
             };
             self.use_backend(backend);
         }
