@@ -39,14 +39,6 @@ impl Nodes {
     pub fn inner(&self) -> &[Node] {
         &self.nodes
     }
-
-    pub fn inner_mut(&mut self) -> &mut [Node] {
-        &mut self.nodes
-    }
-
-    pub fn into_inner(self) -> Box<[Node]> {
-        self.nodes
-    }
 }
 
 impl Index<NodeId> for Nodes {
@@ -196,7 +188,8 @@ pub struct Node {
 
     pub fwd_link_range: ForwardLinkRange,
 
-    pub is_io: bool,
+    /// Changes of frozen nodes are never flushed to the world (non-io nodes in io-only mode)
+    pub is_frozen: bool,
 
     /// Powered or lit
     pub powered: bool,

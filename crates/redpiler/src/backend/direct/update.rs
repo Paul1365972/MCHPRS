@@ -19,7 +19,7 @@ pub(super) fn update_node(
         } => {
             let should_be_locked = get_bool_side(node);
             if should_be_locked != node.locked {
-                set_node_locked(node, should_be_locked);
+                set_node_locked(execution_context, node_id, node, should_be_locked);
             }
             if node.locked || node.pending_tick {
                 return;
@@ -77,26 +77,29 @@ pub(super) fn update_node(
             if lit && !should_be_lit {
                 schedule_tick(execution_context, node_id, node, 2, TickPriority::Normal);
             } else if !lit && should_be_lit {
-                set_node(node, true);
+                set_node(execution_context, node_id, node, true);
             }
         }
         NodeType::Trapdoor => {
             let should_be_powered = get_bool_input(node);
             if node.powered != should_be_powered {
-                set_node(node, should_be_powered);
+                set_node(execution_context, node_id, node, should_be_powered);
             }
         }
         NodeType::Wire => {
             let (input_power, _) = get_all_input(node);
             if node.output_power != input_power {
                 node.output_power = input_power;
-                node.changed = true;
+                if !node.is_frozen && !node.changed {
+                    execution_context.push_change(node_id);
+                    node.changed = true;
+                }
             }
         }
         NodeType::NoteBlock { noteblock_id } => {
             let should_be_powered = get_bool_input(node);
             if node.powered != should_be_powered {
-                set_node(node, should_be_powered);
+                set_node(execution_context, node_id, node, should_be_powered);
                 if should_be_powered {
                     noteblock_info[noteblock_id as usize].pending = true;
                 }

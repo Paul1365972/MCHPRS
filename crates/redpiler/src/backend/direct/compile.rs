@@ -1,4 +1,5 @@
 use crate::backend::direct::node::ForwardLinks;
+use crate::backend::direct::Options;
 use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx};
 use crate::TaskMonitor;
 use itertools::Itertools;
@@ -22,10 +23,10 @@ struct FinalGraphStats {
 fn compile_node(
     graph: &CompileGraph,
     node_idx: NodeIdx,
-    nodes_len: usize,
     nodes_map: &FxHashMap<NodeIdx, usize>,
     noteblock_info: &mut Vec<NoteBlockInfo>,
     forward_links: &mut ForwardLinks,
+    options: &Options,
     stats: &mut FinalGraphStats,
 ) -> Node {
     let node = &graph[node_idx];
@@ -81,7 +82,7 @@ fn compile_node(
             .map(|edge| unsafe {
                 let idx = edge.target();
                 let idx = nodes_map[&idx];
-                assert!(idx < nodes_len);
+                assert!(idx < nodes_map.len());
                 // Safety: bounds checked
                 let target_id = NodeId::from_index(idx);
 
@@ -141,7 +142,7 @@ fn compile_node(
         locked: node.state.repeater_locked,
         pending_tick: false,
         changed: false,
-        is_io: node.is_input || node.is_output,
+        is_frozen: !(node.is_input || node.is_output) && options.is_io_only,
     }
 }
 
@@ -166,10 +167,10 @@ pub fn compile(
             compile_node(
                 &graph,
                 idx,
-                nodes_len,
                 &nodes_map,
                 &mut backend.noteblock_info,
                 &mut backend.forward_links,
+                &backend.options,
                 &mut stats,
             )
         })
