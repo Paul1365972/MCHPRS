@@ -5,7 +5,7 @@ use super::*;
 
 #[inline(always)]
 pub(super) fn update_node(
-    scheduler: &mut TickScheduler,
+    execution_context: &mut ExecutionContext,
     noteblock_info: &mut [NoteBlockInfo],
     nodes: &mut Nodes,
     node_id: NodeId,
@@ -34,7 +34,7 @@ pub(super) fn update_node(
                 } else {
                     TickPriority::High
                 };
-                schedule_tick(scheduler, node_id, node, delay as usize, priority);
+                schedule_tick(execution_context, node_id, node, delay as usize, priority);
             }
         }
         NodeType::Torch => {
@@ -43,7 +43,7 @@ pub(super) fn update_node(
             }
             let should_be_powered = !get_bool_input(node);
             if node.powered != should_be_powered {
-                schedule_tick(scheduler, node_id, node, 1, TickPriority::Normal);
+                schedule_tick(execution_context, node_id, node, 1, TickPriority::Normal);
             }
         }
         NodeType::Comparator {
@@ -68,14 +68,14 @@ pub(super) fn update_node(
                 } else {
                     TickPriority::Normal
                 };
-                schedule_tick(scheduler, node_id, node, 1, priority);
+                schedule_tick(execution_context, node_id, node, 1, priority);
             }
         }
         NodeType::Lamp => {
             let should_be_lit = get_bool_input(node);
             let lit = node.powered;
             if lit && !should_be_lit {
-                schedule_tick(scheduler, node_id, node, 2, TickPriority::Normal);
+                schedule_tick(execution_context, node_id, node, 2, TickPriority::Normal);
             } else if !lit && should_be_lit {
                 set_node(node, true);
             }

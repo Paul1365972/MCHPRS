@@ -1,11 +1,13 @@
 //! The direct backend does not do code generation and operates on the `CompileNode` graph directly
 
 mod compile;
+mod execution_context;
 mod node;
 mod tick;
 mod update;
 
 use super::JITBackend;
+use crate::backend::direct::execution_context::ExecutionContext;
 use crate::backend::direct::node::ForwardLinks;
 use crate::compile_graph::CompileGraph;
 use crate::task_monitor::TaskMonitor;
@@ -18,96 +20,10 @@ use mchprs_world::{TickEntry, TickPriority, World};
 use node::{Node, NodeId, NodeType, Nodes};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+use std::{fmt, mem};
 use std::fmt::Write;
 use std::sync::Arc;
-use std::{fmt, mem};
 use tracing::{debug, warn};
-
-#[derive(Default, Clone)]
-struct Queues([Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
-
-impl Queues {
-    #[inline(always)]
-    fn drain_each<F: FnMut(NodeId)>(&mut self, mut f: F) {
-        for q in self.0.iter_mut() {
-            for n in q.iter() {
-                f(*n);
-            }
-            q.clear();
-        }
-    }
-}
-
-#[derive(Default)]
-struct TickScheduler {
-    queues_deque: [Queues; Self::NUM_QUEUES],
-    pos: usize,
-}
-
-impl TickScheduler {
-    const NUM_PRIORITIES: usize = 4;
-    const NUM_QUEUES: usize = 16;
-
-    fn reset<W: World>(&mut self, world: &mut W, blocks: &[impl AsRef<[(BlockPos, Block)]>]) {
-        for (idx, queues) in self.queues_deque.iter().enumerate() {
-            let delay = if self.pos >= idx {
-                idx + Self::NUM_QUEUES
-            } else {
-                idx
-            } - self.pos;
-            for (entries, priority) in queues.0.iter().zip(Self::priorities()) {
-                for node in entries {
-                    let node_blocks = blocks[node.index()].as_ref();
-                    if node_blocks.is_empty() {
-                        warn!("Cannot schedule tick for node {:?} because block information is missing", node);
-                        continue;
-                    };
-                    for (pos, _) in node_blocks.iter().copied() {
-                        world.schedule_tick(pos, delay as u32, priority);
-                    }
-                }
-            }
-        }
-        for queues in self.queues_deque.iter_mut() {
-            for queue in queues.0.iter_mut() {
-                queue.clear();
-            }
-        }
-    }
-
-    fn schedule_tick(&mut self, node: NodeId, delay: usize, priority: TickPriority) {
-        self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES].0[priority as usize].push(node);
-    }
-
-    fn queues_this_tick(&mut self) -> Queues {
-        self.pos = (self.pos + 1) % Self::NUM_QUEUES;
-        mem::take(&mut self.queues_deque[self.pos])
-    }
-
-    fn end_tick(&mut self, queues: Queues) {
-        self.queues_deque[self.pos % Self::NUM_QUEUES] = queues;
-    }
-
-    fn priorities() -> [TickPriority; Self::NUM_PRIORITIES] {
-        [
-            TickPriority::Highest,
-            TickPriority::Higher,
-            TickPriority::High,
-            TickPriority::Normal,
-        ]
-    }
-
-    fn has_pending_ticks(&self) -> bool {
-        for queues in &self.queues_deque {
-            for queue in &queues.0 {
-                if !queue.is_empty() {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-}
 
 struct NoteBlockInfo {
     positions: SmallVec<[BlockPos; 1]>,
@@ -122,13 +38,14 @@ pub struct DirectBackend {
     forward_links: ForwardLinks,
     blocks: Vec<SmallVec<[(BlockPos, Block); 1]>>,
     pos_map: FxHashMap<BlockPos, NodeId>,
-    scheduler: TickScheduler,
+    execution_context: ExecutionContext,
     noteblock_info: Vec<NoteBlockInfo>,
 }
 
 impl DirectBackend {
     fn schedule_tick(&mut self, node_id: NodeId, delay: usize, priority: TickPriority) {
-        self.scheduler.schedule_tick(node_id, delay, priority);
+        self.execution_context
+            .schedule_tick(node_id, delay, priority);
     }
 
     fn set_node(&mut self, node_id: NodeId, powered: bool, new_power: u8) {
@@ -165,7 +82,7 @@ impl DirectBackend {
             }
 
             update::update_node(
-                &mut self.scheduler,
+                &mut self.execution_context,
                 &mut self.noteblock_info,
                 &mut self.nodes,
                 update,
@@ -185,7 +102,7 @@ impl JITBackend for DirectBackend {
     }
 
     fn reset<W: World>(&mut self, world: &mut W, io_only: bool) {
-        self.scheduler.reset(world, &self.blocks);
+        self.execution_context.reset(world, &self.blocks);
 
         let nodes = std::mem::take(&mut self.nodes);
 
@@ -239,13 +156,13 @@ impl JITBackend for DirectBackend {
     }
 
     fn tick(&mut self) {
-        let mut queues = self.scheduler.queues_this_tick();
+        let mut queues = self.execution_context.queues_this_tick();
 
         queues.drain_each(|node_id| {
             self.tick_node(node_id);
         });
 
-        self.scheduler.end_tick(queues);
+        self.execution_context.end_tick(queues);
     }
 
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {
@@ -290,7 +207,7 @@ impl JITBackend for DirectBackend {
     }
 
     fn has_pending_ticks(&self) -> bool {
-        self.scheduler.has_pending_ticks()
+        self.execution_context.has_pending_ticks()
     }
 }
 
@@ -307,14 +224,14 @@ fn set_node_locked(node: &mut Node, locked: bool) {
 }
 
 fn schedule_tick(
-    scheduler: &mut TickScheduler,
+    execution_context: &mut ExecutionContext,
     node_id: NodeId,
     node: &mut Node,
     delay: usize,
     priority: TickPriority,
 ) {
     node.pending_tick = true;
-    scheduler.schedule_tick(node_id, delay, priority);
+    execution_context.schedule_tick(node_id, delay, priority);
 }
 
 fn get_bool_input(node: &Node) -> bool {
