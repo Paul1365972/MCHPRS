@@ -40,6 +40,12 @@ pub struct DirectBackend {
     pos_map: FxHashMap<BlockPos, NodeId>,
     execution_context: ExecutionContext,
     noteblock_info: Vec<NoteBlockInfo>,
+    options: Options,
+}
+
+#[derive(Default)]
+struct Options {
+    is_io_only: bool,
 }
 
 impl DirectBackend {
@@ -101,7 +107,7 @@ impl JITBackend for DirectBackend {
         debug!("Node {:?}: {:#?}", node_id, self.nodes[*node_id]);
     }
 
-    fn reset<W: World>(&mut self, world: &mut W, io_only: bool) {
+    fn reset<W: World>(&mut self, world: &mut W) {
         self.execution_context.reset(world, &self.blocks);
 
         let nodes = std::mem::take(&mut self.nodes);
@@ -115,7 +121,7 @@ impl JITBackend for DirectBackend {
                     world.set_block_entity(pos, block_entity);
                 }
 
-                if io_only && !node.is_io {
+                if self.options.is_io_only && !node.is_io {
                     world.set_block(pos, block);
                 }
             }
@@ -165,9 +171,9 @@ impl JITBackend for DirectBackend {
         self.execution_context.end_tick(queues);
     }
 
-    fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {
+    fn flush<W: World>(&mut self, world: &mut W) {
         for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
-            if !node.changed || (io_only && !node.is_io) {
+            if !node.changed || (self.options.is_io_only && !node.is_io) {
                 continue;
             }
             node.changed = false;
@@ -203,7 +209,13 @@ impl JITBackend for DirectBackend {
         options: &CompilerOptions,
         monitor: Arc<TaskMonitor>,
     ) {
-        compile::compile(self, graph, ticks, options, monitor);
+        self.options.is_io_only = options.io_only;
+
+        compile::compile(self, graph, ticks, monitor);
+
+        if options.export_dot_graph {
+            std::fs::write("backend_graph.dot", format!("{}", self)).unwrap();
+        }
     }
 
     fn has_pending_ticks(&self) -> bool {

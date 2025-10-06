@@ -1,6 +1,6 @@
 use crate::backend::direct::node::ForwardLinks;
 use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx};
-use crate::{CompilerOptions, TaskMonitor};
+use crate::TaskMonitor;
 use itertools::Itertools;
 use mchprs_blocks::blocks::Block;
 use mchprs_world::TickEntry;
@@ -149,7 +149,6 @@ pub fn compile(
     backend: &mut DirectBackend,
     graph: CompileGraph,
     ticks: Vec<TickEntry>,
-    options: &CompilerOptions,
     _monitor: Arc<TaskMonitor>,
 ) {
     // Create a mapping from compile to backend node indices
@@ -207,10 +206,5 @@ pub fn compile(
             );
             backend.nodes[*node].pending_tick = true;
         }
-    }
-
-    // Dot file output
-    if options.export_dot_graph {
-        std::fs::write("backend_graph.dot", format!("{}", backend)).unwrap();
     }
 }
