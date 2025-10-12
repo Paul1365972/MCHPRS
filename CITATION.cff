@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "MCHPRS: A Minecraft server built for redstone"
+abstract: "MCHPRS is a Minecraft server featuring Redpiler, an interactive digital circuit compiler and simulator that transforms spatial circuit layouts into optimized directed graphs. Redpiler isolates the logical behavior of circuits from their in-game spatial representation, discarding Minecraft-specific properties that are irrelevant to computation. The compiler follows an LLVM-inspired multi-pass architecture, applying optimizations such as constant folding, dead code elimination, and node coalescing. Its runtime simulator then operates directly on the optimized compiled graph."
+authors:
+  - family-names: "Landge"
+    given-names: "Ojas"
+    alias: "StackDoubleFlow"
+    email: "ojaslandge@gmail.com"
+version: 0.5.1
+date-released: 2024-09-03
+license: MIT
+repository-code: "https://github.com/MCHPR/MCHPRS"
+url: "https://github.com/MCHPR/MCHPRS"
+keywords:
+  - redstone
+  - minecraft
+  - compiler
+  - circuit-simulation
+  - graph-optimization
+  - static-analysis
+  - performance-optimization
