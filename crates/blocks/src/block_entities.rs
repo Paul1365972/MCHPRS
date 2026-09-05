@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 
+const EMPTY_SIGN_ROW: &str = r#""""#;
+
 /// A single item in an inventory
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InventoryEntry {
@@ -221,8 +223,16 @@ impl BlockEntity {
         use nbt::Value;
         match self {
             BlockEntity::Sign(sign) => Some({
-                let front = sign.front_rows.iter().map(|str| Value::String(str.clone()));
-                let back = sign.front_rows.iter().map(|str| Value::String(str.clone()));
+                // Vanilla's SignText codec rejects an empty string, rows must be text components
+                let message = |row: &String| {
+                    Value::String(if row.is_empty() {
+                        EMPTY_SIGN_ROW.to_owned()
+                    } else {
+                        row.clone()
+                    })
+                };
+                let front = sign.front_rows.iter().map(message);
+                let back = sign.back_rows.iter().map(message);
                 nbt::Blob::with_content(map! {
                     "is_waxed" => Value::Byte(0),
                     "front_text" => Value::Compound(map! {
