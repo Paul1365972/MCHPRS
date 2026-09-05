@@ -215,7 +215,7 @@ impl BlockEntity {
         match self {
             BlockEntity::Sign(sign) => Some({
                 let front = sign.front_rows.iter().map(|str| Value::String(str.clone()));
-                let back = sign.front_rows.iter().map(|str| Value::String(str.clone()));
+                let back = sign.back_rows.iter().map(|str| Value::String(str.clone()));
                 nbt::Blob::with_content(map! {
                     "is_waxed" => Value::Byte(0),
                     "front_text" => Value::Compound(map! {
@@ -277,4 +277,33 @@ fn nbt_get_int(compound: &HashMap<String, nbt::Value>, name: &str) -> Option<i32
         nbt::Value::Int(val) => Some(*val),
         _ => None,
     }
+}
+
+#[test]
+fn sign_back_rows_survive_serialization() {
+    let original = BlockEntity::Sign(Box::new(SignBlockEntity {
+        front_rows: [
+            "front".to_owned(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        back_rows: [
+            "back".to_owned(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+    }));
+    let serialized = original.to_nbt(false).unwrap();
+    let compound: HashMap<String, nbt::Value> = serialized.content.into_iter().collect();
+    let BlockEntity::Sign(reloaded) = BlockEntity::from_nbt("minecraft:sign", &compound).unwrap()
+    else {
+        panic!("expected a sign block entity");
+    };
+    let BlockEntity::Sign(original) = original else {
+        unreachable!()
+    };
+    assert_eq!(reloaded.front_rows, original.front_rows);
+    assert_eq!(reloaded.back_rows, original.back_rows);
 }
