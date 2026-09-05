@@ -29,8 +29,11 @@ pub trait JITBackend {
     fn on_use_block(&mut self, pos: BlockPos);
     fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool);
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool);
+    /// Not part of `flush` because the plot world sends a packet for every block entity
+    fn flush_block_entities<W: World>(&mut self, world: &mut W);
     fn reset<W: World>(&mut self, world: &mut W, io_only: bool);
     fn has_pending_ticks(&self) -> bool;
+    fn update_all(&mut self);
     /// Inspect block for debugging
     fn inspect(&mut self, pos: BlockPos);
 }

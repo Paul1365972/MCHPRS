@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 /// A single item in an inventory
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InventoryEntry {
     pub id: u32,
     pub slot: i8,
@@ -14,7 +14,7 @@ pub struct InventoryEntry {
     pub nbt: Option<Vec<u8>>,
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignBlockEntity {
     pub front_rows: [String; 4],
     pub back_rows: [String; 4],
@@ -69,7 +69,7 @@ impl ContainerType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BlockEntity {
     Comparator {
         output_strength: u8,

@@ -7,7 +7,7 @@ mod update;
 
 use super::JITBackend;
 use crate::backend::direct::node::ForwardLinks;
-use crate::compile_graph::CompileGraph;
+use crate::compile_graph::{CompileGraph, NodeState};
 use crate::task_monitor::TaskMonitor;
 use crate::{block_powered_mut, CompilerOptions};
 use mchprs_blocks::block_entities::BlockEntity;
@@ -125,6 +125,26 @@ pub struct DirectBackend {
 }
 
 impl DirectBackend {
+    pub fn node_state(&self, pos: BlockPos) -> Option<NodeState> {
+        let node = &self.nodes[*self.pos_map.get(&pos)?];
+        Some(NodeState {
+            powered: node.powered,
+            repeater_locked: node.locked,
+            output_strength: node.output_power,
+        })
+    }
+
+    pub fn tick_observed(&mut self, mut observe: impl FnMut(&Self)) {
+        let mut queues = self.scheduler.queues_this_tick();
+
+        queues.drain_each(|node_id| {
+            self.tick_node(node_id);
+            observe(self);
+        });
+
+        self.scheduler.end_tick(queues);
+    }
+
     fn schedule_tick(&mut self, node_id: NodeId, delay: usize, priority: TickPriority) {
         self.scheduler.schedule_tick(node_id, delay, priority);
     }
@@ -182,21 +202,32 @@ impl JITBackend for DirectBackend {
         debug!("Node {:?}: {:#?}", node_id, self.nodes[*node_id]);
     }
 
+    fn flush_block_entities<W: World>(&mut self, world: &mut W) {
+        for (i, node) in self.nodes.inner().iter().enumerate() {
+            if !matches!(node.ty, NodeType::Comparator { .. }) {
+                continue;
+            }
+            for (pos, _) in self.blocks[i].iter() {
+                let block_entity = BlockEntity::Comparator {
+                    output_strength: node.output_power,
+                };
+                world.set_block_entity(*pos, block_entity);
+            }
+        }
+    }
+
     fn reset<W: World>(&mut self, world: &mut W, io_only: bool) {
         self.scheduler.reset(world, &self.blocks);
+        self.flush_block_entities(world);
 
         let nodes = std::mem::take(&mut self.nodes);
 
-        for (i, node) in nodes.into_inner().iter().enumerate() {
-            for (pos, block) in self.blocks[i].iter().copied() {
-                if matches!(node.ty, NodeType::Comparator { .. }) {
-                    let block_entity = BlockEntity::Comparator {
-                        output_strength: node.output_power,
-                    };
-                    world.set_block_entity(pos, block_entity);
+        if io_only {
+            for (i, node) in nodes.into_inner().iter().enumerate() {
+                if node.is_io {
+                    continue;
                 }
-
-                if io_only && !node.is_io {
+                for (pos, block) in self.blocks[i].iter().copied() {
                     world.set_block(pos, block);
                 }
             }
@@ -238,13 +269,19 @@ impl JITBackend for DirectBackend {
     }
 
     fn tick(&mut self) {
-        let mut queues = self.scheduler.queues_this_tick();
+        self.tick_observed(|_| {});
+    }
 
-        queues.drain_each(|node_id| {
-            self.tick_node(node_id);
-        });
-
-        self.scheduler.end_tick(queues);
+    fn update_all(&mut self) {
+        for idx in 0..self.nodes.inner().len() {
+            let node_id = self.nodes.get(idx);
+            update::update_node(
+                &mut self.scheduler,
+                &mut self.events,
+                &mut self.nodes,
+                node_id,
+            );
+        }
     }
 
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {

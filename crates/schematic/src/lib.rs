@@ -12,6 +12,7 @@ use regex::Regex;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -148,8 +149,11 @@ fn parse_block(str: &str) -> Option<Block> {
 }
 
 pub fn load_schematic(path: &Path) -> Result<WorldEditClipboard> {
-    let mut file = File::open(path)?;
-    let nbt = nbt::Blob::from_gzip_reader(&mut file)?;
+    read_schematic(File::open(path)?)
+}
+
+pub fn read_schematic(mut reader: impl Read) -> Result<WorldEditClipboard> {
+    let nbt = nbt::Blob::from_gzip_reader(&mut reader)?;
 
     let root = if nbt.content.contains_key("Schematic") {
         nbt_as!(&nbt["Schematic"], nbt::Value::Compound)
@@ -329,8 +333,10 @@ struct Schematic {
 
 pub fn save_schematic(path: &Path, clipboard: &WorldEditClipboard) -> Result<()> {
     fs::create_dir_all(path.parent().unwrap())?;
+    write_schematic(File::create(path)?, clipboard)
+}
 
-    let mut file = File::create(path)?;
+pub fn write_schematic(mut writer: impl Write, clipboard: &WorldEditClipboard) -> Result<()> {
     let size_x = clipboard.size_x;
     let size_y = clipboard.size_y;
     let size_z = clipboard.size_z;
@@ -410,7 +416,10 @@ pub fn save_schematic(path: &Path, clipboard: &WorldEditClipboard) -> Result<()>
         version: 2,
         data_version: MC_DATA_VERSION,
     };
-    nbt::to_gzip_writer(&mut file, &schematic, Some("Schematic"))?;
+    nbt::to_gzip_writer(&mut writer, &schematic, Some("Schematic"))?;
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
