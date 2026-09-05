@@ -123,9 +123,15 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bigdecimal"
+<<<<<<< Updated upstream
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51d712318a27c7150326677b321a5fa91b55f6d9034ffd67f20319e147d40cee"
+=======
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6773ddc0eafc0e509fb60e48dff7f450f8e674a0686ae8605e8d9901bd5eefa"
+>>>>>>> Stashed changes
 dependencies = [
  "autocfg",
  "libm",
@@ -494,8 +500,13 @@ dependencies = [
  "ident_case",
  "proc-macro2",
  "quote",
+<<<<<<< Updated upstream
  "strsim",
  "syn 2.0.68",
+=======
+ "scratch",
+ "syn 2.0.72",
+>>>>>>> Stashed changes
 ]
 
 [[package]]
@@ -515,6 +526,20 @@ version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
 dependencies = [
+<<<<<<< Updated upstream
+=======
+ "proc-macro2",
+ "quote",
+ "syn 2.0.72",
+]
+
+[[package]]
+name = "deranged"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
+dependencies = [
+>>>>>>> Stashed changes
  "powerfmt",
 ]
 
@@ -526,7 +551,11 @@ checksum = "61bb5a1014ce6dfc2a378578509abe775a5aa06bff584a547555d9efdb81b926"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< Updated upstream
  "syn 2.0.68",
+=======
+ "syn 2.0.72",
+>>>>>>> Stashed changes
 ]
 
 [[package]]
@@ -813,7 +842,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
  "ahash 0.8.11",
+<<<<<<< Updated upstream
  "allocator-api2",
+=======
+>>>>>>> Stashed changes
 ]
 
 [[package]]
@@ -1032,6 +1064,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53b53d712d99a73eec59ee5e4fe6057f8052142d38eeafbbffcb06b36d738a6e"
 dependencies = [
  "derive_utils",
+<<<<<<< Updated upstream
+=======
+ "syn 2.0.72",
+]
+
+[[package]]
+name = "io-lifetimes"
+version = "1.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c66c74d2ae7e79a5a8f7ac924adbe38ee42a859c6539ad869eb51f0b52dc220"
+dependencies = [
+ "hermit-abi 0.3.1",
+ "libc",
+ "windows-sys 0.48.0",
+>>>>>>> Stashed changes
 ]
 
 [[package]]
@@ -1228,7 +1275,12 @@ dependencies = [
  "rustc-hash 2.0.0",
  "serde",
  "serde_json",
+<<<<<<< Updated upstream
  "sha2",
+=======
+ "smallvec",
+ "thread-priority",
+>>>>>>> Stashed changes
  "tokio",
  "toml",
  "toml_edit 0.22.14",
@@ -1444,7 +1496,11 @@ dependencies = [
  "smallvec",
  "subprocess",
  "thiserror",
+<<<<<<< Updated upstream
  "time",
+=======
+ "time 0.3.36",
+>>>>>>> Stashed changes
  "uuid",
  "zstd",
 ]
@@ -1520,6 +1576,15 @@ dependencies = [
 [[package]]
 name = "num-conv"
 version = "0.1.0"
+<<<<<<< Updated upstream
+=======
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+
+[[package]]
+name = "num-integer"
+version = "0.1.45"
+>>>>>>> Stashed changes
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
@@ -1565,6 +1630,15 @@ name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
+<<<<<<< Updated upstream
+=======
+
+[[package]]
+name = "oorandom"
+version = "11.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ab1bc2a289d34bd04a330323ac98a1b4bc82c9d9fcb1e66b63caa84da26b575"
+>>>>>>> Stashed changes
 
 [[package]]
 name = "openssl"
@@ -1589,7 +1663,11 @@ checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< Updated upstream
  "syn 2.0.68",
+=======
+ "syn 2.0.72",
+>>>>>>> Stashed changes
 ]
 
 [[package]]
@@ -1698,6 +1776,12 @@ name = "pkg-config"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
+
+[[package]]
+name = "powerfmt"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "powerfmt"
@@ -2077,6 +2161,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustversion"
+version = "1.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "955d28af4278de8121b7ebeb796b6a45735dc01436d898801014aced2773a3d6"
+
+[[package]]
 name = "ryu"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2128,15 +2218,22 @@ dependencies = [
 
 [[package]]
 name = "serde"
+<<<<<<< Updated upstream
 version = "1.0.203"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7253ab4de971e72fb7be983802300c30b5a7f0c2e56fab8abfc6a214307c0094"
+=======
+version = "1.0.204"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc76f558e0cbb2a839d37354c575f1dc3fdc6546b5be373ba43d95f231bf7c12"
+>>>>>>> Stashed changes
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
+<<<<<<< Updated upstream
 version = "1.0.203"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "500cbc0ebeb6f46627f50f3f5811ccf6bf00643be300b4c3eabc0ef55dc5b5ba"
@@ -2144,6 +2241,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.68",
+=======
+version = "1.0.204"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0cd7e117be63d3c3678776753929474f3b04a43a080c744d6b0ae2a8c28e222"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.72",
+>>>>>>> Stashed changes
 ]
 
 [[package]]
@@ -2293,9 +2399,15 @@ dependencies = [
 
 [[package]]
 name = "syn"
+<<<<<<< Updated upstream
 version = "2.0.68"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "901fa70d88b9d6c98022e23b4136f9f3e54e4662c3bc1bd1d84a42a9a0f0c1e9"
+=======
+version = "2.0.72"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc4b9b9bf2add8093d3f2c0204471e951b2285580335de42f9d2534f3ae7a8af"
+>>>>>>> Stashed changes
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2385,7 +2497,25 @@ checksum = "46c3384250002a6d5af4d114f2845d37b57521033f30d5c3f46c4d70e1197533"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< Updated upstream
  "syn 2.0.68",
+=======
+ "syn 2.0.72",
+]
+
+[[package]]
+name = "thread-priority"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d3b04d33c9633b8662b167b847c7ab521f83d1ae20f2321b65b5b925e532e36"
+dependencies = [
+ "bitflags 2.4.1",
+ "cfg-if",
+ "libc",
+ "log",
+ "rustversion",
+ "winapi",
+>>>>>>> Stashed changes
 ]
 
 [[package]]
@@ -2402,6 +2532,20 @@ dependencies = [
 name = "time"
 version = "0.3.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< Updated upstream
+=======
+checksum = "1b797afad3f312d1c66a56d11d0316f916356d11bd158fbc6ca6389ff6bf805a"
+dependencies = [
+ "libc",
+ "wasi 0.10.0+wasi-snapshot-preview1",
+ "winapi",
+]
+
+[[package]]
+name = "time"
+version = "0.3.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> Stashed changes
 checksum = "5dfd88e563464686c916c7e46e623e520ddc6d79fa6641390f2e3fa86e83e885"
 dependencies = [
  "deranged",
@@ -2508,9 +2652,15 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
+<<<<<<< Updated upstream
 version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4badfd56924ae69bcc9039335b2e017639ce3f9b001c393c1b2d1ef846ce2cbf"
+=======
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dd7358ecb8fc2f8d014bf86f6f638ce72ba252a2c3a2572f2a795f1d23efb41"
+>>>>>>> Stashed changes
 dependencies = [
  "serde",
 ]
@@ -2584,8 +2734,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3566e8ce28cc0a3fe42519fc80e6b4c943cc4c8cef275620eb8dac2d3d4e06cf"
 dependencies = [
  "crossbeam-channel",
+<<<<<<< Updated upstream
  "thiserror",
  "time",
+=======
+ "time 0.3.36",
+>>>>>>> Stashed changes
  "tracing-subscriber",
 ]
 
@@ -2597,7 +2751,11 @@ checksum = "34704c8d6ebcbc939824180af020566b01a7c01f80641264eba0999f6c2b6be7"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< Updated upstream
  "syn 2.0.68",
+=======
+ "syn 2.0.72",
+>>>>>>> Stashed changes
 ]
 
 [[package]]
@@ -3033,15 +3191,22 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
+<<<<<<< Updated upstream
 version = "0.7.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae87e3fcd617500e5d106f0380cf7b77f3c6092aae37191433159dda23cfb087"
+=======
+version = "0.7.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b9b4fd18abc82b8136838da5d50bae7bdea537c574d8dc1a34ed098d6c166f0"
+>>>>>>> Stashed changes
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
+<<<<<<< Updated upstream
 version = "0.7.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15e934569e47891f7d9411f1a451d947a60e000ab3bd24fbb970f000387d1b3b"
@@ -3083,4 +3248,13 @@ checksum = "75652c55c0b6f3e6f12eb786fe1bc960396bf05a1eb3bf1f3691c3610ac2e6d4"
 dependencies = [
  "cc",
  "pkg-config",
+=======
+version = "0.7.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa4f8080344d4671fb4e831a13ad1e68092748387dfc4f55e356242fae12ce3e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.72",
+>>>>>>> Stashed changes
 ]
