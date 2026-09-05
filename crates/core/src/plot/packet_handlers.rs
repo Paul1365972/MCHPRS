@@ -108,13 +108,11 @@ impl ServerBoundPacketHandler for Plot {
                     }],
                 }
                 .encode();
-                for other_player in 0..self.players.len() {
-                    if player == other_player {
+                for (other_idx, other_player) in self.players.iter().enumerate() {
+                    if player == other_idx {
                         continue;
                     };
-                    self.players[other_player]
-                        .client
-                        .send_packet(&entity_equipment);
+                    other_player.client.send_packet(&entity_equipment);
                 }
             }
         } else {
@@ -144,13 +142,11 @@ impl ServerBoundPacketHandler for Plot {
             animation: animation_id,
         }
         .encode();
-        for other_player in 0..self.players.len() {
-            if player == other_player {
+        for (other_idx, other_player) in self.players.iter().enumerate() {
+            if player == other_idx {
                 continue;
             };
-            self.players[other_player]
-                .client
-                .send_packet(&entity_animation);
+            other_player.client.send_packet(&entity_animation);
         }
     }
 
@@ -234,11 +230,11 @@ impl ServerBoundPacketHandler for Plot {
             }
             .encode()
         };
-        for other_player in 0..self.players.len() {
-            if player == other_player {
+        for (other_idx, other_player) in self.players.iter().enumerate() {
+            if player == other_idx {
                 continue;
             };
-            self.players[other_player].client.send_packet(&packet);
+            other_player.client.send_packet(&packet);
         }
         self.on_player_move(player, old, new);
     }
@@ -292,14 +288,12 @@ impl ServerBoundPacketHandler for Plot {
             head_yaw: player_position_and_rotation.yaw,
         }
         .encode();
-        for other_player in 0..self.players.len() {
-            if player == other_player {
+        for (other_idx, other_player) in self.players.iter().enumerate() {
+            if player == other_idx {
                 continue;
             };
-            self.players[other_player].client.send_packet(&packet);
-            self.players[other_player]
-                .client
-                .send_packet(&entity_head_look);
+            other_player.client.send_packet(&packet);
+            other_player.client.send_packet(&entity_head_look);
         }
         self.on_player_move(player, old, new);
     }
@@ -320,16 +314,12 @@ impl ServerBoundPacketHandler for Plot {
             head_yaw: player_rotation.yaw,
         }
         .encode();
-        for other_player in 0..self.players.len() {
-            if player == other_player {
+        for (other_idx, other_player) in self.players.iter().enumerate() {
+            if player == other_idx {
                 continue;
             };
-            self.players[other_player]
-                .client
-                .send_packet(&rotation_packet);
-            self.players[other_player]
-                .client
-                .send_packet(&entity_head_look);
+            other_player.client.send_packet(&rotation_packet);
+            other_player.client.send_packet(&entity_head_look);
         }
     }
 
@@ -396,13 +386,11 @@ impl ServerBoundPacketHandler for Plot {
             metadata: metadata_entries,
         }
         .encode();
-        for other_player in 0..self.players.len() {
-            if player == other_player {
+        for (other_idx, other_player) in self.players.iter().enumerate() {
+            if player == other_idx {
                 continue;
             };
-            self.players[other_player]
-                .client
-                .send_packet(&entity_metadata);
+            other_player.client.send_packet(&entity_metadata);
         }
     }
 
@@ -417,13 +405,11 @@ impl ServerBoundPacketHandler for Plot {
             }],
         }
         .encode();
-        for other_player in 0..self.players.len() {
-            if player == other_player {
+        for (other_idx, other_player) in self.players.iter().enumerate() {
+            if player == other_idx {
                 continue;
             };
-            self.players[other_player]
-                .client
-                .send_packet(&entity_equipment);
+            other_player.client.send_packet(&entity_equipment);
         }
         self.players[player].selected_slot = held_item_change.slot as u32;
     }

@@ -587,7 +587,7 @@ impl MinecraftServer {
             }
             Message::WhitelistAdd(uuid, username, sender) => {
                 if let Some(whitelist) = &mut self.whitelist {
-                    let msg = format!("{} was successfully added to the whitelist.", &username);
+                    let msg = format!("{} was successfully added to the whitelist.", username);
                     sender.send_system_message(&msg);
                     let uuid = HyphenatedUUID(uuid);
                     debug!("Added to whitelist: {} ({})", username, uuid);
@@ -608,7 +608,7 @@ impl MinecraftServer {
                         if matches {
                             let msg = format!(
                                 "{} was successfully removed from the whitelist.",
-                                &entry.name
+                                entry.name
                             );
                             sender.send_system_message(&msg);
                             debug!("Removed from whitelist: {}", HyphenatedUUID(uuid));

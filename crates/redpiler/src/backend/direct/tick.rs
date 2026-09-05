@@ -57,10 +57,8 @@ impl DirectBackend {
                     self.set_node(node_id, false, 0);
                 }
             }
-            NodeType::Button => {
-                if node.powered {
-                    self.set_node(node_id, false, 0);
-                }
+            NodeType::Button if node.powered => {
+                self.set_node(node_id, false, 0);
             }
             _ => {} //unreachable!("Node {:?} should not be ticked!", node.ty),
         }

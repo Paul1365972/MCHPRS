@@ -103,7 +103,7 @@ fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
     match RILModule::parse_from_string(src) {
         Ok(module) => Some(module),
         Err(err) => {
-            eprintln!("error: failed to load RIL module at path: {:?}", &path);
+            eprintln!("error: failed to load RIL module at path: {:?}", path);
             let file_name = path.file_name().unwrap();
             let line_index = LineIndex::new(src);
             let pos = TextSize::new(err.pos as u32);
