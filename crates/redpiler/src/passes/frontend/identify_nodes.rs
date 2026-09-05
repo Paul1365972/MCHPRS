@@ -31,7 +31,6 @@ impl<W: World> Pass<W> for IdentifyNodes {
         input: &CompilerInput<'_, W>,
         _: &mut AnalysisInfos,
     ) {
-        let ignore_wires = options.optimize;
         let plot = input.world;
 
         let mut first_pass = FxHashMap::default();
@@ -40,17 +39,7 @@ impl<W: World> Pass<W> for IdentifyNodes {
         let (first_pos, second_pos) = input.bounds;
 
         for_each_block_optimized(plot, first_pos, second_pos, |pos| {
-            for_pos(
-                graph,
-                &mut first_pass,
-                &mut second_pass,
-                ignore_wires,
-                options.wire_dot_out,
-                options.illegal_states_out,
-                options.wire_cross_out,
-                plot,
-                pos,
-            );
+            for_pos(graph, &mut first_pass, &mut second_pass, options, plot, pos);
         });
 
         for tick in input.ticks {
@@ -77,10 +66,7 @@ fn for_pos<W: World>(
     graph: &mut CompileGraph,
     first_pass: &mut FxHashMap<BlockPos, NodeIdx>,
     second_pass: &mut FxHashSet<BlockPos>,
-    ignore_wires: bool,
-    wire_dot_out: bool,
-    illegal_states_out: bool,
-    wire_cross_out: bool,
+    options: &CompilerOptions,
     world: &W,
     pos: BlockPos,
 ) {
@@ -101,12 +87,12 @@ fn for_pos<W: World>(
         || matches!(
             block,
             Block::RedstoneWire(wire) if
-                wire_dot_out && wire::is_dot(wire) ||
-                illegal_states_out && wire::is_illegal(wire) ||
-                wire_cross_out && wire::is_cross(wire)
+                options.wire_dot_out && wire::is_dot(wire) ||
+                options.illegal_states_out && wire::is_illegal(wire) ||
+                options.wire_cross_out && wire::is_cross(wire)
         );
 
-    if ignore_wires && ty == NodeType::Wire && !(is_input | is_output) {
+    if options.optimize && ty == NodeType::Wire && !(is_input | is_output) {
         return;
     }
 
