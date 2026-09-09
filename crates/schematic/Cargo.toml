@@ -15,7 +15,6 @@ include.workspace = true
 mchprs_world = { path = "../world", features = ["testing"] }
 mchprs_blocks = { path = "../blocks" }
 serde = { workspace = true }
-itertools = { workspace = true }
 anyhow = { workspace = true }
 rustc-hash = { workspace = true }
 regex = { workspace = true }

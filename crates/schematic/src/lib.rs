@@ -1,8 +1,7 @@
-//! This implements Sponge Schematic Specification ver. 2
+//! This implements Sponge Schematic Specification versions 2 and 3.
 //! https://github.com/SpongePowered/Schematic-Specification/blob/master/versions/schematic-2.md
 
-use anyhow::{bail, Context, Result};
-use itertools::Itertools;
+use anyhow::{bail, ensure, Context, Result};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
@@ -127,22 +126,59 @@ macro_rules! nbt_as {
     };
 }
 
+macro_rules! nbt_field {
+    ($compound:expr, $name:expr, $variant:ident) => {
+        match $compound.get($name) {
+            Some(nbt::Value::$variant(value)) => value,
+            Some(_) => bail!("field {} must be {}", $name, stringify!($variant)),
+            None => bail!("missing field {}", $name),
+        }
+    };
+}
+
 fn parse_block(str: &str) -> Option<Block> {
-    static RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?:minecraft:)?([a-z_]+)(?:\[([a-z=,0-9]+)\])?").unwrap());
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^([a-z0-9_.-]+:)?([a-z0-9_./-]+)(?:\[([a-z0-9_=,.-]*)\])?$").unwrap()
+    });
     let captures = RE.captures(str)?;
-    let mut block_name = captures.get(1)?.as_str().to_owned();
-    if !block_name.contains(':') {
-        block_name.insert_str(0, "minecraft:");
+    let namespace = captures.get(1).map_or("minecraft:", |value| value.as_str());
+    let block_name = format!("{}{}", namespace, captures.get(2)?.as_str());
+    let mut properties = std::collections::HashMap::new();
+    if let Some(properties_match) = captures.get(3).filter(|value| !value.as_str().is_empty()) {
+        for property in properties_match.as_str().split(',') {
+            let (name, value) = property.split_once('=')?;
+            if name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+                || value.is_empty()
+                || value.contains('=')
+                || properties.insert(name, value).is_some()
+            {
+                return None;
+            }
+        }
     }
-    let mut block = Block::from_name(&block_name).unwrap_or(Block::Air);
-    if let Some(properties_match) = captures.get(2) {
-        let properties = properties_match
-            .as_str()
-            .split(&[',', '='][..])
-            .tuples()
-            .collect();
-        block.set_properties(properties);
+    let Some(mut block) = Block::from_name(&block_name) else {
+        return Some(Block::Air);
+    };
+    block.set_properties(properties.clone());
+    let decoded_properties = block.properties();
+    for (name, value) in properties {
+        if let Some(decoded) = decoded_properties.get(name)
+            && decoded != value
+        {
+            return None;
+        }
+    }
+    if matches!(block, Block::Repeater(repeater) if repeater.delay == 0)
+        || matches!(
+            block,
+            Block::SeaPickle { pickles: 0, .. } | Block::WaterCauldron { level: 0 }
+        )
+        || Block::from_id(block.get_id()) != block
+    {
+        return None;
     }
     Some(block)
 }
@@ -151,13 +187,17 @@ pub fn load_schematic(path: &Path) -> Result<WorldEditClipboard> {
     let mut file = File::open(path)?;
     let nbt = nbt::Blob::from_gzip_reader(&mut file)?;
 
-    let root = if nbt.content.contains_key("Schematic") {
-        nbt_as!(&nbt["Schematic"], nbt::Value::Compound)
+    load_schematic_nbt(&nbt.content)
+}
+
+fn load_schematic_nbt(nbt: &nbt::Map<String, nbt::Value>) -> Result<WorldEditClipboard> {
+    let root = if nbt.contains_key("Schematic") {
+        nbt_field!(nbt, "Schematic", Compound)
     } else {
-        &nbt.content
+        nbt
     };
 
-    let version = nbt_as!(root["Version"], nbt::Value::Int);
+    let version = *nbt_field!(root, "Version", Int);
     match version {
         2 | 3 => load_schematic_sponge(root, version),
         _ => bail!("unknown schematic version: {}", version),
@@ -173,12 +213,16 @@ fn read_block_container(
 ) -> Result<(PalettedBitBuffer, FxHashMap<BlockPos, BlockEntity>)> {
     use nbt::Value;
 
-    let nbt_palette = nbt_as!(&nbt["Palette"], Value::Compound);
+    let nbt_palette = nbt_field!(nbt, "Palette", Compound);
     let mut palette: FxHashMap<u32, u32> = FxHashMap::default();
     for (k, v) in nbt_palette {
-        let id = *nbt_as!(v, Value::Int) as u32;
+        let id = *nbt_as!(v, Value::Int);
+        ensure!(id >= 0, "negative palette index {id}");
         let block = parse_block(k).with_context(|| format!("error parsing block: {}", k))?;
-        palette.insert(id, block.get_id());
+        ensure!(
+            palette.insert(id as u32, block.get_id()).is_none(),
+            "duplicate palette index {id}"
+        );
     }
 
     let data_name = match version {
@@ -186,101 +230,157 @@ fn read_block_container(
         3 => "Data",
         _ => unreachable!(),
     };
-    let blocks: Vec<u8> = nbt_as!(&nbt[data_name], Value::ByteArray)
-        .iter()
-        .map(|b| *b as u8)
-        .collect();
+    let mut blocks = nbt_field!(nbt, data_name, ByteArray).as_slice();
+    let volume = (size_x as usize)
+        .checked_mul(size_y as usize)
+        .and_then(|area| area.checked_mul(size_z as usize))
+        .context("schematic dimensions overflow")?;
+    ensure!(
+        blocks.len() >= volume,
+        "{data_name} has fewer bytes than blocks"
+    );
 
-    let mut data = PalettedBitBuffer::new((size_x * size_y * size_z) as usize, 9);
-    let mut i = 0;
-    for y_offset in (0..size_y).map(|y| y * size_z * size_x) {
-        for z_offset in (0..size_z).map(|z| z * size_x) {
-            for x in 0..size_x {
-                let mut blockstate_id = 0;
-                // Max varint length is 5
-                for varint_len in 0..=5 {
-                    blockstate_id |= ((blocks[i] & 127) as u32) << (varint_len * 7);
-                    if (blocks[i] & 128) != 128 {
-                        i += 1;
-                        break;
-                    }
-                    i += 1;
-                }
-                let entry = *palette.get(&blockstate_id).unwrap();
-                data.set_entry((y_offset + z_offset + x) as usize, entry);
-            }
-        }
+    let mut data = PalettedBitBuffer::new(volume, 9);
+    for index in 0..volume {
+        let palette_index = read_palette_index(&mut blocks)
+            .with_context(|| format!("invalid {data_name} entry {index}"))?;
+        let entry = palette.get(&palette_index).with_context(|| {
+            format!("{data_name} entry {index} references missing palette index {palette_index}")
+        })?;
+        data.set_entry(index, *entry);
     }
-    let block_entities = nbt_as!(&nbt["BlockEntities"], Value::List);
+    ensure!(blocks.is_empty(), "trailing bytes in {data_name}");
+
     let mut parsed_block_entities = FxHashMap::default();
-    for block_entity in block_entities {
-        let val = nbt_as!(block_entity, Value::Compound);
-        let pos_array = nbt_as!(&val["Pos"], Value::IntArray);
-        let pos = BlockPos {
-            x: pos_array[0],
-            y: pos_array[1],
-            z: pos_array[2],
-        };
-        let id = nbt_as!(&val.get("Id").unwrap_or_else(|| &val["id"]), Value::String);
-        let data = match version {
-            2 => val,
-            3 => nbt_as!(&val["Data"], Value::Compound),
-            _ => unreachable!(),
-        };
-        if let Some(parsed) = BlockEntity::from_nbt(id, data) {
-            parsed_block_entities.insert(pos, parsed);
+    if nbt.contains_key("BlockEntities") {
+        for (index, block_entity) in nbt_field!(nbt, "BlockEntities", List).iter().enumerate() {
+            if let Some((pos, entity)) =
+                read_block_entity(block_entity, version, [size_x, size_y, size_z])
+                    .with_context(|| format!("invalid BlockEntities entry {index}"))?
+            {
+                ensure!(
+                    parsed_block_entities.insert(pos, entity).is_none(),
+                    "duplicate block entity at {pos}"
+                );
+            }
         }
     }
 
     Ok((data, parsed_block_entities))
 }
 
+fn read_palette_index(bytes: &mut &[i8]) -> Result<u32> {
+    let mut index = 0;
+    for shift in (0..35).step_by(7) {
+        let (byte, remaining) = bytes.split_first().context("truncated palette index")?;
+        *bytes = remaining;
+        let byte = *byte as u8;
+        ensure!(
+            shift < 28 || byte < 8,
+            "palette index exceeds a nonnegative 32-bit integer"
+        );
+        index |= u32::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Ok(index);
+        }
+    }
+    bail!("palette index exceeds five bytes")
+}
+
+fn read_position(values: &[i32], name: &str) -> Result<BlockPos> {
+    let [x, y, z] = values else {
+        bail!("{name} must contain exactly three integers");
+    };
+    Ok(BlockPos::new(*x, *y, *z))
+}
+
+fn read_block_entity(
+    value: &nbt::Value,
+    version: i32,
+    dimensions: [u32; 3],
+) -> Result<Option<(BlockPos, BlockEntity)>> {
+    let entity = nbt_as!(value, nbt::Value::Compound);
+    let pos = read_position(nbt_field!(entity, "Pos", IntArray), "Pos")?;
+    ensure!(
+        [pos.x, pos.y, pos.z]
+            .into_iter()
+            .zip(dimensions)
+            .all(|(coordinate, size)| coordinate >= 0 && (coordinate as u32) < size),
+        "block entity position {pos} is outside the schematic"
+    );
+    let id = if entity.contains_key("Id") {
+        nbt_field!(entity, "Id", String)
+    } else {
+        nbt_field!(entity, "id", String)
+    };
+    let data = match version {
+        2 => entity,
+        3 => nbt_field!(entity, "Data", Compound),
+        _ => unreachable!(),
+    };
+    let parsed = BlockEntity::from_nbt(id, data);
+    if matches!(
+        id.trim_start_matches("minecraft:"),
+        "comparator" | "furnace" | "barrel" | "hopper" | "sign"
+    ) {
+        ensure!(parsed.is_some(), "invalid {id} block entity data");
+    }
+    Ok(parsed.map(|entity| (pos, entity)))
+}
+
 fn load_schematic_sponge(
     nbt: &nbt::Map<String, nbt::Value>,
     version: i32,
 ) -> Result<WorldEditClipboard> {
-    use nbt::Value;
+    let size_x = u32::from(*nbt_field!(nbt, "Width", Short) as u16);
+    let size_z = u32::from(*nbt_field!(nbt, "Length", Short) as u16);
+    let size_y = u32::from(*nbt_field!(nbt, "Height", Short) as u16);
+    ensure!(
+        size_x > 0 && size_y > 0 && size_z > 0,
+        "schematic dimensions must be nonzero"
+    );
 
-    let size_x = nbt_as!(nbt["Width"], Value::Short) as u32;
-    let size_z = nbt_as!(nbt["Length"], Value::Short) as u32;
-    let size_y = nbt_as!(nbt["Height"], Value::Short) as u32;
-
-    let (offset_x, offset_y, offset_z) = match version {
-        2 => {
-            // Older versions of WorldEdit put the offset in Metadata
-            // These offsets are optional but if present all must be present
-            // Its important to check the WEOffset first as both can be present but only the WEOffset is correct
-            if let Some(metadata) = nbt.get("Metadata")
-                && let metadata = nbt_as!(metadata, Value::Compound)
-                && let Some(offset_x) = metadata.get("WEOffsetX")
+    let mut offset = BlockPos::zero();
+    let mut legacy_offset = false;
+    if version == 2 {
+        // Older versions of WorldEdit put the offset in Metadata
+        // These offsets are optional but if present all must be present
+        // Its important to check the WEOffset first as both can be present but only the WEOffset is correct
+        if nbt.contains_key("Metadata") {
+            let metadata = nbt_field!(nbt, "Metadata", Compound);
+            if ["WEOffsetX", "WEOffsetY", "WEOffsetZ"]
+                .iter()
+                .any(|name| metadata.contains_key(*name))
             {
-                (
-                    -nbt_as!(offset_x, Value::Int),
-                    -nbt_as!(metadata["WEOffsetY"], Value::Int),
-                    -nbt_as!(metadata["WEOffsetZ"], Value::Int),
-                )
-            } else if let Some(offset) = nbt.get("Offset") {
-                let offset_array = nbt_as!(offset, Value::IntArray);
-                (-offset_array[0], -offset_array[1], -offset_array[2])
-            } else {
-                (0, 0, 0)
+                offset = BlockPos::new(
+                    *nbt_field!(metadata, "WEOffsetX", Int),
+                    *nbt_field!(metadata, "WEOffsetY", Int),
+                    *nbt_field!(metadata, "WEOffsetZ", Int),
+                );
+                legacy_offset = true;
             }
         }
-        3 => {
-            if let Some(offset_array) = nbt.get("Offset") {
-                let offset_array = nbt_as!(offset_array, Value::IntArray);
-                (-offset_array[0], -offset_array[1], -offset_array[2])
-            } else {
-                (0, 0, 0)
-            }
-        }
-        _ => unreachable!(),
-    };
+    }
+    if !legacy_offset && nbt.contains_key("Offset") {
+        offset = read_position(nbt_field!(nbt, "Offset", IntArray), "Offset")?;
+    }
+    let offset_x = offset
+        .x
+        .checked_neg()
+        .context("Offset X cannot be represented")?;
+    let offset_y = offset
+        .y
+        .checked_neg()
+        .context("Offset Y cannot be represented")?;
+    let offset_z = offset
+        .z
+        .checked_neg()
+        .context("Offset Z cannot be represented")?;
 
     let (data, block_entities) = read_block_container(
         match version {
             2 => nbt,
-            3 => nbt_as!(&nbt["Blocks"], Value::Compound),
+            3 => nbt_field!(nbt, "Blocks", Compound),
             _ => unreachable!(),
         },
         version,
