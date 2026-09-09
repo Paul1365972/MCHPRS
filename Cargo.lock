@@ -1433,12 +1433,12 @@ version = "0.5.2-dev"
 dependencies = [
  "anyhow",
  "hematite-nbt",
- "itertools",
  "mchprs_blocks",
  "mchprs_world",
  "regex",
  "rustc-hash",
  "serde",
+ "tracing",
 ]
 
 [[package]]

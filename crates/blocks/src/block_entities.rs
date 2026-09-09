@@ -106,30 +106,29 @@ impl BlockEntity {
         let num_slots = ty.num_slots();
         let mut fullness_sum: f32 = 0.0;
         let mut inventory = Vec::new();
+        let mut occupied_slots = 0u32;
         for item in slots_nbt {
             let item_compound = nbt_unwrap_val!(item, Value::Compound);
-            let count = nbt_get_int(item_compound, "Count")? as i8;
-            let slot = nbt_get_int(item_compound, "Slot")? as i8;
+            let count = i8::try_from(nbt_get_int(item_compound, "Count")?).ok()?;
+            let slot = i8::try_from(nbt_get_int(item_compound, "Slot")?).ok()?;
             let namespaced_name =
                 nbt_unwrap_val!(nbt_case_insensitive(item_compound, "Id")?, Value::String);
             let item_type = Item::from_name(namespaced_name);
-
-            let mut blob = nbt::Blob::new();
-            for (k, v) in item_compound {
-                blob.insert(k, v.clone()).unwrap();
+            if count < 0 || slot < 0 || slot as u8 >= num_slots || occupied_slots & (1 << slot) != 0
+            {
+                return None;
             }
-            let mut data = Vec::new();
-            blob.to_writer(&mut data).unwrap();
+            occupied_slots |= 1 << slot;
 
             let tag = match item_compound.get("tag") {
                 Some(nbt::Value::Compound(map)) => {
                     let mut blob = nbt::Blob::new();
                     for (k, v) in map {
-                        blob.insert(k, v.clone()).unwrap();
+                        blob.insert(k, v.clone()).ok()?;
                     }
 
                     let mut data = Vec::new();
-                    blob.to_writer(&mut data).unwrap();
+                    blob.to_writer(&mut data).ok()?;
                     Some(data)
                 }
                 _ => None,
@@ -153,22 +152,30 @@ impl BlockEntity {
         })
     }
 
+    pub fn is_supported(id: &str) -> bool {
+        matches!(
+            id.trim_start_matches("minecraft:"),
+            "comparator" | "furnace" | "barrel" | "hopper" | "sign"
+        )
+    }
+
     pub fn from_nbt(id: &str, nbt: &HashMap<String, nbt::Value>) -> Option<BlockEntity> {
         use nbt::Value;
         match id.trim_start_matches("minecraft:") {
             "comparator" => Some(BlockEntity::Comparator {
-                output_strength: *nbt_unwrap_val!(&nbt["OutputSignal"], Value::Int) as u8,
+                // Like vanilla, a missing signal reads as 0
+                output_strength: nbt_get_int(nbt, "OutputSignal").unwrap_or(0).clamp(0, 15) as u8,
             }),
             "furnace" => BlockEntity::load_container(
-                nbt_unwrap_val!(&nbt["Items"], Value::List),
+                nbt_unwrap_val!(nbt.get("Items")?, Value::List),
                 ContainerType::Furnace,
             ),
             "barrel" => BlockEntity::load_container(
-                nbt_unwrap_val!(&nbt["Items"], Value::List),
+                nbt_unwrap_val!(nbt.get("Items")?, Value::List),
                 ContainerType::Barrel,
             ),
             "hopper" => BlockEntity::load_container(
-                nbt_unwrap_val!(&nbt["Items"], Value::List),
+                nbt_unwrap_val!(nbt.get("Items")?, Value::List),
                 ContainerType::Hopper,
             ),
             "sign" => {
