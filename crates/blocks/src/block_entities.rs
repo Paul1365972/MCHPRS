@@ -152,6 +152,13 @@ impl BlockEntity {
         })
     }
 
+    pub fn is_supported(id: &str) -> bool {
+        matches!(
+            id.trim_start_matches("minecraft:"),
+            "comparator" | "furnace" | "barrel" | "hopper" | "sign"
+        )
+    }
+
     pub fn from_nbt(id: &str, nbt: &HashMap<String, nbt::Value>) -> Option<BlockEntity> {
         use nbt::Value;
         match id.trim_start_matches("minecraft:") {
