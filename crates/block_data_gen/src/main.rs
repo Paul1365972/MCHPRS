@@ -66,6 +66,7 @@ struct Prop {
     u8_offset: u8,
     default: String,
     num_values: usize,
+    values: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -159,6 +160,7 @@ fn process_block(
                     ty: prop_type.clone(),
                     default: default_props[prop_name].clone(),
                     num_values,
+                    values: prop_values.clone(),
                     u8_offset: if prop_values[0] == "1" { 1 } else { 0 },
                 });
             }
@@ -368,6 +370,25 @@ fn generate_set_props(blocks: &[ProcessedBlock]) -> TokenStream {
         pub fn set_properties(&mut self, props: HashMap<&str, &str>) {
             match self {
                 #( #match_arms )*
+            }
+        }
+    }
+}
+
+fn generate_property_values(blocks: &[ProcessedBlock]) -> TokenStream {
+    let match_arms = blocks.iter().flat_map(|block| {
+        block.props.iter().map(move |prop| {
+            let pat = block.match_ignore();
+            let name = &prop.name;
+            let values = &prop.values;
+            quote! { (#pat, #name) => Some(&[#(#values),*]), }
+        })
+    });
+    quote! {
+        pub fn property_values(&self, name: &str) -> Option<&'static [&'static str]> {
+            match (self, name) {
+                #(#match_arms)*
+                _ => None,
             }
         }
     }
@@ -809,6 +830,7 @@ fn generate_module(
         Some(|block| block.attrs.maybe_transparent),
     );
     let set_props = generate_set_props(blocks);
+    let property_values = generate_property_values(blocks);
     let gen_props = generate_gen_props(blocks);
     let rotate = generate_rotate(blocks);
     let flip = generate_flip(blocks);
@@ -850,6 +872,7 @@ fn generate_module(
             #is_cube
             #is_transparent
             #set_props
+            #property_values
             #gen_props
             #rotate
             #flip
