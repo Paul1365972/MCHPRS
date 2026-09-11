@@ -281,7 +281,6 @@ impl World for PlotWorld {
 impl Plot {
     fn tickn(&mut self, ticks: u64) {
         if self.redpiler.is_active() {
-            self.timings.tickn(ticks);
             self.redpiler.tickn(ticks);
             return;
         }
@@ -292,7 +291,6 @@ impl Plot {
     }
 
     fn tick(&mut self) {
-        self.timings.tick();
         if self.redpiler.is_active() {
             self.redpiler.tick();
             return;
@@ -684,10 +682,11 @@ impl Plot {
     /// call this function so our timings monitor doesn't think we're running
     /// behind.
     fn reset_timings(&mut self) {
+        let now = Instant::now();
         self.lag_time = Duration::ZERO;
-        self.last_update_time = Instant::now();
+        self.last_update_time = now;
         self.last_nspt = None;
-        self.timings.reset_timings();
+        self.timings.reset(now);
     }
 
     fn publish_world(&mut self) {
@@ -1006,7 +1005,6 @@ impl Plot {
 
         // Only tick if there are players in the plot
         if !self.players.is_empty() {
-            self.timings.set_ticking(true);
             let now = Instant::now();
             self.last_player_time = now;
 
@@ -1043,8 +1041,8 @@ impl Plot {
             };
 
             self.last_update_time = now;
+            let mut ticks_completed = batch_size;
             if batch_size != 0 {
-                let mut ticks_completed = batch_size;
                 if self.redpiler.is_active() {
                     self.tickn(batch_size as u64);
                     self.redpiler.flush(&mut self.world);
@@ -1060,6 +1058,9 @@ impl Plot {
                 self.last_nspt = Some(self.last_update_time.elapsed() / ticks_completed);
             }
 
+            self.timings
+                .record(Instant::now(), u64::from(ticks_completed), self.tps);
+
             if self.auto_redpiler
                 && !self.redpiler.is_active()
                 && (self.tps == Tps::Unlimited || self.timings.is_running_behind())
@@ -1074,11 +1075,10 @@ impl Plot {
                 self.world.flush_block_changes();
             }
         } else {
-            self.timings.set_ticking(false);
+            self.reset_timings();
             // Unload plot after 600 seconds unless the plot should be always loaded
             if self.last_player_time.elapsed().as_secs() > 600 && !self.always_running {
                 self.running = false;
-                self.timings.stop();
             }
         }
 
@@ -1175,7 +1175,7 @@ impl Plot {
             tps,
             always_running,
             redpiler: Default::default(),
-            timings: TimingsMonitor::new(tps),
+            timings: TimingsMonitor::new(Instant::now()),
             owner: database::get_plot_owner(x, z).map(|s| s.parse::<HyphenatedUUID>().unwrap().0),
             async_rt: Plot::create_async_rt(),
             scoreboard: Default::default(),

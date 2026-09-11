@@ -278,7 +278,7 @@ impl Plot {
             },
             "rtps" => {
                 if args.is_empty() {
-                    let report = self.timings.generate_report();
+                    let report = self.timings.generate_report(Instant::now());
                     if let Some(report) = report {
                         self.players[player].send_chat_message(&TextComponent::from_legacy_text(
                             &format!(
@@ -313,7 +313,6 @@ impl Plot {
                 };
 
                 self.sleep_time = sleep_time_for_tps(tps);
-                self.timings.set_tps(tps);
                 self.tps = tps;
                 self.reset_timings();
                 self.players[player].send_system_message("The rtps was successfully set.");
@@ -333,6 +332,7 @@ impl Plot {
                 let start_time = Instant::now();
                 self.tickn(ticks as u64);
                 self.publish_world();
+                self.reset_timings();
                 self.players[player].send_system_message(&format!(
                     "Plot has been advanced by {} ticks ({:?})",
                     ticks,
