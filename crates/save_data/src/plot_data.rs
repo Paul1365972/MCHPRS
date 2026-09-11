@@ -72,12 +72,13 @@ pub struct ChunkSectionData {
 }
 
 impl ChunkSectionData {
-    fn new(section: &ChunkSection) -> Self {
+    fn new(section: &mut ChunkSection) -> Self {
+        let snapshot = section.snapshot();
         Self {
-            data: section.data().to_vec(),
-            palette: section.palette().to_vec(),
-            bits_per_block: section.bits_per_block(),
-            block_count: section.block_count(),
+            data: snapshot.block_states.data().to_vec(),
+            palette: snapshot.block_states.palette().to_vec(),
+            bits_per_block: snapshot.block_states.bits_per_entry(),
+            block_count: snapshot.block_count,
         }
     }
 
@@ -98,13 +99,11 @@ pub struct ChunkData {
 }
 
 impl ChunkData {
-    /// Takes a mutable Chunk to flush it first
     pub fn new(chunk: &mut Chunk) -> Self {
-        chunk.flush();
         Self {
             sections: chunk
                 .sections
-                .iter()
+                .iter_mut()
                 .map(|section| {
                     if section.block_count() > 0 {
                         Some(ChunkSectionData::new(section))

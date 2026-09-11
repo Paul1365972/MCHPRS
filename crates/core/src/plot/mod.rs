@@ -257,14 +257,11 @@ impl World for PlotWorld {
     }
 
     fn flush_block_changes(&mut self) {
-        for packet in self.chunks.iter_mut().flat_map(|c| c.multi_blocks()) {
+        for packet in self.chunks.iter_mut().flat_map(Chunk::drain_block_updates) {
             let encoded = packet.encode();
             for player in &self.packet_senders {
                 player.send_packet(&encoded);
             }
-        }
-        for chunk in &mut self.chunks {
-            chunk.reset_multi_blocks();
         }
         for (_, block_entity) in self.pending_block_entities.drain() {
             let encoded = block_entity.encode();
