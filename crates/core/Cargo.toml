@@ -13,6 +13,7 @@ include.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+mchprs_syntax = { path = "../syntax" }
 mchprs_proc_macros = { path = "../proc_macros" }
 mchprs_save_data = { path = "../save_data" }
 mchprs_blocks = { path = "../blocks", features = ["nbt"] }
@@ -44,3 +45,4 @@ rustc-hash = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 regex = { workspace = true }
+thiserror = { workspace = true }

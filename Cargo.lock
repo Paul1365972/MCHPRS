@@ -1236,6 +1236,7 @@ dependencies = [
  "mchprs_redstone",
  "mchprs_save_data",
  "mchprs_schematic",
+ "mchprs_syntax",
  "mchprs_world",
  "md5",
  "rand",
@@ -1246,6 +1247,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "thiserror 2.0.18",
  "tokio",
  "toml",
  "toml_edit",
@@ -1333,6 +1335,13 @@ dependencies = [
  "rustc-hash",
  "serde",
  "tracing",
+]
+
+[[package]]
+name = "mchprs_syntax"
+version = "0.5.2-dev"
+dependencies = [
+ "thiserror 2.0.18",
 ]
 
 [[package]]

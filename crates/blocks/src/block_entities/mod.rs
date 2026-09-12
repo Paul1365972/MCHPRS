@@ -30,26 +30,41 @@ impl FromStr for ContainerType {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "barrel" => ContainerType::Barrel,
-            "furnace" => ContainerType::Furnace,
-            "hopper" => ContainerType::Hopper,
-            _ => return Err(()),
-        })
+        let named = |ty: &ContainerType| ty.name() == s;
+        ContainerType::ALL.into_iter().find(named).ok_or(())
     }
 }
 
 impl std::fmt::Display for ContainerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            ContainerType::Furnace => "minecraft:furnace",
-            ContainerType::Barrel => "minecraft:barrel",
-            ContainerType::Hopper => "minecraft:hopper",
-        })
+        write!(f, "minecraft:{}", self.name())
     }
 }
 
 impl ContainerType {
+    pub const ALL: [ContainerType; 3] = [
+        ContainerType::Barrel,
+        ContainerType::Furnace,
+        ContainerType::Hopper,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ContainerType::Barrel => "barrel",
+            ContainerType::Furnace => "furnace",
+            ContainerType::Hopper => "hopper",
+        }
+    }
+
+    pub fn items_needed_for_signal_strength(self, signal_strength: u8) -> usize {
+        let slots = self.num_slots() as usize;
+        match signal_strength {
+            0 => 0,
+            15 => slots * 64,
+            _ => ((32 * slots * signal_strength as usize) as f32 / 7.0 - 1.0).ceil() as usize,
+        }
+    }
+
     pub fn num_slots(self) -> u8 {
         match self {
             ContainerType::Furnace => 3,
