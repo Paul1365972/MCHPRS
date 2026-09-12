@@ -1,9 +1,12 @@
+pub mod mask;
 pub mod pattern;
+mod suggestions;
 
 use crate::{player::PlayerPos, plot::PlotWorld};
 use mchprs_blocks::{blocks::Block, BlockPos};
 use mchprs_schematic::WorldEditClipboard;
 use mchprs_world::{for_each_block_mut_optimized, World};
+use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
 pub struct WorldEditUndo {
@@ -11,6 +14,94 @@ pub struct WorldEditUndo {
     pub pos: BlockPos,
     pub plot_x: i32,
     pub plot_z: i32,
+}
+
+fn split_top_level_commas(input: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+    for (i, ch) in input.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&input[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&input[start..]);
+    parts
+}
+
+fn parse_raw_block(input: &str) -> Result<Block, String> {
+    let id = input
+        .strip_prefix('=')
+        .unwrap_or(input)
+        .parse::<u32>()
+        .map_err(|_| format!("Invalid block state ID: {input}"))?;
+    let block = Block::from_id(id);
+    if block.get_id() != id {
+        return Err(format!("Unsupported block state ID: {id}"));
+    }
+    Ok(block)
+}
+
+pub(super) fn parse_block_states(state_str: &str) -> Result<FxHashMap<String, String>, String> {
+    let mut states = FxHashMap::default();
+    for pair in state_str.split(',') {
+        let (key, value) = pair
+            .split_once('=')
+            .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+            .ok_or_else(|| format!("Invalid block state: {pair}"))?;
+        if states.insert(key.to_string(), value.to_string()).is_some() {
+            return Err(format!("Duplicate block property: {key}"));
+        }
+    }
+    Ok(states)
+}
+
+fn parse_block(input: &str) -> Result<(Block, FxHashMap<String, String>), String> {
+    let (name, states) = match input.split_once('[') {
+        Some((name, rest)) => {
+            let states_str = rest
+                .strip_suffix(']')
+                .ok_or_else(|| "Unclosed bracket in block states".to_owned())?;
+            (name, parse_block_states(states_str)?)
+        }
+        None => (input, FxHashMap::default()),
+    };
+    if name.is_empty() {
+        return Err("Missing block name".to_owned());
+    }
+    let name = if name.contains(':') {
+        name.to_string()
+    } else {
+        format!("minecraft:{}", name)
+    };
+    let block = Block::from_name(&name).ok_or_else(|| format!("Unknown block: {name}"))?;
+    validate_states(Some(block), &states)?;
+    Ok((block, states))
+}
+
+fn validate_states(block: Option<Block>, states: &FxHashMap<String, String>) -> Result<(), String> {
+    for (name, value) in states {
+        let values = match block {
+            Some(block) => block.property_values(name).ok_or_else(|| {
+                format!("Block {} does not have property {name}", block.get_name())
+            })?,
+            None => Block::known_properties()
+                .iter()
+                .find(|property| property.name == name)
+                .map(|property| property.values)
+                .ok_or_else(|| format!("Unknown block property: {name}"))?,
+        };
+        if !values.contains(&value.as_str()) {
+            return Err(format!("Property {name} does not accept {value}"));
+        }
+    }
+    Ok(())
 }
 
 pub fn ray_trace_block(

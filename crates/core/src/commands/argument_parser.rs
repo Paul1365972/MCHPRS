@@ -1,5 +1,5 @@
 use crate::commands::value::*;
-use crate::worldedit::pattern::WorldEditPattern;
+use crate::worldedit::{mask::WorldEditMask, pattern::WorldEditPattern};
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_commands::reader::{Reader, SyntaxError};
 use std::str::FromStr;
@@ -172,6 +172,31 @@ pub fn parse_pattern(reader: &mut Reader<'_>) -> Result<Value, SyntaxError> {
     WorldEditPattern::from_str(&text)
         .map(Value::Pattern)
         .map_err(|error| reader.error(error.to_string()))
+}
+
+pub fn parse_mask(reader: &mut Reader<'_>) -> Result<Value, SyntaxError> {
+    let text = reader.custom_string()?;
+    WorldEditMask::from_str(&text)
+        .map(Value::Mask)
+        .map_err(|error| reader.error(error.to_string()))
+}
+
+pub fn parse_replacement(reader: &mut Reader<'_>) -> Result<Value, SyntaxError> {
+    let text = reader.custom_string()?;
+    let pattern = WorldEditPattern::from_str(&text);
+    let mask = WorldEditMask::from_str(&text);
+    if let (Err(pattern), Err(mask)) = (&pattern, &mask) {
+        let message = if text.starts_with(['!', '<', '>', '%', '#']) {
+            mask.to_string()
+        } else {
+            pattern.to_string()
+        };
+        return Err(reader.error(message));
+    }
+    Ok(Value::Replacement(ReplacementOperand {
+        pattern: pattern.ok(),
+        mask: mask.ok(),
+    }))
 }
 
 pub fn parse_direction(reader: &mut Reader<'_>) -> Result<Value, SyntaxError> {

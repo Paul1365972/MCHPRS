@@ -3,12 +3,14 @@ use crate::{
         argument::ArgumentType,
         context::ExecutionContext,
         define::Command,
-        error::{CommandResult, RuntimeError},
+        error::{CommandError, CommandResult, RuntimeError},
         registry::CommandRegistry,
-        value::Direction,
+        value::{Direction, ReplacementOperand},
     },
     utils,
-    worldedit::{clear_area, pattern::WorldEditPattern, region_positions, update},
+    worldedit::{
+        clear_area, mask::WorldEditMask, pattern::WorldEditPattern, region_positions, update,
+    },
 };
 use mchprs_blocks::{
     block_entities::{BlockEntity, ContainerType, InventoryEntry},
@@ -24,7 +26,7 @@ use std::time::Instant;
 pub(super) fn register(registry: &mut CommandRegistry) {
     fn exec_set(
         ctx: &mut ExecutionContext<'_>,
-        from: Option<&WorldEditPattern>,
+        mask: Option<&WorldEditMask>,
         pattern: &WorldEditPattern,
     ) -> CommandResult<()> {
         let (first_pos, second_pos) = ctx.get_selection()?;
@@ -37,8 +39,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
         let world = ctx.world_mut();
         for pos in region_positions(first_pos, second_pos) {
-            if from.is_none_or(|from| from.matches(world.get_block(pos)))
-                && world.set_block_raw(pos, pattern.pick().get_id())
+            if mask.is_none_or(|mask| mask.matches(world, pos))
+                && world.set_block_raw(pos, pattern.pick(world, pos).get_id())
             {
                 blocks_updated += 1;
             }
@@ -66,12 +68,23 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         Command::new("/replace")
             .permission("worldedit.region.replace")
             .require_plot_ownership()
-            .arg("from", ArgumentType::Pattern)
-            .arg("to", ArgumentType::Pattern)
+            .arg("maskOrPattern", ArgumentType::Replacement)
+            .optional("pattern", ArgumentType::Pattern)
             .executes(|ctx| {
-                let from = ctx.arg("from")?;
-                let to = ctx.arg("to")?;
-                exec_set(ctx, Some(from), to)
+                let first: &ReplacementOperand = ctx.arg("maskOrPattern")?;
+                if let Some(pattern) = ctx.arg_opt("pattern")? {
+                    let mask = first
+                        .mask
+                        .as_ref()
+                        .ok_or_else(|| CommandError::runtime("The first operand must be a mask"))?;
+                    return exec_set(ctx, Some(mask), pattern);
+                }
+
+                let pattern = first
+                    .pattern
+                    .as_ref()
+                    .ok_or_else(|| CommandError::runtime("Expected a pattern after the mask"))?;
+                exec_set(ctx, Some(&WorldEditMask::existing()), pattern)
             }),
     );
 
@@ -79,15 +92,15 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         Command::new("/count")
             .permission("worldedit.analysis.count")
             .require_plot_ownership()
-            .arg("mask", ArgumentType::Pattern)
+            .arg("mask", ArgumentType::Mask)
             .executes(|ctx| {
-                let mask: &WorldEditPattern = ctx.arg("mask")?;
+                let mask: &WorldEditMask = ctx.arg("mask")?;
                 let (first_pos, second_pos) = ctx.get_selection()?;
 
                 let start_time = Instant::now();
                 let world = ctx.world();
                 let blocks_counted = region_positions(first_pos, second_pos)
-                    .filter(|&pos| mask.matches(world.get_block(pos)))
+                    .filter(|&pos| mask.matches(world, pos))
                     .count();
 
                 ctx.worldedit_message(&format!(

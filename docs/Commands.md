@@ -84,7 +84,7 @@ Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/)
 | Command | Alias | Description |
 | --- | --- | --- |
 | `//set <pattern>` | None | Fill the selection with the specified block pattern. |
-| `//replace <from> <to>` | None | Replace blocks matching the `from` mask with the `to` pattern. |
+| `//replace [<mask>] <pattern>` | None | Replace blocks matching the mask with the given pattern. Without a mask, replace non-air blocks in the selection. |
 | `//count <mask>` | None | Count blocks in the selection that match the mask. |
 | `//stack [<count>] [<direction>]` | `//s` | Create adjacent copies of the selection. Defaults to 1 copy in the direction you are facing, including air. Flags: `-a`/`--ignore-air` (skip air). |
 | `//move [<count>] [<direction>]` | None | Move the selected blocks, leaving air behind. Defaults to 1 block in the direction you are facing; parts moved outside the plot are clipped. Flags: `-a`/`--ignore-air` (skip air when placing blocks), `-s`/`--shift-selection` (move the selection with the blocks). |
@@ -177,9 +177,18 @@ Servers can add their own aliases in [Config.toml](../README.md#command-aliases)
 
 | Type | Values | Description |
 | --- | --- | --- |
-| `<pattern>` | `stone`, `minecraft:glass`, `stone,20%glass`, `=5922` | Blocks to place in their default state. Commas separate random choices; prefixes such as `20%` set weights (default `100%`). `=` followed by a number selects an exact block state ID. |
-| `<mask>` | `stone,glass`, `=5922` | Blocks to match, written like a pattern. Each block name matches only its default state. |
+| `<pattern>` | `stone`, `minecraft:glass`, `repeater[delay=3]`, `stone,20%glass`, `^[powered=true]` | Blocks to place, optionally with states. Commas separate random choices; prefixes such as `20%` set relative weights (default `100%`). `^` preserves compatible existing states unless overridden. |
+| `<mask>` | `stone,glass`, `repeater[delay=2,powered=true]`, `!stone`, `#existing`, `#solid`, `#surface`, `>stone`, `<stone`, `%50`, `^[powered=true]` | Select blocks by type, state, or condition. Block lists match any state unless states are given. `!` negates, `>` checks the block below, `<` checks the block above, `%` matches randomly, `^[...]` matches block states. Quote masks separated by spaces to require all of them to match, e.g. `"stone #solid"`. |
 | `<type>` | `barrel`, `furnace`, `hopper` | Container type to use. |
 | `<angle>` | `90`, `180`, `270`, `-90`, `-180` | Rotation in degrees, in 90° steps. |
 | `<direction>` | `me`, `left`/`l`, `right`/`r`, `up`/`u`, `down`/`d`, `north`/`n`, `south`/`s`, `east`/`e`, `west`/`w` | A compass direction or a direction relative to where you are looking. Defaults to `me`, the direction you are facing. |
 | `<direction>` of `//rstack` | All `<direction>` values plus diagonals: `lu`, `ld`, `ru`, `rd`, `nu`, `nd`, `su`, `sd`, `eu`, `ed`, `wu`, `wd` | Combine directions to stack diagonally, e.g. `leftup`/`lu` for left and up. |
+
+State patterns such as `^[powered=true]` change only compatible blocks, leaving other blocks unchanged.
+The mask `^[delay=2]` matches blocks with delay 2 and blocks without a delay property.
+Use `^=[delay=2]` to require the property to exist and equal 2.
+`#surface`/`#exposed` matches non-air blocks with an air neighbor.
+
+Patterns and masks can use single or double quotes to include spaces.
+Inside quotes, prefix the matching quote or a backslash with `\` to escape it.
+Exact block state IDs, such as `=5922`, also work in block lists.
