@@ -62,7 +62,9 @@ Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/)
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `/up [<distance>]` | `/u` | Move up by the given number of blocks (default 1), placing glass beneath you if needed. |
+| `/jumpto` | `/j` | Teleport onto the block you are looking at. |
+| `/unstuck` | `/!` | Escape from blocks by moving upward to a space with room to stand. |
+| `/up [<distance>]` | `/u` | Move up by the given number of blocks (default 1), placing glass beneath you if needed. Flags: `-f`/`--force-flight` (enable flight instead), `-g`/`--force-glass` (also place glass when forcing flight). |
 | `/ascend [<levels>]` | `/asc` | Teleport to the floor above, or move up several floors. |
 | `/descend [<levels>]` | `/desc` | Teleport to the floor below, or move down several floors. |
 
@@ -70,13 +72,14 @@ Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/)
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `//pos1` | `//1` | Set the first selection corner to your current position. |
-| `//pos2` | `//2` | Set the second selection corner to your current position. |
+| `//pos1 [<coordinates>]` | `//1` | Set the first selection corner to the given coordinates, or your current position. |
+| `//pos2 [<coordinates>]` | `//2` | Set the second selection corner to the given coordinates, or your current position. |
 | `//hpos1` | `//h1` | Set the first selection corner to the block you are looking at. |
 | `//hpos2` | `//h2` | Set the second selection corner to the block you are looking at. |
-| `//sel` | None | Clear both selection corners. |
-| `//expand [<amount>] [<direction>]` | `//e` | Extend the selection in the given direction. Defaults to 1 block in the direction you are facing. |
-| `//contract [<amount>] [<direction>]` | None | Shrink the selection toward the given direction. Defaults to 1 block in the direction you are facing. |
+| `//pos [<pos1> [<pos2>]]` | None | Set one or both selection corners. Without arguments, set the first corner to your current position. |
+| `//sel` | `/;`, `//desel`, `//deselect` | Clear both selection corners. |
+| `//expand (vert \| [<amount>] [<reverseAmount>] [<direction>])` | `//e` | Extend the selection in the given direction; `reverseAmount` also extends the opposite side. Defaults to 1 block in the direction you are facing. `vert` selects the full world height. |
+| `//contract [<amount>] [<reverseAmount>] [<direction>]` | None | Shrink the selection toward the given direction; `reverseAmount` also shrinks it in the opposite direction. Defaults to 1 block in the direction you are facing. |
 | `//shift [<amount>] [<direction>]` | None | Move the selection without moving its blocks. Defaults to 1 block in the direction you are facing. |
 
 ### Region Operations
@@ -84,11 +87,12 @@ Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/)
 | Command | Alias | Description |
 | --- | --- | --- |
 | `//set <pattern>` | None | Fill the selection with the specified block pattern. |
-| `//replace [<mask>] <pattern>` | None | Replace blocks matching the mask with the given pattern. Without a mask, replace non-air blocks in the selection. |
+| `//replace [<mask>] <pattern>` | `//re`, `//rep` | Replace blocks matching the mask with the given pattern. Without a mask, replace non-air blocks in the selection. |
 | `//count <mask>` | None | Count blocks in the selection that match the mask. |
-| `//stack [<count>] [<direction>]` | `//s` | Create adjacent copies of the selection. Defaults to 1 copy in the direction you are facing, including air. Flags: `-a`/`--ignore-air` (skip air). |
+| `//distr [-c]` | None | Show block counts and percentages in the selection. Flags: `-c`/`--clipboard` (use the clipboard instead). |
+| `//stack [<count>] [<direction>]` | `//s` | Create adjacent copies of the selection. Defaults to 1 copy in the direction you are facing, including air. Flags: `-a`/`--ignore-air` (skip air); `-s`/`--shift-selection` (select the last copy). |
 | `//move [<count>] [<direction>]` | None | Move the selected blocks, leaving air behind. Defaults to 1 block in the direction you are facing; parts moved outside the plot are clipped. Flags: `-a`/`--ignore-air` (skip air when placing blocks), `-s`/`--shift-selection` (move the selection with the blocks). |
-| `//rstack [<count>] [<spacing>] [<direction>]` | `//rs` | Repeat the selection at a fixed block spacing, allowing copies to overlap. Supports diagonal directions. Defaults to 1 copy, 2 blocks in the direction you are looking, skipping air. Flags: `-a`/`--include-air` (include air), `-e`/`--expand-selection` (include all copies in the selection). |
+| `//rstack [<count>] [<direction>] [<offset>]` | `//rs` | Repeat the selection at a fixed block offset, allowing copies to overlap. Supports diagonal directions. Defaults to 1 copy, 2 blocks in the direction you are looking, skipping air. Flags: `-w`/`--with-air` (include air); `-s`/`--shift-selection` (select the last copy) or `-e`/`--expand-selection` (include all copies in the selection). |
 
 ### Clipboard
 
@@ -96,7 +100,7 @@ Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/)
 | --- | --- | --- |
 | `//copy` | `//c` | Copy selected blocks to your clipboard. |
 | `//cut` | `//x` | Copy selected blocks to your clipboard, then replace them with air. |
-| `//paste` | `//v` | Paste the clipboard relative to your current position. Flags: `-a`/`--ignore-air` (skip air), `-u`/`--update` (update pasted blocks), `-s`/`--select-region` (select the pasted region). |
+| `//paste` | `//v` | Paste the clipboard relative to your current position. Flags: `-a`/`--ignore-air` (skip air), `-u`/`--update` (update pasted blocks), `-s`/`--select-region` (select the pasted region), `-n`/`--no-paste` (select the destination without pasting). |
 | `//flip [<direction>]` | `//f` | Mirror the clipboard in the given direction, or the direction you are facing. |
 | `//rotate <angle>` | `//r` | Rotate the clipboard around the vertical axis in 90° steps. |
 
@@ -104,8 +108,8 @@ Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/)
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `//undo` | `/undo` | Undo the last WorldEdit operation. |
-| `//redo` | `/redo` | Redo the last undone WorldEdit operation. |
+| `//undo [<times>]` | `/undo` | Undo the last WorldEdit operation, or several operations. |
+| `//redo [<times>]` | `/redo` | Redo the last undone WorldEdit operation, or several operations. |
 
 ### Schematics
 
@@ -113,8 +117,9 @@ Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/)
 
 | Command | Alias | Description |
 | --- | --- | --- |
+| `//schematic list` | `//schem list`, `//schem all`, `//schem ls` | List available schematic files. |
 | `//schematic load <filename>` | `//load` | Load a Sponge v2 or v3 schematic into your clipboard. |
-| `//schematic save <filename>` | `//save` | Save your clipboard as a Sponge v2 schematic. |
+| `//schematic save <filename>` | `//save` | Save your clipboard as a Sponge v2 schematic. Flags: `-f`/`--force-overwrite` (overwrite an existing file). |
 
 Files are stored in `./schems/`, or `./schems/<uuid>/` when `schemati` is enabled.
 File names can use letters, digits, `_`, `-`, `.` and `+`, and end in `.schem` or `.schematic`.
@@ -125,7 +130,7 @@ File names can use letters, digits, `_`, `-`, `.` and `+`, and end in `.schem` o
 | --- | --- | --- |
 | `//wand` | None | Give yourself a wooden axe for selecting corners with left and right clicks. |
 | `//update` | None | Recalculate redstone in the selection. Flags: `-p`/`--plot` (update the entire plot). |
-| `//replacecontainer <from> <to>` | `//rc` | Replace barrels, furnaces, or hoppers of one type in the selection with another of these types, preserving comparator signal strength. |
+| `//replacecontainer [<from>] <to>` | `//rc` | Replace barrels, furnaces, or hoppers in the selection with another of these types, preserving comparator signal strength. Omit `from` to replace all three types. |
 
 ## Redpiler Commands
 

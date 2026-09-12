@@ -12,6 +12,7 @@ use crate::{
         clear_area, mask::WorldEditMask, pattern::WorldEditPattern, region_positions, update,
     },
 };
+use itertools::Itertools;
 use mchprs_blocks::{
     block_entities::{BlockEntity, ContainerType, InventoryEntry},
     blocks::{Block, HopperFacing},
@@ -21,6 +22,7 @@ use mchprs_blocks::{
 use mchprs_network::packets::clientbound::*;
 use mchprs_schematic::{create_clipboard, paste_clipboard};
 use mchprs_world::World;
+use rustc_hash::FxHashMap;
 use std::time::Instant;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
@@ -66,6 +68,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/replace")
+            .alias("/re")
+            .alias("/rep")
             .permission("worldedit.region.replace")
             .require_plot_ownership()
             .arg("maskOrPattern", ArgumentType::Replacement)
@@ -108,6 +112,48 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     blocks_counted,
                     start_time.elapsed()
                 ))
+            }),
+    );
+
+    registry.register(
+        Command::new("/distr")
+            .require_plot_ownership()
+            .flag('c', "clipboard", "Get distribution of clipboard")
+            .executes(|ctx| {
+                let start_time = Instant::now();
+                let mut block_counts = FxHashMap::default();
+
+                if ctx.flag("clipboard") {
+                    let clipboard = ctx.get_clipboard()?;
+                    let volume = clipboard.size_x * clipboard.size_y * clipboard.size_z;
+                    for i in 0..volume as usize {
+                        let block = Block::from_id(clipboard.data.get_entry(i));
+                        *block_counts.entry(block.get_name()).or_insert(0) += 1;
+                    }
+                } else {
+                    let (first_pos, second_pos) = ctx.get_selection()?;
+                    let world = ctx.world();
+                    for pos in region_positions(first_pos, second_pos) {
+                        *block_counts
+                            .entry(world.get_block(pos).get_name())
+                            .or_insert(0) += 1;
+                    }
+                }
+
+                let block_counts = block_counts
+                    .into_iter()
+                    .sorted_by_key(|(_, count)| *count)
+                    .collect_vec();
+
+                let total_blocks: u32 = block_counts.iter().map(|(_, count)| *count).sum();
+                let mut result = format!("# total blocks: {}\n", total_blocks);
+                for (name, count) in block_counts {
+                    let percentage = (count as f64 / total_blocks as f64) * 100.0;
+                    result.push_str(&format!("{:>6} ({:>5.2}%) {}\n", count, percentage, name));
+                }
+
+                result.push_str(&format!("({:?})", start_time.elapsed()));
+                ctx.worldedit_message(&result)
             }),
     );
 
@@ -191,8 +237,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .alias("/rc")
             .permission("mchprs.we.replacecontainer")
             .require_plot_ownership()
-            .arg("from", ArgumentType::ContainerType)
-            .arg("to", ArgumentType::ContainerType)
+            .arg("fromOrTo", ArgumentType::ContainerType)
+            .optional("to", ArgumentType::ContainerType)
             .executes(exec_replacecontainer),
     );
 
@@ -229,8 +275,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 }
 
 fn exec_replacecontainer(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
-    let from: ContainerType = ctx.arg("from")?;
-    let to: ContainerType = ctx.arg("to")?;
+    let first: ContainerType = ctx.arg("fromOrTo")?;
+    let (from, to) = match ctx.arg_opt("to")? {
+        Some(to) => (Some(first), to),
+        None => (None, first),
+    };
     let (first_pos, second_pos) = ctx.get_selection()?;
 
     let origin = first_pos.min(second_pos);
@@ -271,7 +320,7 @@ fn exec_replacecontainer(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
             _ => (block_ty, 0),
         };
 
-        if from != current_ty {
+        if from.is_some_and(|from| from != current_ty) {
             continue;
         }
 

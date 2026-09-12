@@ -27,6 +27,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .optional("count", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::Direction)
             .flag('a', "ignore-air", "Stack without air blocks")
+            .flag(
+                's',
+                "shift-selection",
+                "Shift the selection to the last stacked copy",
+            )
             .executes(|ctx| {
                 let direction = ctx.arg_or("direction", Direction::Me)?;
                 let direction = direction.resolve(ctx.player()?.get_facing());
@@ -49,26 +54,26 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .permission("redstonetools.rstack")
             .require_plot_ownership()
             .optional("count", ArgumentType::integer(1, 1000))
-            .optional("spacing", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::DirectionWithDiagonals)
-            .flag('a', "include-air", "Include air blocks")
+            .optional("offset", ArgumentType::integer(1, 1000))
+            .flag('w', "with-air", "Stack with air blocks")
+            .flag(
+                's',
+                "shift-selection",
+                "Shift the selection to the last stacked copy",
+            )
             .flag(
                 'e',
                 "expand-selection",
                 "Expand selection to include stacked region",
             )
             .executes(|ctx| {
-                let spacing = ctx.arg_or("spacing", 2)?;
                 let direction = ctx.arg_or("direction", DirectionWithDiagonals::Me)?;
+                let spacing = ctx.arg_or("offset", 2)?;
                 let player = ctx.player()?;
                 let direction = direction.resolve(player.get_facing(), player.pitch);
                 let selection = ctx.get_selection()?;
-                exec_stack(
-                    ctx,
-                    selection,
-                    direction * spacing,
-                    !ctx.flag("include-air"),
-                )
+                exec_stack(ctx, selection, direction * spacing, !ctx.flag("with-air"))
             }),
     );
 }
@@ -90,7 +95,13 @@ fn exec_stack(
     ignore_air: bool,
 ) -> CommandResult<()> {
     let count = ctx.arg_or("count", 1)?;
+    let shift_selection = ctx.flag("shift-selection");
     let expand_selection = ctx.flag("expand-selection");
+    if shift_selection && expand_selection {
+        return Err(CommandError::runtime(
+            "Use either --shift-selection or --expand-selection, not both.",
+        ));
+    }
 
     let (first_pos, second_pos) = selection;
     check_stack_volume(first_pos, second_pos, count)?;
@@ -112,7 +123,9 @@ fn exec_stack(
     }
 
     let offset = offset * count;
-    if expand_selection {
+    if shift_selection {
+        update_selection(ctx, selection, (first_pos + offset, second_pos + offset))?;
+    } else if expand_selection {
         let expanded = calculate_expanded_selection(first_pos, second_pos, offset, false);
         update_selection(ctx, selection, expanded)?;
     }
