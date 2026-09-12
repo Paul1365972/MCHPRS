@@ -9,6 +9,7 @@ use crate::utils;
 use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
 use crate::worldedit::{clear_area, region_positions, update};
+use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
 use mchprs_blocks::blocks::{Block, HopperFacing};
 use mchprs_blocks::items::{Item, ItemStack};
@@ -16,6 +17,7 @@ use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_schematic::{create_clipboard, paste_clipboard};
 use mchprs_world::World;
+use rustc_hash::FxHashMap;
 use std::time::Instant;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
@@ -30,6 +32,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/replace")
+            .alias("/re")
+            .alias("/rep")
             .optional("mask", ArgumentType::Mask)
             .arg("pattern", ArgumentType::Pattern)
             .executes(|ctx| {
@@ -58,6 +62,47 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     blocks_counted,
                     start_time.elapsed()
                 ))
+            }),
+    );
+
+    registry.register(
+        Command::new("/distr")
+            .flag('c', "clipboard", "Get distribution of clipboard")
+            .executes(|ctx| {
+                let start_time = Instant::now();
+                let mut block_counts = FxHashMap::default();
+
+                if ctx.flag("clipboard") {
+                    let clipboard = ctx.clipboard()?;
+                    let volume = clipboard.size_x * clipboard.size_y * clipboard.size_z;
+                    for i in 0..volume as usize {
+                        let block = Block::from_id(clipboard.data.get_entry(i));
+                        *block_counts.entry(block.get_name()).or_insert(0) += 1;
+                    }
+                } else {
+                    let (first_pos, second_pos) = ctx.selection()?;
+                    let world = ctx.world();
+                    for pos in region_positions(first_pos, second_pos) {
+                        *block_counts
+                            .entry(world.get_block(pos).get_name())
+                            .or_insert(0) += 1;
+                    }
+                }
+
+                let block_counts = block_counts
+                    .into_iter()
+                    .sorted_by_key(|(_, count)| *count)
+                    .collect_vec();
+
+                let total_blocks: u32 = block_counts.iter().map(|(_, count)| *count).sum();
+                let mut result = format!("# total blocks: {total_blocks}\n");
+                for (name, count) in block_counts {
+                    let percentage = (count as f64 / total_blocks as f64) * 100.0;
+                    result.push_str(&format!("{count:>6} ({percentage:>5.2}%) {name}\n"));
+                }
+
+                result.push_str(&format!("({:?})", start_time.elapsed()));
+                ctx.worldedit_message(&result)
             }),
     );
 
@@ -137,7 +182,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/replacecontainer")
             .alias("/rc")
-            .arg("from", ArgumentType::ContainerType)
+            .optional("from", ArgumentType::ContainerType)
             .arg("to", ArgumentType::ContainerType)
             .executes(exec_replace_container),
     );
@@ -196,7 +241,7 @@ fn exec_set(
 }
 
 fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
-    let from: ContainerType = ctx.arg("from")?;
+    let from: Option<ContainerType> = ctx.arg_opt("from")?;
     let to: ContainerType = ctx.arg("to")?;
     let (first_pos, second_pos) = ctx.selection()?;
 
@@ -238,7 +283,7 @@ fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
             _ => (block_ty, 0),
         };
 
-        if from != current_ty {
+        if from.is_some_and(|from| from != current_ty) {
             continue;
         }
 

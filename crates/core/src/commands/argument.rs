@@ -1,5 +1,5 @@
 use super::suggestions::SuggestionSource;
-use super::value::Value;
+use super::value::{BlockCoordinates, Value};
 use super::{argument_parser, argument_suggestions};
 use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
@@ -28,6 +28,7 @@ pub(super) enum ArgumentType {
     Pattern,
     Mask,
     DirectionWithDiagonals,
+    BlockPos,
     SchematicFile,
     GreedyString,
     Flags { flags: Vec<Flag> },
@@ -49,6 +50,7 @@ impl ArgumentType {
             Self::Word => ClientArgument::Client(Parser::String(0)),
             Self::GreedyString => ClientArgument::Client(Parser::String(2)),
             Self::Vec3 => ClientArgument::Client(Parser::Vec3),
+            Self::BlockPos => ClientArgument::Client(Parser::BlockPos),
             Self::Flags { .. } => ClientArgument::AskServer(Parser::String(2)),
             Self::Direction
             | Self::DirectionWithDiagonals
@@ -90,7 +92,7 @@ impl ArgumentType {
             Self::Mask => {
                 argument_suggestions::suggest_quoted(self, builder, WorldEditMask::suggest)
             }
-            Self::Vec3 => {
+            Self::Vec3 | Self::BlockPos => {
                 argument_suggestions::suggest_coordinates(self, &["~ ~ ~", "^ ^ ^"], builder)
             }
             Self::PlotPos => argument_suggestions::suggest_coordinates(self, &["~ ~"], builder),
@@ -115,12 +117,14 @@ impl Argument for ArgumentType {
             Self::Integer { min, max } => reader.number(*min, *max).map(Value::Integer),
             Self::Float { min, max } => reader.number(*min, *max).map(Value::Float),
             Self::Direction => argument_parser::parse_direction(reader),
-            Self::Vec3 => argument_parser::parse_vec3(reader).map(Value::Position),
+            Self::Vec3 => argument_parser::parse_vec3(reader, true).map(Value::Position),
             Self::PlotPos => argument_parser::parse_plot_pos(reader),
             Self::ContainerType => argument_parser::parse_container(reader),
             Self::Pattern => argument_parser::parse_pattern(reader),
             Self::Mask => argument_parser::parse_mask(reader),
             Self::DirectionWithDiagonals => argument_parser::parse_direction_with_diagonals(reader),
+            Self::BlockPos => argument_parser::parse_vec3(reader, false)
+                .map(|position| Value::BlockPos(BlockCoordinates(position))),
             Self::GreedyString => Ok(Value::String(reader.greedy())),
             Self::Flags { flags } => flag::parse(reader, flags).map(Value::Flags),
         }

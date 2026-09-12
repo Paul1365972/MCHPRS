@@ -51,6 +51,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .flag('a', "ignore-air", "Paste without air blocks")
             .flag('u', "update", "Update blocks after pasting")
             .flag('s', "select-region", "Select the pasted region")
+            .flag('n', "no-paste", "No paste, select only")
             .executes(exec_paste),
     );
     registry.add_custom_alias("/va", "/paste -a");
@@ -163,6 +164,7 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let ignore_air = ctx.flag("ignore-air");
     let should_update = ctx.flag("update");
     let select_region = ctx.flag("select-region");
+    let no_paste = ctx.flag("no-paste");
 
     let start_time = Instant::now();
 
@@ -177,6 +179,11 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
         );
     let select =
         |ctx: &mut ExecutionContext<'_>| update_selection(ctx, None, (paste_min, paste_max));
+
+    if no_paste {
+        select(ctx)?.ok_or(RuntimeError::DestinationOutsidePlot)?;
+        return ctx.worldedit_message(&format!("Region selected. ({:?})", start_time.elapsed()));
+    }
 
     let clipped = ctx.capture_undo_regions([(paste_min, paste_max)], paste_min)?;
     let (world, player) = ctx.world_and_player_mut()?;

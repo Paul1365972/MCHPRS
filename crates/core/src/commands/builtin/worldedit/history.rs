@@ -1,3 +1,4 @@
+use crate::commands::argument::ArgumentType;
 use crate::commands::context::ExecutionContext;
 use crate::commands::define::Command;
 use crate::commands::error::{CommandResult, RuntimeError};
@@ -11,46 +12,58 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/undo")
             .alias("undo")
+            .optional("times", ArgumentType::integer(1, 100))
             .executes(|ctx| exec_history(ctx, true)),
     );
 
     registry.register(
         Command::new("/redo")
             .alias("redo")
+            .optional("times", ArgumentType::integer(1, 100))
             .executes(|ctx| exec_history(ctx, false)),
     );
 }
 
 fn exec_history(ctx: &mut ExecutionContext<'_>, undo: bool) -> CommandResult<()> {
+    let times: i32 = ctx.arg_or("times", 1)?;
     let (world, player) = ctx.world_and_player_mut()?;
     let (source, destination) = if undo {
         (&mut player.worldedit_undo, &mut player.worldedit_redo)
     } else {
         (&mut player.worldedit_redo, &mut player.worldedit_undo)
     };
-    let Some(entry) = source.last() else {
-        return Err(if undo {
-            RuntimeError::NoUndoHistory
-        } else {
-            RuntimeError::NoRedoHistory
+
+    let mut done = 0;
+    let result = loop {
+        if done == times {
+            break Ok(());
         }
-        .into());
+        let Some(entry) = source.last() else {
+            break Ok(());
+        };
+        if entry.plot_x != world.x || entry.plot_z != world.z {
+            break Err(if undo {
+                RuntimeError::UndoFromDifferentPlot
+            } else {
+                RuntimeError::RedoFromDifferentPlot
+            });
+        }
+        let entry = source.pop().unwrap();
+        destination.push(apply_history(world, &entry));
+        done += 1;
     };
-    if entry.plot_x != world.x || entry.plot_z != world.z {
-        return Err(if undo {
-            RuntimeError::UndoFromDifferentPlot
-        } else {
-            RuntimeError::RedoFromDifferentPlot
-        }
-        .into());
-    }
-    let entry = source.pop().unwrap();
-    destination.push(apply_history(world, &entry));
-    ctx.worldedit_message(if undo {
-        "Undo successful."
+
+    let (verb, past, none_left) = if undo {
+        ("Undo", "Undid", RuntimeError::NoUndoHistory)
     } else {
-        "Redo successful."
-    })
+        ("Redo", "Redid", RuntimeError::NoRedoHistory)
+    };
+    match done {
+        0 => return result.and(Err(none_left)).map_err(Into::into),
+        1 => ctx.worldedit_message(&format!("{verb} successful."))?,
+        n => ctx.worldedit_message(&format!("{past} {n} operations."))?,
+    }
+    result.map_err(Into::into)
 }
 
 fn apply_history(world: &mut PlotWorld, entry: &WorldEditUndo) -> WorldEditUndo {

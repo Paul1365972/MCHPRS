@@ -202,6 +202,32 @@ impl PlotCoordinates {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct BlockCoordinates(pub(super) PositionCoordinates);
+
+impl BlockCoordinates {
+    pub(super) fn resolve(
+        &self,
+        reference: (f64, f64, f64),
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<BlockPos, RuntimeError> {
+        let (x, y, z) = self.0.resolve(reference, yaw, pitch)?;
+        let coordinates = [x.floor(), y.floor(), z.floor()];
+        if coordinates
+            .iter()
+            .any(|&value| value < i32::MIN as f64 || value > i32::MAX as f64)
+        {
+            return Err(RuntimeError::CoordinateOutOfRange);
+        }
+        Ok(BlockPos::new(
+            coordinates[0] as i32,
+            coordinates[1] as i32,
+            coordinates[2] as i32,
+        ))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum PlayerTarget {
     Name(String),
@@ -222,6 +248,7 @@ pub(super) enum Value {
     Mask(WorldEditMask),
     Direction(Direction),
     DirectionWithDiagonals(DirectionWithDiagonals),
+    BlockPos(BlockCoordinates),
     Flags(FlagValues),
 }
 
@@ -258,3 +285,4 @@ from_value!(&'a WorldEditPattern, Pattern(p) => p);
 from_value!(&'a WorldEditMask, Mask(m) => m);
 from_value!(Direction, Direction(d) => *d);
 from_value!(DirectionWithDiagonals, DirectionWithDiagonals(d) => *d);
+from_value!(BlockCoordinates, BlockPos(p) => *p);

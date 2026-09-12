@@ -21,6 +21,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .optional("count", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::Direction)
             .flag('a', "ignore-air", "Stack without air blocks")
+            .flag(
+                's',
+                "shift-selection",
+                "Shift the selection to the last stacked copy",
+            )
             .executes(|ctx| {
                 let direction = ctx.arg_or("direction", Direction::Me)?;
                 let direction = direction.resolve(ctx.player()?.get_facing());
@@ -45,6 +50,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .optional("direction", ArgumentType::DirectionWithDiagonals)
             .flag('a', "with-air", "Include air blocks")
             .flag(
+                's',
+                "shift-selection",
+                "Shift the selection to the last stacked copy",
+            )
+            .flag(
                 'e',
                 "expand-selection",
                 "Expand selection to include stacked region",
@@ -67,7 +77,13 @@ fn exec_stack(
     ignore_air: bool,
 ) -> CommandResult<()> {
     let count = ctx.arg_or("count", 1)?;
+    let shift_selection = ctx.flag("shift-selection");
     let expand_selection = ctx.flag("expand-selection");
+    if shift_selection && expand_selection {
+        return Err(CommandError::runtime(
+            "Use either --shift-selection or --expand-selection, not both.",
+        ));
+    }
 
     let (first_pos, second_pos) = selection;
     check_stack_volume(first_pos, second_pos, count)?;
@@ -80,17 +96,20 @@ fn exec_stack(
     let clipped = ctx.capture_undo_regions(destinations, first_pos)?;
     let clipboard = create_clipboard(ctx.world(), first_pos, first_pos, second_pos);
 
+    let mut last_copy = None;
     for i in 1..=count {
         let destination = (first_pos + offset * i, second_pos + offset * i);
         if ctx.clip_region(destination.0, destination.1).is_none() {
             continue;
         }
         paste_clipboard(ctx.world_mut(), &clipboard, destination.0, ignore_air);
+        last_copy = Some(destination);
     }
 
-    let offset = offset * count;
-    if expand_selection {
-        let expanded = calculate_expanded_selection(first_pos, second_pos, offset, false);
+    if shift_selection && let Some(last_copy) = last_copy {
+        update_selection(ctx, Some(selection), last_copy)?;
+    } else if expand_selection {
+        let expanded = calculate_expanded_selection(first_pos, second_pos, offset * count, false);
         update_selection(ctx, Some(selection), expanded)?;
     }
 

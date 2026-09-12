@@ -1,22 +1,46 @@
 use crate::commands::argument::ArgumentType;
 use crate::commands::context::ExecutionContext;
-use crate::commands::define::Command;
+use crate::commands::define::{arg, opt, Command};
 use crate::commands::error::{CommandResult, RuntimeError};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::Direction;
+use crate::plot::PLOT_BLOCK_HEIGHT;
 use crate::worldedit::{calculate_expanded_selection, calculate_selection_volume};
 use mchprs_blocks::BlockPos;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
+        Command::new("/pos")
+            .syntax(opt([
+                arg("pos1", ArgumentType::BlockPos),
+                opt([arg("pos2", ArgumentType::BlockPos)]),
+            ]))
+            .executes(|ctx| {
+                let pos1 = ctx
+                    .block_position("pos1")?
+                    .unwrap_or(ctx.player()?.pos.block_pos());
+                let pos2 = ctx.block_position("pos2")?;
+
+                let player = ctx.player_mut()?;
+                player.worldedit_set_first_pos(pos1);
+                if let Some(pos2) = pos2 {
+                    player.worldedit_set_second_pos(pos2);
+                }
+                Ok(())
+            }),
+    );
+
+    registry.register(
         Command::new("/pos1")
             .alias("/1")
+            .optional("coordinates", ArgumentType::BlockPos)
             .executes(|ctx| exec_pos(ctx, true)),
     );
 
     registry.register(
         Command::new("/pos2")
             .alias("/2")
+            .optional("coordinates", ArgumentType::BlockPos)
             .executes(|ctx| exec_pos(ctx, false)),
     );
 
@@ -30,15 +54,40 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         set_pos(ctx, false, pos)
     }));
 
-    registry.register(Command::new("/sel").executes(|ctx| {
-        ctx.player_mut()?.worldedit_clear_pos();
-        Ok(())
-    }));
+    registry.register(
+        Command::new("/sel")
+            .alias(";")
+            .alias("/desel")
+            .alias("/deselect")
+            .executes(|ctx| {
+                ctx.player_mut()?.worldedit_clear_pos();
+                Ok(())
+            }),
+    );
 
     registry.register(
         Command::new("/expand")
             .alias("/e")
+            .subcommand(Command::new("vert").executes(|ctx| {
+                let (first, second) = ctx.selection()?;
+                let (mut new_first, mut new_second) = (first, second);
+                let (lower, upper) = if first.y <= second.y {
+                    (&mut new_first, &mut new_second)
+                } else {
+                    (&mut new_second, &mut new_first)
+                };
+                lower.y = 0;
+                upper.y = PLOT_BLOCK_HEIGHT - 1;
+
+                let (new_first, new_second) =
+                    update_selection(ctx, Some((first, second)), (new_first, new_second))?
+                        .ok_or(RuntimeError::DestinationOutsidePlot)?;
+                let total = calculate_selection_volume(new_first, new_second)
+                    - calculate_selection_volume(first, second);
+                ctx.worldedit_message(&format!("Region expanded {total} block(s)."))
+            }))
             .optional("amount", ArgumentType::integer(1, 1000))
+            .optional("reverseAmount", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::Direction)
             .executes(|ctx| exec_resize(ctx, false)),
     );
@@ -46,6 +95,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/contract")
             .optional("amount", ArgumentType::integer(1, 1000))
+            .optional("reverseAmount", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::Direction)
             .executes(|ctx| exec_resize(ctx, true)),
     );
@@ -76,7 +126,9 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 }
 
 fn exec_pos(ctx: &mut ExecutionContext<'_>, first: bool) -> CommandResult<()> {
-    let pos = ctx.player()?.pos.block_pos();
+    let pos = ctx
+        .block_position("coordinates")?
+        .unwrap_or(ctx.player()?.pos.block_pos());
     set_pos(ctx, first, pos)
 }
 
@@ -92,13 +144,21 @@ fn set_pos(ctx: &mut ExecutionContext<'_>, first: bool, pos: BlockPos) -> Comman
 
 fn exec_resize(ctx: &mut ExecutionContext<'_>, contract: bool) -> CommandResult<()> {
     let amount: i32 = ctx.arg_or("amount", 1)?;
+    let reverse_amount = ctx.arg_opt::<i32>("reverseAmount")?;
     let direction = ctx.arg_or("direction", Direction::Me)?;
 
     let (first, second) = ctx.selection()?;
     let direction = direction.resolve(ctx.player()?.get_facing());
 
     let offset = direction.offset_pos(BlockPos::zero(), amount);
-    let (new_first, new_second) = calculate_expanded_selection(first, second, offset, contract);
+    let (mut new_first, mut new_second) =
+        calculate_expanded_selection(first, second, offset, contract);
+
+    if let Some(reverse_amount) = reverse_amount {
+        let reverse_offset = direction.offset_pos(BlockPos::zero(), -reverse_amount);
+        (new_first, new_second) =
+            calculate_expanded_selection(new_first, new_second, reverse_offset, contract);
+    }
 
     let old_volume = calculate_selection_volume(first, second);
     let (new_first, new_second) =

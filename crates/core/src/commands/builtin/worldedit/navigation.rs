@@ -3,26 +3,54 @@ use crate::commands::context::ExecutionContext;
 use crate::commands::define::Command;
 use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
+use crate::player::PlayerPos;
 use crate::plot::PLOT_BLOCK_HEIGHT;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use mchprs_world::World;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
+    registry.register(Command::new("jumpto").alias("j").executes(|ctx| {
+        let target = ctx.target_block(1000.0)?;
+        let above = BlockPos::new(target.x, target.y + 1, target.z);
+        let pos = free_spot_above(ctx.world(), above);
+        ctx.teleport(pos)?;
+        ctx.worldedit_message("Teleported to block.")
+    }));
+
+    registry.register(Command::new("unstuck").alias("!").executes(|ctx| {
+        let feet = ctx.player()?.pos.block_pos();
+        let pos = free_spot_above(ctx.world(), feet);
+        ctx.teleport(pos)?;
+        ctx.worldedit_message("Moved to free position.")
+    }));
+
     registry.register(
         Command::new("up")
             .alias("u")
             .optional("distance", ArgumentType::integer(1, 100))
+            .flag('f', "force-flight", "Force using flight to keep you still")
+            .flag('g', "force-glass", "Force using glass to keep you still")
             .executes(|ctx| {
                 let distance = ctx.arg_or("distance", 1)?;
+                let force_flight = ctx.flag("force-flight");
+                let force_glass = ctx.flag("force-glass");
 
-                let mut new_pos = ctx.player()?.pos;
+                let player = ctx.player_mut()?;
+                let mut new_pos = player.pos;
                 new_pos.y += distance as f64;
 
-                let block_pos = new_pos.block_pos();
-                let platform_pos = BlockPos::new(block_pos.x, block_pos.y - 1, block_pos.z);
-                if matches!(ctx.world().get_block(platform_pos), Block::Air) {
-                    ctx.world_mut().set_block(platform_pos, Block::Glass);
+                if force_flight {
+                    player.flying = true;
+                    player.update_player_abilities();
+                }
+
+                if force_glass || !force_flight {
+                    let block_pos = new_pos.block_pos();
+                    let platform_pos = BlockPos::new(block_pos.x, block_pos.y - 1, block_pos.z);
+                    if matches!(ctx.world().get_block(platform_pos), Block::Air) {
+                        ctx.world_mut().set_block(platform_pos, Block::Glass);
+                    }
                 }
 
                 ctx.teleport(new_pos)?;
@@ -98,4 +126,12 @@ fn exec_floors(
     new_pos.y = player_y as f64;
     ctx.teleport(new_pos)?;
     ctx.worldedit_message(&format!("{verb} {} levels", levels - remaining))
+}
+
+fn free_spot_above(world: &impl World, pos: BlockPos) -> PlayerPos {
+    let is_air = |y| world.get_block(BlockPos::new(pos.x, y, pos.z)) == Block::Air;
+    let y = (pos.y..PLOT_BLOCK_HEIGHT)
+        .find(|&y| is_air(y) && is_air(y + 1))
+        .unwrap_or(pos.y.max(PLOT_BLOCK_HEIGHT));
+    PlayerPos::new(pos.x as f64 + 0.5, y as f64, pos.z as f64 + 0.5)
 }
