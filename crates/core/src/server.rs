@@ -1,19 +1,25 @@
-use crate::config::CONFIG;
-use crate::player::{Gamemode, PacketSender, Player};
-use crate::plot::commands::DECLARE_COMMANDS;
-use crate::plot::{self, database, Plot, PLOT_BLOCK_HEIGHT};
-use crate::utils::HyphenatedUUID;
-use crate::{permissions, utils};
+use crate::{
+    commands::{
+        suggestions::{CommandSuggestions, SuggestionSource},
+        value::PlayerTarget,
+        COMMAND_REGISTRY,
+    },
+    config::CONFIG,
+    permissions,
+    player::{Gamemode, PacketSender, Player},
+    plot::{self, database, Plot, PLOT_BLOCK_HEIGHT},
+    utils::{self, HyphenatedUUID},
+};
 use backtrace::Backtrace;
 use bus::Bus;
 use hmac::{Hmac, Mac};
 use mchprs_network::packets::clientbound::{
-    CConfigurationPluginMessage, CDisconnectLogin, CFinishConfiguration, CGameEvent,
-    CGameEventType, CLogin, CLoginPluginRequest, CLoginSuccess, CPlayerInfoActions,
-    CPlayerInfoAddPlayer, CPlayerInfoUpdate, CPlayerInfoUpdatePlayer, CPong, CRegistryBiome,
-    CRegistryBiomeEffects, CRegistryData, CRegistryDataCodec, CRegistryDimensionType, CResponse,
-    CSetCompression, CSetContainerContent, CSetHeldItem, CSynchronizePlayerPosition,
-    ClientBoundPacket, UpdateTime,
+    CCommandSuggestionsResponse, CConfigurationPluginMessage, CDisconnectLogin,
+    CFinishConfiguration, CGameEvent, CGameEventType, CLogin, CLoginPluginRequest, CLoginSuccess,
+    CPlayerInfoActions, CPlayerInfoAddPlayer, CPlayerInfoUpdate, CPlayerInfoUpdatePlayer, CPong,
+    CRegistryBiome, CRegistryBiomeEffects, CRegistryData, CRegistryDataCodec,
+    CRegistryDimensionType, CResponse, CSetCompression, CSetContainerContent, CSetHeldItem,
+    CSynchronizePlayerPosition, ClientBoundPacket, UpdateTime,
 };
 use mchprs_network::packets::serverbound::{
     SAcknowledgeFinishConfiguration, SHandshake, SLoginAcknowledged, SLoginPluginResponse,
@@ -28,16 +34,20 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
-use std::fs::{self, File};
-use std::io::Cursor;
-use std::path::Path;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::{Duration, Instant};
+use std::{
+    fs::{self, File},
+    io::Cursor,
+    path::Path,
+    sync::mpsc::{self, Receiver, Sender, SyncSender},
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
 use tracing::{debug, error, info, warn};
 
 /// `Message` gets send from a plot thread to the server thread.
 #[derive(Debug)]
 pub enum Message {
+    CommandSuggestions(CommandSuggestions, SyncSender<CCommandSuggestionsResponse>),
     /// This message is sent to the server thread when a player sends a chat message,
     /// It contains the uuid and name of the player and the raw message the player sent.
     ChatInfo(u128, String, String),
@@ -48,7 +58,7 @@ pub enum Message {
     /// This message is sent to the server thread when a player goes outside of their plot.
     PlayerLeavePlot(Player),
     /// This message is sent to the server thread when a player runs /tp <name>.
-    PlayerTeleportOther(Player, String),
+    PlayerTeleportOther(Player, PlayerTarget),
     /// This message is sent to the server thread when a player changes their gamemode.
     PlayerUpdateGamemode(u128, Gamemode),
     /// This message is sent to the server thread when a plot unloads itself.
@@ -161,6 +171,8 @@ impl MinecraftServer {
             ctrl_handler_sender.send(Message::Shutdown).unwrap();
         })
         .expect("There was an error setting the ctrlc handler");
+
+        LazyLock::force(&COMMAND_REGISTRY);
 
         let whitelist = CONFIG.whitelist.then(|| {
             if !Path::new("whitelist.json").exists() {
@@ -406,7 +418,9 @@ impl MinecraftServer {
         .encode();
         player.client.send_packet(&held_item_change);
 
-        player.client.send_packet(&DECLARE_COMMANDS);
+        player
+            .client
+            .send_packet(&COMMAND_REGISTRY.declare_commands_packet(&player));
 
         let time_update = UpdateTime {
             world_age: 0,
@@ -507,6 +521,15 @@ impl MinecraftServer {
 
     fn handle_message(&mut self, message: Message) {
         match message {
+            Message::CommandSuggestions(mut suggestions, sender) => {
+                suggestions.resolve(
+                    SuggestionSource::PlayerNames,
+                    self.online_players
+                        .values()
+                        .map(|player| player.username.as_str()),
+                );
+                let _ = sender.send(suggestions.into_response());
+            }
             Message::PlayerJoined(player) => {
                 info!("{} joined the game", player.username);
                 // Send player info to plots
@@ -547,15 +570,19 @@ impl MinecraftServer {
             Message::Shutdown => {
                 self.graceful_shutdown();
             }
-            Message::PlayerTeleportOther(player, other_username) => {
-                let username_lower = other_username.to_lowercase();
-                if let Some((_, other_player)) = self
-                    .online_players
-                    .iter()
-                    .find(|(_, p)| p.username.to_lowercase().starts_with(&username_lower))
+            Message::PlayerTeleportOther(player, target) => {
+                if let Some((_, other_player)) =
+                    self.online_players
+                        .iter()
+                        .find(|(uuid, other)| match &target {
+                            PlayerTarget::Name(name) => other.username.eq_ignore_ascii_case(name),
+                            PlayerTarget::Uuid(target) => **uuid == *target,
+                            PlayerTarget::SelfPlayer => **uuid == player.uuid,
+                        })
                 {
                     let plot_x = other_player.plot_x;
                     let plot_z = other_player.plot_z;
+                    let target_name = other_player.username.clone();
 
                     let plot_loaded = self
                         .running_plots
@@ -574,7 +601,7 @@ impl MinecraftServer {
                             .unwrap();
                         let _ = plot_list_entry
                             .priv_message_sender
-                            .send(PrivMessage::PlayerTeleportOther(player, other_username));
+                            .send(PrivMessage::PlayerTeleportOther(player, target_name));
                     }
                 } else {
                     player.send_system_message("Player not found!");
