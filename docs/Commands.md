@@ -1,0 +1,181 @@
+# MCHPRS Commands
+
+## Table of Contents
+
+- [General Commands](#general-commands)
+- [Plot Commands](#plot-commands)
+- [WorldEdit Commands](#worldedit-commands)
+  - [Navigation](#navigation)
+  - [Selection](#selection)
+  - [Region Operations](#region-operations)
+  - [Clipboard](#clipboard)
+  - [History](#history)
+  - [Schematics](#schematics)
+  - [Other](#other)
+- [Redpiler Commands](#redpiler-commands)
+  - [Compiler Flags](#compiler-flags)
+- [Command Aliases](#command-aliases)
+- [Argument Types](#argument-types)
+
+Flags such as `-a` go after all other arguments.
+
+## General Commands
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `/help [<command>]` | `//help` | List available commands, or show syntax and flags for a command. |
+| `/speed <speed>` | None | Set your flying speed. |
+| `/teleport (<position> \| <player>)` | `/tp` | Teleport to coordinates or another player. |
+| `/rtps [unlimited \| <tps>]` | `/rtps u` (for unlimited) | Show plot timings or set the redstone tick rate (default 10 ticks per second). Fractional rates are allowed; `0` pauses simulation; `unlimited` runs as fast as possible. One redstone tick equals two game ticks. |
+| `/radvance <ticks>` | `/radv` | Immediately advance the plot by the given number of redstone ticks. |
+| `/stop` | None | Stop the server. |
+| `/gamemode (creative \| spectator)` | `1` (creative), `3` (spectator), `/gmc`, `/gmsp` | Change your game mode. |
+| `/worldsendrate [<hertz>]` | `/wsr` | Show or set how often the plot sends block updates to players (0–1000, fractional; `0` disables periodic sends; default 60 Hz). |
+| `/container <type> <power>` | None | Give yourself a barrel, furnace, or hopper filled to produce the specified comparator signal strength (0–15). |
+| `/whitelist add <username>` | None | Add a player to the whitelist. |
+| `/whitelist remove <username>` | None | Remove a player from the whitelist. |
+| `/version` | None | Show the server version. |
+
+## Plot Commands
+
+Note: The plot ownership system in MCHPRS is very incomplete.
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `/plot info` | `/p i` | Show the owner of your current plot. |
+| `/plot claim` | `/p c` | Claim your current plot if it is unclaimed. |
+| `/plot auto` | `/p a` | Find and claim an unclaimed plot. |
+| `/plot middle` | None | Teleport to the center of your current plot. |
+| `/plot visit <username> [<index>]` | `/p v` | Visit a player's plot. Use `index` to choose among their plots; defaults to the first. |
+| `/plot teleport <location>` | `/p tp` | Teleport to a plot by its X Z coordinates. Relative `~` offsets are measured in plots. |
+| `/plot lock` | None | Prevent crossing a plot boundary from transferring you to another plot. |
+| `/plot unlock` | None | Undo `/plot lock`. |
+| `/plot select` | `/p sel` | Select the entire plot with WorldEdit. |
+
+## WorldEdit Commands
+
+MCHPRS provides its own implementation of [WorldEdit](https://github.com/EngineHub/WorldEdit).
+Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/) for more information.
+
+### Navigation
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `/up [<distance>]` | `/u` | Move up by the given number of blocks (default 1), placing glass beneath you if needed. |
+| `/ascend [<levels>]` | `/asc` | Teleport to the floor above, or move up several floors. |
+| `/descend [<levels>]` | `/desc` | Teleport to the floor below, or move down several floors. |
+
+### Selection
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `//pos1` | `//1` | Set the first selection corner to your current position. |
+| `//pos2` | `//2` | Set the second selection corner to your current position. |
+| `//hpos1` | `//h1` | Set the first selection corner to the block you are looking at. |
+| `//hpos2` | `//h2` | Set the second selection corner to the block you are looking at. |
+| `//sel` | None | Clear both selection corners. |
+| `//expand [<amount>] [<direction>]` | `//e` | Extend the selection in the given direction. Defaults to 1 block in the direction you are facing. |
+| `//contract [<amount>] [<direction>]` | None | Shrink the selection toward the given direction. Defaults to 1 block in the direction you are facing. |
+| `//shift [<amount>] [<direction>]` | None | Move the selection without moving its blocks. Defaults to 1 block in the direction you are facing. |
+
+### Region Operations
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `//set <pattern>` | None | Fill the selection with the specified block pattern. |
+| `//replace <from> <to>` | None | Replace blocks matching the `from` mask with the `to` pattern. |
+| `//count <mask>` | None | Count blocks in the selection that match the mask. |
+| `//stack [<count>] [<direction>]` | `//s` | Create adjacent copies of the selection. Defaults to 1 copy in the direction you are facing, including air. Flags: `-a`/`--ignore-air` (skip air). |
+| `//move [<count>] [<direction>]` | None | Move the selected blocks, leaving air behind. Defaults to 1 block in the direction you are facing; parts moved outside the plot are clipped. Flags: `-a`/`--ignore-air` (skip air when placing blocks), `-s`/`--shift-selection` (move the selection with the blocks). |
+| `//rstack [<count>] [<spacing>] [<direction>]` | `//rs` | Repeat the selection at a fixed block spacing, allowing copies to overlap. Supports diagonal directions. Defaults to 1 copy, 2 blocks in the direction you are looking, skipping air. Flags: `-a`/`--with-air` (include air), `-e`/`--expand-selection` (include all copies in the selection). |
+
+### Clipboard
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `//copy` | `//c` | Copy selected blocks to your clipboard. |
+| `//cut` | `//x` | Copy selected blocks to your clipboard, then replace them with air. |
+| `//paste` | `//v` | Paste the clipboard relative to your current position. Flags: `-a`/`--ignore-air` (skip air), `-u`/`--update` (update pasted blocks), `-s`/`--select-region` (select the pasted region). |
+| `//flip [<direction>]` | `//f` | Mirror the clipboard in the given direction, or the direction you are facing. |
+| `//rotate <angle>` | `//r` | Rotate the clipboard around the vertical axis in 90° steps. |
+
+### History
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `//undo` | `/undo` | Undo the last WorldEdit operation. |
+| `//redo` | `/redo` | Redo the last undone WorldEdit operation. |
+
+### Schematics
+
+`//schematic` also works as `//schem`, `/schematic` and `/schem`.
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `//schematic load <filename>` | `//load` | Load a Sponge v2 or v3 schematic into your clipboard. |
+| `//schematic save <filename>` | `//save` | Save your clipboard as a Sponge v2 schematic. |
+
+Files are stored in `./schems/`, or `./schems/<uuid>/` when `schemati` is enabled.
+File names can use letters, digits, `_`, `-`, `.` and `+`, and end in `.schem` or `.schematic`.
+
+### Other
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `//wand` | None | Give yourself a wooden axe for selecting corners with left and right clicks. |
+| `//update` | None | Recalculate redstone in the selection. Flags: `-p`/`--plot` (update the entire plot). |
+| `//replacecontainer <from> <to>` | `//rc` | Replace barrels, furnaces, or hoppers of one type in the selection with another of these types, preserving comparator signal strength. |
+
+## Redpiler Commands
+
+Redpiler compiles the plot's redstone circuits for faster simulation.
+Placing or breaking blocks stops Redpiler and returns the plot to normal redstone ticking.
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `/redpiler compile` | `/rp c` | Compile the current plot for accelerated redstone simulation. |
+| `/redpiler reset` | `/rp r` | Stop compiled simulation and return to normal redstone ticking. |
+
+### Compiler Flags
+
+The `/redpiler compile` command supports these optional flags:
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `--optimize` | `-o` | Enable Redpiler optimizations. This can and will break the state of your build; use backups. |
+| `--reorder` | `-r` | Let `--optimize` also run optimizations that can reorder updates within a tick. |
+| `--io-only` | `-i` | Only send block updates for inputs and outputs: buttons, levers, pressure plates, lamps, trapdoors, and note blocks. This can reduce lag and improve simulation speed. |
+| `--wire-dot-out` | `-d` | Treat redstone dots as outputs with `--io-only`, useful for color displays. |
+| `--illegal-states-out` | `-l` | Treat redstone wires in illegal states (one connected side) as outputs with `--io-only`, useful for sprite displays. |
+| `--wire-cross-out` | `-c` | Treat redstone crosses as outputs with `--io-only`, useful for sprite displays without illegal wire states. |
+| `--update` | `-u` | Update all blocks after Redpiler resets. |
+| `--export` | `-e` | Export the compiled graph in binary format for use by external tools. |
+| `--export-dot` | None | Export the backend graph in Graphviz DOT format for debugging. |
+| `--print-after-all` | None | Print the RIL circuit after each compiler pass. |
+| `--print-before-backend` | None | Print the RIL circuit before backend compilation. |
+
+## Command Aliases
+
+| Alias | Equivalent Command | Description |
+| --- | --- | --- |
+| `/gmc` | `/gamemode creative` | Change to creative mode. |
+| `/gmsp` | `/gamemode spectator` | Change to spectator mode. |
+| `//va` | `//paste -a` | Paste without air blocks. |
+| `//sa` | `//stack {} -a` | Stack copies without air blocks. |
+| `//load` | `//schematic load` | Load a schematic into your clipboard. |
+| `//save` | `//schematic save` | Save your clipboard as a schematic. |
+
+Arguments replace `{}`, or go at the end without it: `//sa 5 north` runs `//stack 5 north -a`.
+
+Servers can add their own aliases in [Config.toml](../README.md#command-aliases).
+
+## Argument Types
+
+| Type | Values | Description |
+| --- | --- | --- |
+| `<pattern>` | `stone`, `minecraft:glass`, `stone,20%glass`, `=5922` | Blocks to place in their default state. Commas separate random choices; prefixes such as `20%` set weights (default `100%`). `=` followed by a number selects an exact block state ID. |
+| `<mask>` | `stone,glass`, `=5922` | Blocks to match, written like a pattern. Each block name matches only its default state. |
+| `<type>` | `barrel`, `furnace`, `hopper` | Container type to use. |
+| `<angle>` | `90`, `180`, `270`, `-90`, `-180` | Rotation in degrees, in 90° steps. |
+| `<direction>` | `me`, `left`/`l`, `right`/`r`, `up`/`u`, `down`/`d`, `north`/`n`, `south`/`s`, `east`/`e`, `west`/`w` | A compass direction or a direction relative to where you are looking. Defaults to `me`, the direction you are facing. |
+| `<direction>` of `//rstack` | All `<direction>` values plus diagonals: `lu`, `ld`, `ru`, `rd`, `nu`, `nd`, `su`, `sd`, `eu`, `ed`, `wu`, `wd` | Combine directions to stack diagonally, e.g. `leftup`/`lu` for left and up. |

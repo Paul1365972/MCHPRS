@@ -1,6 +1,6 @@
-use crate::plot::worldedit::WorldEditUndo;
 use crate::plot::PLOT_SCALE;
 use crate::utils::{self, HyphenatedUUID};
+use crate::worldedit::WorldEditUndo;
 use byteorder::{BigEndian, ReadBytesExt};
 use mchprs_blocks::block_entities::{ContainerType, InventoryEntry};
 use mchprs_blocks::items::{Item, ItemStack};
@@ -16,6 +16,7 @@ use std::fmt;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Instant, SystemTime};
 use tracing::{error, warn};
 
@@ -156,9 +157,9 @@ pub struct Player {
     /// The last time the keep alive packet was sent.
     last_keep_alive_sent: Instant,
     /// The worldedit first position.
-    pub first_position: Option<BlockPos>,
+    first_position: Option<BlockPos>,
     /// The worldedit second position.
-    pub second_position: Option<BlockPos>,
+    second_position: Option<BlockPos>,
     /// The worldedit current clipboard.
     pub worldedit_clipboard: Option<WorldEditClipboard>,
     /// The saved sections used for worldedit //undo
@@ -167,6 +168,7 @@ pub struct Player {
     pub worldedit_redo: Vec<WorldEditUndo>,
     /// Commands are stored so they can be handled after packets
     pub command_queue: Vec<String>,
+    pub pending_command_suggestions: Vec<Receiver<CCommandSuggestionsResponse>>,
 }
 
 impl fmt::Debug for Player {
@@ -240,6 +242,7 @@ impl Player {
             worldedit_undo: Vec::new(),
             worldedit_redo: Vec::new(),
             command_queue: Vec::new(),
+            pending_command_suggestions: Vec::new(),
         }
     }
 
@@ -316,6 +319,15 @@ impl Player {
 
     /// Manages keep alives and packet reading. Return true if the view position should be updated.
     pub fn update(&mut self) -> bool {
+        self.pending_command_suggestions
+            .retain(|receiver| match receiver.try_recv() {
+                Ok(response) => {
+                    self.client.send_packet(&response.encode());
+                    false
+                }
+                Err(TryRecvError::Empty) => true,
+                Err(TryRecvError::Disconnected) => false,
+            });
         if self.last_keep_alive_received.elapsed().as_secs() > 30 {
             self.kick("Timed out.".into());
         }
@@ -429,7 +441,15 @@ impl Player {
         );
     }
 
-    pub fn worldedit_set_first_position(&mut self, pos: BlockPos) {
+    pub fn worldedit_first_pos(&self) -> Option<BlockPos> {
+        self.first_position
+    }
+
+    pub fn worldedit_second_pos(&self) -> Option<BlockPos> {
+        self.second_position
+    }
+
+    pub fn worldedit_set_first_pos(&mut self, pos: BlockPos) {
         self.send_worldedit_message(&format!(
             "First position set to ({}, {}, {})",
             pos.x, pos.y, pos.z
@@ -438,13 +458,20 @@ impl Player {
         self.worldedit_send_cui(&format!("p|0|{}|{}|{}|0", pos.x, pos.y, pos.z));
     }
 
-    pub fn worldedit_set_second_position(&mut self, pos: BlockPos) {
+    pub fn worldedit_set_second_pos(&mut self, pos: BlockPos) {
         self.send_worldedit_message(&format!(
             "Second position set to ({}, {}, {})",
             pos.x, pos.y, pos.z
         ));
         self.second_position = Some(pos);
         self.worldedit_send_cui(&format!("p|1|{}|{}|{}|0", pos.x, pos.y, pos.z));
+    }
+
+    pub fn worldedit_clear_pos(&mut self) {
+        self.send_worldedit_message("Selection cleared.");
+        self.first_position = None;
+        self.second_position = None;
+        self.worldedit_send_cui("s|cuboid");
     }
 
     pub fn worldedit_send_cui(&self, message: &str) {

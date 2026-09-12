@@ -258,6 +258,10 @@ impl Compiler {
         self.backend().flush(world);
     }
 
+    pub fn flush_all<W: World>(&mut self, world: &mut W) {
+        self.backend().flush_all(world);
+    }
+
     pub fn has_pending_ticks(&mut self) -> bool {
         self.backend().has_pending_ticks()
     }
