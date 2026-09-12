@@ -1,5 +1,5 @@
 use super::error::RuntimeError;
-use crate::worldedit::pattern::WorldEditPattern;
+use crate::worldedit::{mask::WorldEditMask, pattern::WorldEditPattern};
 use mchprs_blocks::{block_entities::ContainerType, BlockFacing, BlockPos};
 use mchprs_commands::flag::FlagValues;
 use std::{array, f64::consts::FRAC_PI_2};
@@ -199,6 +199,12 @@ impl PlotCoordinates {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReplacementOperand {
+    pub pattern: Option<WorldEditPattern>,
+    pub mask: Option<WorldEditMask>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlayerTarget {
     Name(String),
@@ -210,12 +216,14 @@ pub enum PlayerTarget {
 pub enum Value {
     String(String),
     Player(PlayerTarget),
+    Replacement(ReplacementOperand),
     Integer(i32),
     Float(f32),
     Position(PositionCoordinates),
     PlotPos(PlotCoordinates),
     Container(ContainerType),
     Pattern(WorldEditPattern),
+    Mask(WorldEditMask),
     Direction(Direction),
     DirectionWithDiagonals(DirectionWithDiagonals),
     Flags(FlagValues),
@@ -243,6 +251,7 @@ macro_rules! from_value {
 }
 
 from_value!(PlayerTarget, "PlayerTarget", Value::Player(p) => p.clone());
+from_value!(&'a ReplacementOperand, "ReplacementOperand", Value::Replacement(p) => p);
 from_value!(String, "String", Value::String(s) => s.clone());
 from_value!(i32, "Integer", Value::Integer(i) => *i);
 from_value!(f32, "Float", Value::Float(f) => *f);
@@ -250,5 +259,6 @@ from_value!(PositionCoordinates, "PositionCoordinates", Value::Position(v) => *v
 from_value!(PlotCoordinates, "PlotPos", Value::PlotPos(p) => *p);
 from_value!(ContainerType, "Container", Value::Container(c) => *c);
 from_value!(&'a WorldEditPattern, "Pattern", Value::Pattern(p) => p);
+from_value!(&'a WorldEditMask, "Mask", Value::Mask(m) => m);
 from_value!(Direction, "Direction", Value::Direction(d) => *d);
 from_value!(DirectionWithDiagonals, "DirectionWithDiagonals", Value::DirectionWithDiagonals(d) => *d);
