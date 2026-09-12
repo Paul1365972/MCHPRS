@@ -69,7 +69,10 @@ Disregarding High-Signal Strength logic, which Redpiler does not support anyways
 ## The `Coalesce` Pass
 
 There are often times when a wire powers many different components in the same way. For example, it is common for vertical multi-bit latches to be controlled by a slab tower that powers several repetears that lock other repeaters. This is very inefficent because these repeaters will always have the exact same value, but they are still updated and ticked independently. To avoid this logic duplication, this optimization pass merges duplicate nodes into one, removing duplicate nodes from the graph and adjusting links to point to the new node.
-Merged nodes must have the same initial state, a single default input link from the shared source, and no pending ticks.
+Two nodes that are neither inputs nor outputs are merged when they have the same type, the same initial state, no pending tick, and the same multiset of input links, where each link is compared by source node, link type and weight.
+The weight is ignored when a binary source (repeater, torch, lever, button, pressure plate) feeds a binary reader (everything except comparators and wires), since any such link powers the reader in the same way.
+The pass repeats until nothing changes, because merging two nodes can make the nodes they feed identical as well.
+Merged nodes can end up with parallel links to a shared consumer, so `DedupLinks` runs once more afterwards.
 
 ## The `PruneOrphans` Pass
 
