@@ -199,6 +199,32 @@ impl PlotCoordinates {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BlockCoordinates(pub PositionCoordinates);
+
+impl BlockCoordinates {
+    pub fn resolve(
+        &self,
+        reference: (f64, f64, f64),
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<BlockPos, RuntimeError> {
+        let (x, y, z) = self.0.resolve(reference, yaw, pitch)?;
+        let coordinates = [x.floor(), y.floor(), z.floor()];
+        if coordinates
+            .iter()
+            .any(|&value| value < i32::MIN as f64 || value > i32::MAX as f64)
+        {
+            return Err(RuntimeError::CoordinateOutOfRange);
+        }
+        Ok(BlockPos::new(
+            coordinates[0] as i32,
+            coordinates[1] as i32,
+            coordinates[2] as i32,
+        ))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReplacementOperand {
     pub pattern: Option<WorldEditPattern>,
@@ -226,6 +252,7 @@ pub enum Value {
     Mask(WorldEditMask),
     Direction(Direction),
     DirectionWithDiagonals(DirectionWithDiagonals),
+    BlockPos(BlockCoordinates),
     Flags(FlagValues),
 }
 
@@ -262,3 +289,4 @@ from_value!(&'a WorldEditPattern, "Pattern", Value::Pattern(p) => p);
 from_value!(&'a WorldEditMask, "Mask", Value::Mask(m) => m);
 from_value!(Direction, "Direction", Value::Direction(d) => *d);
 from_value!(DirectionWithDiagonals, "DirectionWithDiagonals", Value::DirectionWithDiagonals(d) => *d);
+from_value!(BlockCoordinates, "BlockPos", Value::BlockPos(p) => *p);

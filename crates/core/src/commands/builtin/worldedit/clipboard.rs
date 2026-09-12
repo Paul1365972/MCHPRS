@@ -70,6 +70,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .flag('a', "ignore-air", "Paste without air blocks")
             .flag('u', "update", "Update blocks after pasting")
             .flag('s', "select-region", "Select the pasted region")
+            .flag('n', "no-paste", "No paste, select only")
             .executes(exec_paste),
     );
     registry.add_custom_alias("/va", "/paste -a");
@@ -184,6 +185,7 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let ignore_air = ctx.flag("ignore-air");
     let should_update = ctx.flag("update");
     let select_region = ctx.flag("select-region");
+    let no_paste = ctx.flag("no-paste");
 
     let start_time = Instant::now();
 
@@ -202,6 +204,11 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
         player.worldedit_set_second_pos(paste_max);
         Ok(())
     };
+
+    if no_paste {
+        select(ctx)?;
+        return ctx.worldedit_message(&format!("Region selected. ({:?})", start_time.elapsed()));
+    }
 
     let clipboard = ctx.get_clipboard()?.clone();
     let clipped = ctx.capture_undo_regions([(paste_min, paste_max)], paste_min)?;

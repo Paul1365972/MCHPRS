@@ -56,7 +56,10 @@ fn separator(reader: &mut Reader<'_>, count: usize) -> Result<(), SyntaxError> {
     Ok(())
 }
 
-pub fn parse_vec3(reader: &mut Reader<'_>) -> Result<PositionCoordinates, SyntaxError> {
+pub fn parse_vec3(
+    reader: &mut Reader<'_>,
+    center: bool,
+) -> Result<PositionCoordinates, SyntaxError> {
     if reader.peek() == Some('^') {
         let mut local = [0.0; 3];
         for (i, value) in local.iter_mut().enumerate() {
@@ -86,6 +89,8 @@ pub fn parse_vec3(reader: &mut Reader<'_>) -> Result<PositionCoordinates, Syntax
         let start = reader.cursor();
         let value = if relative && reader.peek().is_none_or(|ch| ch == ' ') {
             0.0
+        } else if !center && !relative {
+            reader.number(i32::MIN, i32::MAX)? as f64
         } else {
             reader.number(-f64::MAX, f64::MAX)?
         };
@@ -93,7 +98,14 @@ pub fn parse_vec3(reader: &mut Reader<'_>) -> Result<PositionCoordinates, Syntax
         *coordinate = if relative {
             Coordinate::Relative(value)
         } else {
-            Coordinate::Absolute(value + if i != 1 && integer { 0.5 } else { 0.0 })
+            Coordinate::Absolute(
+                value
+                    + if center && i != 1 && integer {
+                        0.5
+                    } else {
+                        0.0
+                    },
+            )
         };
     }
     let [x, y, z] = coordinates;

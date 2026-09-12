@@ -1,4 +1,8 @@
-use super::{argument_parser, argument_suggestions, suggestions::SuggestionSource, value::Value};
+use super::{
+    argument_parser, argument_suggestions,
+    suggestions::SuggestionSource,
+    value::{BlockCoordinates, Value},
+};
 use crate::worldedit::{mask::WorldEditMask, pattern::WorldEditPattern};
 use mchprs_commands::flag::{self, Flag};
 use mchprs_commands::graph::Argument;
@@ -26,6 +30,7 @@ pub enum ArgumentType {
     Mask,
     Replacement,
     DirectionWithDiagonals,
+    BlockPos,
     SchematicFile,
     GreedyString,
     Flags { flags: Vec<Flag> },
@@ -47,6 +52,7 @@ impl ArgumentType {
             Self::Word => ClientArgument::Client(Parser::String(0)),
             Self::GreedyString => ClientArgument::Client(Parser::String(2)),
             Self::Vec3 => ClientArgument::Client(Parser::Vec3),
+            Self::BlockPos => ClientArgument::Client(Parser::BlockPos),
             Self::Flags { .. } => ClientArgument::AskServer(Parser::String(2)),
             Self::Direction
             | Self::DirectionWithDiagonals
@@ -90,7 +96,9 @@ impl ArgumentType {
                 WorldEditPattern::suggest(builder);
                 WorldEditMask::suggest(builder);
             }),
-            Self::Vec3 => argument_suggestions::coordinates(self, &["~ ~ ~", "^ ^ ^"], builder),
+            Self::Vec3 | Self::BlockPos => {
+                argument_suggestions::coordinates(self, &["~ ~ ~", "^ ^ ^"], builder)
+            }
             Self::PlotPos => argument_suggestions::coordinates(self, &["~ ~"], builder),
             Self::SchematicFile => return Some(SuggestionSource::SchematicFiles),
             Self::Word | Self::GreedyString | Self::Integer { .. } | Self::Float { .. } => {}
@@ -113,7 +121,7 @@ impl Argument for ArgumentType {
             ArgumentType::Integer { min, max } => reader.number(*min, *max).map(Value::Integer),
             ArgumentType::Float { min, max } => reader.number(*min, *max).map(Value::Float),
             ArgumentType::Direction => argument_parser::parse_direction(reader),
-            ArgumentType::Vec3 => argument_parser::parse_vec3(reader).map(Value::Position),
+            ArgumentType::Vec3 => argument_parser::parse_vec3(reader, true).map(Value::Position),
             ArgumentType::PlotPos => argument_parser::parse_plot_pos(reader),
             ArgumentType::ContainerType => argument_parser::parse_container(reader),
             ArgumentType::Pattern => argument_parser::parse_pattern(reader),
@@ -122,6 +130,8 @@ impl Argument for ArgumentType {
             ArgumentType::DirectionWithDiagonals => {
                 argument_parser::parse_direction_with_diagonals(reader)
             }
+            ArgumentType::BlockPos => argument_parser::parse_vec3(reader, false)
+                .map(|position| Value::BlockPos(BlockCoordinates(position))),
             ArgumentType::GreedyString => Ok(Value::String(reader.greedy())),
             ArgumentType::Flags { flags } => flag::parse(reader, flags).map(Value::Flags),
         }

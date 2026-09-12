@@ -2,7 +2,7 @@ use crate::{
     commands::{
         define::FLAGS_ARGUMENT,
         error::{CommandResult, InternalError, RuntimeError},
-        value::{FromValue, PositionCoordinates, Value},
+        value::{BlockCoordinates, FromValue, PositionCoordinates, Value},
     },
     player::{PacketSender, Player, PlayerPos},
     plot::{Plot, PlotWorld, PLOT_BLOCK_HEIGHT},
@@ -100,6 +100,19 @@ impl<'a> ExecutionContext<'a> {
             player.pitch,
         )?;
         Ok(Some(PlayerPos::new(x, y, z)))
+    }
+
+    pub(super) fn block_position(&self, name: &str) -> CommandResult<Option<BlockPos>> {
+        let Some(coordinates) = self.arg_opt::<BlockCoordinates>(name)? else {
+            return Ok(None);
+        };
+        let player = self.player()?;
+        let position = player.pos;
+        Ok(Some(coordinates.resolve(
+            (position.x, position.y, position.z),
+            player.yaw,
+            player.pitch,
+        )?))
     }
 
     pub(super) fn reply(&self, message: &str) -> CommandResult<()> {
