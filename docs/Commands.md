@@ -91,7 +91,7 @@ Visit their [documentation](https://worldedit.enginehub.org/en/latest/commands/)
 | `//distr [-c]` | None | Show block counts and percentages in the selection. Flags: `-c`/`--clipboard` (use the clipboard instead). |
 | `//stack [<count>] [<direction>]` | `//s` | Create adjacent copies of the selection. Defaults to 1 copy in the direction you are facing, including air. Flags: `-a`/`--ignore-air` (skip air); `-s`/`--shift-selection` (select the last copy). |
 | `//move [<count>] [<direction>]` | None | Move the selected blocks, leaving air behind. Defaults to 1 block in the direction you are facing; parts moved outside the plot are clipped. Flags: `-a`/`--ignore-air` (skip air when placing blocks), `-s`/`--shift-selection` (move the selection with the blocks). |
-| `//rstack [<count>] [<spacing>] [<direction>]` | `//rs` | Repeat the selection at a fixed block spacing, allowing copies to overlap. Supports diagonal directions. Defaults to 1 copy, 2 blocks in the direction you are looking, skipping air. Flags: `-a`/`--with-air` (include air); `-s`/`--shift-selection` (select the last copy) or `-e`/`--expand-selection` (include all copies in the selection). |
+| `//rstack [<count>] [<direction>] [<offset>]` | `//rs` | Repeat the selection at a fixed block offset, allowing copies to overlap. Supports diagonal directions. Defaults to 1 copy, 2 blocks in the direction you are looking, skipping air. Flags: `-w`/`--with-air` (include air); `-s`/`--shift-selection` (select the last copy) or `-e`/`--expand-selection` (include all copies in the selection). |
 
 ### Clipboard
 

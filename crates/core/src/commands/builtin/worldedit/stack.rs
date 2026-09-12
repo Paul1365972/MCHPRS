@@ -46,9 +46,9 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         Command::new("/rstack")
             .alias("/rs")
             .optional("count", ArgumentType::integer(1, 1000))
-            .optional("spacing", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::DirectionWithDiagonals)
-            .flag('a', "with-air", "Include air blocks")
+            .optional("offset", ArgumentType::integer(1, 1000))
+            .flag('w', "with-air", "Stack with air blocks")
             .flag(
                 's',
                 "shift-selection",
@@ -60,8 +60,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                 "Expand selection to include stacked region",
             )
             .executes(|ctx| {
-                let spacing = ctx.arg_or("spacing", 2)?;
                 let direction = ctx.arg_or("direction", DirectionWithDiagonals::Me)?;
+                let spacing = ctx.arg_or("offset", 2)?;
                 let player = ctx.player()?;
                 let direction = direction.resolve(player.get_facing(), player.pitch);
                 let selection = ctx.selection()?;
