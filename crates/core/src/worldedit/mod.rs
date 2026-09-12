@@ -1,11 +1,15 @@
+pub mod mask;
 pub mod pattern;
+mod suggestions;
 
 use crate::player::PlayerPos;
 use crate::plot::PlotWorld;
+use mchprs_blocks::block_state_spec::{parse_properties, BlockStateSpec};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use mchprs_schematic::WorldEditClipboard;
 use mchprs_world::{for_each_block_mut_optimized, World};
+use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
 pub struct WorldEditUndo {
@@ -135,4 +139,76 @@ pub fn update(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {
         let block = plot.get_block(pos);
         mchprs_redstone::update(block, plot, pos);
     });
+}
+
+fn split_top_level_commas(input: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+    for (i, ch) in input.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&input[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&input[start..]);
+    parts
+}
+
+fn parse_raw_block(input: &str) -> Result<Block, String> {
+    let id = input
+        .strip_prefix('=')
+        .unwrap_or(input)
+        .parse::<u32>()
+        .map_err(|_| format!("Invalid block state ID: {input}"))?;
+    let block = Block::from_id(id);
+    if block.get_id() != id {
+        return Err(format!("Unsupported block state ID: {id}"));
+    }
+    Ok(block)
+}
+
+fn parse_block_states(list: &str) -> Result<FxHashMap<String, String>, String> {
+    let properties = parse_properties(list).map_err(|error| error.to_string())?;
+    Ok(owned_states(properties))
+}
+
+fn parse_block(input: &str) -> Result<(Block, FxHashMap<String, String>), String> {
+    let spec = BlockStateSpec::parse(input).map_err(|error| error.to_string())?;
+    let name = spec.name();
+    let block = Block::from_name(&name).ok_or_else(|| format!("Unknown block: {name}"))?;
+    let states = owned_states(spec.properties);
+    validate_states(Some(block), &states)?;
+    Ok((block, states))
+}
+
+fn owned_states(properties: Vec<(&str, &str)>) -> FxHashMap<String, String> {
+    properties
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value.to_owned()))
+        .collect()
+}
+
+fn validate_states(block: Option<Block>, states: &FxHashMap<String, String>) -> Result<(), String> {
+    for (name, value) in states {
+        let values = match block {
+            Some(block) => block.property_values(name).ok_or_else(|| {
+                format!("Block {} does not have property {name}", block.get_name())
+            })?,
+            None => Block::known_properties()
+                .iter()
+                .find(|property| property.name == name)
+                .map(|property| property.values)
+                .ok_or_else(|| format!("Unknown block property: {name}"))?,
+        };
+        if !values.contains(&value.as_str()) {
+            return Err(format!("Property {name} does not accept {value}"));
+        }
+    }
+    Ok(())
 }

@@ -1,4 +1,5 @@
 use super::error::RuntimeError;
+use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::{BlockFacing, BlockPos};
@@ -218,6 +219,7 @@ pub(super) enum Value {
     PlotPos(PlotCoordinates),
     Container(ContainerType),
     Pattern(WorldEditPattern),
+    Mask(WorldEditMask),
     Direction(Direction),
     DirectionWithDiagonals(DirectionWithDiagonals),
     Flags(FlagValues),
@@ -253,5 +255,6 @@ from_value!(PositionCoordinates, Position(v) => *v);
 from_value!(PlotCoordinates, PlotPos(p) => *p);
 from_value!(ContainerType, Container(c) => *c);
 from_value!(&'a WorldEditPattern, Pattern(p) => p);
+from_value!(&'a WorldEditMask, Mask(m) => m);
 from_value!(Direction, Direction(d) => *d);
 from_value!(DirectionWithDiagonals, DirectionWithDiagonals(d) => *d);

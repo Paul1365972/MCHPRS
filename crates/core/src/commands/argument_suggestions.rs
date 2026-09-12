@@ -1,6 +1,6 @@
 use mchprs_commands::flag::{self, Flag};
 use mchprs_commands::graph::Argument;
-use mchprs_commands::reader::Reader;
+use mchprs_commands::reader::{Reader, Span};
 use mchprs_commands::suggestion::SuggestionsBuilder;
 use std::iter;
 
@@ -48,5 +48,43 @@ pub(super) fn suggest_coordinates(
         if parser.parse(&mut reader).is_ok() && !reader.can_read() {
             builder.suggest_matching([suggestion]);
         }
+    }
+}
+
+pub(super) fn suggest_quoted(
+    parser: &impl Argument,
+    builder: &mut SuggestionsBuilder<'_, '_>,
+    suggest: impl FnOnce(&mut SuggestionsBuilder<'_, '_>),
+) {
+    let Some(quote @ ('\'' | '"')) = builder.remaining().chars().next() else {
+        suggest(builder);
+        return;
+    };
+
+    let mut reader = Reader::new(builder.remaining());
+    let closed = reader.quoted().is_ok();
+    if closed && reader.can_read() {
+        return;
+    }
+    let input = builder.input();
+    let span = builder.span();
+    let end = span.end - usize::from(closed);
+    let mut suggestions = Vec::new();
+    suggest(&mut SuggestionsBuilder::new(
+        input,
+        Span::new(span.start + 1, end),
+        &mut suggestions,
+    ));
+    for mut suggestion in suggestions {
+        let completed = format!(
+            "{}{}{quote}",
+            &input[span.start..suggestion.span.start],
+            suggestion.text
+        );
+        let mut reader = Reader::new(&completed);
+        if parser.parse(&mut reader).is_ok() && !reader.can_read() {
+            suggestion.text.push(quote);
+        }
+        builder.at(suggestion.span.start).suggest(suggestion.text);
     }
 }

@@ -6,6 +6,7 @@ use crate::commands::error::{CommandResult, RuntimeError};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::Direction;
 use crate::utils;
+use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
 use crate::worldedit::{clear_area, region_positions, update};
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
@@ -29,26 +30,27 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/replace")
-            .arg("from", ArgumentType::Pattern)
-            .arg("to", ArgumentType::Pattern)
+            .optional("mask", ArgumentType::Mask)
+            .arg("pattern", ArgumentType::Pattern)
             .executes(|ctx| {
-                let from = ctx.arg("from")?;
-                let to = ctx.arg("to")?;
-                exec_set(ctx, Some(from), to)
+                let existing = WorldEditMask::existing();
+                let mask = ctx.arg_opt("mask")?.unwrap_or(&existing);
+                let pattern = ctx.arg("pattern")?;
+                exec_set(ctx, Some(mask), pattern)
             }),
     );
 
     registry.register(
         Command::new("/count")
-            .arg("mask", ArgumentType::Pattern)
+            .arg("mask", ArgumentType::Mask)
             .executes(|ctx| {
-                let mask: &WorldEditPattern = ctx.arg("mask")?;
+                let mask: &WorldEditMask = ctx.arg("mask")?;
                 let (first_pos, second_pos) = ctx.selection()?;
 
                 let start_time = Instant::now();
                 let world = ctx.world();
                 let blocks_counted = region_positions(first_pos, second_pos)
-                    .filter(|&pos| mask.matches(world.get_block(pos)))
+                    .filter(|&pos| mask.matches(world, pos))
                     .count();
 
                 ctx.worldedit_message(&format!(
@@ -168,7 +170,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
 fn exec_set(
     ctx: &mut ExecutionContext<'_>,
-    from: Option<&WorldEditPattern>,
+    mask: Option<&WorldEditMask>,
     pattern: &WorldEditPattern,
 ) -> CommandResult<()> {
     let (first_pos, second_pos) = ctx.selection()?;
@@ -181,9 +183,7 @@ fn exec_set(
 
     let world = ctx.world_mut();
     for pos in region_positions(first_pos, second_pos) {
-        if from.is_none_or(|from| from.matches(world.get_block(pos)))
-            && world.set_block_raw(pos, pattern.pick().get_id())
-        {
+        if mask.is_none_or(|mask| mask.matches(world, pos)) && pattern.place(world, pos) {
             blocks_updated += 1;
         }
     }

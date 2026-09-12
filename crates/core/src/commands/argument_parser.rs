@@ -2,6 +2,7 @@ use super::value::{
     Coordinate, Direction, DirectionWithDiagonals, PlayerTarget, PlotCoordinates,
     PositionCoordinates, Value,
 };
+use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_commands::reader::{Reader, SyntaxError};
@@ -164,6 +165,13 @@ pub(super) fn parse_pattern(reader: &mut Reader<'_>) -> Result<Value, SyntaxErro
     let text = reader.custom_string()?;
     WorldEditPattern::from_str(&text)
         .map(Value::Pattern)
+        .map_err(|error| reader.error(error.to_string()))
+}
+
+pub(super) fn parse_mask(reader: &mut Reader<'_>) -> Result<Value, SyntaxError> {
+    let text = reader.custom_string()?;
+    WorldEditMask::from_str(&text)
+        .map(Value::Mask)
         .map_err(|error| reader.error(error.to_string()))
 }
 

@@ -1,6 +1,8 @@
 use super::suggestions::SuggestionSource;
 use super::value::Value;
 use super::{argument_parser, argument_suggestions};
+use crate::worldedit::mask::WorldEditMask;
+use crate::worldedit::pattern::WorldEditPattern;
 use mchprs_commands::flag::{self, Flag};
 use mchprs_commands::graph::Argument;
 use mchprs_commands::reader::{Reader, SyntaxError};
@@ -24,6 +26,7 @@ pub(super) enum ArgumentType {
     PlotPos,
     ContainerType,
     Pattern,
+    Mask,
     DirectionWithDiagonals,
     SchematicFile,
     GreedyString,
@@ -52,7 +55,7 @@ impl ArgumentType {
             | Self::ContainerType
             | Self::SchematicFile => ClientArgument::AskServer(Parser::String(0)),
             Self::PlotPos => ClientArgument::AskServer(Parser::ColumnPos),
-            Self::Pattern | Self::PlayerTarget => ClientArgument::Opaque,
+            Self::Pattern | Self::Mask | Self::PlayerTarget => ClientArgument::Opaque,
         }
     }
 
@@ -81,16 +84,18 @@ impl ArgumentType {
                 return Some(SuggestionSource::PlayerNames);
             }
             Self::Flags { flags } => argument_suggestions::suggest_flags(flags, builder),
+            Self::Pattern => {
+                argument_suggestions::suggest_quoted(self, builder, WorldEditPattern::suggest)
+            }
+            Self::Mask => {
+                argument_suggestions::suggest_quoted(self, builder, WorldEditMask::suggest)
+            }
             Self::Vec3 => {
                 argument_suggestions::suggest_coordinates(self, &["~ ~ ~", "^ ^ ^"], builder)
             }
             Self::PlotPos => argument_suggestions::suggest_coordinates(self, &["~ ~"], builder),
             Self::SchematicFile => return Some(SuggestionSource::SchematicFiles),
-            Self::Word
-            | Self::GreedyString
-            | Self::Integer { .. }
-            | Self::Float { .. }
-            | Self::Pattern => {}
+            Self::Word | Self::GreedyString | Self::Integer { .. } | Self::Float { .. } => {}
         }
         None
     }
@@ -114,6 +119,7 @@ impl Argument for ArgumentType {
             Self::PlotPos => argument_parser::parse_plot_pos(reader),
             Self::ContainerType => argument_parser::parse_container(reader),
             Self::Pattern => argument_parser::parse_pattern(reader),
+            Self::Mask => argument_parser::parse_mask(reader),
             Self::DirectionWithDiagonals => argument_parser::parse_direction_with_diagonals(reader),
             Self::GreedyString => Ok(Value::String(reader.greedy())),
             Self::Flags { flags } => flag::parse(reader, flags).map(Value::Flags),

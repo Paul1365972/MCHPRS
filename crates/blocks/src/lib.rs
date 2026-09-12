@@ -1,4 +1,5 @@
 pub mod block_entities;
+pub mod block_state_spec;
 pub mod blocks;
 mod generated;
 pub mod items;

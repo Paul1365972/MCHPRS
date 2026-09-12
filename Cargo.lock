@@ -1244,7 +1244,6 @@ dependencies = [
  "mchprs_world",
  "md5",
  "rand",
- "regex",
  "reqwest",
  "rusqlite",
  "rustc-hash",
