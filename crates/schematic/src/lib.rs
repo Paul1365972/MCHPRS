@@ -28,7 +28,7 @@ pub struct WorldEditClipboard {
 }
 
 pub fn create_clipboard<W: World>(
-    world: &mut W,
+    world: &W,
     origin: BlockPos,
     first_pos: BlockPos,
     second_pos: BlockPos,

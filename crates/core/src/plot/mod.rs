@@ -1,15 +1,17 @@
-pub mod commands;
 mod data;
 pub mod database;
 mod monitor;
 mod packet_handlers;
 mod scoreboard;
-pub mod worldedit;
 
+use self::data::sleep_time_for_tps;
+use self::scoreboard::Scoreboard;
+use crate::commands::COMMAND_REGISTRY;
 use crate::config::CONFIG;
 use crate::interaction;
 use crate::interaction::UseOnBlockContext;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
+use crate::profile::PlayerProfile;
 use crate::server::{BroadcastMessage, Message, PrivMessage};
 use crate::utils::HyphenatedUUID;
 use anyhow::Error;
@@ -23,7 +25,7 @@ use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::{Compiler, CompilerOptions};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
-use mchprs_text::TextComponent;
+
 use mchprs_world::storage::Chunk;
 use mchprs_world::{has_tick_entry, schedule_tick_entry, TickEntry, TickPriority, World};
 use monitor::TimingsMonitor;
@@ -37,10 +39,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
-use tracing::{debug, error, warn};
-
-use self::data::sleep_time_for_tps;
-use self::scoreboard::Scoreboard;
+use tracing::{debug, error, info, warn};
 
 /// The width of a plot (2^n)
 pub const PLOT_SCALE: u32 = 5;
@@ -89,7 +88,7 @@ pub struct Plot {
     running: bool,
     /// If true, the plot will remain running even if no players are on for a long time.
     always_running: bool,
-    auto_redpiler: bool,
+    pub auto_redpiler: bool,
 
     owner: Option<u128>,
     async_rt: Runtime,
@@ -184,6 +183,9 @@ impl World for PlotWorld {
     }
 
     fn set_block_entity(&mut self, pos: BlockPos, block_entity: BlockEntity) {
+        if !(0..PLOT_BLOCK_HEIGHT).contains(&pos.y) {
+            return;
+        }
         let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
             Some(idx) => idx,
             None => return,
@@ -280,7 +282,7 @@ impl World for PlotWorld {
 }
 
 impl Plot {
-    fn tickn(&mut self, ticks: u64) {
+    pub fn tickn(&mut self, ticks: u64) {
         if self.redpiler.is_active() {
             self.timings.tickn(ticks);
             self.redpiler.tickn(ticks);
@@ -330,22 +332,7 @@ impl Plot {
         }
     }
 
-    pub fn broadcast_chat_message(&mut self, message: String) {
-        let broadcast_message = Message::ChatInfo(
-            0,
-            format!("Plot {}-{}", self.world.x, self.world.z),
-            message,
-        );
-        self.message_sender.send(broadcast_message).unwrap();
-    }
-
-    pub fn broadcast_plot_chat_message(&mut self, message: &str) {
-        for player in &mut self.players {
-            player.send_chat_message(&TextComponent::from_legacy_text(message));
-        }
-    }
-
-    fn change_player_gamemode(&mut self, player_idx: usize, gamemode: Gamemode) {
+    pub fn change_player_gamemode(&mut self, player_idx: usize, gamemode: Gamemode) {
         self.players[player_idx].set_gamemode(gamemode);
         let _ = self.message_sender.send(Message::PlayerUpdateGamemode(
             self.players[player_idx].uuid,
@@ -553,9 +540,9 @@ impl Plot {
         if let Some(item) = &item_in_hand {
             let has_permission = self.players[player].has_permission("worldedit.selection.pos");
             if item.item_type == (Item::WoodenAxe) && has_permission {
-                let same = self.players[player].second_position == Some(block_pos);
+                let same = self.players[player].worldedit_second_pos() == Some(block_pos);
                 if !same {
-                    self.players[player].worldedit_set_second_position(block_pos);
+                    self.players[player].worldedit_set_second_pos(block_pos);
                 }
                 cancel(self);
                 // FIXME: Because the client sends another packet after this for the left hand for
@@ -637,12 +624,12 @@ impl Plot {
             let has_permission = self.players[player].has_permission("worldedit.selection.pos");
             if item.item_type == (Item::WoodenAxe) && has_permission {
                 self.send_block_corrections(&[block_pos]);
-                if let Some(pos) = self.players[player].first_position
+                if let Some(pos) = self.players[player].worldedit_first_pos()
                     && pos == block_pos
                 {
                     return;
                 }
-                self.players[player].worldedit_set_first_position(block_pos);
+                self.players[player].worldedit_set_first_pos(block_pos);
                 return;
             }
         }
@@ -686,14 +673,14 @@ impl Plot {
     /// After an expensive operation or change in timings, it's important to
     /// call this function so our timings monitor doesn't think we're running
     /// behind.
-    fn reset_timings(&mut self) {
+    pub fn reset_timings(&mut self) {
         self.lag_time = Duration::ZERO;
         self.last_update_time = Instant::now();
         self.last_nspt = None;
         self.timings.reset_timings();
     }
 
-    fn publish_world(&mut self) {
+    pub fn publish_world(&mut self) {
         if self.redpiler.is_active() {
             self.redpiler.flush(&mut self.world);
         }
@@ -701,7 +688,7 @@ impl Plot {
         self.last_world_send_time = Instant::now();
     }
 
-    fn start_redpiler(&mut self, options: CompilerOptions) {
+    pub fn start_redpiler(&mut self, options: CompilerOptions) {
         debug!("Starting redpiler");
         self.scoreboard
             .set_redpiler_state(&self.players, RedpilerState::Compiling);
@@ -746,7 +733,7 @@ impl Plot {
 
     /// Redpiler needs to reset implicitly in the case of any block changes done by a player. This
     /// can be
-    fn reset_redpiler(&mut self) {
+    pub fn reset_redpiler(&mut self) {
         if self.redpiler.is_active() {
             debug!("Discarding redpiler");
             let bounds = self.world.get_corners();
@@ -761,6 +748,93 @@ impl Plot {
         }
     }
 
+    pub fn owner(&self) -> Option<u128> {
+        self.owner
+    }
+
+    pub fn send_message(&self, message: Message) {
+        let _ = self.message_sender.send(message);
+    }
+
+    pub fn generate_timings_report(&self) -> Option<monitor::TimingsReport> {
+        self.timings.generate_report()
+    }
+
+    pub fn tps(&self) -> Tps {
+        self.tps
+    }
+
+    pub fn set_tps(&mut self, tps: Tps) {
+        self.tps = tps;
+        self.sleep_time = sleep_time_for_tps(tps);
+        self.timings.set_tps(tps);
+        self.reset_timings();
+    }
+
+    pub fn world_send_rate(&self) -> WorldSendRate {
+        self.world.world_send_rate
+    }
+
+    pub fn set_world_send_rate(&mut self, rate: WorldSendRate) {
+        self.world.world_send_rate = rate;
+        self.world.pending_sounds.clear();
+        self.last_world_send_time = Instant::now();
+    }
+
+    pub fn add_locked_player(&mut self, entity_id: EntityId) -> bool {
+        self.locked_players.insert(entity_id)
+    }
+
+    pub fn remove_locked_player(&mut self, entity_id: EntityId) -> bool {
+        self.locked_players.remove(&entity_id)
+    }
+
+    pub fn whitelist_add(&self, username: String, packet_sender: PlayerPacketSender) {
+        if !CONFIG.whitelist {
+            packet_sender.send_error_message("Whitelist is not enabled!");
+            return;
+        }
+        let sender = self.message_sender.clone();
+        self.async_rt.spawn(async move {
+            match PlayerProfile::lookup_by_username(&username).await {
+                Ok(profile) => {
+                    let _ = sender.send(Message::WhitelistAdd(
+                        profile.uuid.0,
+                        profile.username,
+                        packet_sender,
+                    ));
+                }
+                Err(error) => {
+                    warn!("Failed to look up profile for {username:?}: {error}");
+                    packet_sender.send_error_message(
+                        "Unable to look up that player. Check the name and try again.",
+                    );
+                }
+            }
+        });
+    }
+
+    pub fn whitelist_remove(&self, username: String, packet_sender: PlayerPacketSender) {
+        if !CONFIG.whitelist {
+            packet_sender.send_error_message("Whitelist is not enabled!");
+            return;
+        }
+        let sender = self.message_sender.clone();
+        self.async_rt.spawn(async move {
+            match PlayerProfile::lookup_by_username(&username).await {
+                Ok(profile) => {
+                    let _ = sender.send(Message::WhitelistRemove(profile.uuid.0, packet_sender));
+                }
+                Err(error) => {
+                    warn!("Failed to look up profile for {username:?}: {error}");
+                    packet_sender.send_error_message(
+                        "Unable to look up that player. Check the name and try again.",
+                    );
+                }
+            }
+        });
+    }
+
     fn destroy_entity(&mut self, entity_id: u32) {
         let destroy_entity = CRemoveEntities {
             entity_ids: vec![entity_id as i32],
@@ -771,7 +845,7 @@ impl Plot {
         }
     }
 
-    fn leave_plot(&mut self, uuid: u128) -> Player {
+    pub fn leave_plot(&mut self, uuid: u128) -> Player {
         let player_idx = self.players.iter().position(|p| p.uuid == uuid).unwrap();
         let player = self.players.remove(player_idx);
         self.world.packet_senders.remove(&player.entity_id);
@@ -804,7 +878,7 @@ impl Plot {
         plot_x == x && plot_z == z
     }
 
-    fn in_plot_bounds(plot_x: i32, plot_z: i32, x: i32, z: i32) -> bool {
+    pub fn in_plot_bounds(plot_x: i32, plot_z: i32, x: i32, z: i32) -> bool {
         Plot::chunk_in_plot_bounds(plot_x, plot_z, x >> 4, z >> 4)
     }
 
@@ -856,20 +930,27 @@ impl Plot {
     }
 
     fn handle_commands(&mut self) {
-        let mut removal_offset = 0;
-        for player_idx in 0..self.players.len() {
-            let player_idx = player_idx - removal_offset;
+        let mut player_idx = 0;
+        while player_idx < self.players.len() {
+            let uuid = self.players[player_idx].uuid;
             let commands = mem::take(&mut self.players[player_idx].command_queue);
-            for command in commands {
-                let mut args: Vec<&str> = command.split(' ').collect();
-                let command = args.remove(0);
+            for command_line in commands {
+                info!(
+                    "{} issued command: {}",
+                    self.players[player_idx].username, command_line
+                );
                 let old_block = self.players[player_idx].pos.block_pos();
-                let left_plot = self.handle_command(player_idx, command, args);
+                let result = COMMAND_REGISTRY.execute(self, player_idx, &command_line);
+                if let Err(err) = result {
+                    error!("Failed to run command `{}`: {}", command_line, err);
+                }
                 self.release_pressure_plate(old_block);
-                if left_plot {
-                    removal_offset += 1;
+                if self.players.get(player_idx).map(|p| p.uuid) != Some(uuid) {
                     break;
                 }
+            }
+            if self.players.get(player_idx).map(|p| p.uuid) == Some(uuid) {
+                player_idx += 1;
             }
         }
     }
