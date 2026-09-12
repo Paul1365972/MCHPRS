@@ -1337,17 +1337,16 @@ impl Drop for Plot {
                     .unwrap();
             }
         }
-        let world = &self.world;
-        self.message_sender
-            .send(Message::PlotUnload(world.x, world.z))
-            .unwrap();
-
         self.reset_redpiler();
         self.world
             .chunks
             .iter_mut()
             .for_each(|chunk| chunk.compress());
         self.save();
+        let world = &self.world;
+        self.message_sender
+            .send(Message::PlotUnload(world.x, world.z))
+            .unwrap();
     }
 }
 
