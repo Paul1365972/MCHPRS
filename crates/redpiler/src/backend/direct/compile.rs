@@ -1,5 +1,5 @@
 use crate::backend::direct::node::ForwardLinks;
-use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx};
+use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx, NodeType as CNodeType};
 use crate::{CompilerOptions, TaskMonitor};
 use itertools::Itertools;
 use mchprs_blocks::blocks::{Block, Instrument};
@@ -19,6 +19,23 @@ struct FinalGraphStats {
     side_link_count: usize,
     default_link_count: usize,
     nodes_bytes: usize,
+}
+
+// Forward links are grouped by target type so consecutive updates take the same code path
+fn type_order(ty: &CNodeType) -> u8 {
+    match ty {
+        CNodeType::Repeater { .. } => 0,
+        CNodeType::Torch => 1,
+        CNodeType::Comparator { .. } => 2,
+        CNodeType::Lamp => 3,
+        CNodeType::Button => 4,
+        CNodeType::Lever => 5,
+        CNodeType::PressurePlate => 6,
+        CNodeType::Trapdoor => 7,
+        CNodeType::Wire => 8,
+        CNodeType::Constant => 9,
+        CNodeType::NoteBlock { .. } => 10,
+    }
 }
 
 fn compile_node(
@@ -72,14 +89,13 @@ fn compile_node(
     default_inputs.ss_counts[0] += (MAX_INPUTS - default_input_count) as u8;
     side_inputs.ss_counts[0] += (MAX_INPUTS - side_input_count) as u8;
 
-    use crate::compile_graph::NodeType as CNodeType;
     let fwd_link_range = if node.ty != CNodeType::Constant {
         let new_links = graph
             .edges(node_idx, Direction::Outgoing)
-            .sorted_by_key(|edge| nodes_map[&edge.target()])
-            .into_group_map_by(|edge| std::mem::discriminant(&graph[edge.target()].ty))
-            .into_values()
-            .flatten()
+            .sorted_by_key(|edge| {
+                let target = edge.target();
+                (type_order(&graph[target].ty), nodes_map[&target])
+            })
             .map(|edge| unsafe {
                 let idx = edge.target();
                 let idx = nodes_map[&idx];
