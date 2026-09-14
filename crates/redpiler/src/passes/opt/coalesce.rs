@@ -3,9 +3,7 @@
 //! Merges nodes that are indistinguishable at runtime: same type, same initial state and the same
 //! multiset of input links. The merged node takes over all outgoing links and block positions.
 
-use crate::compile_graph::{
-    CompileGraph, CompileLink, Direction, EdgeRef, LinkType, NodeIdx, NodeState, NodeType,
-};
+use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx, NodeState, NodeType};
 use crate::passes::{AnalysisInfos, Pass};
 use crate::{CompilerInput, CompilerOptions};
 use mchprs_world::World;
@@ -127,11 +125,7 @@ fn node_signature<'a>(
     inputs.clear();
     inputs.extend(graph.edges(idx, Direction::Incoming).map(|edge| {
         let link = edge.weight();
-        (
-            edge.source(),
-            link.ty,
-            significant_link_strength(graph, &node.ty, &edge),
-        )
+        (edge.source(), link.ty, link.ss)
     }));
     inputs.sort_unstable();
     inputs.dedup_by(|weaker, strongest| weaker.0 == strongest.0 && weaker.1 == strongest.1);
@@ -146,22 +140,6 @@ fn fx_hash(signature: &NodeSignature<'_>) -> u64 {
     let mut hasher = FxHasher::default();
     signature.hash(&mut hasher);
     hasher.finish()
-}
-
-/// A binary source powers a binary reader through any link that can carry a signal at all,
-/// so such a link is equivalent to a direct one.
-fn significant_link_strength(
-    graph: &CompileGraph,
-    reader: &NodeType,
-    edge: &EdgeRef<'_, CompileLink, u32>,
-) -> u8 {
-    let link = edge.weight();
-    let source = &graph[edge.source()].ty;
-    if link.ss < 15 && !reader.reads_signal_strength() && !source.outputs_signal_strength() {
-        0
-    } else {
-        link.ss
-    }
 }
 
 fn coalesce(

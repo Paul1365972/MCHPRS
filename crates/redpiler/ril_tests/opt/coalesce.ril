@@ -1,13 +1,14 @@
 test_args "--passes=coalesce"
 
-# Both torches read the same two inputs, which then makes the repeaters they feed identical too
+# Both torches read the same two inputs in a different order, which then makes the repeaters they
+# feed identical too
 circuit @same_inputs_input {
   %lever_a = lever false
   %lever_b = lever false
   %repeater1 = repeater 1, false, false, false, [%torch1:0], []
-  %repeater2 = repeater 1, false, false, false, [%torch2:5], []
+  %repeater2 = repeater 1, false, false, false, [%torch2:0], []
   %torch1 = torch true, [%lever_a:3, %lever_b:0]
-  %torch2 = torch true, [%lever_b:7, %lever_a:0]
+  %torch2 = torch true, [%lever_b:0, %lever_a:3]
   %lamp = lamp false, [%repeater1:0, %repeater2:4]
 }
 

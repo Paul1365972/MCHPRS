@@ -1,0 +1,52 @@
+test_args "--passes=normalize-weights"
+
+# A binary source powers a binary reader through any weight below 15, so the weight becomes 0
+circuit @binary_source_input {
+  %lever = lever false
+  %torch = torch true, [%lever:7]
+  %repeater = repeater 1, false, false, false, [%torch:3], [%lever:14]
+  %lamp = lamp false, [%repeater:9]
+}
+
+test(@binary_source_input) circuit @binary_source {
+  %lever = lever false
+  %torch = torch true, [%lever:0]
+  %repeater = repeater 1, false, false, false, [%torch:0], [%lever:0]
+  %lamp = lamp false, [%repeater:0]
+}
+
+# Comparators, wires and constants output a strength, and comparators and wires read one
+circuit @signal_strength_input {
+  %lever = lever false
+  %constant = constant 12
+  %cmp = comparator compare, none, false, 0, [%lever:4], [%constant:1]
+  %wire = wire 0, [%lever:9]
+  %lamp = lamp false, [%cmp:2, %constant:5, %wire:6]
+}
+
+test(@signal_strength_input) circuit @signal_strength {
+  %lever = lever false
+  %constant = constant 12
+  %cmp = comparator compare, none, false, 0, [%lever:4], [%constant:1]
+  %wire = wire 0, [%lever:9]
+  %lamp = lamp false, [%cmp:2, %constant:5, %wire:6]
+}
+
+# Normalized weights let the torches and then the repeaters coalesce despite different wire lengths
+circuit @coalesce_input {
+  %lever_a = lever false
+  %lever_b = lever false
+  %repeater1 = repeater 1, false, false, false, [%torch1:0], []
+  %repeater2 = repeater 1, false, false, false, [%torch2:5], []
+  %torch1 = torch true, [%lever_a:3, %lever_b:0]
+  %torch2 = torch true, [%lever_b:7, %lever_a:0]
+  %lamp = lamp false, [%repeater1:0, %repeater2:4]
+}
+
+test(@coalesce_input, "--passes=normalize-weights,coalesce") circuit @coalesce {
+  %lever_a = lever false
+  %lever_b = lever false
+  %repeater1 = repeater 1, false, false, false, [%torch1:0], []
+  %torch1 = torch true, [%lever_a:0, %lever_b:0]
+  %lamp = lamp false, [%repeater1:0, %repeater1:0]
+}

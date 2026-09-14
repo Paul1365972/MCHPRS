@@ -32,6 +32,10 @@ When the input block of a node is searched, the block is either a component that
 
 The links created in the `InputSearch` pass are weighted by the distance taken in the breadth-first search, but this may search Wires infinetely even though wires can only have a maximum 15 signal strength that decays every block. Therefore, this optimization pass was created to remove any links with a 15 or greater weight since they ultimately have no effect.
 
+## The `NormalizeWeights` Pass
+
+Repeaters, torches, lamps, trapdoors and note blocks only test whether any input delivers a signal, and a binary source (everything except comparators, wires and constants) delivers one through every link that survived `ClampWeights`. This optimization pass sets the weight of every such link to 0, so that `DedupLinks` and `Coalesce` can match links that only differ in the length of the wire they came from.
+
 ## The `DedupLinks` Pass
 
 Sometimes, the breadth-first search done by the `InputSearch` pass can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 15, the link with weight 15 is removed.
@@ -70,7 +74,7 @@ Disregarding High-Signal Strength logic, which Redpiler does not support anyways
 
 There are often times when a wire powers many different components in the same way. For example, it is common for vertical multi-bit latches to be controlled by a slab tower that powers several repetears that lock other repeaters. This is very inefficent because these repeaters will always have the exact same value, but they are still updated and ticked independently. To avoid this logic duplication, this optimization pass merges duplicate nodes into one, removing duplicate nodes from the graph and adjusting links to point to the new node.
 Two nodes that are neither inputs nor outputs are merged when they have the same type, the same initial state, no pending tick, and the same input links, where each link is compared by source node, link type and weight and only the strongest link per source node and link type counts.
-The weight is ignored when a binary source (everything except comparators, wires and constants) feeds a binary reader (everything except comparators and wires), since any such link powers the reader in the same way.
+Links from binary sources into binary readers already carry a canonical weight from `NormalizeWeights`, so they match regardless of their original wire length.
 Constant nodes are skipped, since `ConstantCoalesce` already leaves a single constant per value.
 The pass repeats until nothing changes, because merging two nodes can make the nodes they feed identical as well.
 Merged nodes can end up with parallel links to a shared consumer, so `DedupLinks` runs once more afterwards.

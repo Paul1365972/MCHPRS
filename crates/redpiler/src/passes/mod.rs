@@ -33,6 +33,7 @@ pub fn build_pass_pipeline<'p, W: World>(
     builder.add_pass::<clamp_weights::ClampWeights>();
 
     if options.optimize {
+        builder.add_pass::<normalize_weights::NormalizeWeights>();
         builder.add_pass::<dedup_links::DedupLinks>();
         builder.add_pass::<constant_fold::ConstantFold>();
         builder.add_pass::<unreachable_output::UnreachableOutput>();
@@ -69,6 +70,7 @@ impl<W: World> Default for PassRegistry<W> {
 
         // Optimization Passes
         registry.register_pass(clamp_weights::ClampWeights);
+        registry.register_pass(normalize_weights::NormalizeWeights);
         registry.register_pass(dedup_links::DedupLinks);
         registry.register_pass(constant_fold::ConstantFold);
         registry.register_pass(unreachable_output::UnreachableOutput);
