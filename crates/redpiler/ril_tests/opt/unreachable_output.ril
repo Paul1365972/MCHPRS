@@ -31,7 +31,7 @@ circuit @current_output_input {
 
 test(@current_output_input) circuit @current_output {
   %constant = constant 0
-  %cmp = comparator compare, none, false, 9, [%constant:0], []
+  %cmp = comparator compare, none, false, 9, [], []
   %lamp_near = lamp false, [%cmp:8]
   %lamp_far = lamp false, []
 }
