@@ -311,7 +311,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
 
                 let input_pos = pos.offset(facing.block_face());
                 let input_block = self.block_lookup_cache.get_block(input_pos);
-                if comparator::has_override(input_block) {
+                if comparator::analog_output(input_block, self.world, input_pos).is_some() {
                     self.graph
                         .add_edge(self.pos_map[&input_pos], id, CompileLink::default(0));
                 } else {
