@@ -1,5 +1,6 @@
 use mchprs_blocks::blocks::ComparatorMode;
-use std::num::NonZeroU8;
+use mchprs_blocks::signal_strength::SignalStrength;
+use std::num::NonZeroU128;
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -66,12 +67,12 @@ pub struct ForwardLink {
 }
 
 impl ForwardLink {
-    pub fn new(id: NodeId, side: bool, ss: u8) -> Self {
+    pub fn new(id: NodeId, side: bool, weight: u8) -> Self {
         assert!(id.index() < (1 << 27));
         // the clamp_weights compile pass should ensure ss < 15
-        assert!(ss < 15);
+        assert!(weight < 15);
         Self {
-            data: (id.index() as u32) << 5 | if side { 1 << 4 } else { 0 } | ss as u32,
+            data: (id.index() as u32) << 5 | if side { 1 << 4 } else { 0 } | weight as u32,
         }
     }
 
@@ -86,7 +87,7 @@ impl ForwardLink {
         self.data & (1 << 4) != 0
     }
 
-    pub fn ss(self) -> u8 {
+    pub fn weight(self) -> u8 {
         (self.data & 0b1111) as u8
     }
 }
@@ -96,7 +97,7 @@ impl std::fmt::Debug for ForwardLink {
         f.debug_struct("ForwardLink")
             .field("node", &self.node())
             .field("side", &self.side())
-            .field("ss", &self.ss())
+            .field("weight", &self.weight())
             .finish()
     }
 }
@@ -145,7 +146,7 @@ pub enum NodeType {
     Torch,
     Comparator {
         mode: ComparatorMode,
-        far_input: Option<NonMaxU8>,
+        far_input: Option<SignalStrength>,
         prioritized: bool,
     },
     Lamp,
@@ -161,21 +162,51 @@ pub enum NodeType {
 }
 
 #[repr(align(16))]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NodeInput {
-    pub ss_counts: [u8; 16],
+    power_counts: [u8; 16],
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct NonMaxU8(NonZeroU8);
-
-impl NonMaxU8 {
-    pub fn new(value: u8) -> Option<Self> {
-        NonZeroU8::new(value + 1).map(Self)
+impl NodeInput {
+    pub const fn new() -> Self {
+        let mut power_counts = [0; 16];
+        power_counts[0] = u8::MAX;
+        Self { power_counts }
     }
 
-    pub fn get(self) -> u8 {
-        self.0.get() - 1
+    #[inline]
+    pub fn update_power(&mut self, old_power: SignalStrength, new_power: SignalStrength) {
+        self.power_counts[old_power.get() as usize] -= 1;
+        self.power_counts[new_power.get() as usize] += 1;
+    }
+
+    pub fn is_powered(&self) -> bool {
+        // During compilation its ensured all signal strength buckets add up to 255
+        // So if and only if the zero bucket contains 255 is the input zero
+        self.power_counts[0] != u8::MAX
+    }
+
+    pub fn power(&self) -> SignalStrength {
+        // Note: this might be slower on big-endian systems
+        let counts = u128::from_le_bytes(self.power_counts);
+        // Safety: construction and updates preserve a total count of 255.
+        let counts = unsafe { NonZeroU128::new_unchecked(counts) };
+        SignalStrength::try_from(15 - (counts.leading_zeros() >> 3) as u8).unwrap()
+    }
+}
+
+impl FromIterator<SignalStrength> for NodeInput {
+    fn from_iter<T: IntoIterator<Item = SignalStrength>>(powers: T) -> Self {
+        let mut inputs = Self::new();
+        for (index, power) in powers.into_iter().enumerate() {
+            assert!(
+                index < u8::MAX as usize,
+                "Exceeded the maximum number of inputs {}",
+                u8::MAX
+            );
+            inputs.update_power(SignalStrength::Zero, power);
+        }
+        inputs
     }
 }
 
@@ -194,11 +225,29 @@ pub struct Node {
 
     pub visible: bool,
 
-    /// Powered or lit
-    pub powered: bool,
+    pub power: SignalStrength,
     /// Only for repeaters
-    pub locked: bool,
-    pub output_power: u8,
+    pub repeater_locked: bool,
     pub changed: bool,
     pub pending_tick: bool,
+}
+
+impl Node {
+    pub fn is_powered(&self) -> bool {
+        !self.power.is_zero()
+    }
+
+    pub fn set_power(&mut self, power: SignalStrength) {
+        self.power = power;
+        self.changed = true;
+    }
+
+    pub fn set_powered(&mut self, powered: bool) {
+        self.set_power(powered.into());
+    }
+
+    pub fn set_repeater_locked(&mut self, locked: bool) {
+        self.repeater_locked = locked;
+        self.changed = true;
+    }
 }
