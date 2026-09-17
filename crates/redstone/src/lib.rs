@@ -224,7 +224,7 @@ pub fn update(block: Block, world: &mut impl World, pos: BlockPos) {
         }
         Block::RedstoneLamp { lit } => {
             let should_be_lit = redstone_lamp_should_be_lit(world, pos);
-            if lit && !should_be_lit {
+            if lit && !should_be_lit && !world.pending_tick_at(pos) {
                 world.schedule_tick(pos, 2, TickPriority::Normal);
             } else if !lit && should_be_lit {
                 world.set_block(pos, Block::RedstoneLamp { lit: true });
