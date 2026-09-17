@@ -179,3 +179,5 @@ jobs:
           push: ${{ env.DOCKER_HUB_USERNAME != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
