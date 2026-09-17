@@ -174,11 +174,10 @@ fn identify_block<W: World>(
                 NodeState::simple(powered),
             )
         }
-        block if comparator::has_override(block) => (
-            NodeType::Constant,
-            NodeState::ss(comparator::get_override(block, world, pos)),
-        ),
-        _ => return None,
+        _ => {
+            let strength = comparator::analog_output(block, world, pos)?;
+            (NodeType::Constant, NodeState::ss(strength))
+        }
     };
     Some((ty, state))
 }
