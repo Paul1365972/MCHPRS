@@ -801,7 +801,6 @@ impl Block {
             Block::GreenWool => true,
             Block::RedWool => true,
             Block::BlackWool => true,
-            Block::IronTrapdoor { .. } => true,
             Block::NoteBlock { .. } => true,
             Block::Clay => true,
             Block::GoldBlock => true,
@@ -814,7 +813,6 @@ impl Block {
             Block::HayBlock { .. } => true,
             Block::Sand => true,
             Block::StoneBricks => true,
-            Block::EndPortalFrame { .. } => true,
             _ => false,
         }
     }
