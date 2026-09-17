@@ -95,7 +95,9 @@ When a Torch is ticked, it checks if the Torch should be off. If that value is d
 
 ### Lamp
 
-When a Lamp is updated, it checks if the Lamp should be lit. If a Lamp should be lit but currently is not, then the Lamp state is changed (this is instant). If the Lamp should *not* be lit, but currently is, then a tick is scheduled with delay 2 and priority `Normal`.
+When a Lamp is updated, it checks if the Lamp should be lit. If a Lamp should be lit but currently is not, then the Lamp state is changed (this is instant). If the Lamp should *not* be lit, but currently is, and no tick is pending at its node, then a tick is scheduled with delay 2 and priority `Normal`.
+
+Known deviation: vanilla lets a Lamp schedule a new tick while its previous tick has already been collected for the running game tick but not executed yet. Redpiler treats that tick as still pending and refuses, so a Lamp that loses power in the same tick its check runs, regains it the next tick and loses it again can stay lit two ticks longer than in vanilla. This only affects the lit state of the Lamp itself.
 
 When a Lamp is ticked, it checks if the Lamp should be lit. If it should not be bit, but currently is, then the state of the Lamp is changed.
 
