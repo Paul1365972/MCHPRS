@@ -13,6 +13,7 @@ use crate::{CompilerInput, CompilerOptions};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_redstone::{self, comparator, noteblock, wire};
 use mchprs_world::{for_each_block_optimized, World};
@@ -115,7 +116,7 @@ fn identify_block<W: World>(
     world: &W,
 ) -> Option<(NodeType, NodeState)> {
     if let Some(powered) = block.clone().get_pressure_plate_powered() {
-        return Some((NodeType::PressurePlate, NodeState::simple(*powered)));
+        return Some((NodeType::PressurePlate, NodeState::from_powered(*powered)));
     }
     let (ty, state) = match block {
         Block::Repeater(repeater) => (
@@ -132,33 +133,44 @@ fn identify_block<W: World>(
         Block::Comparator(comparator) => (
             NodeType::Comparator {
                 mode: comparator.mode,
-                far_input: comparator::get_far_input(world, pos, comparator.facing),
+                far_input: comparator::get_far_input(world, pos, comparator.facing).map(|power| {
+                    SignalStrength::try_from(power).expect("invalid comparator far input")
+                }),
                 prioritized: mchprs_redstone::diode_should_be_prioritized(
                     world,
                     pos,
                     comparator.facing,
                 ),
             },
-            NodeState::comparator(
-                comparator.powered,
+            NodeState::from_power(
                 if let Some(BlockEntity::Comparator { output_strength }) =
                     world.get_block_entity(pos)
                 {
-                    *output_strength
+                    SignalStrength::try_from(*output_strength).expect("invalid comparator output")
                 } else {
-                    0
+                    SignalStrength::Zero
                 },
             ),
         ),
         Block::RedstoneTorch { lit, .. } | Block::RedstoneWallTorch { lit, .. } => {
-            (NodeType::Torch, NodeState::simple(lit))
+            (NodeType::Torch, NodeState::from_powered(lit))
         }
-        Block::RedstoneWire(wire) => (NodeType::Wire, NodeState::ss(wire.power)),
-        Block::StoneButton { powered, .. } => (NodeType::Button, NodeState::simple(powered)),
-        Block::RedstoneLamp { lit } => (NodeType::Lamp, NodeState::simple(lit)),
-        Block::Lever { powered, .. } => (NodeType::Lever, NodeState::simple(powered)),
-        Block::IronTrapdoor { powered, .. } => (NodeType::Trapdoor, NodeState::simple(powered)),
-        Block::RedstoneBlock => (NodeType::Constant, NodeState::ss(15)),
+        Block::RedstoneWire(wire) => (
+            NodeType::Wire,
+            NodeState::from_power(
+                SignalStrength::try_from(wire.power).expect("invalid wire power"),
+            ),
+        ),
+        Block::StoneButton { powered, .. } => (NodeType::Button, NodeState::from_powered(powered)),
+        Block::RedstoneLamp { lit } => (NodeType::Lamp, NodeState::from_powered(lit)),
+        Block::Lever { powered, .. } => (NodeType::Lever, NodeState::from_powered(powered)),
+        Block::IronTrapdoor { powered, .. } => {
+            (NodeType::Trapdoor, NodeState::from_powered(powered))
+        }
+        Block::RedstoneBlock => (
+            NodeType::Constant,
+            NodeState::from_power(SignalStrength::Fifteen),
+        ),
         Block::NoteBlock {
             instrument: _,
             note,
@@ -167,12 +179,17 @@ fn identify_block<W: World>(
             let instrument = noteblock::get_noteblock_instrument(world, pos);
             (
                 NodeType::NoteBlock { instrument, note },
-                NodeState::simple(powered),
+                NodeState::from_powered(powered),
             )
         }
         _ => {
-            let strength = comparator::analog_output(block, world, pos)?;
-            (NodeType::Constant, NodeState::ss(strength))
+            let power = comparator::analog_output(block, world, pos)?;
+            (
+                NodeType::Constant,
+                NodeState::from_power(
+                    SignalStrength::try_from(power).expect("invalid comparator override"),
+                ),
+            )
         }
     };
     Some((ty, state))

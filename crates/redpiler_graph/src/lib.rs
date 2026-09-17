@@ -1,4 +1,5 @@
 use bincode::{BincodeRead, Result};
+use mchprs_blocks::signal_strength::SignalStrength;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
@@ -47,9 +48,8 @@ pub enum NodeType {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct NodeState {
-    pub powered: bool,
+    pub power: SignalStrength,
     pub repeater_locked: bool,
-    pub output_strength: u8,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -60,7 +60,7 @@ pub struct Node {
     pub state: NodeState,
 
     pub diode_prioritized: bool,
-    pub comparator_far_input: Option<u8>,
+    pub comparator_far_input: Option<SignalStrength>,
 
     pub inputs: Vec<Link>,
     pub updates: Vec<NodeId>,

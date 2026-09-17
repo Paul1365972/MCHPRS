@@ -2,6 +2,7 @@ pub mod block_entities;
 pub mod blocks;
 mod generated;
 pub mod items;
+pub mod signal_strength;
 
 pub use mchprs_proc_macros::BlockProperty;
 use serde::{Deserialize, Serialize};
