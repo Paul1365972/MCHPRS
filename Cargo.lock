@@ -1999,6 +1999,7 @@ name = "redpiler_graph"
 version = "0.5.2-dev"
 dependencies = [
  "bincode",
+ "mchprs_blocks",
  "serde",
  "smallvec",
 ]
