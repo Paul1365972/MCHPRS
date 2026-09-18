@@ -24,7 +24,7 @@ struct FinalGraphStats {
 fn compile_node(
     graph: &CompileGraph,
     node_idx: NodeIdx,
-    nodes_len: usize,
+    io_only: bool,
     nodes_map: &FxHashMap<NodeIdx, usize>,
     noteblock_info: &mut Vec<(SmallVec<[BlockPos; 1]>, Instrument, u8)>,
     forward_links: &mut ForwardLinks,
@@ -83,7 +83,7 @@ fn compile_node(
             .map(|edge| unsafe {
                 let idx = edge.target();
                 let idx = nodes_map[&idx];
-                assert!(idx < nodes_len);
+                assert!(idx < nodes_map.len());
                 // Safety: bounds checked
                 let target_id = NodeId::from_index(idx);
 
@@ -140,9 +140,9 @@ fn compile_node(
         powered: node.state.powered,
         output_power: node.state.output_strength,
         locked: node.state.repeater_locked,
-        pending_tick: false,
         changed: false,
-        is_io: node.is_input || node.is_output,
+        pending_tick: false,
+        visible: !io_only || node.is_input || node.is_output,
     }
 }
 
@@ -168,7 +168,7 @@ pub fn compile(
             compile_node(
                 &graph,
                 idx,
-                nodes_len,
+                options.io_only,
                 &nodes_map,
                 &mut backend.noteblock_info,
                 &mut backend.forward_links,

@@ -196,7 +196,12 @@ impl JITBackend for DirectBackend {
     }
 
     fn reset<W: World>(&mut self, world: &mut W) {
-        self.flush(world, false);
+        self.flush_events(world);
+        for (i, node) in self.nodes.inner().iter().enumerate() {
+            if node.changed {
+                write_blocks(world, &mut self.blocks[i], node);
+            }
+        }
         self.scheduler.reset(world, &self.blocks);
         self.nodes = Nodes::default();
         self.blocks.clear();
@@ -245,14 +250,13 @@ impl JITBackend for DirectBackend {
         self.scheduler.end_tick(queues);
     }
 
-    fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {
+    fn flush<W: World>(&mut self, world: &mut W) {
         self.flush_events(world);
         for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
-            if !node.changed || (io_only && !node.is_io) {
-                continue;
+            if node.changed && node.visible {
+                node.changed = false;
+                write_blocks(world, &mut self.blocks[i], node);
             }
-            node.changed = false;
-            write_blocks(world, &mut self.blocks[i], node);
         }
     }
 
