@@ -129,6 +129,19 @@ impl DirectBackend {
         self.scheduler.schedule_tick(node_id, delay, priority);
     }
 
+    fn flush_events<W: World>(&mut self, world: &mut W) {
+        for event in self.events.drain(..) {
+            match event {
+                Event::NoteBlockPlay { noteblock_id } => {
+                    let (positions, instrument, note) = &self.noteblock_info[noteblock_id as usize];
+                    for pos in positions.iter().copied() {
+                        noteblock::play_note(world, pos, *instrument, *note);
+                    }
+                }
+            }
+        }
+    }
+
     fn set_node(&mut self, node_id: NodeId, powered: bool, new_power: u8) {
         let node = &mut self.nodes[node_id];
         let old_power = node.output_power;
@@ -233,44 +246,13 @@ impl JITBackend for DirectBackend {
     }
 
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {
-        for event in self.events.drain(..) {
-            match event {
-                Event::NoteBlockPlay { noteblock_id } => {
-                    let (positions, instrument, note) = &self.noteblock_info[noteblock_id as usize];
-                    for pos in positions.iter().copied() {
-                        noteblock::play_note(world, pos, *instrument, *note);
-                    }
-                }
-            }
-        }
+        self.flush_events(world);
         for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
             if !node.changed || (io_only && !node.is_io) {
                 continue;
             }
             node.changed = false;
-            for (pos, block) in &mut self.blocks[i] {
-                if let Some(powered) = block_powered_mut(block) {
-                    *powered = node.powered
-                }
-                if let Block::IronTrapdoor { open, .. } = block {
-                    *open = node.powered;
-                }
-                if let Block::RedstoneWire(wire) = block {
-                    wire.power = node.output_power
-                };
-                if let Block::Repeater(repeater) = block {
-                    repeater.locked = node.locked;
-                }
-                world.set_block(*pos, *block);
-                if matches!(block, Block::Comparator(_)) {
-                    world.set_block_entity(
-                        *pos,
-                        BlockEntity::Comparator {
-                            output_strength: node.output_power,
-                        },
-                    );
-                }
-            }
+            write_blocks(world, &mut self.blocks[i], node);
         }
     }
 
@@ -286,6 +268,32 @@ impl JITBackend for DirectBackend {
 
     fn has_pending_ticks(&self) -> bool {
         self.scheduler.has_pending_ticks()
+    }
+}
+
+fn write_blocks<W: World>(world: &mut W, blocks: &mut [(BlockPos, Block)], node: &Node) {
+    for (pos, block) in blocks {
+        if let Some(powered) = block_powered_mut(block) {
+            *powered = node.powered
+        }
+        if let Block::IronTrapdoor { open, .. } = block {
+            *open = node.powered;
+        }
+        if let Block::RedstoneWire(wire) = block {
+            wire.power = node.output_power
+        };
+        if let Block::Repeater(repeater) = block {
+            repeater.locked = node.locked;
+        }
+        world.set_block(*pos, *block);
+        if matches!(block, Block::Comparator(_)) {
+            world.set_block_entity(
+                *pos,
+                BlockEntity::Comparator {
+                    output_strength: node.output_power,
+                },
+            );
+        }
     }
 }
 
