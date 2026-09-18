@@ -131,6 +131,16 @@ impl DirectBackend {
         self.scheduler.schedule_tick(node_id, delay, priority);
     }
 
+    fn play_pending_notes<W: World>(&mut self, world: &mut W) {
+        for info in &mut self.noteblock_info {
+            if mem::take(&mut info.pending) {
+                for pos in info.positions.iter().copied() {
+                    noteblock::play_note(world, pos, info.instrument, info.note);
+                }
+            }
+        }
+    }
+
     fn set_node(&mut self, node_id: NodeId, powered: bool, new_power: u8) {
         let node = &mut self.nodes[node_id];
         let old_power = node.output_power;
@@ -185,7 +195,12 @@ impl JITBackend for DirectBackend {
     }
 
     fn reset<W: World>(&mut self, world: &mut W) {
-        self.flush(world, false);
+        for (i, node) in self.nodes.inner().iter().enumerate() {
+            if node.changed {
+                write_blocks(world, &mut self.blocks[i], node);
+            }
+        }
+        self.play_pending_notes(world);
         self.scheduler.reset(world, &self.blocks);
         self.nodes = Nodes::default();
         self.blocks.clear();
@@ -233,43 +248,14 @@ impl JITBackend for DirectBackend {
         self.scheduler.end_tick(queues);
     }
 
-    fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {
+    fn flush<W: World>(&mut self, world: &mut W) {
         for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
-            if !node.changed || (io_only && !node.is_io) {
-                continue;
-            }
-            node.changed = false;
-            for (pos, block) in &mut self.blocks[i] {
-                if let Some(powered) = block_powered_mut(block) {
-                    *powered = node.powered
-                }
-                if let Block::IronTrapdoor { open, .. } = block {
-                    *open = node.powered;
-                }
-                if let Block::RedstoneWire(wire) = block {
-                    wire.power = node.output_power
-                };
-                if let Block::Repeater(repeater) = block {
-                    repeater.locked = node.locked;
-                }
-                world.set_block(*pos, *block);
-                if matches!(block, Block::Comparator(_)) {
-                    world.set_block_entity(
-                        *pos,
-                        BlockEntity::Comparator {
-                            output_strength: node.output_power,
-                        },
-                    );
-                }
+            if node.changed && node.visible {
+                node.changed = false;
+                write_blocks(world, &mut self.blocks[i], node);
             }
         }
-        for info in &mut self.noteblock_info {
-            if mem::take(&mut info.pending) {
-                for pos in info.positions.iter().copied() {
-                    noteblock::play_note(world, pos, info.instrument, info.note);
-                }
-            }
-        }
+        self.play_pending_notes(world);
     }
 
     fn compile(
@@ -284,6 +270,32 @@ impl JITBackend for DirectBackend {
 
     fn has_pending_ticks(&self) -> bool {
         self.scheduler.has_pending_ticks()
+    }
+}
+
+fn write_blocks<W: World>(world: &mut W, blocks: &mut [(BlockPos, Block)], node: &Node) {
+    for (pos, block) in blocks {
+        if let Some(powered) = block_powered_mut(block) {
+            *powered = node.powered
+        }
+        if let Block::IronTrapdoor { open, .. } = block {
+            *open = node.powered;
+        }
+        if let Block::RedstoneWire(wire) = block {
+            wire.power = node.output_power
+        };
+        if let Block::Repeater(repeater) = block {
+            repeater.locked = node.locked;
+        }
+        world.set_block(*pos, *block);
+        if matches!(block, Block::Comparator(_)) {
+            world.set_block_entity(
+                *pos,
+                BlockEntity::Comparator {
+                    output_strength: node.output_power,
+                },
+            );
+        }
     }
 }
 
