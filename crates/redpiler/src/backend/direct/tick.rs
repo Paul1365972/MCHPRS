@@ -38,7 +38,7 @@ impl DirectBackend {
 
     #[inline(never)]
     fn tick_other(&mut self, node_id: NodeId) {
-        let node = &mut self.nodes[node_id];
+        let node = &self.nodes[node_id];
         match node.ty {
             NodeType::Gate(_) => unreachable!("gates tick through tick_gate"),
             NodeType::Comparator(comparator) => {

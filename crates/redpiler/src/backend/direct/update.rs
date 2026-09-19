@@ -24,7 +24,6 @@ impl DirectBackend {
         if node.locked || node.pending_tick {
             return;
         }
-
         let should_be_powered = gate.should_be_powered(&node.default_inputs);
         if should_be_powered != node.is_powered() {
             let priority = gate.tick_priority(should_be_powered);

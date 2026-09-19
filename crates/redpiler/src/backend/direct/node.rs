@@ -27,11 +27,58 @@ impl NodeId {
 #[derive(Default)]
 pub struct Nodes {
     nodes: Box<[Node]>,
+    dirty: Vec<NodeId>,
 }
 
 impl Nodes {
     pub fn new(nodes: Box<[Node]>) -> Nodes {
-        Nodes { nodes }
+        Nodes {
+            nodes,
+            dirty: Vec::new(),
+        }
+    }
+
+    pub fn set_power(&mut self, node_id: NodeId, power: SignalStrength) {
+        self[node_id].power = power;
+        self.mark_changed(node_id);
+    }
+
+    pub fn set_powered(&mut self, node_id: NodeId, powered: bool) {
+        self.set_power(node_id, powered.into());
+    }
+
+    pub fn set_locked(&mut self, node_id: NodeId, locked: bool) {
+        self[node_id].locked = locked;
+        self.mark_changed(node_id);
+    }
+
+    fn mark_changed(&mut self, node_id: NodeId) {
+        let node = &mut self[node_id];
+        if node.changed {
+            return;
+        }
+        node.changed = true;
+        if node.visible {
+            self.dirty.push(node_id);
+        }
+    }
+
+    pub fn flush_dirty(&mut self, mut write: impl FnMut(NodeId, &Node)) {
+        for node_id in self.dirty.drain(..) {
+            let node = &mut self.nodes[node_id.index()];
+            node.changed = false;
+            write(node_id, node);
+        }
+    }
+
+    pub fn flush_all(&mut self, mut write: impl FnMut(NodeId, &Node)) {
+        self.dirty.clear();
+        for (index, node) in self.nodes.iter_mut().enumerate() {
+            if node.changed {
+                node.changed = false;
+                write(NodeId(index as u32), node);
+            }
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -51,29 +98,6 @@ impl Nodes {
             .iter()
             .enumerate()
             .map(|(index, node)| (NodeId(index as u32), node))
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeId, &mut Node)> {
-        self.nodes
-            .iter_mut()
-            .enumerate()
-            .map(|(index, node)| (NodeId(index as u32), node))
-    }
-
-    pub fn set_power(&mut self, node_id: NodeId, power: SignalStrength) {
-        let node = &mut self[node_id];
-        node.power = power;
-        node.changed = true;
-    }
-
-    pub fn set_powered(&mut self, node_id: NodeId, powered: bool) {
-        self.set_power(node_id, powered.into());
-    }
-
-    pub fn set_locked(&mut self, node_id: NodeId, locked: bool) {
-        let node = &mut self[node_id];
-        node.locked = locked;
-        node.changed = true;
     }
 
     pub fn update_input(

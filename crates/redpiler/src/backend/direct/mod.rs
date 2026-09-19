@@ -120,11 +120,10 @@ impl JITBackend for DirectBackend {
 
     fn reset<W: World>(&mut self, world: &mut W) {
         self.flush_events(world);
-        for (node_id, node) in self.nodes.iter() {
-            if node.changed {
-                write_blocks(world, &mut self.blocks[node_id.index()], node);
-            }
-        }
+        let blocks = &mut self.blocks;
+        self.nodes.flush_all(|node_id, node| {
+            write_blocks(world, &mut blocks[node_id.index()], node);
+        });
         for (node_id, delay, priority) in self.scheduler.pending() {
             let blocks = &self.blocks[node_id.index()];
             if blocks.is_empty() {
@@ -187,12 +186,10 @@ impl JITBackend for DirectBackend {
 
     fn flush<W: World>(&mut self, world: &mut W) {
         self.flush_events(world);
-        for (node_id, node) in self.nodes.iter_mut() {
-            if node.changed && node.visible {
-                node.changed = false;
-                write_blocks(world, &mut self.blocks[node_id.index()], node);
-            }
-        }
+        let blocks = &mut self.blocks;
+        self.nodes.flush_dirty(|node_id, node| {
+            write_blocks(world, &mut blocks[node_id.index()], node);
+        });
     }
 
     fn compile(
