@@ -22,7 +22,7 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use tracing::{debug, warn};
 
-use self::node::{ForwardLinks, GateKind, Node, NodeId, NodeType, Nodes};
+use self::node::{ForwardLinkRange, ForwardLinks, GateKind, Node, NodeId, NodeType, Nodes};
 use self::scheduler::TickScheduler;
 use super::JITBackend;
 use crate::compile_graph::{CompileGraph, SignalStrength};
@@ -70,13 +70,38 @@ impl DirectBackend {
         let links = node.links;
         self.nodes.set_power(node_id, power);
 
+        match (old_power, power) {
+            (SignalStrength::ZERO, SignalStrength::MAX) => self.propagate(links, |weight| {
+                Some((
+                    SignalStrength::ZERO,
+                    SignalStrength::MAX.saturating_sub(weight),
+                ))
+            }),
+            (SignalStrength::MAX, SignalStrength::ZERO) => self.propagate(links, |weight| {
+                Some((
+                    SignalStrength::MAX.saturating_sub(weight),
+                    SignalStrength::ZERO,
+                ))
+            }),
+            _ => self.propagate(links, |weight| {
+                let old_input = old_power.saturating_sub(weight);
+                let new_input = power.saturating_sub(weight);
+                (old_input != new_input).then_some((old_input, new_input))
+            }),
+        }
+    }
+
+    #[inline(always)]
+    fn propagate(
+        &mut self,
+        links: ForwardLinkRange,
+        input_change: impl Fn(u8) -> Option<(SignalStrength, SignalStrength)>,
+    ) {
         for index in links.iter() {
             let link = self.forward_links[index];
-            let old_input = old_power.saturating_sub(link.weight());
-            let new_input = power.saturating_sub(link.weight());
-            if old_input == new_input {
+            let Some((old_input, new_input)) = input_change(link.weight()) else {
                 continue;
-            }
+            };
             self.nodes.update_input(link, old_input, new_input);
             self.update_node(link.node());
         }
