@@ -1,13 +1,13 @@
 use mchprs_world::TickPriority;
 
 use super::node::{NodeId, NodeType};
-use super::{comparator_output_power, schedule_tick, DirectBackend};
+use super::{comparator_output_power, DirectBackend};
 use crate::compile_graph::SignalStrength;
 
 impl DirectBackend {
     // Benchmarks show that `tick_node` getting inlined into `tick` causes worse perf.
     #[inline(never)]
-    pub fn tick_node(&mut self, node_id: NodeId) {
+    pub(super) fn tick_node(&mut self, node_id: NodeId) {
         let node = &mut self.nodes[node_id];
         node.pending_tick = false;
 
@@ -22,13 +22,7 @@ impl DirectBackend {
                     self.set_power_and_propagate(node_id, SignalStrength::ZERO);
                 } else if !node.is_powered() {
                     if !should_be_powered {
-                        schedule_tick(
-                            &mut self.scheduler,
-                            node_id,
-                            node,
-                            delay as usize,
-                            TickPriority::Higher,
-                        );
+                        self.schedule_tick(node_id, delay as usize, TickPriority::Higher);
                     }
                     self.set_power_and_propagate(node_id, SignalStrength::MAX);
                 }
@@ -50,7 +44,7 @@ impl DirectBackend {
             NodeType::Lamp => {
                 let should_be_lit = node.default_inputs.is_powered();
                 if node.is_powered() && !should_be_lit {
-                    node.set_powered(false);
+                    self.nodes.set_powered(node_id, false);
                 }
             }
             NodeType::Button if node.is_powered() => {

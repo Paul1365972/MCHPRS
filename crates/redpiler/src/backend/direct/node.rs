@@ -25,7 +25,7 @@ impl NodeId {
 // but at least some type system protection is better than none.
 #[derive(Default)]
 pub struct Nodes {
-    pub nodes: Box<[Node]>,
+    nodes: Box<[Node]>,
 }
 
 impl Nodes {
@@ -41,12 +41,49 @@ impl Nodes {
         }
     }
 
-    pub fn inner(&self) -> &[Node] {
-        &self.nodes
+    pub fn iter(&self) -> impl Iterator<Item = (NodeId, &Node)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (NodeId(index as u32), node))
     }
 
-    pub fn inner_mut(&mut self) -> &mut [Node] {
-        &mut self.nodes
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeId, &mut Node)> {
+        self.nodes
+            .iter_mut()
+            .enumerate()
+            .map(|(index, node)| (NodeId(index as u32), node))
+    }
+
+    pub fn set_power(&mut self, node_id: NodeId, power: SignalStrength) {
+        let node = &mut self[node_id];
+        node.power = power;
+        node.changed = true;
+    }
+
+    pub fn set_powered(&mut self, node_id: NodeId, powered: bool) {
+        self.set_power(node_id, powered.into());
+    }
+
+    pub fn set_repeater_locked(&mut self, node_id: NodeId, locked: bool) {
+        let node = &mut self[node_id];
+        node.repeater_locked = locked;
+        node.changed = true;
+    }
+
+    pub fn update_input(
+        &mut self,
+        link: ForwardLink,
+        old_input: SignalStrength,
+        new_input: SignalStrength,
+    ) {
+        let node = &mut self[link.node()];
+        let inputs = if link.side() {
+            &mut node.side_inputs
+        } else {
+            &mut node.default_inputs
+        };
+        inputs.update_power(old_input, new_input);
     }
 }
 
@@ -105,12 +142,22 @@ impl std::fmt::Debug for ForwardLink {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct ForwardLinkRange(std::ops::Range<usize>);
+#[derive(Clone, Copy, Debug)]
+pub struct ForwardLinkIndex(u32);
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ForwardLinkRange {
+    start: u32,
+    end: u32,
+}
 
 impl ForwardLinkRange {
-    pub fn len(&self) -> usize {
-        self.0.end - self.0.start
+    pub fn len(self) -> usize {
+        (self.end - self.start) as usize
+    }
+
+    pub fn iter(self) -> impl Iterator<Item = ForwardLinkIndex> {
+        (self.start..self.end).map(ForwardLinkIndex)
     }
 }
 
@@ -125,18 +172,25 @@ impl ForwardLinks {
         self.links.extend(iter);
         let end = self.links.len();
 
-        ForwardLinkRange(start..end)
-    }
-
-    /// The `range` MUST have been created by this instance of ForwardLinks, otherwise this is UB.
-    pub fn get(&self, range: &ForwardLinkRange) -> &[ForwardLink] {
-        // Safety: there's only one instance of ForwardLinks in the backend
-        unsafe { self.links.get_unchecked(range.0.clone()) }
+        ForwardLinkRange {
+            start: start.try_into().unwrap(),
+            end: end.try_into().unwrap(),
+        }
     }
 
     /// After this point, all existing `ForwardLinkRange`s are invalidated.
     pub fn clear(&mut self) {
         self.links.clear();
+    }
+}
+
+impl Index<ForwardLinkIndex> for ForwardLinks {
+    type Output = ForwardLink;
+
+    /// The index MUST come from a range this instance handed out, otherwise this is UB.
+    fn index(&self, index: ForwardLinkIndex) -> &ForwardLink {
+        // Safety: there's only one instance of ForwardLinks in the backend
+        unsafe { self.links.get_unchecked(index.0 as usize) }
     }
 }
 
@@ -222,7 +276,7 @@ pub struct Node {
     pub default_inputs: NodeInput,
     pub side_inputs: NodeInput,
 
-    pub fwd_link_range: ForwardLinkRange,
+    pub links: ForwardLinkRange,
 
     pub visible: bool,
 
@@ -235,19 +289,5 @@ pub struct Node {
 impl Node {
     pub fn is_powered(&self) -> bool {
         !self.power.is_zero()
-    }
-
-    pub fn set_power(&mut self, power: SignalStrength) {
-        self.power = power;
-        self.changed = true;
-    }
-
-    pub fn set_powered(&mut self, powered: bool) {
-        self.set_power(powered.into());
-    }
-
-    pub fn set_repeater_locked(&mut self, locked: bool) {
-        self.repeater_locked = locked;
-        self.changed = true;
     }
 }

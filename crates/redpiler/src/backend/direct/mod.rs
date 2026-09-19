@@ -142,38 +142,26 @@ impl DirectBackend {
         }
     }
 
+    fn schedule_tick(&mut self, node_id: NodeId, delay: usize, priority: TickPriority) {
+        self.nodes[node_id].pending_tick = true;
+        self.scheduler.schedule_tick(node_id, delay, priority);
+    }
+
     fn set_power_and_propagate(&mut self, node_id: NodeId, power: SignalStrength) {
-        let node = &mut self.nodes[node_id];
+        let node = &self.nodes[node_id];
         let old_power = node.power;
-        node.set_power(power);
+        let links = node.links;
+        self.nodes.set_power(node_id, power);
 
-        for forward_link in self.forward_links.get(&node.fwd_link_range) {
-            let side = forward_link.side();
-            let weight = forward_link.weight();
-            let update = forward_link.node();
-
-            let update_ref = &mut self.nodes[update];
-            let inputs = if side {
-                &mut update_ref.side_inputs
-            } else {
-                &mut update_ref.default_inputs
-            };
-
-            let old_input = old_power.saturating_sub(weight);
-            let new_input = power.saturating_sub(weight);
-
+        for index in links.iter() {
+            let link = self.forward_links[index];
+            let old_input = old_power.saturating_sub(link.weight());
+            let new_input = power.saturating_sub(link.weight());
             if old_input == new_input {
                 continue;
             }
-
-            inputs.update_power(old_input, new_input);
-
-            update::update_node(
-                &mut self.scheduler,
-                &mut self.events,
-                &mut self.nodes,
-                update,
-            );
+            self.nodes.update_input(link, old_input, new_input);
+            self.update_node(link.node());
         }
     }
 }
@@ -190,9 +178,9 @@ impl JITBackend for DirectBackend {
 
     fn reset<W: World>(&mut self, world: &mut W) {
         self.flush_events(world);
-        for (i, node) in self.nodes.inner().iter().enumerate() {
+        for (node_id, node) in self.nodes.iter() {
             if node.changed {
-                write_blocks(world, &mut self.blocks[i], node);
+                write_blocks(world, &mut self.blocks[node_id.index()], node);
             }
         }
         self.scheduler.reset(world, &self.blocks);
@@ -212,8 +200,7 @@ impl JITBackend for DirectBackend {
                 if node.is_powered() {
                     return;
                 }
-                self.scheduler
-                    .schedule_tick(node_id, 10, TickPriority::Normal);
+                self.schedule_tick(node_id, 10, TickPriority::Normal);
                 self.set_power_and_propagate(node_id, SignalStrength::MAX);
             }
             NodeType::Lever => {
@@ -246,10 +233,10 @@ impl JITBackend for DirectBackend {
 
     fn flush<W: World>(&mut self, world: &mut W) {
         self.flush_events(world);
-        for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
+        for (node_id, node) in self.nodes.iter_mut() {
             if node.changed && node.visible {
                 node.changed = false;
-                write_blocks(world, &mut self.blocks[i], node);
+                write_blocks(world, &mut self.blocks[node_id.index()], node);
             }
         }
     }
@@ -295,17 +282,6 @@ fn write_blocks<W: World>(world: &mut W, blocks: &mut [(BlockPos, Block)], node:
     }
 }
 
-fn schedule_tick(
-    scheduler: &mut TickScheduler,
-    node_id: NodeId,
-    node: &mut Node,
-    delay: usize,
-    priority: TickPriority,
-) {
-    node.pending_tick = true;
-    scheduler.schedule_tick(node_id, delay, priority);
-}
-
 #[inline]
 fn comparator_output_power(
     node: &Node,
@@ -333,10 +309,11 @@ fn comparator_output_power(
 impl fmt::Display for DirectBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "digraph {{")?;
-        for (id, node) in self.nodes.inner().iter().enumerate() {
+        for (node_id, node) in self.nodes.iter() {
             if matches!(node.ty, NodeType::Wire) {
                 continue;
             }
+            let id = node_id.index();
             let label = match node.ty {
                 NodeType::Repeater { delay, .. } => format!("Repeater({})", delay),
                 NodeType::Torch => "Torch".to_string(),
@@ -369,7 +346,8 @@ impl fmt::Display for DirectBackend {
                 "No Pos".to_string()
             };
             writeln!(f, "    n{} [ label = \"{}\\n({})\" ];", id, label, pos)?;
-            for link in self.forward_links.get(&node.fwd_link_range) {
+            for index in node.links.iter() {
+                let link = self.forward_links[index];
                 let out_index = link.node().index();
                 let weight = link.weight();
                 let color = if link.side() { ",color=\"blue\"" } else { "" };
