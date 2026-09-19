@@ -25,6 +25,22 @@ struct FinalGraphStats {
     nodes_bytes: usize,
 }
 
+fn propagation_order(ty: &CompileNodeType) -> u8 {
+    match ty {
+        CompileNodeType::Repeater { .. } => 0,
+        CompileNodeType::Torch => 1,
+        CompileNodeType::Comparator { .. } => 2,
+        CompileNodeType::Lamp => 3,
+        CompileNodeType::Trapdoor => 4,
+        CompileNodeType::Wire => 5,
+        CompileNodeType::NoteBlock { .. } => 6,
+        CompileNodeType::Button
+        | CompileNodeType::Lever
+        | CompileNodeType::PressurePlate
+        | CompileNodeType::Constant => 7,
+    }
+}
+
 struct Lowering<'a> {
     graph: &'a CompileGraph,
     io_only: bool,
@@ -75,10 +91,10 @@ impl<'a> Lowering<'a> {
             let nodes_map = &self.nodes_map;
             let new_links = graph
                 .edges(node_idx, Direction::Outgoing)
-                .sorted_by_key(|edge| nodes_map[&edge.target()])
-                .into_group_map_by(|edge| std::mem::discriminant(&graph[edge.target()].ty))
-                .into_values()
-                .flatten()
+                .sorted_by_key(|edge| {
+                    let target = edge.target();
+                    (propagation_order(&graph[target].ty), nodes_map[&target])
+                })
                 .map(|edge| unsafe {
                     let idx = edge.target();
                     let idx = nodes_map[&idx];
