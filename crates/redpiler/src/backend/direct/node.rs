@@ -34,6 +34,10 @@ impl Nodes {
         Nodes { nodes }
     }
 
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
     pub fn get(&self, idx: usize) -> NodeId {
         if self.nodes.get(idx).is_some() {
             NodeId(idx as u32)

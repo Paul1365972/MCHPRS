@@ -13,6 +13,7 @@ use tracing::trace;
 use super::node::{
     Comparator, ForwardLink, ForwardLinks, Gate, Node, NodeId, NodeInput, NodeType, Nodes,
 };
+use super::scheduler::TickScheduler;
 use super::DirectBackend;
 use crate::compile_graph::{
     CompileGraph, Direction, LinkType, NodeIdx, NodeType as CompileNodeType,
@@ -191,8 +192,11 @@ pub fn compile(
         }
     }
 
+    backend.scheduler = TickScheduler::new(backend.nodes.len());
     for entry in ticks {
-        if let Some(node_id) = backend.pos_map.get(&entry.pos).copied() {
+        if let Some(node_id) = backend.pos_map.get(&entry.pos).copied()
+            && !backend.nodes[node_id].pending_tick
+        {
             backend.schedule_tick(node_id, entry.ticks_left as usize, entry.tick_priority);
         }
     }

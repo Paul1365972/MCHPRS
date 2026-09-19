@@ -51,7 +51,9 @@ impl DirectBackend {
                 let should_be_lit = node.default_inputs.is_powered();
                 let lit = node.is_powered();
                 if lit && !should_be_lit {
-                    self.schedule_tick(node_id, 2, TickPriority::Normal);
+                    if !node.pending_tick {
+                        self.schedule_tick(node_id, 2, TickPriority::Normal);
+                    }
                 } else if !lit && should_be_lit {
                     self.nodes.set_powered(node_id, true);
                 }
