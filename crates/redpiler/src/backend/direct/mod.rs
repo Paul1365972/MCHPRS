@@ -22,7 +22,7 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use tracing::{debug, warn};
 
-use self::node::{ForwardLinks, Node, NodeId, NodeType, Nodes};
+use self::node::{ForwardLinks, GateKind, Node, NodeId, NodeType, Nodes};
 use super::JITBackend;
 use crate::compile_graph::{CompileGraph, SignalStrength};
 use crate::{block_powered_mut, CompilerOptions, TaskMonitor};
@@ -268,7 +268,7 @@ fn write_blocks<W: World>(world: &mut W, blocks: &mut [(BlockPos, Block)], node:
             wire.power = node.power.get()
         };
         if let Block::Repeater(repeater) = block {
-            repeater.locked = node.repeater_locked;
+            repeater.locked = node.locked;
         }
         world.set_block(*pos, *block);
         if matches!(block, Block::Comparator(_)) {
@@ -282,30 +282,6 @@ fn write_blocks<W: World>(world: &mut W, blocks: &mut [(BlockPos, Block)], node:
     }
 }
 
-#[inline]
-fn comparator_output_power(
-    node: &Node,
-    mode: ComparatorMode,
-    far_input: Option<SignalStrength>,
-) -> SignalStrength {
-    let mut input_power = node.default_inputs.power();
-    let side_power = node.side_inputs.power();
-    if let Some(far_input) = far_input
-        && input_power < SignalStrength::MAX
-    {
-        input_power = far_input;
-    }
-    let difference = input_power.get().wrapping_sub(side_power.get());
-    if difference <= SignalStrength::MAX.get() {
-        match mode {
-            ComparatorMode::Compare => input_power,
-            ComparatorMode::Subtract => SignalStrength::try_from(difference).unwrap(),
-        }
-    } else {
-        SignalStrength::ZERO
-    }
-}
-
 impl fmt::Display for DirectBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "digraph {{")?;
@@ -315,11 +291,13 @@ impl fmt::Display for DirectBackend {
             }
             let id = node_id.index();
             let label = match node.ty {
-                NodeType::Repeater { delay, .. } => format!("Repeater({})", delay),
-                NodeType::Torch => "Torch".to_string(),
-                NodeType::Comparator { mode, .. } => format!(
+                NodeType::Gate(gate) => match gate.kind {
+                    GateKind::Repeater => format!("Repeater({})", gate.delay),
+                    GateKind::Torch => "Torch".to_string(),
+                },
+                NodeType::Comparator(comparator) => format!(
                     "Comparator({})",
-                    match mode {
+                    match comparator.mode {
                         ComparatorMode::Compare => "Cmp",
                         ComparatorMode::Subtract => "Sub",
                     }

@@ -4,6 +4,7 @@ use std::{
 };
 
 use mchprs_blocks::blocks::ComparatorMode;
+use mchprs_world::TickPriority;
 
 use crate::compile_graph::SignalStrength;
 
@@ -65,9 +66,9 @@ impl Nodes {
         self.set_power(node_id, powered.into());
     }
 
-    pub fn set_repeater_locked(&mut self, node_id: NodeId, locked: bool) {
+    pub fn set_locked(&mut self, node_id: NodeId, locked: bool) {
         let node = &mut self[node_id];
-        node.repeater_locked = locked;
+        node.locked = locked;
         node.changed = true;
     }
 
@@ -196,16 +197,8 @@ impl Index<ForwardLinkIndex> for ForwardLinks {
 
 #[derive(Debug, Clone, Copy)]
 pub enum NodeType {
-    Repeater {
-        delay: u8,
-        facing_diode: bool,
-    },
-    Torch,
-    Comparator {
-        mode: ComparatorMode,
-        far_input: Option<SignalStrength>,
-        facing_diode: bool,
-    },
+    Gate(Gate),
+    Comparator(Comparator),
     Lamp,
     Button,
     Lever,
@@ -213,9 +206,110 @@ pub enum NodeType {
     Trapdoor,
     Wire,
     Constant,
-    NoteBlock {
-        noteblock_id: u16,
-    },
+    NoteBlock { noteblock_id: u16 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GateKind {
+    Repeater,
+    Torch,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Gate {
+    pub kind: GateKind,
+    pub delay: u8,
+    turn_on_priority: TickPriority,
+    turn_off_priority: TickPriority,
+}
+
+impl Gate {
+    pub fn repeater(delay: u8, facing_diode: bool) -> Self {
+        let (turn_on_priority, turn_off_priority) = if facing_diode {
+            (TickPriority::Highest, TickPriority::Highest)
+        } else {
+            (TickPriority::High, TickPriority::Higher)
+        };
+        Self {
+            kind: GateKind::Repeater,
+            delay,
+            turn_on_priority,
+            turn_off_priority,
+        }
+    }
+
+    pub fn torch() -> Self {
+        Self {
+            kind: GateKind::Torch,
+            delay: 1,
+            turn_on_priority: TickPriority::Normal,
+            turn_off_priority: TickPriority::Normal,
+        }
+    }
+
+    pub fn should_be_powered(&self, inputs: &NodeInput) -> bool {
+        match self.kind {
+            GateKind::Repeater => inputs.is_powered(),
+            GateKind::Torch => !inputs.is_powered(),
+        }
+    }
+
+    pub fn tick_priority(&self, turning_on: bool) -> TickPriority {
+        if turning_on {
+            self.turn_on_priority
+        } else {
+            self.turn_off_priority
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Comparator {
+    pub mode: ComparatorMode,
+    pub far_input: Option<SignalStrength>,
+    pub tick_priority: TickPriority,
+}
+
+impl Comparator {
+    pub fn new(
+        mode: ComparatorMode,
+        far_input: Option<SignalStrength>,
+        facing_diode: bool,
+    ) -> Self {
+        Self {
+            mode,
+            far_input,
+            tick_priority: if facing_diode {
+                TickPriority::High
+            } else {
+                TickPriority::Normal
+            },
+        }
+    }
+
+    #[inline]
+    pub fn output_power(
+        &self,
+        default_inputs: &NodeInput,
+        side_inputs: &NodeInput,
+    ) -> SignalStrength {
+        let mut input_power = default_inputs.power();
+        let side_power = side_inputs.power();
+        if let Some(far_input) = self.far_input
+            && input_power < SignalStrength::MAX
+        {
+            input_power = far_input;
+        }
+        let difference = input_power.get().wrapping_sub(side_power.get());
+        if difference <= SignalStrength::MAX.get() {
+            match self.mode {
+                ComparatorMode::Compare => input_power,
+                ComparatorMode::Subtract => SignalStrength::try_from(difference).unwrap(),
+            }
+        } else {
+            SignalStrength::ZERO
+        }
+    }
 }
 
 #[repr(align(16))]
@@ -281,7 +375,7 @@ pub struct Node {
     pub visible: bool,
 
     pub power: SignalStrength,
-    pub repeater_locked: bool,
+    pub locked: bool,
     pub changed: bool,
     pub pending_tick: bool,
 }

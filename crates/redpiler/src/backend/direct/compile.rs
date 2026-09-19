@@ -10,7 +10,9 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use tracing::trace;
 
-use super::node::{ForwardLink, ForwardLinks, Node, NodeId, NodeInput, NodeType, Nodes};
+use super::node::{
+    Comparator, ForwardLink, ForwardLinks, Gate, Node, NodeId, NodeInput, NodeType, Nodes,
+};
 use super::DirectBackend;
 use crate::compile_graph::{
     CompileGraph, Direction, LinkType, NodeIdx, NodeType as CompileNodeType,
@@ -115,20 +117,13 @@ impl<'a> Lowering<'a> {
             CompileNodeType::Repeater {
                 delay,
                 facing_diode,
-            } => NodeType::Repeater {
-                delay: *delay,
-                facing_diode: *facing_diode,
-            },
-            CompileNodeType::Torch => NodeType::Torch,
+            } => NodeType::Gate(Gate::repeater(*delay, *facing_diode)),
+            CompileNodeType::Torch => NodeType::Gate(Gate::torch()),
             CompileNodeType::Comparator {
                 mode,
                 far_input,
                 facing_diode,
-            } => NodeType::Comparator {
-                mode: *mode,
-                far_input: *far_input,
-                facing_diode: *facing_diode,
-            },
+            } => NodeType::Comparator(Comparator::new(*mode, *far_input, *facing_diode)),
             CompileNodeType::Lamp => NodeType::Lamp,
             CompileNodeType::Button => NodeType::Button,
             CompileNodeType::Lever => NodeType::Lever,
@@ -153,7 +148,7 @@ impl<'a> Lowering<'a> {
             side_inputs,
             links,
             power: node.state.power,
-            repeater_locked: node.state.repeater_locked,
+            locked: node.state.repeater_locked,
             changed: false,
             pending_tick: false,
             visible: !self.io_only || node.is_input || node.is_output,
