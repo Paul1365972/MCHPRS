@@ -3,28 +3,29 @@ use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
-use mchprs_redpiler::CompilerOptions;
+use mchprs_redpiler::{CompilerOptions, PassStatus};
 use mchprs_text::{ColorCode, TextComponent, TextComponentBuilder};
 
 #[derive(PartialEq, Eq, Default, Clone, Copy)]
 pub enum RedpilerState {
     #[default]
     Stopped,
-    Compiling,
+    Compiling(Option<PassStatus>),
     Running,
 }
 
 impl RedpilerState {
     fn to_str(self) -> TextComponent {
         let (text, color) = match self {
-            RedpilerState::Stopped => ("Stopped", ColorCode::LightPurple.into()),
-            RedpilerState::Compiling => ("Compiling", ColorCode::Yellow.into()),
-            RedpilerState::Running => ("Running", ColorCode::Green.into()),
+            RedpilerState::Stopped => ("Stopped".to_owned(), ColorCode::LightPurple.into()),
+            RedpilerState::Compiling(None) => ("Compiling".to_owned(), ColorCode::Yellow.into()),
+            RedpilerState::Compiling(Some(pass)) => (
+                format!("Compiling {}/{}: {}", pass.index + 1, pass.count, pass.name),
+                ColorCode::Yellow.into(),
+            ),
+            RedpilerState::Running => ("Running".to_owned(), ColorCode::Green.into()),
         };
-        TextComponentBuilder::new(text.into())
-            .color(color)
-            .bold()
-            .finish()
+        TextComponentBuilder::new(text).color(color).bold().finish()
     }
 }
 

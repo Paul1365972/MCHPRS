@@ -22,6 +22,5 @@ tracing = { workspace = true }
 petgraph = { workspace = true }
 itertools = { workspace = true }
 rustc-hash = { workspace = true }
-enum_dispatch = { workspace = true }
 indexmap = { workspace = true }
 smallvec = { workspace = true }

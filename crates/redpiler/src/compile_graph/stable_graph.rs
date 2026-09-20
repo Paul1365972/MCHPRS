@@ -363,6 +363,31 @@ impl<Node, Edge, Idx: IdxT> StableGraph<Node, Edge, Idx> {
     }
 }
 
+type NodeList<Node, Idx> = Vec<(NodeIndex<Idx>, Node)>;
+type EdgeList<Edge, Idx> = Vec<(NodeIndex<Idx>, NodeIndex<Idx>, Edge)>;
+
+impl<Node, Edge, Idx: IdxT> StableGraph<Node, Edge, Idx> {
+    pub fn into_parts(self) -> (NodeList<Node, Idx>, EdgeList<Edge, Idx>) {
+        let nodes = self
+            .nodes
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, raw)| raw.value.map(|value| (NodeIndex::new(index), value)))
+            .collect();
+        let edges = self
+            .edges
+            .into_iter()
+            .filter_map(|raw| {
+                raw.def.map(|def| {
+                    let [source, target] = def.endpoints;
+                    (source, target, def.value)
+                })
+            })
+            .collect();
+        (nodes, edges)
+    }
+}
+
 impl<Node, Edge, Idx: IdxT> std::ops::Index<NodeIndex<Idx>> for StableGraph<Node, Edge, Idx> {
     type Output = Node;
 

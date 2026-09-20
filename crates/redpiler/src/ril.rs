@@ -631,7 +631,7 @@ impl RILModule {
         for component in &circuit.components {
             let node_idx = graph.add_node(CompileNode {
                 ty: component.node_ty.clone(),
-                state: component.node_state.clone(),
+                state: component.node_state,
                 name: Some(component.name.clone()),
                 block: Default::default(),
                 is_input: component.node_ty.is_normally_input(),

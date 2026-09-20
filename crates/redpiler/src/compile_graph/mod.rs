@@ -50,7 +50,7 @@ impl NodeType {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NodeState {
     pub powered: bool,
     pub repeater_locked: bool,

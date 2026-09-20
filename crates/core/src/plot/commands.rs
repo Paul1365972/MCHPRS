@@ -1,6 +1,5 @@
 use super::{database, worldedit, Plot, PlotWorld};
 use crate::player::{Gamemode, PacketSender, PlayerPos};
-use crate::plot::data::sleep_time_for_tps;
 use crate::profile::PlayerProfile;
 use crate::server::{get_version_string, Message};
 use mchprs_blocks::items::ItemStack;
@@ -185,30 +184,13 @@ impl Plot {
                     self.players[player].send_system_message(msg);
                 }
 
-                self.reset_redpiler();
+                self.stop_redpiler();
                 self.start_redpiler(options);
-                self.publish_world();
 
                 debug!("Compile took {:?}", start_time.elapsed());
             }
-            "inspect" | "i" => {
-                let player = &self.players[player];
-                let pos = worldedit::ray_trace_block(
-                    &self.world,
-                    player.pos,
-                    player.pitch as f64,
-                    player.yaw as f64,
-                    10.0,
-                );
-                let Some(pos) = pos else {
-                    player.send_error_message("Trace failed");
-                    return;
-                };
-                self.redpiler.inspect(pos);
-            }
             "reset" | "r" => {
-                self.reset_redpiler();
-                self.publish_world();
+                self.stop_redpiler();
             }
             _ => self.players[player].send_error_message("Invalid argument for /redpiler"),
         }
@@ -278,12 +260,16 @@ impl Plot {
             },
             "rtps" => {
                 if args.is_empty() {
-                    let report = self.timings.generate_report();
+                    let report = self.tick_history.report(Instant::now());
                     if let Some(report) = report {
                         self.players[player].send_chat_message(&TextComponent::from_legacy_text(
                             &format!(
                             "&6RTPS from last 10s, 1m, 5m, 15m: &a{:.1}, {:.1}, {:.1}, {:.1} ({})",
-                            report.ten_s, report.one_m, report.five_m, report.fifteen_m, self.tps
+                            report.ten_seconds,
+                            report.one_minute,
+                            report.five_minutes,
+                            report.fifteen_minutes,
+                            self.tps
                         ),
                         ));
                     } else {
@@ -312,10 +298,8 @@ impl Plot {
                     return false;
                 };
 
-                self.sleep_time = sleep_time_for_tps(tps);
-                self.timings.set_tps(tps);
                 self.tps = tps;
-                self.reset_timings();
+                self.restart_ticking();
                 self.players[player].send_system_message("The rtps was successfully set.");
             }
             "radv" | "radvance" => {
@@ -330,14 +314,7 @@ impl Plot {
                     self.players[player].send_error_message("Unable to parse ticks!");
                     return false;
                 };
-                let start_time = Instant::now();
-                self.tickn(ticks as u64);
-                self.publish_world();
-                self.players[player].send_system_message(&format!(
-                    "Plot has been advanced by {} ticks ({:?})",
-                    ticks,
-                    start_time.elapsed()
-                ));
+                self.advance(player, ticks as u64);
             }
             "toggleautorp" => {
                 self.auto_redpiler = !self.auto_redpiler;
@@ -530,7 +507,8 @@ impl Plot {
 
                 self.world.world_send_rate = WorldSendRate(hertz);
                 self.world.pending_sounds.clear();
-                self.last_world_send_time = Instant::now();
+                self.update_send_rate();
+                self.restart_ticking();
                 self.players[player]
                     .send_system_message("The world send rate was successfully set.");
             }
@@ -565,7 +543,7 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
             Node {
                 flags: CommandFlags::ROOT.bits() as i8,
                 children: vec![
-                    1, 4, 5, 6, 8, 10, 11, 13, 18, 30, 34, 41, 43, 44, 45, 49, 51, 52,
+                    1, 4, 5, 6, 8, 10, 11, 13, 18, 30, 34, 41, 43, 44, 45, 48, 50, 51,
                 ],
                 redirect_node: None,
                 name: None,
@@ -965,7 +943,7 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
             // 44: /redpiler
             Node {
                 flags: CommandFlags::LITERAL.bits() as i8,
-                children: vec![46, 47, 48], // Children are compile, inspect, reset
+                children: vec![46, 47], // Children are compile, reset
                 redirect_node: None,
                 name: Some("redpiler"),
                 parser: None,
@@ -989,16 +967,7 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
                 parser: None,
                 suggestions_type: None,
             },
-            // 47: /redpiler inspect
-            Node {
-                flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
-                children: vec![],
-                redirect_node: None,
-                name: Some("inspect"),
-                parser: None,
-                suggestions_type: None,
-            },
-            // 48: /redpiler reset
+            // 47: /redpiler reset
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
                 children: vec![],
@@ -1007,16 +976,16 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
                 parser: None,
                 suggestions_type: None,
             },
-            // 49: /worldsendrate
+            // 48: /worldsendrate
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
-                children: vec![50],
+                children: vec![49],
                 redirect_node: None,
                 name: Some("worldsendrate"),
                 parser: None,
                 suggestions_type: None,
             },
-            // 50: /worldsendrate [hertz]
+            // 49: /worldsendrate [hertz]
             Node {
                 flags: (CommandFlags::ARGUMENT | CommandFlags::EXECUTABLE).bits() as i8,
                 children: vec![],
@@ -1025,16 +994,16 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
                 parser: Some(Parser::Float(0.0, 1000.0)),
                 suggestions_type: None,
             },
-            // 51: /wsr
+            // 50: /wsr
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::REDIRECT).bits() as i8,
                 children: vec![],
-                redirect_node: Some(49),
+                redirect_node: Some(48),
                 name: Some("wsr"),
                 parser: None,
                 suggestions_type: None,
             },
-            // 52: /version
+            // 51: /version
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
                 children: vec![],

@@ -1,9 +1,8 @@
 use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
 use mchprs_redpiler::ril::ast::Global;
 use mchprs_redpiler::ril::dump_graph;
-use mchprs_redpiler::{CompilerInput, CompilerOptions, TaskMonitor};
+use mchprs_redpiler::{CompileProgress, CompilerInput, CompilerOptions};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::{fs, process};
 
 pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &CompilerOptions) {
@@ -47,8 +46,8 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
             bounds,
         };
 
-        let monitor = Arc::new(TaskMonitor::default());
-        let result_graph = pass_pipeline.run_passes(options, &input, graph, monitor);
+        let progress = CompileProgress::default();
+        let result_graph = pass_pipeline.run_passes(options, &input, graph, &progress);
         result.push('\n');
         dump_graph(&mut result, &result_graph, name).unwrap();
         result.push('\n');

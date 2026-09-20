@@ -1,15 +1,10 @@
-use crate::backend::direct::node::ForwardLinks;
-use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx};
-use crate::{CompilerOptions, TaskMonitor};
+use super::node::{ForwardLink, ForwardLinks, Node, NodeInput, NodeType, Nodes, NonMaxU8};
+use super::{DirectEngine, TickScheduler};
+use crate::compile_graph::LinkType;
+use crate::engine::PendingTick;
+use crate::netlist::{Netlist, NodeId};
 use itertools::Itertools;
-use mchprs_blocks::blocks::Block;
-use mchprs_world::TickEntry;
-use rustc_hash::FxHashMap;
-use std::sync::Arc;
 use tracing::trace;
-
-use super::node::{ForwardLink, Node, NodeId, NodeInput, NodeType, Nodes, NonMaxU8};
-use super::{DirectBackend, NoteBlockInfo};
 
 #[derive(Debug, Default)]
 struct FinalGraphStats {
@@ -20,15 +15,13 @@ struct FinalGraphStats {
 }
 
 fn compile_node(
-    graph: &CompileGraph,
-    node_idx: NodeIdx,
-    nodes_len: usize,
-    nodes_map: &FxHashMap<NodeIdx, usize>,
-    noteblock_info: &mut Vec<NoteBlockInfo>,
+    netlist: &Netlist,
+    id: NodeId,
+    io_only: bool,
     forward_links: &mut ForwardLinks,
     stats: &mut FinalGraphStats,
 ) -> Node {
-    let node = &graph[node_idx];
+    let node = netlist.node(id);
 
     const MAX_INPUTS: usize = 255;
 
@@ -37,12 +30,13 @@ fn compile_node(
 
     let mut default_inputs = NodeInput { ss_counts: [0; 16] };
     let mut side_inputs = NodeInput { ss_counts: [0; 16] };
-    for edge in graph.edges(node_idx, Direction::Incoming) {
-        let weight = edge.weight();
-        let distance = weight.ss;
-        let source = edge.source();
-        let ss = graph[source].state.output_strength.saturating_sub(distance);
-        match weight.ty {
+    for link in netlist.inputs(id) {
+        let ss = netlist
+            .node(link.source)
+            .state
+            .output_strength
+            .saturating_sub(link.ss);
+        match link.ty {
             LinkType::Default => {
                 if default_input_count >= MAX_INPUTS {
                     panic!(
@@ -72,22 +66,13 @@ fn compile_node(
 
     use crate::compile_graph::NodeType as CNodeType;
     let fwd_link_range = if node.ty != CNodeType::Constant {
-        let new_links = graph
-            .edges(node_idx, Direction::Outgoing)
-            .sorted_by_key(|edge| nodes_map[&edge.target()])
-            .into_group_map_by(|edge| std::mem::discriminant(&graph[edge.target()].ty))
+        let new_links = netlist
+            .outputs(id)
+            .iter()
+            .into_group_map_by(|link| std::mem::discriminant(&netlist.node(link.target).ty))
             .into_values()
             .flatten()
-            .map(|edge| unsafe {
-                let idx = edge.target();
-                let idx = nodes_map[&idx];
-                assert!(idx < nodes_len);
-                // Safety: bounds checked
-                let target_id = NodeId::from_index(idx);
-
-                let weight = edge.weight();
-                ForwardLink::new(target_id, weight.ty == LinkType::Side, weight.ss)
-            });
+            .map(|link| ForwardLink::new(link.target, link.ty == LinkType::Side, link.ss));
         forward_links.extend(new_links)
     } else {
         Default::default()
@@ -119,16 +104,7 @@ fn compile_node(
         CNodeType::Trapdoor => NodeType::Trapdoor,
         CNodeType::Wire => NodeType::Wire,
         CNodeType::Constant => NodeType::Constant,
-        CNodeType::NoteBlock { instrument, note } => {
-            let noteblock_id = noteblock_info.len().try_into().unwrap();
-            noteblock_info.push(NoteBlockInfo {
-                positions: node.block.iter().copied().map(|(pos, _)| pos).collect(),
-                instrument: *instrument,
-                note: *note,
-                pending: false,
-            });
-            NodeType::NoteBlock { noteblock_id }
-        }
+        CNodeType::NoteBlock { .. } => NodeType::NoteBlock,
     };
 
     Node {
@@ -139,76 +115,35 @@ fn compile_node(
         powered: node.state.powered,
         output_power: node.state.output_strength,
         locked: node.state.repeater_locked,
-        pending_tick: false,
         changed: false,
-        is_io: node.is_input || node.is_output,
+        pending_tick: false,
+        visible: !io_only || node.is_input || node.is_output,
     }
 }
 
-pub fn compile(
-    backend: &mut DirectBackend,
-    graph: CompileGraph,
-    ticks: Vec<TickEntry>,
-    options: &CompilerOptions,
-    _monitor: Arc<TaskMonitor>,
-) {
-    // Create a mapping from compile to backend node indices
-    let mut nodes_map = FxHashMap::with_capacity_and_hasher(graph.node_count(), Default::default());
-    for node in graph.node_indices() {
-        nodes_map.insert(node, nodes_map.len());
-    }
-    let nodes_len = nodes_map.len();
-
-    // Lower nodes
+pub fn compile(netlist: &Netlist, io_only: bool, pending_ticks: Vec<PendingTick>) -> DirectEngine {
     let mut stats = FinalGraphStats::default();
-    let nodes = graph
-        .node_indices()
-        .map(|idx| {
-            compile_node(
-                &graph,
-                idx,
-                nodes_len,
-                &nodes_map,
-                &mut backend.noteblock_info,
-                &mut backend.forward_links,
-                &mut stats,
-            )
-        })
+    let mut forward_links = ForwardLinks::default();
+    let nodes: Box<[Node]> = netlist
+        .ids()
+        .map(|id| compile_node(netlist, id, io_only, &mut forward_links, &mut stats))
         .collect();
-    stats.nodes_bytes = nodes_len * std::mem::size_of::<Node>();
+    stats.nodes_bytes = nodes.len() * std::mem::size_of::<Node>();
     trace!("{:#?}", stats);
 
-    backend.blocks = graph
-        .all_node_weights()
-        .map(|node| {
-            node.block
-                .iter()
-                .copied()
-                .map(|(pos, id)| (pos, Block::from_id(id)))
-                .collect()
-        })
-        .collect();
-    backend.nodes = Nodes::new(nodes);
-
-    // Create a mapping from block pos to backend NodeId
-    for i in 0..backend.blocks.len() {
-        for (pos, _) in backend.blocks[i].iter().copied() {
-            backend.pos_map.insert(pos, backend.nodes.get(i));
-        }
+    let mut nodes = Nodes::new(nodes);
+    let mut scheduler = TickScheduler::default();
+    for tick in pending_ticks {
+        nodes.inner_mut()[tick.node.index()].pending_tick = true;
+        scheduler.schedule_tick(tick.node, tick.delay as usize, tick.priority);
     }
 
-    // Schedule backend ticks
-    for entry in ticks {
-        if let Some(node) = backend.pos_map.get(&entry.pos) {
-            backend
-                .scheduler
-                .schedule_tick(*node, entry.ticks_left as usize, entry.tick_priority);
-            backend.nodes[*node].pending_tick = true;
-        }
-    }
-
-    // Dot file output
-    if options.export_dot_graph {
-        std::fs::write("backend_graph.dot", format!("{}", backend)).unwrap();
+    DirectEngine {
+        nodes,
+        forward_links,
+        scheduler,
+        notes: Vec::new(),
+        work: 0,
+        changed_since_take: false,
     }
 }

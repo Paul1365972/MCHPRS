@@ -9,13 +9,12 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::ril::DumpGraph;
 
 use super::compile_graph::CompileGraph;
-use super::task_monitor::TaskMonitor;
+use super::progress::{CompileProgress, PassStatus};
 use super::{CompilerInput, CompilerOptions};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 use analysis::*;
 use frontend::*;
@@ -199,34 +198,28 @@ impl<'p, W: World> PassPipeline<'p, W> {
         options: &CompilerOptions,
         input: &CompilerInput<'_, W>,
         mut graph: CompileGraph,
-        monitor: Arc<TaskMonitor>,
+        progress: &CompileProgress,
     ) -> CompileGraph {
-        // Add one for the backend compile step
-        monitor.set_max_progress(self.passes.len() + 1);
-
         let mut analysis_infos = AnalysisInfos::default();
+        let count = self.passes.len();
 
-        for &pass in &self.passes {
-            if monitor.cancelled() {
-                return graph;
-            }
-
-            trace!("Running pass: {}", pass.debug_name());
-            monitor.set_message(pass.status_message().to_string());
+        for (index, &pass) in self.passes.iter().enumerate() {
+            let name = pass.status_message();
+            progress.set(Some(PassStatus { index, count, name }));
             let start = Instant::now();
 
             pass.run_pass(&mut graph, options, input, &mut analysis_infos);
 
-            trace!("Completed pass in {:?}", start.elapsed());
+            info!("{name} took {:?}", start.elapsed());
             trace!("node_count: {}", graph.node_count());
             trace!("edge_count: {}", graph.edge_count());
-            monitor.inc_progress();
 
             if options.print_after_all {
                 debug!("Printing circuit after pass: {}", pass.debug_name());
                 graph.dump();
             }
         }
+        progress.set(None);
 
         if options.print_before_backend {
             debug!("Printing circuit before backend compile:");

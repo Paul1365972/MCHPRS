@@ -1,9 +1,11 @@
 pub mod commands;
 mod data;
 pub mod database;
-mod monitor;
 mod packet_handlers;
+mod redpiler;
 mod scoreboard;
+mod tick_history;
+mod ticking;
 pub mod worldedit;
 
 use crate::config::CONFIG;
@@ -21,24 +23,23 @@ use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
-use mchprs_redpiler::{Compiler, CompilerOptions};
+use mchprs_redpiler::Input;
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use mchprs_text::TextComponent;
 use mchprs_world::storage::Chunk;
-use mchprs_world::{TickEntry, TickPriority, World};
-use monitor::TimingsMonitor;
+use mchprs_world::{SendSchedule, TickEntry, TickPriority, TickSchedule, World};
+use redpiler::{AdvanceRequest, Redpiler};
 use rustc_hash::FxHashMap;
-use scoreboard::RedpilerState;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
+use tick_history::TickHistory;
 use tokio::runtime::Runtime;
-use tracing::{debug, error, warn};
+use tracing::error;
 
-use self::data::sleep_time_for_tps;
 use self::scoreboard::Scoreboard;
 
 /// The width of a plot (2^n)
@@ -57,12 +58,12 @@ pub const PLOT_BLOCK_HEIGHT: i32 = PLOT_SECTIONS as i32 * 16;
 
 const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler is active with `--io-only`. To stop redpiler, run `/redpiler reset`.";
 
-const MAX_BATCH_SIZE: u32 = 50_000;
-
 pub struct Plot {
     pub world: PlotWorld,
     pub players: Vec<Player>,
-    pub redpiler: Compiler,
+    redpiler: Option<Redpiler>,
+    advance_requests: Vec<AdvanceRequest>,
+    advance_ticks_owed: u64,
 
     // Thread communication
     message_receiver: BusReader<BroadcastMessage>,
@@ -73,16 +74,11 @@ pub struct Plot {
 
     // Timings
     tps: Tps,
-    last_update_time: Instant,
-    lag_time: Duration,
-    last_nspt: Option<Duration>,
-    timings: TimingsMonitor,
+    tick_schedule: TickSchedule,
+    send_schedule: SendSchedule,
+    tick_history: TickHistory,
     /// The last time a player was in this plot
     last_player_time: Instant,
-    /// The last time the world changes were sent to the player
-    last_world_send_time: Instant,
-    /// The duration we should sleep for after every update
-    sleep_time: Duration,
     /// When this is false, the update loop will end and the thread will stop.
     /// This will be set to false if no players are on the plot for a certain amount of time.
     running: bool,
@@ -107,6 +103,25 @@ pub struct PlotWorld {
 }
 
 impl PlotWorld {
+    pub fn new(
+        x: i32,
+        z: i32,
+        chunks: Vec<Chunk>,
+        to_be_ticked: Vec<TickEntry>,
+        world_send_rate: WorldSendRate,
+    ) -> PlotWorld {
+        PlotWorld {
+            x,
+            z,
+            chunks,
+            to_be_ticked,
+            packet_senders: Vec::new(),
+            world_send_rate,
+            pending_block_entities: FxHashMap::default(),
+            pending_sounds: FxHashMap::default(),
+        }
+    }
+
     fn get_chunk_index_for_chunk(&self, chunk_x: i32, chunk_z: i32) -> usize {
         let local_x = chunk_x - self.x * PLOT_WIDTH;
         let local_z = chunk_z - self.z * PLOT_WIDTH;
@@ -167,11 +182,11 @@ impl World for PlotWorld {
     }
 
     fn delete_block_entity(&mut self, pos: BlockPos) {
-        self.pending_block_entities.remove(&pos);
         let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
             Some(idx) => idx,
             None => return,
         };
+        self.pending_block_entities.remove(&pos);
         let chunk = &mut self.chunks[chunk_index];
         chunk.delete_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF));
     }
@@ -282,37 +297,6 @@ impl World for PlotWorld {
 }
 
 impl Plot {
-    fn tickn(&mut self, ticks: u64) {
-        if self.redpiler.is_active() {
-            self.timings.tickn(ticks);
-            self.redpiler.tickn(ticks);
-            return;
-        }
-
-        for _ in 0..ticks {
-            self.tick();
-        }
-    }
-
-    fn tick(&mut self) {
-        self.timings.tick();
-        if self.redpiler.is_active() {
-            self.redpiler.tick();
-            return;
-        }
-
-        self.world
-            .to_be_ticked
-            .sort_by_key(|e| (e.ticks_left, e.tick_priority));
-        for pending in &mut self.world.to_be_ticked {
-            pending.ticks_left = pending.ticks_left.saturating_sub(1);
-        }
-        while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
-            let entry = self.world.to_be_ticked.remove(0);
-            mchprs_redstone::tick(self.world.get_block(entry.pos), &mut self.world, entry.pos);
-        }
-    }
-
     pub fn send_block_corrections(&mut self, positions: &[BlockPos]) {
         self.publish_world();
         for pos in positions {
@@ -352,43 +336,32 @@ impl Plot {
         ));
     }
 
-    fn on_player_move(&mut self, player_idx: usize, old: PlayerPos, new: PlayerPos) {
-        let old_block = old.block_pos();
-        let new_block = new.block_pos();
-
-        if let Some(true) = self.world.get_block(old_block).get_pressure_plate_powered()
-            && !self.are_players_on_block(old_block)
-        {
-            self.set_pressure_plate(old_block, false);
-        }
-
-        if let Some(false) = self.world.get_block(new_block).get_pressure_plate_powered()
-            && self.players[player_idx].on_ground
-        {
-            self.set_pressure_plate(new_block, true);
-        }
+    fn on_player_move(&mut self, player_idx: usize, old: PlayerPos) {
+        self.refresh_pressure_plate(old.block_pos());
+        self.refresh_pressure_plate(self.players[player_idx].pos.block_pos());
     }
 
-    fn set_pressure_plate(&mut self, pos: BlockPos, new_powered: bool) {
-        if self.redpiler.is_active() {
-            self.redpiler.set_pressure_plate(pos, new_powered);
-            self.publish_world();
+    fn refresh_pressure_plate(&mut self, pos: BlockPos) {
+        let mut block = self.world.get_block(pos);
+        let Some(powered) = block.get_pressure_plate_powered() else {
+            return;
+        };
+        let should_be_powered = self.are_players_on_block(pos);
+
+        if let Some(redpiler) = &mut self.redpiler {
+            let input = Input::PressurePlate {
+                powered: should_be_powered,
+            };
+            redpiler.backend.input(pos, input);
             return;
         }
-
-        let mut block = self.world.get_block(pos);
-        if let Some(powered) = block.get_pressure_plate_powered() {
-            *powered = new_powered;
-            self.world.set_block(pos, block);
-            mchprs_redstone::update_surrounding_blocks(&mut self.world, pos);
-            mchprs_redstone::update_surrounding_blocks(
-                &mut self.world,
-                pos.offset(BlockFace::Bottom),
-            );
-        } else {
-            warn!("Block at {} is not a pressure plate", pos);
+        if *powered == should_be_powered {
+            return;
         }
-        self.publish_world();
+        *powered = should_be_powered;
+        self.world.set_block(pos, block);
+        mchprs_redstone::update_surrounding_blocks(&mut self.world, pos);
+        mchprs_redstone::update_surrounding_blocks(&mut self.world, pos.offset(BlockFace::Bottom));
     }
 
     fn are_players_on_block(&mut self, pos: BlockPos) -> bool {
@@ -461,15 +434,15 @@ impl Plot {
                     .client
                     .send_packet(&Chunk::encode_empty_packet(chunk_x, chunk_z, PLOT_SECTIONS));
             } else {
-                let chunk_idx = self.world.get_chunk_index_for_chunk(chunk_x, chunk_z);
-                let chunk_data = self.world.chunks[chunk_idx].encode_packet();
+                let chunk_data = self.world.chunks
+                    [self.world.get_chunk_index_for_chunk(chunk_x, chunk_z)]
+                .encode_packet();
                 self.players[player_idx].client.send_packet(&chunk_data);
             }
         }
     }
 
     pub fn update_view_pos_for_player(&mut self, player_idx: usize, force_load: bool) {
-        self.publish_world();
         let view_distance = CONFIG.view_distance as i32;
         let (chunk_x, chunk_z) = self.players[player_idx].pos.chunk_pos();
         let last_chunk_x = self.players[player_idx].last_chunk_x;
@@ -561,25 +534,19 @@ impl Plot {
             return;
         }
 
-        if self.redpiler.is_active() {
+        if let Some(redpiler) = &mut self.redpiler {
             let block = self.world.get_block(block_pos);
             let lever_or_button = matches!(block, Block::Lever { .. } | Block::StoneButton { .. });
             if lever_or_button && !self.players[player].crouching {
-                self.redpiler.on_use_block(block_pos);
-                self.publish_world();
+                redpiler.backend.input(block_pos, Input::Interact);
                 return;
-            } else {
-                match self.redpiler.current_flags() {
-                    Some(flags) if flags.io_only => {
-                        self.players[player].send_error_message(ERROR_IO_ONLY);
-                        cancel(self);
-                        return;
-                    }
-                    _ => {}
-                }
-                self.reset_redpiler();
+            } else if redpiler.options.io_only {
+                self.players[player].send_error_message(ERROR_IO_ONLY);
+                cancel(self);
+                return;
             }
         }
+        self.stop_redpiler();
 
         if let Some(item) = item_in_hand {
             let cancelled = interaction::use_item_on_block(
@@ -652,16 +619,17 @@ impl Plot {
             return;
         }
 
-        match self.redpiler.current_flags() {
-            Some(flags) if flags.io_only => {
-                self.players[player].send_error_message(ERROR_IO_ONLY);
-                self.send_block_corrections(&[block_pos]);
-                return;
-            }
-            _ => {}
+        if self
+            .redpiler
+            .as_ref()
+            .is_some_and(|redpiler| redpiler.options.io_only)
+        {
+            self.players[player].send_error_message(ERROR_IO_ONLY);
+            self.send_block_corrections(&[block_pos]);
+            return;
         }
 
-        self.reset_redpiler();
+        self.stop_redpiler();
 
         interaction::destroy(block, &mut self.world, block_pos);
         self.world.flush_block_changes();
@@ -683,82 +651,8 @@ impl Plot {
         }
     }
 
-    /// After an expensive operation or change in timings, it's important to
-    /// call this function so our timings monitor doesn't think we're running
-    /// behind.
-    fn reset_timings(&mut self) {
-        self.lag_time = Duration::ZERO;
-        self.last_update_time = Instant::now();
-        self.last_nspt = None;
-        self.timings.reset_timings();
-    }
-
-    fn publish_world(&mut self) {
-        if self.redpiler.is_active() {
-            self.redpiler.flush(&mut self.world);
-        }
-        self.world.flush_block_changes();
-        self.last_world_send_time = Instant::now();
-    }
-
-    fn start_redpiler(&mut self, options: CompilerOptions) {
-        debug!("Starting redpiler");
-        self.scoreboard
-            .set_redpiler_state(&self.players, RedpilerState::Compiling);
-        self.scoreboard
-            .set_redpiler_options(&self.players, &options);
-
-        let bounds = self.world.get_corners();
-        // TODO: use monitor
-        let monitor = Default::default();
-        let ticks = self.world.to_be_ticked.drain(..).collect();
-
-        let mut players_need_updates = HashSet::new();
-        thread::scope(|s| {
-            let handle = s.spawn(|| {
-                self.redpiler
-                    .compile(&self.world, bounds, options, ticks, monitor)
-            });
-            while !handle.is_finished() {
-                // We'll update the players so that they don't time out.
-                for player_idx in 0..self.players.len() {
-                    if self.players[player_idx].update() {
-                        // Unforunately we can't update a players view position
-                        // since we don't have access to the world, but we can
-                        // save the players that need updating for later.
-                        players_need_updates.insert(player_idx);
-                    }
-                }
-                thread::sleep(Duration::from_millis(20));
-            }
-        });
-
-        // Now that we have ownership of the world again, we can update player view positions
-        for player_idx in players_need_updates {
-            self.update_view_pos_for_player(player_idx, false);
-        }
-
-        self.scoreboard
-            .set_redpiler_state(&self.players, RedpilerState::Running);
-
-        self.reset_timings();
-    }
-
-    /// Redpiler needs to reset implicitly in the case of any block changes done by a player. This
-    /// can be
-    fn reset_redpiler(&mut self) {
-        if self.redpiler.is_active() {
-            debug!("Discarding redpiler");
-            let bounds = self.world.get_corners();
-            self.redpiler.reset(&mut self.world, bounds);
-            self.scoreboard
-                .set_redpiler_state(&self.players, RedpilerState::Stopped);
-            self.scoreboard
-                .set_redpiler_options(&self.players, &Default::default());
-
-            // reseting redpiler could cause a large amount of block updates
-            self.reset_timings();
-        }
+    fn restart_ticking(&mut self) {
+        self.tick_schedule.restart(Instant::now());
     }
 
     fn destroy_entity(&mut self, entity_id: u32) {
@@ -796,6 +690,7 @@ impl Plot {
         self.destroy_entity(player.entity_id);
         self.locked_players.remove(&player.entity_id);
         self.scoreboard.remove_player(&player);
+        self.refresh_pressure_plate(player.pos.block_pos());
         player
     }
 
@@ -982,12 +877,13 @@ impl Plot {
                 message_sender
                     .send(Message::PlayerLeft(player.uuid))
                     .unwrap();
-                disconnected_players.push(player.entity_id);
+                disconnected_players.push((player.entity_id, player.pos.block_pos()));
             }
             alive
         });
-        for entity_id in disconnected_players {
+        for (entity_id, block) in disconnected_players {
             self.destroy_entity(entity_id);
+            self.refresh_pressure_plate(block);
         }
     }
 
@@ -1007,81 +903,33 @@ impl Plot {
     fn update(&mut self) {
         self.handle_messages();
 
+        self.update_tick_rate();
+        self.tick_history.sample(Instant::now());
+
         // Only tick if there are players in the plot
         if !self.players.is_empty() {
-            self.timings.set_ticking(true);
-            let now = Instant::now();
-            self.last_player_time = now;
+            self.last_player_time = Instant::now();
 
-            let world_send_interval =
-                Duration::try_from_secs_f64(1.0 / f64::from(self.world.world_send_rate.0))
-                    .unwrap_or(Duration::MAX);
-
-            let batch_interval = world_send_interval.min(Duration::from_millis(50));
-            let max_batch_size = match self.last_nspt {
-                Some(Duration::ZERO) | None => 1,
-                Some(last_nspt) => {
-                    let ticks_fit = batch_interval.as_nanos() / last_nspt.as_nanos();
-                    // A tick previously took longer than the batch interval.
-                    // Run at least one just so we're not stuck doing nothing
-                    ticks_fit.clamp(1, u128::from(MAX_BATCH_SIZE)) as u32
-                }
-            };
-
-            let batch_size = match self.tps {
-                Tps::Limited(tps) if tps > 0.0 => {
-                    // Very high rates can round the interval to zero and cause division by zero.
-                    let dur_per_tick = Duration::try_from_secs_f64(1.0 / f64::from(tps))
-                        .unwrap_or(Duration::MAX)
-                        .max(Duration::from_nanos(1));
-                    self.lag_time += now - self.last_update_time;
-                    let ticks_behind = self.lag_time.as_nanos() / dur_per_tick.as_nanos();
-                    self.lag_time = Duration::from_nanos(
-                        (self.lag_time.as_nanos() % dur_per_tick.as_nanos()) as u64,
-                    );
-                    ticks_behind.min(u128::from(max_batch_size)) as u32
-                }
-                Tps::Unlimited => max_batch_size,
-                _ => 0,
-            };
-
-            self.last_update_time = now;
-            if batch_size != 0 {
-                let mut ticks_completed = batch_size;
-                if self.redpiler.is_active() {
-                    self.tickn(batch_size as u64);
-                    self.redpiler.flush(&mut self.world);
-                } else {
-                    for i in 0..batch_size {
-                        self.tick();
-                        if now.elapsed() > Duration::from_millis(200) {
-                            ticks_completed = i + 1;
-                            break;
-                        }
-                    }
-                }
-                self.last_nspt = Some(self.last_update_time.elapsed() / ticks_completed);
+            if self.redpiler.is_none() {
+                self.tick_interpreted();
             }
 
             if self.auto_redpiler
-                && !self.redpiler.is_active()
-                && (self.tps == Tps::Unlimited || self.timings.is_running_behind())
+                && self.redpiler.is_none()
+                && (self.tps == Tps::Unlimited || self.tick_schedule.is_saturated())
             {
                 self.start_redpiler(Default::default());
             }
 
             let now = Instant::now();
-            let time_since_last_world_send = now - self.last_world_send_time;
-            if time_since_last_world_send > world_send_interval {
-                self.last_world_send_time = now;
+            if self.send_schedule.is_due(now) {
+                self.send_schedule.sent(now);
                 self.world.flush_block_changes();
             }
         } else {
-            self.timings.set_ticking(false);
             // Unload plot after 600 seconds unless the plot should be always loaded
             if self.last_player_time.elapsed().as_secs() > 600 && !self.always_running {
                 self.running = false;
-                self.timings.stop();
             }
         }
 
@@ -1150,24 +998,20 @@ impl Plot {
             let possible_scale = (chunks.len() as f64).sqrt().log2();
             error!("Note: it most likely came from a server running plot scale {}, this server is running a plot scale of {}", possible_scale, PLOT_SCALE);
         }
-        let world = PlotWorld {
+        let world = PlotWorld::new(
             x,
             z,
             chunks,
-            to_be_ticked: plot_data.pending_ticks,
-            packet_senders: Vec::new(),
-            world_send_rate: plot_data.world_send_rate,
-            pending_block_entities: FxHashMap::default(),
-            pending_sounds: FxHashMap::default(),
-        };
+            plot_data.pending_ticks,
+            plot_data.world_send_rate,
+        );
         let tps = plot_data.tps;
+        let now = Instant::now();
         Plot {
-            last_player_time: Instant::now(),
-            last_update_time: Instant::now(),
-            last_world_send_time: Instant::now(),
-            lag_time: Duration::new(0, 0),
-            sleep_time: sleep_time_for_tps(tps),
-            last_nspt: None,
+            last_player_time: now,
+            tick_schedule: TickSchedule::new(now),
+            send_schedule: SendSchedule::new(ticking::send_rate(plot_data.world_send_rate), now),
+            tick_history: TickHistory::new(now),
             message_receiver: rx,
             message_sender: tx,
             priv_message_receiver: priv_rx,
@@ -1177,8 +1021,9 @@ impl Plot {
             auto_redpiler: CONFIG.auto_redpiler,
             tps,
             always_running,
-            redpiler: Default::default(),
-            timings: TimingsMonitor::new(tps),
+            redpiler: None,
+            advance_requests: Vec::new(),
+            advance_ticks_owed: 0,
             owner: database::get_plot_owner(x, z).map(|s| s.parse::<HyphenatedUUID>().unwrap().0),
             async_rt: Plot::create_async_rt(),
             scoreboard: Default::default(),
@@ -1211,18 +1056,21 @@ impl Plot {
     }
 
     fn save(&mut self) {
+        let pending_ticks = self
+            .pull_snapshot()
+            .unwrap_or_else(|| self.world.to_be_ticked.clone());
         let world = &mut self.world;
         let chunk_data: Vec<ChunkData> = world.chunks.iter_mut().map(ChunkData::new).collect();
         let data = PlotData {
             tps: self.tps,
             world_send_rate: world.world_send_rate,
             chunk_data,
-            pending_ticks: world.to_be_ticked.clone(),
+            pending_ticks,
         };
         data.save_to_file(format!("./world/plots/p{},{}", world.x, world.z))
             .unwrap();
 
-        self.reset_timings();
+        self.restart_ticking();
     }
 
     fn run(&mut self, initial_player: Option<Player>) {
@@ -1233,27 +1081,18 @@ impl Plot {
         }
 
         while self.running {
-            // Fast path, for super high RTPS
-            if self.sleep_time <= Duration::from_millis(5) && !self.players.is_empty() {
-                self.update();
-                if self.tps != Tps::Unlimited {
-                    thread::yield_now();
-                }
-                continue;
-            }
-
-            let before = Instant::now();
             self.update();
-            let delta = Instant::now().duration_since(before);
-
-            if delta < self.sleep_time {
-                let sleep_time = self.sleep_time - delta;
-                thread::sleep(sleep_time);
-            } else {
+            let wait = self.loop_wait();
+            if self.redpiler.is_some() {
+                self.receive_batch(wait);
+            } else if wait.is_zero() {
                 thread::yield_now();
+            } else {
+                thread::sleep(wait);
             }
         }
 
+        self.stop_redpiler();
         self.save();
     }
 
@@ -1323,7 +1162,7 @@ impl Drop for Plot {
             .send(Message::PlotUnload(world.x, world.z))
             .unwrap();
 
-        self.reset_redpiler();
+        self.stop_redpiler();
         self.world
             .chunks
             .iter_mut()

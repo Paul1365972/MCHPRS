@@ -63,7 +63,47 @@ This pass is neither a mandatory pass nor an optimization pass. This pass is onl
 
 # The Backend
 
-Once the graph has been created, it is sent to a Redpiler backend which is responsible for the runtime execution of the Redstone circuit. A backend may implement redstone executation in any way, whether that is by just-in-time compiling redstone or by interpreting the graph.
+Once the netlist has been created, it is handed to a backend, which is responsible for running the circuit. A backend may run redstone in any way, by compiling it just in time, by interpreting the netlist or on hardware.
+
+## The Lifecycle
+
+`compile(world, bounds, options, progress)` runs the passes on a frozen world and returns a `Netlist`, an immutable node array indexed by `NodeId` with each node's input and output `Link`s. `CompileProgress` names the pass currently running, and the plot's keep alive loop shows it on the scoreboard.
+
+The plot holds a `Backend`:
+
+```rust
+pub trait Backend: Send {
+    fn set_tick_rate(&mut self, rate: TickRate);
+    fn set_send_rate(&mut self, rate: SendRate);
+    fn input(&mut self, pos: BlockPos, input: Input);
+    fn next_batch(&mut self, timeout: Duration) -> Result<Batch, BackendFailure>;
+    fn snapshot(&mut self) -> Result<Snapshot, BackendFailure>;
+    fn stop(self: Box<Self>) -> Result<Snapshot, BackendFailure>;
+}
+```
+
+It speaks block positions and receives `Batch`es: blocks, block entities, note sounds, the ticks completed since the last batch and the ticks still owed from a `Ticks(n)` rate. A `Snapshot` is a complete `Batch` plus the pending ticks as `TickEntry`s. Each backend is started by one function, for the direct backend `backend::direct::start(netlist, ticks, io_only)`. Threads or hardware behind it are invisible to the plot.
+
+Most backends implement `Engine` instead, the synchronous node level trait, and let `Worker::start(netlist, ticks, build)` run it on its own thread in five millisecond slices, paced by a `TickSchedule` and published by a `SendSchedule`. `BlockMap` translates between positions and node ids and remembers the last state it reported for every node. Tests and benchmarks call `Engine` directly.
+
+```rust
+pub trait Engine: Send {
+    fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> u64;
+    fn input(&mut self, node: NodeId, input: Input);
+    fn take_changes(&mut self) -> NodeChanges;
+    fn snapshot(&mut self) -> (NodeChanges, Vec<PendingTick>);
+}
+```
+
+Rules for every `Backend`:
+
+- The plot waits on a backend only in `next_batch`, `snapshot` and `stop`. A backend never waits on the plot.
+- `Paused` runs nothing. `PerSecond` catches up a bounded backlog and never runs ahead. `Unlimited` runs as fast as the engine can. `Ticks(n)` runs `n` ticks as fast as possible and then behaves as `Paused` until the plot sets a rate again.
+- `Input::Interact` flicks a lever or presses a button, `Input::PressurePlate` sets a plate. An input takes effect within one slice.
+- A batch is published at most once per slice and no more often than the send rate. `SendRate::Never` publishes nothing; the plot then learns of changes through snapshots only. `io_only` limits batches to input and output nodes.
+- `next_batch` blocks for at most `timeout` and returns an empty `Batch` when nothing was published.
+- `snapshot` and `stop` are answered at the end of the running slice with every block that differs from the last report, hidden nodes included, plus all pending ticks. Batches published before the answer are folded into it, so applying a snapshot never rewinds a block.
+- `Err(BackendFailure)` means the backend has died. The plot drops it and keeps interpreting.
 
 ## How Redstone Works
 
@@ -127,7 +167,7 @@ Levers can never be updated nor ticked.
 
 ## The Direct Backend
 
-There are several types of backends, but the one which is in use today is known as the [Direct backend](https://github.com/MCHPR/MCHPRS/tree/master/crates/core/src/redpiler/backend/direct). While this backend does not have a JIT compiler, it does implement several optimizations when compared to vanilla:
+There are several types of backends, but the one which is in use today is known as the [Direct backend](https://github.com/MCHPR/MCHPRS/tree/master/crates/redpiler/src/backend/direct). While this backend does not have a JIT compiler, it does implement several optimizations when compared to vanilla:
 
 - Small buffer optimization (SBO) - This not only reduces allocations, but it also helps with memory fragmentation that can lead to cache misses.
 - Node sizes are kept as small as possible in memory to allow the node list to fit into small CPU caches.

@@ -3,14 +3,13 @@ use mchprs_redpiler::{
     passes::{build_pass_pipeline, PassRegistry},
     ril::{self, RILModule, RILTest},
     string_replacer::StringReplacer,
-    CompilerInput, TaskMonitor,
+    CompileProgress, CompilerInput,
 };
 use owo_colors::OwoColorize as _;
 use std::{
     ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 /// Recursively search for ril files starting from `path` and collect into `paths`.
@@ -68,8 +67,8 @@ fn run_test(
         },
         None => build_pass_pipeline(&registry, &test.options),
     };
-    let monitor = Arc::new(TaskMonitor::default());
-    let result_graph = pass_pipeline.run_passes(&test.options, &input, test.graph, monitor);
+    let progress = CompileProgress::default();
+    let result_graph = pass_pipeline.run_passes(&test.options, &input, test.graph, &progress);
     let test_path = match test_root {
         Some(test_root) => test_path.strip_prefix(test_root).unwrap(),
         None => test_path,
