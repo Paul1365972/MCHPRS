@@ -989,8 +989,8 @@ fn clear_area(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {
         for chunk_z in (start_pos.z >> 4)..=(end_pos.z >> 4) {
             if let Some(chunk) = plot.get_chunk(chunk_x, chunk_z) {
                 let chunk_data = chunk.encode_packet();
-                for player in &mut plot.packet_senders {
-                    player.send_packet(&chunk_data);
+                for packet_sender in plot.packet_senders.values() {
+                    packet_sender.send_packet(&chunk_data);
                 }
             }
         }
