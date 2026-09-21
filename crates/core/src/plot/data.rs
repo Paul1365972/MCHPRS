@@ -1,6 +1,7 @@
 use super::{Plot, PlotWorld, PLOT_WIDTH};
 use anyhow::{Context, Result};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -49,7 +50,7 @@ static EMPTY_PLOT: LazyLock<PlotData> = LazyLock::new(|| {
             z: 0,
             chunks,
             to_be_ticked: Vec::new(),
-            packet_senders: Vec::new(),
+            packet_senders: HashMap::new(),
             world_send_rate: WorldSendRate::default(),
             pending_block_entities: Default::default(),
             pending_sounds: Default::default(),

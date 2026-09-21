@@ -30,7 +30,7 @@ use monitor::TimingsMonitor;
 use rustc_hash::FxHashMap;
 use scoreboard::RedpilerState;
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
@@ -100,7 +100,7 @@ pub struct PlotWorld {
     pub z: i32,
     pub chunks: Vec<Chunk>,
     pub to_be_ticked: Vec<TickEntry>,
-    pub packet_senders: Vec<PlayerPacketSender>,
+    pub packet_senders: HashMap<EntityId, PlayerPacketSender>,
     world_send_rate: WorldSendRate,
     pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
     pending_sounds: FxHashMap<BlockPos, CSoundEffect>,
@@ -259,8 +259,8 @@ impl World for PlotWorld {
     fn flush_block_changes(&mut self) {
         for packet in self.chunks.iter_mut().flat_map(|c| c.multi_blocks()) {
             let encoded = packet.encode();
-            for player in &self.packet_senders {
-                player.send_packet(&encoded);
+            for packet_sender in self.packet_senders.values() {
+                packet_sender.send_packet(&encoded);
             }
         }
         for chunk in &mut self.chunks {
@@ -268,14 +268,14 @@ impl World for PlotWorld {
         }
         for (_, block_entity) in self.pending_block_entities.drain() {
             let encoded = block_entity.encode();
-            for player in &self.packet_senders {
-                player.send_packet(&encoded);
+            for packet_sender in self.packet_senders.values() {
+                packet_sender.send_packet(&encoded);
             }
         }
         for (_, sound) in self.pending_sounds.drain() {
             let encoded = sound.encode();
-            for player in &self.packet_senders {
-                player.send_packet(&encoded);
+            for packet_sender in self.packet_senders.values() {
+                packet_sender.send_packet(&encoded);
             }
         }
     }
@@ -432,7 +432,7 @@ impl Plot {
         ));
         self.world
             .packet_senders
-            .push(PlayerPacketSender::new(&player.client));
+            .insert(player.entity_id, PlayerPacketSender::new(&player.client));
         self.scoreboard.add_player(&player);
         self.players.push(player);
         self.update_view_pos_for_player(self.players.len() - 1, true);
@@ -773,8 +773,8 @@ impl Plot {
 
     fn leave_plot(&mut self, uuid: u128) -> Player {
         let player_idx = self.players.iter().position(|p| p.uuid == uuid).unwrap();
-        self.world.packet_senders.remove(player_idx);
         let player = self.players.remove(player_idx);
+        self.world.packet_senders.remove(&player.entity_id);
 
         let destroy_other_entities = CRemoveEntities {
             entity_ids: self.players.iter().map(|p| p.entity_id as i32).collect(),
@@ -987,6 +987,7 @@ impl Plot {
             alive
         });
         for entity_id in disconnected_players {
+            self.world.packet_senders.remove(&entity_id);
             self.destroy_entity(entity_id);
         }
     }
@@ -1155,7 +1156,7 @@ impl Plot {
             z,
             chunks,
             to_be_ticked: plot_data.pending_ticks,
-            packet_senders: Vec::new(),
+            packet_senders: HashMap::new(),
             world_send_rate: plot_data.world_send_rate,
             pending_block_entities: FxHashMap::default(),
             pending_sounds: FxHashMap::default(),
