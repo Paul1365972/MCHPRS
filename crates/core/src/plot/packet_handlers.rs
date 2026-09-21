@@ -1,4 +1,4 @@
-use super::Plot;
+use super::{Plot, PLOT_BLOCK_HEIGHT};
 use crate::config::CONFIG;
 use crate::player::{PacketSender, PlayerPos, SkinParts};
 use crate::server::Message;
@@ -428,8 +428,27 @@ impl ServerBoundPacketHandler for Plot {
         self.players[player].selected_slot = held_item_change.slot as u32;
     }
 
-    fn handle_update_sign(&mut self, packet: SUpdateSign, _player: usize) {
+    fn handle_update_sign(&mut self, packet: SUpdateSign, player: usize) {
         let pos = BlockPos::new(packet.x, packet.y, packet.z);
+        if !Plot::in_plot_bounds(self.world.x, self.world.z, pos.x, pos.z)
+            || !(0..PLOT_BLOCK_HEIGHT).contains(&pos.y)
+        {
+            return;
+        }
+        let block = self.world.get_block(pos);
+        if !block.is_sign() && !block.is_wall_sign() {
+            return;
+        }
+        if let Some(owner) = self.owner {
+            let player = &mut self.players[player];
+            if owner != player.uuid && !player.has_permission("plots.admin.interact.other") {
+                player.send_no_permission_message();
+                return;
+            }
+        } else if !self.players[player].has_permission("plots.admin.interact.unowned") {
+            self.players[player].send_no_permission_message();
+            return;
+        }
         let mut rows = packet
             .lines
             .iter()
