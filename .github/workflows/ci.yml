@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -56,7 +56,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -75,7 +75,7 @@ jobs:
         run: Compress-Archive -Path target/${{ matrix.target }}/release/mchprs.exe -DestinationPath mchprs-${{ matrix.target }}.zip
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mchprs-${{ matrix.target }}
           path: mchprs-${{ matrix.target }}.*
@@ -85,7 +85,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Add the Intel target
         run: rustup target add x86_64-apple-darwin
@@ -102,7 +102,7 @@ jobs:
           tar -czf mchprs-universal-apple-darwin.tar.gz mchprs
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mchprs-universal-apple-darwin
           path: mchprs-universal-apple-darwin.tar.gz
@@ -119,7 +119,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: mchprs-*
           path: dist
@@ -148,7 +148,7 @@ jobs:
     steps:
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: name=${{ env.DOCKER_HUB_USERNAME }}/mchprs,enable=${{ env.DOCKER_HUB_USERNAME != '' }}
           tags: |
@@ -158,22 +158,22 @@ jobs:
             type=sha,format=short
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
         if: env.DOCKER_HUB_USERNAME != ''
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ env.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           platforms: linux/amd64,linux/arm64
           push: ${{ env.DOCKER_HUB_USERNAME != '' }}
