@@ -8,7 +8,7 @@ COPY ./src/ ./src/
 COPY ./crates/ ./crates/
 COPY ./mc_data/ ./mc_data/
 COPY ./Cargo.toml ./Cargo.lock ./rust-toolchain.toml ./
-RUN cargo build --release
+RUN cargo build --locked --release
 
 # Runtime stage
 FROM scratch

@@ -32,13 +32,13 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Lint
-        run: cargo clippy --workspace --all-features --all-targets
+        run: cargo clippy --locked --workspace --all-features --all-targets
 
       - name: Test
-        run: cargo test --workspace --all-features --all-targets
+        run: cargo test --locked --workspace --all-features --all-targets
 
       - name: Test redpiler
-        run: cargo run -p rilc test crates/redpiler/ril_tests
+        run: cargo run --locked -p rilc test crates/redpiler/ril_tests
 
   build:
     strategy:
@@ -64,7 +64,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --locked --release --target ${{ matrix.target }}
 
       - name: Package
         if: runner.os != 'Windows'
@@ -94,7 +94,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --release --target aarch64-apple-darwin --target x86_64-apple-darwin
+        run: cargo build --locked --release --target aarch64-apple-darwin --target x86_64-apple-darwin
 
       - name: Package
         run: |
