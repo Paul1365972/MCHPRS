@@ -511,6 +511,20 @@ impl Plot {
         self.players[player_idx].last_chunk_z = chunk_z;
     }
 
+    fn can_interact_with_plot(&mut self, player: usize) -> bool {
+        let player = &mut self.players[player];
+        let allowed = match self.owner {
+            Some(owner) => {
+                owner == player.uuid || player.has_permission("plots.admin.interact.other")
+            }
+            None => player.has_permission("plots.admin.interact.unowned"),
+        };
+        if !allowed {
+            player.send_no_permission_message();
+        }
+        allowed
+    }
+
     fn handle_use_item_impl(&mut self, use_item_on: &SUseItemOn, player: usize) {
         let block_pos = BlockPos::new(use_item_on.x, use_item_on.y, use_item_on.z);
         let block_face = BlockFace::from_id(use_item_on.face as u32);
@@ -548,15 +562,7 @@ impl Plot {
             }
         }
 
-        if let Some(owner) = self.owner {
-            let player = &mut self.players[player];
-            if owner != player.uuid && !player.has_permission("plots.admin.interact.other") {
-                player.send_no_permission_message();
-                cancel(self);
-                return;
-            }
-        } else if !self.players[player].has_permission("plots.admin.interact.unowned") {
-            self.players[player].send_no_permission_message();
+        if !self.can_interact_with_plot(player) {
             cancel(self);
             return;
         }
@@ -639,15 +645,7 @@ impl Plot {
             }
         }
 
-        if let Some(owner) = self.owner {
-            let player = &mut self.players[player];
-            if owner != player.uuid && !player.has_permission("plots.admin.interact.other") {
-                player.send_no_permission_message();
-                self.send_block_corrections(&[block_pos]);
-                return;
-            }
-        } else if !self.players[player].has_permission("plots.admin.interact.unowned") {
-            self.players[player].send_no_permission_message();
+        if !self.can_interact_with_plot(player) {
             self.send_block_corrections(&[block_pos]);
             return;
         }
