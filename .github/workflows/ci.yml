@@ -32,7 +32,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Lint
-        run: cargo clippy --locked --workspace --all-features --all-targets
+        run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
 
       - name: Test
         run: cargo test --locked --workspace --all-features --all-targets
