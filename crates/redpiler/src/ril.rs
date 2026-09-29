@@ -1,6 +1,5 @@
 use crate::compile_graph::{
-    CompileGraph, CompileLink, CompileNode, Direction, EdgeRef, LinkType, NodeIdx, NodeState,
-    NodeType,
+    CompileGraph, CompileLink, CompileNode, Direction, LinkType, NodeIdx, NodeState, NodeType,
 };
 use crate::string_replacer::StringReplacer;
 use crate::CompilerOptions;
@@ -13,86 +12,13 @@ use std::iter::Peekable;
 use std::str::CharIndices;
 use std::{fmt, vec};
 
-fn dump_node_name(f: &mut impl fmt::Write, ctx: &FmtContext<'_>, node_idx: NodeIdx) -> fmt::Result {
+fn dump_node_name(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -> fmt::Result {
     write!(f, "%")?;
-    if let Some(name) = &ctx.graph[node_idx].name {
+    if let Some(name) = &graph[node_idx].name {
         write!(f, "{}", name)
     } else {
         write!(f, "{}", node_idx.index())
     }
-}
-
-fn dump_edge(
-    f: &mut fmt::Formatter<'_>,
-    ctx: &FmtContext<'_>,
-    src: NodeIdx,
-    link: &CompileLink,
-) -> fmt::Result {
-    dump_node_name(f, ctx, src)?;
-    write!(f, ":{}", link.weight)
-}
-
-fn dump_edges<'a>(
-    f: &mut fmt::Formatter<'_>,
-    ctx: &FmtContext<'_>,
-    edges: impl Iterator<Item = EdgeRef<'a, CompileLink, u32>>,
-) -> fmt::Result {
-    write!(f, "[")?;
-    let mut first = true;
-    for edge in edges {
-        if !first {
-            write!(f, ", ")?;
-        } else {
-            first = false;
-        }
-        dump_edge(f, ctx, edge.source(), edge.weight())?;
-    }
-    write!(f, "]")
-}
-
-struct FmtContext<'a> {
-    graph: &'a CompileGraph,
-    node_idx: NodeIdx,
-}
-
-impl<'a> FmtContext<'a> {
-    fn node(&self) -> &CompileNode {
-        &self.graph[self.node_idx]
-    }
-}
-
-struct SideInputFormatter<'a> {
-    ctx: &'a FmtContext<'a>,
-}
-
-impl<'a> fmt::Display for SideInputFormatter<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let default_inputs = self
-            .ctx
-            .graph
-            .edges(self.ctx.node_idx, Direction::Incoming)
-            .filter(|edge| edge.weight().ty == LinkType::Side);
-        dump_edges(f, self.ctx, default_inputs)
-    }
-}
-
-struct DefaultInputFormatter<'a> {
-    ctx: &'a FmtContext<'a>,
-}
-
-impl<'a> fmt::Display for DefaultInputFormatter<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let default_inputs = self
-            .ctx
-            .graph
-            .edges(self.ctx.node_idx, Direction::Incoming)
-            .filter(|edge| edge.weight().ty == LinkType::Default);
-        dump_edges(f, self.ctx, default_inputs)
-    }
-}
-
-struct InputFormatter<'a> {
-    ctx: &'a FmtContext<'a>,
 }
 
 struct FarInputFormatter(Option<SignalStrength>);
@@ -106,82 +32,66 @@ impl fmt::Display for FarInputFormatter {
     }
 }
 
-impl<'a> InputFormatter<'a> {
-    fn default_inputs(&self) -> DefaultInputFormatter<'a> {
-        DefaultInputFormatter { ctx: self.ctx }
+fn dump_outputs(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -> fmt::Result {
+    let mut outputs = graph.edges(node_idx, Direction::Outgoing).peekable();
+    if outputs.peek().is_none() {
+        return Ok(());
     }
-
-    fn side_inputs(&self) -> SideInputFormatter<'a> {
-        SideInputFormatter { ctx: self.ctx }
+    write!(f, " -> [")?;
+    for (idx, edge) in outputs.enumerate() {
+        if idx > 0 {
+            write!(f, ", ")?;
+        }
+        if edge.weight().ty == LinkType::Side {
+            write!(f, "side ")?;
+        }
+        dump_node_name(f, graph, edge.target())?;
+        write!(f, ":{}", edge.weight().weight)?;
     }
+    write!(f, "]")
 }
 
-fn dump_node(f: &mut impl fmt::Write, ctx: &FmtContext<'_>) -> fmt::Result {
-    let node = ctx.node();
-    let inputs = InputFormatter { ctx };
+fn dump_node(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -> fmt::Result {
+    let node = &graph[node_idx];
 
     write!(f, "  ")?;
-    dump_node_name(f, ctx, ctx.node_idx)?;
+    dump_node_name(f, graph, node_idx)?;
     write!(f, " = ")?;
 
     match node.ty {
         NodeType::Repeater { delay, prioritized } => write!(
             f,
-            "repeater {}, {}, {}, {}, {}, {}",
+            "repeater {}, {}, {}, {}",
             delay,
             prioritized,
             node.state.repeater_locked,
             node.state.is_powered(),
-            inputs.default_inputs(),
-            inputs.side_inputs(),
         ),
-        NodeType::Torch => write!(
-            f,
-            "torch {}, {}",
-            node.state.is_powered(),
-            inputs.default_inputs()
-        ),
+        NodeType::Torch => write!(f, "torch {}", node.state.is_powered()),
         NodeType::Comparator {
             mode,
             far_input,
             prioritized,
         } => write!(
             f,
-            "comparator {}, {}, {}, {}, {}, {}",
+            "comparator {}, {}, {}, {}",
             mode,
             FarInputFormatter(far_input),
             prioritized,
             node.state.power,
-            inputs.default_inputs(),
-            inputs.side_inputs(),
         ),
-        NodeType::Lamp => write!(
-            f,
-            "lamp {}, {}",
-            node.state.is_powered(),
-            inputs.default_inputs()
-        ),
+        NodeType::Lamp => write!(f, "lamp {}", node.state.is_powered()),
         NodeType::Button => write!(f, "button {}", node.state.is_powered()),
         NodeType::Lever => write!(f, "lever {}", node.state.is_powered()),
         NodeType::PressurePlate => write!(f, "pressure_plate {}", node.state.is_powered()),
-        NodeType::Trapdoor => write!(
-            f,
-            "trapdoor {}, {}",
-            node.state.is_powered(),
-            inputs.default_inputs()
-        ),
-        NodeType::Wire => write!(f, "wire {}, {}", node.state.power, inputs.default_inputs()),
+        NodeType::Trapdoor => write!(f, "trapdoor {}", node.state.is_powered()),
+        NodeType::Wire => write!(f, "wire {}", node.state.power),
         NodeType::Constant => write!(f, "constant {}", node.state.power),
         NodeType::NoteBlock { instrument, note } => {
-            write!(
-                f,
-                "note_block {}, {}, {}",
-                instrument,
-                note,
-                inputs.default_inputs()
-            )
+            write!(f, "note_block {}, {}", instrument, note)
         }
     }?;
+    dump_outputs(f, graph, node_idx)?;
 
     if !node.block.is_empty() {
         write!(f, "  # Loc: ")?;
@@ -199,8 +109,7 @@ fn dump_node(f: &mut impl fmt::Write, ctx: &FmtContext<'_>) -> fmt::Result {
 pub fn dump_graph(f: &mut impl fmt::Write, graph: &CompileGraph, name: &str) -> fmt::Result {
     writeln!(f, "circuit @{} {{", name)?;
     for node_idx in graph.node_indices() {
-        let ctx = FmtContext { graph, node_idx };
-        dump_node(f, &ctx)?;
+        dump_node(f, graph, node_idx)?;
         writeln!(f)?;
     }
     write!(f, "}}")
@@ -281,6 +190,10 @@ enum TokenType {
     GlobalValue(String),
     /// The `none` keyword
     None,
+    /// The `side` keyword
+    Side,
+    /// `->`
+    Arrow,
     Colon,
     RightBracket,
     LeftBracket,
@@ -366,6 +279,8 @@ impl TokenType {
             Value(_) => "value",
             GlobalValue(_) => "global value",
             None => "none keyword",
+            Side => "side keyword",
+            Arrow => "'->'",
             Colon => "':'",
             LeftBracket => "'['",
             RightBracket => "']'",
@@ -441,6 +356,14 @@ impl<'a> Lexer<'a> {
                 '=' => TokenType::Equals,
                 '#' => {
                     lexer.skip_line();
+                    continue;
+                }
+                '-' => {
+                    lexer.src_iter.next();
+                    if lexer.src_iter.next_if(|&(_, c)| c == '>').is_none() {
+                        return Err(RILParserError::new(pos, "expected '>' after '-'"));
+                    }
+                    lexer.tokens.push(Token::new(pos, TokenType::Arrow));
                     continue;
                 }
                 '%' | '@' => {
@@ -544,6 +467,7 @@ impl<'a> Lexer<'a> {
             "test_args" => TokenType::TestArgs,
             "schematic" => TokenType::Schematic,
             "none" => TokenType::None,
+            "side" => TokenType::Side,
             "repeater" => TokenType::ComponentType(ComponentType::Repeater),
             "torch" => TokenType::ComponentType(ComponentType::Torch),
             "comparator" => TokenType::ComponentType(ComponentType::Comparator),
@@ -634,10 +558,9 @@ impl RILModule {
             name_map.insert(component.name.clone(), node_idx);
         }
         for component in &circuit.components {
-            let to = name_map[&component.name];
-            for input in &component.inputs {
-                let from = name_map[&input.value];
-                graph.add_edge(from, to, input.link);
+            let from = name_map[&component.name];
+            for output in &component.outputs {
+                graph.add_edge(from, name_map[&output.target], output.link);
             }
         }
         graph
@@ -705,23 +628,17 @@ impl RILModule {
             if expected.node_ty != node.ty || expected.node_state != node.state {
                 return false;
             }
-            // We do it this way instead of searching for matching edges because we need to be able to count duplicates.
-            let mut remaining_inputs = expected.inputs.clone();
-            for edge in result.edges(node_idx, Direction::Incoming) {
-                let src = &result[edge.source()];
-                let src_name = src
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| edge.source().index().to_string());
-                let Some(pos) = remaining_inputs
-                    .iter()
-                    .position(|input| &input.link == edge.weight() && input.value == src_name)
-                else {
-                    return false;
-                };
-                remaining_inputs.remove(pos);
-            }
-            if !remaining_inputs.is_empty() {
+            let outputs: Vec<ast::Output> = result
+                .edges(node_idx, Direction::Outgoing)
+                .map(|edge| ast::Output {
+                    link: *edge.weight(),
+                    target: result[edge.target()]
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| edge.target().index().to_string()),
+                })
+                .collect();
+            if outputs != expected.outputs {
                 return false;
             }
             expected_map.remove(&name);
@@ -827,7 +744,7 @@ impl Parser {
             )?
             .ty
             .unwrap_component_ty();
-        Ok(match component_ty {
+        let (node_ty, node_state) = match component_ty {
             ComponentType::Repeater => {
                 let (delay_token, delay) = self.expect_int()?;
                 if !(1..=4).contains(&delay) {
@@ -842,30 +759,11 @@ impl Parser {
                 let (_, locked) = self.expect_bool()?;
                 self.expect_token(&[TokenType::Comma])?;
                 let (_, powered) = self.expect_bool()?;
-                self.expect_token(&[TokenType::Comma])?;
-                let mut inputs = self.parse_input_list(LinkType::Default)?;
-                self.expect_token(&[TokenType::Comma])?;
-                inputs.append(&mut self.parse_input_list(LinkType::Side)?);
-                ast::Component {
-                    name,
-                    inputs,
-                    node_state: NodeState::repeater(powered, locked),
-                    node_ty: NodeType::Repeater {
-                        delay: delay as u8,
-                        prioritized,
-                    },
-                }
-            }
-            ComponentType::Torch | ComponentType::Lamp | ComponentType::Trapdoor => {
-                let (_, powered) = self.expect_bool()?;
-                self.expect_token(&[TokenType::Comma])?;
-                let inputs = self.parse_input_list(LinkType::Default)?;
-                ast::Component {
-                    name,
-                    inputs,
-                    node_state: NodeState::from_powered(powered),
-                    node_ty: component_ty.simple_node_type(),
-                }
+                let ty = NodeType::Repeater {
+                    delay: delay as u8,
+                    prioritized,
+                };
+                (ty, NodeState::repeater(powered, locked))
             }
             ComponentType::Comparator => {
                 let mode = self
@@ -881,50 +779,31 @@ impl Parser {
                 let (_, prioritized) = self.expect_bool()?;
                 self.expect_token(&[TokenType::Comma])?;
                 let power = self.expect_power()?;
-                self.expect_token(&[TokenType::Comma])?;
-                let mut inputs = self.parse_input_list(LinkType::Default)?;
-                self.expect_token(&[TokenType::Comma])?;
-                inputs.append(&mut self.parse_input_list(LinkType::Side)?);
-
-                ast::Component {
-                    name,
-                    inputs,
-                    node_state: NodeState::from_power(power),
-                    node_ty: NodeType::Comparator {
-                        mode,
-                        far_input,
-                        prioritized,
-                    },
-                }
+                let ty = NodeType::Comparator {
+                    mode,
+                    far_input,
+                    prioritized,
+                };
+                (ty, NodeState::from_power(power))
             }
-            ComponentType::Button | ComponentType::Lever | ComponentType::PressurePlate => {
+            ComponentType::Torch
+            | ComponentType::Lamp
+            | ComponentType::Trapdoor
+            | ComponentType::Button
+            | ComponentType::Lever
+            | ComponentType::PressurePlate => {
                 let (_, powered) = self.expect_bool()?;
-                ast::Component {
-                    name,
-                    inputs: Vec::new(),
-                    node_state: NodeState::from_powered(powered),
-                    node_ty: component_ty.simple_node_type(),
-                }
+                (
+                    component_ty.simple_node_type(),
+                    NodeState::from_powered(powered),
+                )
             }
-            ComponentType::Wire => {
+            ComponentType::Wire | ComponentType::Constant => {
                 let power = self.expect_power()?;
-                self.expect_token(&[TokenType::Comma])?;
-                let inputs = self.parse_input_list(LinkType::Default)?;
-                ast::Component {
-                    name,
-                    inputs,
-                    node_state: NodeState::from_power(power),
-                    node_ty: component_ty.simple_node_type(),
-                }
-            }
-            ComponentType::Constant => {
-                let power = self.expect_power()?;
-                ast::Component {
-                    name,
-                    inputs: Vec::new(),
-                    node_state: NodeState::from_power(power),
-                    node_ty: component_ty.simple_node_type(),
-                }
+                (
+                    component_ty.simple_node_type(),
+                    NodeState::from_power(power),
+                )
             }
             ComponentType::NoteBlock => {
                 let (_, note) = self.expect_int()?;
@@ -936,18 +815,18 @@ impl Parser {
                     )?
                     .ty
                     .unwrap_instrument();
-                self.expect_token(&[TokenType::Comma])?;
-                let inputs = self.parse_input_list(LinkType::Default)?;
-                ast::Component {
-                    name,
-                    inputs,
-                    node_state: NodeState::from_powered(false),
-                    node_ty: NodeType::NoteBlock {
-                        instrument,
-                        note: note as u8,
-                    },
-                }
+                let ty = NodeType::NoteBlock {
+                    instrument,
+                    note: note as u8,
+                };
+                (ty, NodeState::from_powered(false))
             }
+        };
+        Ok(ast::Component {
+            name,
+            node_ty,
+            node_state,
+            outputs: self.parse_outputs()?,
         })
     }
 
@@ -1013,13 +892,38 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_input(
-        &mut self,
-        ty: LinkType,
-        value_token: Token,
-        inputs: &mut Vec<ast::Input>,
-    ) -> RILParserResult<()> {
-        let value = value_token.ty.unwrap_value();
+    fn parse_outputs(&mut self) -> RILParserResult<Vec<ast::Output>> {
+        if self
+            .tokens
+            .next_if(|token| token.ty == TokenType::Arrow)
+            .is_none()
+        {
+            return Ok(Vec::new());
+        }
+        self.expect_token(&[TokenType::LeftBracket])?;
+        let mut outputs = Vec::new();
+        loop {
+            outputs.push(self.parse_output()?);
+            let comma_or_bracket =
+                self.expect_token(&[TokenType::Comma, TokenType::RightBracket])?;
+            if comma_or_bracket.ty == TokenType::RightBracket {
+                return Ok(outputs);
+            }
+        }
+    }
+
+    fn parse_output(&mut self) -> RILParserResult<ast::Output> {
+        let ty = match self.tokens.next_if(|token| token.ty == TokenType::Side) {
+            Some(_) => LinkType::Side,
+            None => LinkType::Default,
+        };
+        let target = self
+            .expect_token_with(
+                |token| matches!(token.ty, TokenType::Value(_)),
+                &[TokenType::Side, TokenType::Value(Default::default())],
+            )?
+            .ty
+            .unwrap_value();
         self.expect_token(&[TokenType::Colon])?;
         let (token, weight) = self.expect_int()?;
         let weight = u8::try_from(weight).map_err(|_| {
@@ -1028,45 +932,10 @@ impl Parser {
                 format!("link weight {weight} is outside 0..=255"),
             )
         })?;
-        let link = CompileLink::new(ty, weight);
-        inputs.push(ast::Input { link, value });
-        Ok(())
-    }
-
-    fn parse_input_list(&mut self, ty: LinkType) -> RILParserResult<Vec<ast::Input>> {
-        self.expect_token(&[TokenType::LeftBracket])?;
-
-        let mut inputs = Vec::new();
-
-        let value_or_bracket = self.expect_token_with(
-            |token| matches!(token.ty, TokenType::Value(_) | TokenType::RightBracket),
-            &[
-                TokenType::Value(Default::default()),
-                TokenType::RightBracket,
-            ],
-        )?;
-
-        if value_or_bracket.ty == TokenType::RightBracket {
-            return Ok(inputs);
-        } else {
-            self.parse_input(ty, value_or_bracket, &mut inputs)?;
-        }
-
-        loop {
-            let comma_or_bracket =
-                self.expect_token(&[TokenType::Comma, TokenType::RightBracket])?;
-            if comma_or_bracket.ty == TokenType::RightBracket {
-                break;
-            } else {
-                let value_token = self.expect_token_with(
-                    |token| matches!(token.ty, TokenType::Value(_)),
-                    &[TokenType::Value(Default::default())],
-                )?;
-                self.parse_input(ty, value_token, &mut inputs)?;
-            }
-        }
-
-        Ok(inputs)
+        Ok(ast::Output {
+            link: CompileLink::new(ty, weight),
+            target,
+        })
     }
 
     fn expect_power(&mut self) -> RILParserResult<SignalStrength> {
@@ -1194,16 +1063,16 @@ pub mod ast {
     }
 
     #[derive(Clone, PartialEq)]
-    pub struct Input {
+    pub struct Output {
         pub link: CompileLink,
-        pub value: String,
+        pub target: String,
     }
 
     pub struct Component {
         pub name: String,
         pub node_ty: NodeType,
         pub node_state: NodeState,
-        pub inputs: Vec<Input>,
+        pub outputs: Vec<Output>,
     }
 }
 
@@ -1216,7 +1085,7 @@ mod tests {
         use TokenType::*;
         let src = r"
             circuit {
-              %comp = comparator subtract, none, false, 0, [%10:2, %11:1], [%10:4, %11:1]  # Loc: (126, 8, 118)
+              %comp = comparator subtract, none, false, 0 -> [%10:2, side %11:1]  # Loc: (126, 8, 118)
             }
         ";
         let actual_tokens = Lexer::lex(src).unwrap();
@@ -1233,27 +1102,18 @@ mod tests {
             Token::new(72, Bool(false)),
             Token::new(77, Comma),
             Token::new(79, Int(0)),
-            Token::new(80, Comma),
-            Token::new(82, LeftBracket),
-            Token::new(83, Value("10".to_owned())),
-            Token::new(86, Colon),
-            Token::new(87, Int(2)),
-            Token::new(88, Comma),
-            Token::new(90, Value("11".to_owned())),
-            Token::new(93, Colon),
-            Token::new(94, Int(1)),
-            Token::new(95, RightBracket),
-            Token::new(96, Comma),
-            Token::new(98, LeftBracket),
-            Token::new(99, Value("10".to_owned())),
-            Token::new(102, Colon),
-            Token::new(103, Int(4)),
-            Token::new(104, Comma),
-            Token::new(106, Value("11".to_owned())),
-            Token::new(109, Colon),
-            Token::new(110, Int(1)),
-            Token::new(111, RightBracket),
-            Token::new(147, RightCurlyBrace),
+            Token::new(81, Arrow),
+            Token::new(84, LeftBracket),
+            Token::new(85, Value("10".to_owned())),
+            Token::new(88, Colon),
+            Token::new(89, Int(2)),
+            Token::new(90, Comma),
+            Token::new(92, Side),
+            Token::new(97, Value("11".to_owned())),
+            Token::new(100, Colon),
+            Token::new(101, Int(1)),
+            Token::new(102, RightBracket),
+            Token::new(138, RightCurlyBrace),
         ];
         assert_eq!(&actual_tokens, expected_tokens);
     }
