@@ -40,6 +40,9 @@ enum Command {
         /// Enable optimization passes which may significantly increase compile times.
         #[arg(long, short = 'O')]
         optimize: bool,
+        /// Let optimizations reorder updates within a tick
+        #[arg(long, short)]
+        reorder: bool,
         /// Export the graph to a binary format. See the [`redpiler_graph`] crate.
         #[arg(long, short)]
         export: bool,
@@ -160,6 +163,7 @@ fn main() -> ExitCode {
             input_path,
             output_path,
             optimize,
+            reorder,
             export,
             io_only,
             wire_dot_out,
@@ -170,6 +174,7 @@ fn main() -> ExitCode {
         } => {
             let options = CompilerOptions {
                 optimize,
+                reorder,
                 export,
                 io_only,
                 update: false,

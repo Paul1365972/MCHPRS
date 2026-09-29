@@ -1,0 +1,92 @@
+test_args "--passes=coalesce"
+
+# Both torches read the same inputs. Merging them makes their repeaters identical too, and the
+# lamp keeps the links of both
+circuit @same_inputs_input {
+  %lever_a = lever false -> [%torch1:3, %torch2:0]
+  %lever_b = lever false -> [%torch1:0, %torch2:7]
+  %repeater1 = repeater 1, false, false, false -> [%lamp:0]
+  %repeater2 = repeater 1, false, false, false -> [%lamp:4]
+  %torch1 = torch true -> [%repeater1:0]
+  %torch2 = torch true -> [%repeater2:5]
+  %lamp = lamp false
+}
+
+test(@same_inputs_input) circuit @same_inputs {
+  %lever_a = lever false -> [%torch1:3]
+  %lever_b = lever false -> [%torch1:0]
+  %repeater1 = repeater 1, false, false, false -> [%lamp:0, %lamp:4]
+  %torch1 = torch true -> [%repeater1:0]
+  %lamp = lamp false
+}
+
+# The loop ticks first, so the reader already sees its new output
+circuit @self_loop_input {
+  %lever = lever true -> [%loop:0, %reader:0]
+  %loop = comparator compare, none, false, 15 -> [%loop:1, %reader:1, %lamp_loop:0]
+  %reader = comparator compare, none, false, 15 -> [%lamp_reader:0]
+  %lamp_loop = lamp true
+  %lamp_reader = lamp true
+}
+
+test(@self_loop_input) circuit @self_loop {
+  %lever = lever true -> [%loop:0, %reader:0]
+  %loop = comparator compare, none, false, 15 -> [%loop:1, %reader:1, %lamp_loop:0]
+  %reader = comparator compare, none, false, 15 -> [%lamp_reader:0]
+  %lamp_loop = lamp true
+  %lamp_reader = lamp true
+}
+
+# The middle torch ticks between the other two, so they see different values
+circuit @input_ticks_between_input {
+  %lever = lever true -> [%torch_a:0, %torch_x:0, %torch_b:0]
+  %torch_a = torch false -> [%lamp_a:0]
+  %torch_x = torch false -> [%torch_a:0, %torch_b:0]
+  %torch_b = torch false -> [%lamp_b:0]
+  %lamp_a = lamp false
+  %lamp_b = lamp false
+}
+
+test(@input_ticks_between_input) circuit @input_ticks_between {
+  %lever = lever true -> [%torch_a:0, %torch_x:0, %torch_b:0]
+  %torch_a = torch false -> [%lamp_a:0]
+  %torch_x = torch false -> [%torch_a:0, %torch_b:0]
+  %torch_b = torch false -> [%lamp_b:0]
+  %lamp_a = lamp false
+  %lamp_b = lamp false
+}
+
+# Each comparator sees the other's change in the same tick, so no order of the two matches a
+# merged node
+circuit @mutual_loop_input {
+  %lever = lever false -> [%comparator_a:0, %comparator_b:0]
+  %comparator_a = comparator compare, none, false, 0 -> [%comparator_a:1, %comparator_b:1, %lamp_a:0]
+  %comparator_b = comparator compare, none, false, 0 -> [%comparator_a:1, %comparator_b:1, %lamp_b:0]
+  %lamp_a = lamp false
+  %lamp_b = lamp false
+}
+
+test(@mutual_loop_input) circuit @mutual_loop {
+  %lever = lever false -> [%comparator_a:0, %comparator_b:0]
+  %comparator_a = comparator compare, none, false, 0 -> [%comparator_a:1, %comparator_b:1, %lamp_a:0]
+  %comparator_b = comparator compare, none, false, 0 -> [%comparator_a:1, %comparator_b:1, %lamp_b:0]
+  %lamp_a = lamp false
+  %lamp_b = lamp false
+}
+
+# A comparator reads the signal strength, so the weight must match
+circuit @analog_reader_input {
+  %lever = lever false -> [%comparator1:0, %comparator2:5]
+  %comparator1 = comparator compare, none, false, 0 -> [%lamp1:0]
+  %comparator2 = comparator compare, none, false, 0 -> [%lamp2:0]
+  %lamp1 = lamp false
+  %lamp2 = lamp false
+}
+
+test(@analog_reader_input) circuit @analog_reader {
+  %lever = lever false -> [%comparator1:0, %comparator2:5]
+  %comparator1 = comparator compare, none, false, 0 -> [%lamp1:0]
+  %comparator2 = comparator compare, none, false, 0 -> [%lamp2:0]
+  %lamp1 = lamp false
+  %lamp2 = lamp false
+}
