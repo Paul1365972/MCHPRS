@@ -41,27 +41,26 @@ Values are a name given to a component prefixed with `%`. They can include any a
 
 Examples: `%a`, `%repeater`, `%123`
 
-### Input lists
+### Output lists
 
-Input lists are defined as a list of value and weight pairs. The weight is the power lost along the link, from 0 through 255; the `clamp-weights` pass removes links with a weight of 15 or more.
+A component may end with `->` and the links leading out of it, in the order the engine updates their targets. Each link names its target and its weight, the power lost along the link, from 0 through 255; the `clamp-weights` pass removes links with a weight of 15 or more. `side` marks a link into the side of a repeater or comparator.
 
-`[%<name>:<weight>, ...]`
+`-> [%<name>:<weight>, side %<name>:<weight>, ...]`
 
-For example: `[%a:12, %12:2]`
+For example: `%lever = lever false -> [%a:12, side %12:2]`
 
 ## Components
 
-All components have a type and a list of arguments.
+All components have a type, a list of arguments and an optional output list.
 
 These arguments have a standard type:
 - `powered`: boolean
-- `base_inputs`, `side_inputs`, `inputs`: input list
 - `power`: integer between 0 and 15
 
 ### repeater
 
 ```
-%x = repeater <delay>, <prioritized>, <locked>, <powered>, <base_inputs>, <side_inputs>
+%x = repeater <delay>, <prioritized>, <locked>, <powered>
 ```
 
 `delay` is an integer between 1 and 4.\
@@ -71,13 +70,13 @@ These arguments have a standard type:
 ### torch
 
 ```
-%x = torch <powered>, <inputs>
+%x = torch <powered>
 ```
 
 ### comparator
 
 ```
-%x = comparator <mode>, <far_input>, <prioritized>, <power>, <base_inputs>, <side_inputs>
+%x = comparator <mode>, <far_input>, <prioritized>, <power>
 ```
 
 `mode` can either be `compare` or `subtract`.\
@@ -87,7 +86,7 @@ These arguments have a standard type:
 ### lamp
 
 ```
-%x = lamp <powered>, <inputs>
+%x = lamp <powered>
 ```
 
 ### button
@@ -111,13 +110,13 @@ These arguments have a standard type:
 ### trapdoor
 
 ```
-%x = trapdoor <powered>, <inputs>
+%x = trapdoor <powered>
 ```
 
 ### wire
 
 ```
-%x = wire <power>, <inputs>
+%x = wire <power>
 ```
 
 ### constant
@@ -129,7 +128,7 @@ These arguments have a standard type:
 ### note_block
 
 ```
-%x = note_block <instrument>, <note>, <inputs>
+%x = note_block <instrument>, <note>
 ```
 
 `instrument` is one of `harp`, `basedrum`, `snare`, `hat`, `bass`, `flute`, `bell`, `guitar`, `chime`, `xylophone`, `iron_xylophone`, `cow_bell`, `didgeridoo`, `bit`, `banjo`, or `pling`.\
