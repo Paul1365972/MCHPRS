@@ -1,29 +1,29 @@
 test_args "--passes=constant-fold"
 
 circuit @simple_input {
-  %constant = constant 1
-  %repeater1 = repeater 1, false, false, true, [%constant:0], []
-  %repeater2 = repeater 1, false, false, true, [%repeater1:0], []
-  %lamp = lamp true, [%repeater2:0]
+  %constant = constant 1 -> [%repeater1:0]
+  %repeater1 = repeater 1, false, false, true -> [%repeater2:0]
+  %repeater2 = repeater 1, false, false, true -> [%lamp:0]
+  %lamp = lamp true
 }
 
 test(@simple_input) circuit @simple {
   %constant = constant 1
   %repeater1 = constant 15
-  %repeater2 = constant 15
-  %lamp = lamp true, [%repeater2:0]
+  %repeater2 = constant 15 -> [%lamp:0]
+  %lamp = lamp true
 }
 
 circuit @comparator_input {
-  %constant5 = constant 5
-  %constant4 = constant 4
-  %constant10 = constant 10
+  %constant5 = constant 5 -> [%comp_sub1:0, side %comp_sub2:0]
+  %constant4 = constant 4 -> [side %comp_sub1:0, %comp_sub2:0]
+  %constant10 = constant 10 -> [%comp_sub3:1, side %comp_sub3:5]
   # 5 - 4
-  %comp_sub1 = comparator subtract, none, false, 1, [%constant5:0], [%constant4:0]
+  %comp_sub1 = comparator subtract, none, false, 1
   # 4 - 5 would be 0, but constant inputs never update the comparator, so it keeps its output of 1
-  %comp_sub2 = comparator subtract, none, false, 1, [%constant4:0], [%constant5:0]
+  %comp_sub2 = comparator subtract, none, false, 1
   # (10 - 1) - (10 - 5) would be 4, but the comparator keeps its output of 1 as well
-  %comp_sub3 = comparator subtract, none, false, 1, [%constant10:1], [%constant10:5]
+  %comp_sub3 = comparator subtract, none, false, 1
 }
 
 test(@comparator_input) circuit @comparator {
@@ -36,16 +36,16 @@ test(@comparator_input) circuit @comparator {
 }
 
 circuit @locking_rep_input {
-  %constant = constant 1
-  %lever = lever false
-  %side_rep = repeater 1, true, false, false, [%lever:0], []
+  %constant = constant 1 -> [%locking_rep:0]
+  %lever = lever false -> [%side_rep:0]
+  %side_rep = repeater 1, true, false, false -> [side %locking_rep:0]
   # This repeater should be untouched
-  %locking_rep = repeater 1, false, false, true, [%constant:0], [%side_rep:0]
+  %locking_rep = repeater 1, false, false, true
 }
 
 test(@locking_rep_input) circuit @locking_rep {
-  %constant = constant 1
-  %lever = lever false
-  %side_rep = repeater 1, true, false, false, [%lever:0], []
-  %locking_rep = repeater 1, false, false, true, [%constant:0], [%side_rep:0]
+  %constant = constant 1 -> [%locking_rep:0]
+  %lever = lever false -> [%side_rep:0]
+  %side_rep = repeater 1, true, false, false -> [side %locking_rep:0]
+  %locking_rep = repeater 1, false, false, true
 }
