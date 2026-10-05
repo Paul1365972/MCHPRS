@@ -37,7 +37,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -70,7 +70,7 @@ jobs:
           Compress-Archive -Path "package/mchprs.exe" -DestinationPath "mchprs-${{ matrix.target }}.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mchprs-${{ matrix.target }}
           path: |
@@ -81,11 +81,11 @@ jobs:
     needs: build
     runs-on: macos-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: mchprs-x86_64-apple-darwin
           path: x86_64
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: mchprs-aarch64-apple-darwin
           path: aarch64
@@ -105,7 +105,7 @@ jobs:
           tar -czf mchprs-universal-apple-darwin.tar.gz -C package mchprs
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mchprs-universal-apple-darwin
           path: mchprs-universal-apple-darwin.tar.gz
@@ -117,8 +117,8 @@ jobs:
       contents: write
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
