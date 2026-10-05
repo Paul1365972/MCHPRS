@@ -1,5 +1,5 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM rust:alpine AS builder
+FROM rust:alpine AS builder
 
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static
 
