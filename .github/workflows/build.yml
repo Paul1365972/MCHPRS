@@ -1,11 +1,7 @@
 name: Build
 
 on:
-  push:
-    branches: [ "master" ]
-    tags: [ "v*" ]
-  pull_request:
-    branches: [ "master" ]
+  workflow_call:
 
 jobs:
   build:
@@ -109,43 +105,3 @@ jobs:
         with:
           name: mchprs-universal-apple-darwin
           path: mchprs-universal-apple-darwin.tar.gz
-
-  publish:
-    needs: [build, build-macos-universal]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    if: github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-
-      - name: Collect release assets
-        run: |
-          mkdir -p dist
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} dist/ \;
-          ls -l dist
-
-      - name: Create preview release
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          gh release delete preview --yes || true
-          gh release create preview \
-            --prerelease \
-            --title "${GITHUB_REPOSITORY} Preview Build" \
-            --notes "🚧 **This is a preview build of the latest commit.**" \
-            dist/*.tar.gz dist/*.zip
-
-      - name: Create release
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          tag: ${{ github.ref_name }}
-        run: |
-          gh release create "$tag" \
-            --title "${GITHUB_REPOSITORY} ${tag#v}" \
-            --generate-notes \
-            dist/*.tar.gz dist/*.zip
