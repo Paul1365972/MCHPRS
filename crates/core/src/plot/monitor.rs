@@ -178,7 +178,7 @@ impl TimingsMonitor {
                 let ticking = data.ticking.load(Ordering::Relaxed);
                 let resetting = data
                     .reset_timings
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
                         remaining.checked_sub(1)
                     })
                     .is_ok();

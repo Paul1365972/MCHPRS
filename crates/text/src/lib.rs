@@ -83,9 +83,9 @@ pub enum TextColor {
     ColorCode(ColorCode),
 }
 
-impl Into<TextColor> for ColorCode {
-    fn into(self) -> TextColor {
-        TextColor::ColorCode(self)
+impl From<ColorCode> for TextColor {
+    fn from(color_code: ColorCode) -> Self {
+        TextColor::ColorCode(color_code)
     }
 }
 

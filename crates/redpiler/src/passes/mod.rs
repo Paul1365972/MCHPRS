@@ -245,12 +245,6 @@ pub struct AnalysisUsage {
 }
 
 impl AnalysisUsage {
-    fn reset(&mut self) {
-        self.preserves_all = false;
-        self.required.clear();
-        self.preserved.clear();
-    }
-
     pub fn set_preserves_all(&mut self) {
         self.preserves_all = true;
     }
