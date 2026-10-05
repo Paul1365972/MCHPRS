@@ -31,6 +31,7 @@ use rustc_hash::FxHashMap;
 use scoreboard::RedpilerState;
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::mem;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
@@ -711,7 +712,7 @@ impl Plot {
         let bounds = self.world.get_corners();
         // TODO: use monitor
         let monitor = Default::default();
-        let ticks = self.world.to_be_ticked.drain(..).collect();
+        let ticks = mem::take(&mut self.world.to_be_ticked);
 
         let mut players_need_updates = HashSet::new();
         thread::scope(|s| {
@@ -859,7 +860,7 @@ impl Plot {
         let mut removal_offset = 0;
         for player_idx in 0..self.players.len() {
             let player_idx = player_idx - removal_offset;
-            let commands: Vec<String> = self.players[player_idx].command_queue.drain(..).collect();
+            let commands = mem::take(&mut self.players[player_idx].command_queue);
             for command in commands {
                 let mut args: Vec<&str> = command.split(' ').collect();
                 let command = args.remove(0);
@@ -907,8 +908,7 @@ impl Plot {
                     }
                 }
                 BroadcastMessage::Shutdown => {
-                    let mut players: Vec<Player> = self.players.drain(..).collect();
-                    for player in players.iter_mut() {
+                    for player in &mut mem::take(&mut self.players) {
                         player.save();
                         player.kick("Server closed".into());
                     }
