@@ -1,9 +1,7 @@
 name: Docker
 
 on:
-  push:
-    branches: [ "master" ]
-    tags: [ "v*" ]
+  workflow_call:
 
 jobs:
   docker:
@@ -14,13 +12,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Check if master is at this commit
+        id: master
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq .sha)
+          echo "head=$([ "$head" = "$GITHUB_SHA" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ${{ secrets.DOCKER_HUB_USERNAME }}/mchprs
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' && steps.master.outputs.head == 'true' }}
             type=semver,pattern={{major}}.{{minor}}.{{patch}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short

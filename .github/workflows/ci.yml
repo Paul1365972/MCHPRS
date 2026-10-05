@@ -3,8 +3,16 @@ name: CI
 on:
   push:
     branches: [ "master" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "master" ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -59,3 +67,65 @@ jobs:
 
       - name: Run redpiler tests
         run: cargo run --locked -p rilc test crates/redpiler/ril_tests
+
+  build:
+    uses: ./.github/workflows/build.yml
+
+  publish:
+    needs: [format, clippy, test, build]
+    if: github.event_name == 'push'
+    concurrency:
+      group: ${{ startsWith(github.ref, 'refs/tags/') && format('release-{0}', github.ref_name) || 'preview' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        run: |
+          mkdir -p dist
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} dist/ \;
+          ls -l dist
+
+      - name: Create preview release
+        if: github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # Runs can finish out of order
+          head=$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq .sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "Skipping the preview release: master is at $head, not $GITHUB_SHA"
+            exit 0
+          fi
+          gh release delete preview --yes --cleanup-tag || true
+          gh release create preview \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "${GITHUB_REPOSITORY} Preview Build" \
+            --notes "🚧 **This is a preview build of the latest commit.**" \
+            dist/*.tar.gz dist/*.zip
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          tag: ${{ github.ref_name }}
+        run: |
+          gh release create "$tag" \
+            --title "${GITHUB_REPOSITORY} ${tag#v}" \
+            --generate-notes \
+            dist/*.tar.gz dist/*.zip
+
+  docker:
+    needs: [format, clippy, test]
+    if: github.event_name == 'push'
+    concurrency:
+      group: docker-${{ github.ref }}
+    uses: ./.github/workflows/docker.yml
+    secrets: inherit
