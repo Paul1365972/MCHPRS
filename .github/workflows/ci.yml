@@ -3,59 +3,179 @@ name: CI
 on:
   push:
     branches: [ "master" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "master" ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
-  format:
-    name: Check formatting
+  check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Check formatting
-        run: cargo fmt --check --all
-
-  clippy:
-    name: Clippy lints
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Rust cache
+      - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Run clippy
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Lint
         # If we ever get around to fix everything clippy complains about we can start failing on warning via: -- -D warnings
         run: cargo clippy --locked --workspace --all-features --all-targets
 
-  test:
-    name: Run tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run rust tests
+      - name: Test
         run: cargo test --locked --workspace --all-features --all-targets
 
-      - name: Run redpiler tests
+      - name: Test redpiler
         run: cargo run --locked -p rilc test crates/redpiler/ril_tests
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Package
+        if: runner.os != 'Windows'
+        run: tar -czf mchprs-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release mchprs
+
+      - name: Package
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path target/${{ matrix.target }}/release/mchprs.exe -DestinationPath mchprs-${{ matrix.target }}.zip
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: mchprs-${{ matrix.target }}
+          path: mchprs-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Add the Intel target
+        run: rustup target add x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --locked --release --target aarch64-apple-darwin --target x86_64-apple-darwin
+
+      - name: Package
+        run: |
+          lipo -create -output mchprs target/aarch64-apple-darwin/release/mchprs target/x86_64-apple-darwin/release/mchprs
+          tar -czf mchprs-universal-apple-darwin.tar.gz mchprs
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: mchprs-universal-apple-darwin
+          path: mchprs-universal-apple-darwin.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [check, build, build-macos]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mchprs-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish preview
+        if: github.ref == 'refs/heads/master'
+        run: |
+          gh release delete preview --yes --cleanup-tag || true
+          gh release create preview dist/* --target "$GITHUB_SHA" --prerelease \
+            --title "$GITHUB_REPOSITORY Preview Build" \
+            --notes "🚧 **This is a preview build of the latest commit.**"
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes \
+            --title "$GITHUB_REPOSITORY ${GITHUB_REF_NAME#v}"
+
+  docker:
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ secrets.DOCKER_HUB_USERNAME }}/mchprs
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{major}}.{{minor}}.{{patch}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha
