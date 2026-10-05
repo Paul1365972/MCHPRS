@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 
-use mchprs_blocks::blocks::Block;
+use mchprs_blocks::blocks::{Block, ComparatorMode};
 use mchprs_blocks::BlockDirection;
 use mchprs_world::{testing::TestWorld, TickPriority, World};
 
@@ -137,6 +137,29 @@ fn repeater_on_off(backend: TestBackend) {
         runner.use_block(lever_pos);
         runner.check_powered_for(trapdoor_pos, false, delay);
         runner.check_powered_for(trapdoor_pos, true, delay);
+        runner.check_block_powered(trapdoor_pos, false);
+    }
+}
+
+test_all_backends!(comparator_on_off);
+fn comparator_on_off(backend: TestBackend) {
+    let lever_pos = pos(0, 2, 0);
+    let trapdoor_pos = pos(2, 1, 0);
+
+    for mode in [ComparatorMode::Compare, ComparatorMode::Subtract] {
+        let mut world = TestWorld::new(1, 1, 1);
+        make_lever(&mut world, lever_pos);
+        make_comparator(&mut world, pos(1, 1, 0), mode, BlockDirection::West);
+        world.set_block(trapdoor_pos, trapdoor());
+
+        let mut runner = BackendRunner::new(world, backend);
+        runner.check_block_powered(trapdoor_pos, false);
+
+        runner.use_block(lever_pos);
+        runner.check_powered_for(trapdoor_pos, false, 1);
+        runner.check_block_powered(trapdoor_pos, true);
+        runner.use_block(lever_pos);
+        runner.check_powered_for(trapdoor_pos, true, 1);
         runner.check_block_powered(trapdoor_pos, false);
     }
 }
