@@ -1,6 +1,6 @@
 # Minecraft High-Performance Redstone Server
 
-[![Build Status](https://github.com/MCHPR/MCHPRS/actions/workflows/build.yml/badge.svg)](https://github.com/MCHPR/MCHPRS/actions/workflows/build.yml)
+[![Build Status](https://github.com/MCHPR/MCHPRS/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MCHPR/MCHPRS/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Discord Banner 2](https://discordapp.com/api/guilds/724072903083163679/widget.png)](https://discord.com/invite/svK9JU7)
 
