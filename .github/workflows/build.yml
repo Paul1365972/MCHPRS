@@ -52,7 +52,7 @@ jobs:
           CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld.exe
           CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: rust-lld.exe
 
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --locked --release --target ${{ matrix.target }}
 
       - name: Package binary (Unix)
         if: runner.os != 'Windows'
