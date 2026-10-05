@@ -1,8 +1,8 @@
 mod common;
 use common::*;
 
-use mchprs_blocks::blocks::{Block, ComparatorMode};
-use mchprs_blocks::BlockDirection;
+use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode};
+use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_world::testing::TestWorld;
 
 test_all_backends!(repeater_t_flip_flop);
@@ -106,4 +106,22 @@ fn pulse_gen_1t(backend: TestBackend) {
     runner.check_powered_for(output_pos, false, 1);
     runner.check_powered_for(output_pos, true, 1);
     runner.check_powered_for(output_pos, false, 10);
+}
+
+/// Creates a comparator at `comp_pos` with a block of sandstone below it
+fn make_comparator(
+    world: &mut TestWorld,
+    comp_pos: BlockPos,
+    mode: ComparatorMode,
+    facing: BlockDirection,
+) {
+    place_on_block(
+        world,
+        comp_pos,
+        Block::Comparator(Comparator {
+            mode,
+            facing,
+            ..Default::default()
+        }),
+    );
 }

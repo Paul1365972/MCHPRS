@@ -314,30 +314,28 @@ pub fn tick(block: Block, world: &mut impl World, pos: BlockPos) {
             }
         }
         Block::StoneButton {
-            powered,
+            powered: true,
             face,
             facing,
         } => {
-            if powered {
-                world.set_block(
-                    pos,
-                    Block::StoneButton {
-                        face,
-                        facing,
-                        powered: false,
-                    },
-                );
-                update_surrounding_blocks(world, pos);
-                match face {
-                    LeverFace::Ceiling => {
-                        update_surrounding_blocks(world, pos.offset(BlockFace::Top));
-                    }
-                    LeverFace::Floor => {
-                        update_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
-                    }
-                    LeverFace::Wall => {
-                        update_surrounding_blocks(world, pos.offset(facing.opposite().block_face()))
-                    }
+            world.set_block(
+                pos,
+                Block::StoneButton {
+                    face,
+                    facing,
+                    powered: false,
+                },
+            );
+            update_surrounding_blocks(world, pos);
+            match face {
+                LeverFace::Ceiling => {
+                    update_surrounding_blocks(world, pos.offset(BlockFace::Top));
+                }
+                LeverFace::Floor => {
+                    update_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
+                }
+                LeverFace::Wall => {
+                    update_surrounding_blocks(world, pos.offset(facing.opposite().block_face()))
                 }
             }
         }

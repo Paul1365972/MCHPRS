@@ -34,30 +34,26 @@ pub fn on_neighbor_changed(
     side: BlockFace,
 ) -> RedstoneWire {
     let old_state = wire;
-    let new_side;
-    match side {
+    let new_side = match side {
         BlockFace::Top => return wire,
-        BlockFace::Bottom => {
-            return get_regulated_sides(wire, world, pos);
-        }
+        BlockFace::Bottom => return get_regulated_sides(wire, world, pos),
         BlockFace::North => {
             wire.south = get_side(world, pos, BlockDirection::South);
-            new_side = wire.south;
+            wire.south
         }
         BlockFace::South => {
             wire.north = get_side(world, pos, BlockDirection::North);
-            new_side = wire.north;
+            wire.north
         }
-
         BlockFace::East => {
             wire.west = get_side(world, pos, BlockDirection::West);
-            new_side = wire.west;
+            wire.west
         }
         BlockFace::West => {
             wire.east = get_side(world, pos, BlockDirection::East);
-            new_side = wire.east;
+            wire.east
         }
-    }
+    };
     wire = get_regulated_sides(wire, world, pos);
     if is_cross(old_state) && new_side.is_none() {
         // Don't mess up the cross
