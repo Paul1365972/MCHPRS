@@ -16,7 +16,7 @@ Redpiler turns these blocks into nodes:
 | Repeater | Repeater |
 | Comparator | Comparator |
 | Redstone torch, standing or on a wall | Torch |
-| Redstone wire | Wire. `direct --optimize` leaves out wire that is neither a port nor observed. |
+| Redstone wire | Wire. `--optimize` leaves out wire that is neither a port nor observed. |
 | Button | Button |
 | Lever | Lever |
 | Wooden, stone or polished blackstone pressure plate | Pressure plate |
@@ -128,7 +128,7 @@ A pass rewrites the graph before the backend builds it.
 Passes are the types in the modules of `mchprs_redpiler::passes` that implement `Pass`.
 A backend chooses which passes it runs and in which order; its page lists them.
 A pass must not change the result of a build that is not locational.
-It may change the result of a locational build, the same way a recompile can, but only to a result that a valid tick order of the original graph gives.
+It may change the result of a locational build, the same way a recompile can, but only to a result that the backend's tick order allows for the original graph.
 
 | Pass | Effect |
 | --- | --- |

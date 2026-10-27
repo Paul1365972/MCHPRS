@@ -86,7 +86,7 @@ fn timed_inputs(circuit: &Circuit, steps: &[Step]) -> (Vec<String>, u64) {
     (inputs, ticks)
 }
 
-pub fn scenario_toml(circuit: &Circuit, steps: &[Step], seed: u64) -> Result<String, Error> {
+pub fn scenario_steps(circuit: &Circuit, steps: &[Step]) -> Vec<scenario::Step> {
     let mut written = Vec::new();
     let mut current = scenario::Step {
         action: None,
@@ -105,7 +105,12 @@ pub fn scenario_toml(circuit: &Circuit, steps: &[Step], seed: u64) -> Result<Str
         }
     }
     written.push(current);
-    scenario::to_toml(Path::new(&format!("{seed}.ril")), written)
+    written
+}
+
+pub fn scenario_toml(circuit: &Circuit, steps: &[Step], seed: u64) -> Result<String, Error> {
+    let steps = scenario_steps(circuit, steps);
+    scenario::to_toml(Path::new(&format!("{seed}.ril")), steps)
 }
 
 pub fn label(circuit: &Circuit, id: NodeId) -> String {

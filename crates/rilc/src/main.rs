@@ -105,6 +105,9 @@ enum Command {
             required = true
         )]
         setups: Vec<Setup>,
+        /// Run the ticks of each step at once and compare after the step
+        #[arg(long)]
+        steps: bool,
     },
     /// Check a property of Redpiler on random cases
     Fuzz {
@@ -161,9 +164,17 @@ fn main() -> ExitCode {
             unlimited,
             save_outputs.as_deref(),
         ),
-        Command::Diff { scenario, setups } => {
+        Command::Diff {
+            scenario,
+            setups,
+            steps,
+        } => {
             let [first, second] = two_setups(setups);
-            diff::command(&scenario, [&first, &second])
+            let compare_every = match steps {
+                true => diff::CompareEvery::Step,
+                false => diff::CompareEvery::Tick,
+            };
+            diff::command(&scenario, [&first, &second], compare_every)
         }
         Command::Fuzz { property } => fuzz::command(property),
         Command::Update {

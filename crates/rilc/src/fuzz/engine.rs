@@ -3,6 +3,7 @@ use super::report::{self, caught, illegal_trace, FailedCase, Failure};
 use super::rng::Rng;
 use super::scenario_generator::{label, moment};
 use super::{Cases, GivenCircuits};
+use crate::diff::CompareEvery;
 use crate::oracle::trace::{Sight, Tracer};
 use crate::oracle::{Oracle, Verdict};
 use crate::setup::Setup;
@@ -100,7 +101,7 @@ pub fn command(inputs: &[PathBuf], cases: &Cases) -> Outcome {
             Failure {
                 command,
                 problem,
-                case: FailedCase::Circuit(Box::new(case), replayed_setups),
+                case: FailedCase::Circuit(Box::new(case), replayed_setups, CompareEvery::Tick),
             }
         })
     })

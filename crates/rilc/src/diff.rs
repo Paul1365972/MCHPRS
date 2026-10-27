@@ -11,18 +11,55 @@ use std::path::Path;
 
 const SHOWN_DIFFERENCES: usize = 12;
 
-pub fn command(scenario_path: &Path, setups: [&Setup; 2]) -> Outcome {
+pub struct Played {
+    pub components: usize,
+    pub ticks: u64,
+    pub divergence: Option<String>,
+}
+
+pub fn command(scenario_path: &Path, setups: [&Setup; 2], compare_every: CompareEvery) -> Outcome {
     let scenario = Scenario::read(scenario_path)?;
     let input = scenario.read_input()?;
     let mut runs = [start(&input, setups[0])?, start(&input, setups[1])?];
+    let played = play(&mut runs, &scenario, setups, compare_every)?;
+    let [first, second] = setups;
+    match played.divergence {
+        None => {
+            println!(
+                "{first} and {second} agree on {} for {}",
+                counted(played.components as u64, "component"),
+                counted(played.ticks, "tick")
+            );
+            Ok(true)
+        }
+        Some(divergence) => {
+            println!("{first} and {second} differ {}", when(played.ticks));
+            println!("{divergence}");
+            Ok(false)
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum CompareEvery {
+    Tick,
+    Step,
+}
+
+pub fn play(
+    runs: &mut [Box<dyn Run>; 2],
+    scenario: &Scenario,
+    setups: [&Setup; 2],
+    compare_every: CompareEvery,
+) -> Result<Played, Error> {
     let slots = [
-        input_slots(&mut *runs[0], &scenario)?,
-        input_slots(&mut *runs[1], &scenario)?,
+        input_slots(&mut *runs[0], scenario)?,
+        input_slots(&mut *runs[1], scenario)?,
     ];
     let pairs = pairs([&*runs[0], &*runs[1]]);
-    let mut tick = 0;
+    let mut ticks = 0;
     let mut last_action = None;
-    let mut differences = compare(&mut runs, &pairs, setups)?;
+    let mut differences = compare(runs, &pairs, setups)?;
     'steps: for (index, step) in scenario.steps.iter().enumerate() {
         if !differences.is_empty() {
             break;
@@ -33,41 +70,46 @@ pub fn command(scenario_path: &Path, setups: [&Setup; 2]) -> Outcome {
                 run.drive(slot, action.input)
                     .map_err(|error| scenario.step_error(index, error))?;
             }
-            last_action = Some((action, tick + 1));
+            last_action = Some((action, ticks + 1));
         }
-        for _ in 0..step.ticks {
-            for run in &mut runs {
-                run.run(1)?;
+        let chunk = match compare_every {
+            CompareEvery::Tick => 1,
+            CompareEvery::Step => step.ticks.max(1),
+        };
+        let end = ticks + step.ticks;
+        while ticks < end {
+            let run_ticks = chunk.min(end - ticks);
+            for run in runs.iter_mut() {
+                run.run(run_ticks)?;
             }
-            tick += 1;
-            differences = compare(&mut runs, &pairs, setups)?;
+            ticks += run_ticks;
+            differences = compare(runs, &pairs, setups)?;
             if !differences.is_empty() {
                 break 'steps;
             }
         }
     }
-    let [first, second] = setups;
-    if differences.is_empty() {
-        println!(
-            "{first} and {second} agree on {} for {}",
-            counted(pairs.len() as u64, "component"),
-            counted(tick, "tick")
-        );
-        return Ok(true);
-    }
-    println!("{first} and {second} differ {}", when(tick));
-    for difference in differences.iter().take(SHOWN_DIFFERENCES) {
-        println!("{difference}");
-    }
-    if differences.len() > SHOWN_DIFFERENCES {
-        let more = (differences.len() - SHOWN_DIFFERENCES) as u64;
-        println!("and {} more", counted(more, "difference"));
-    }
-    match last_action {
-        Some((action, tick)) => println!("last action: {action} before tick {}", grouped(tick)),
-        None => println!("last action: none"),
-    }
-    Ok(false)
+    let divergence = (!differences.is_empty()).then(|| {
+        let mut lines: Vec<String> = differences
+            .iter()
+            .take(SHOWN_DIFFERENCES)
+            .cloned()
+            .collect();
+        if differences.len() > SHOWN_DIFFERENCES {
+            let more = (differences.len() - SHOWN_DIFFERENCES) as u64;
+            lines.push(format!("and {} more", counted(more, "difference")));
+        }
+        lines.push(match last_action {
+            Some((action, tick)) => format!("last action: {action} before tick {}", grouped(tick)),
+            None => "last action: none".to_owned(),
+        });
+        lines.join("\n")
+    });
+    Ok(Played {
+        components: pairs.len(),
+        ticks,
+        divergence,
+    })
 }
 
 fn pairs(runs: [&dyn Run; 2]) -> Vec<[usize; 2]> {

@@ -1,0 +1,5 @@
+circuit @due_together {
+  %lever = lever(powered) -> [%compare:0, %subtract:0]
+  %compare = comparator tick(delay=1, order=0) -> [side %subtract:0]
+  %subtract = comparator(mode=subtract) tick(delay=1, order=1)
+}

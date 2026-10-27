@@ -834,6 +834,7 @@ dependencies = [
  "mchprs_blocks",
  "mchprs_redpiler",
  "mchprs_redpiler_direct",
+ "mchprs_redpiler_phase",
  "mchprs_redstone",
  "mchprs_schematic",
  "mchprs_simulation",
@@ -941,6 +942,18 @@ dependencies = [
  "mchprs_simulation",
  "mchprs_syntax",
  "thiserror",
+]
+
+[[package]]
+name = "mchprs_redpiler_phase"
+version = "0.5.2-dev"
+dependencies = [
+ "mchprs_blocks",
+ "mchprs_redpiler",
+ "mchprs_redstone",
+ "mchprs_ril",
+ "mchprs_simulation",
+ "mchprs_syntax",
 ]
 
 [[package]]

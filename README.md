@@ -139,7 +139,7 @@ direct = "--optimize --io-only"
 
 - [Semantics](docs/Semantics.md): supported redstone and the differences from vanilla, with and without Redpiler.
 - [Redpiler](docs/Redpiler.md): compiling a plot in game, flags, probes and breakpoints.
-- The backends, each with its tick order, passes, flags and limits: [vanilla](docs/backends/Vanilla.md), [direct](docs/backends/Direct.md).
+- The backends, each with its tick order, passes, flags and limits: [vanilla](docs/backends/Vanilla.md), [direct](docs/backends/Direct.md), [phase](docs/backends/Phase.md).
 - [Commands](docs/Commands.md): every command. `/help` lists them in game.
 - [Circuits](docs/Circuits.md): the graph Redpiler compiles, the behaviour of its components and the passes.
 - [RIL](docs/RIL.md): the text format of a circuit.

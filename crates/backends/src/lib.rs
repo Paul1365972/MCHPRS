@@ -15,6 +15,8 @@ use std::fmt;
 pub const GRAPH_BACKENDS: &[&dyn GraphBackend] = &[
     #[cfg(feature = "direct")]
     &mchprs_redpiler_direct::backend::DirectBackend,
+    #[cfg(feature = "phase")]
+    &mchprs_redpiler_phase::backend::PhaseBackend,
 ];
 
 #[cfg(feature = "graph")]

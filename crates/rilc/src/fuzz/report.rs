@@ -1,6 +1,7 @@
 use super::circuit_generator::CircuitCase;
 use super::scenario_generator::{label, moment, scenario_toml};
 use super::Cases;
+use crate::diff::CompareEvery;
 use crate::numbers::{counted, grouped};
 use crate::oracle::trace::{NodeView, PendingTicks, View};
 use crate::oracle::{Illegal, Step, Verdict};
@@ -29,7 +30,7 @@ impl Failure {
         println!("{:#}", self.problem);
         match &self.case {
             FailedCase::World(described) => println!("{described}"),
-            FailedCase::Circuit(case, [first, second]) => {
+            FailedCase::Circuit(case, [first, second], compare_every) => {
                 let write = |extension: &str, text: &str| {
                     let path = Path::new(FAILED_CASE_DIRECTORY).join(format!("{seed}.{extension}"));
                     fs::write(&path, text)
@@ -44,7 +45,11 @@ impl Failure {
                 let scenario_path = write("toml", &toml)?;
                 println!("{ril}\n{toml}");
                 let replay = scenario_path.display();
-                println!("rilc diff {replay} -b \"{first}\" -b \"{second}\"");
+                let steps = match compare_every {
+                    CompareEvery::Tick => "",
+                    CompareEvery::Step => " --steps",
+                };
+                println!("rilc diff {replay}{steps} -b \"{first}\" -b \"{second}\"");
             }
         }
         println!();
@@ -53,7 +58,7 @@ impl Failure {
 }
 
 pub enum FailedCase {
-    Circuit(Box<CircuitCase>, [String; 2]),
+    Circuit(Box<CircuitCase>, [String; 2], CompareEvery),
     World(String),
 }
 
@@ -109,7 +114,7 @@ pub fn run(cases: &Cases, check: impl Fn(u64) -> Result<Verdict, Failure> + Sync
         }
     }
     println!(
-        "{}, {} passed, {} failed, {} skipped over budget",
+        "{}, {} passed, {} failed, {} skipped",
         counted(cases.count, "case"),
         grouped(passed),
         grouped(failed),

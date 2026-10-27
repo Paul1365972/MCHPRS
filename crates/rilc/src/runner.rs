@@ -8,12 +8,13 @@ use mchprs_blocks::signal_strength::UncappedSignalStrength;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::circuit::{Circuit, NodeId};
 use mchprs_redpiler::graph::{Graph, NodeIdx, NodeKind, NodeState};
-use mchprs_redpiler::nodes::{Changes, Nodes};
+use mchprs_redpiler::nodes::{Changes, Nodes, Snapshot};
 use mchprs_redstone::input::Input;
 use mchprs_redstone::sound::Sound;
 use mchprs_ril::{ast, component};
 use mchprs_simulation::component::strength_at;
 use mchprs_simulation::ports::Role;
+use mchprs_simulation::readback::Readback;
 use mchprs_simulation::simulated_world::SimulatedWorld;
 use mchprs_simulation::{Simulation, View};
 use rustc_hash::FxHashSet;
@@ -33,6 +34,11 @@ pub struct ShownState {
     pub repeater_locked: bool,
 }
 
+pub struct CircuitSnapshot {
+    pub kinds: Vec<NodeKind>,
+    pub state: Snapshot,
+}
+
 /// Slots index the targets, which are sorted
 pub trait Run {
     fn targets(&self) -> &[Target];
@@ -42,13 +48,22 @@ pub trait Run {
     fn drive(&mut self, slot: usize, input: Input) -> Result<(), Error>;
     fn run(&mut self, ticks: u64) -> Result<(), Error>;
     fn take_sounds(&mut self) -> Result<Vec<(usize, Sound)>, Error>;
+
+    /// The kinds of a circuit's nodes and the state it reads back, if it reads back all of it.
+    fn snapshot(&mut self) -> Result<Option<CircuitSnapshot>, Error> {
+        Ok(None)
+    }
 }
 
 pub fn start(input: &Loaded, setup: &Setup) -> Result<Box<dyn Run>, Error> {
     Ok(match input {
         Loaded::World(world) => Box::new(WorldRun::new(world, setup)?),
-        Loaded::Circuit(circuit) => Box::new(CircuitRun::new(labelled_graph(circuit), setup)?),
+        Loaded::Circuit(circuit) => start_circuit(labelled_graph(circuit), setup)?,
     })
+}
+
+pub fn start_circuit(graph: Graph, setup: &Setup) -> Result<Box<dyn Run>, Error> {
+    Ok(Box::new(CircuitRun::new(graph, setup)?))
 }
 
 pub fn labelled_graph(circuit: &ast::Circuit) -> Graph {
@@ -274,5 +289,16 @@ impl Run for CircuitRun {
             }
         }
         Ok(sounds)
+    }
+
+    fn snapshot(&mut self) -> Result<Option<CircuitSnapshot>, Error> {
+        let Readback::Complete(snapshot) = self.simulation.read()? else {
+            return Ok(None);
+        };
+        let kinds = self.circuit.ids().map(|id| self.circuit.node(id).kind);
+        Ok(Some(CircuitSnapshot {
+            kinds: kinds.collect(),
+            state: snapshot,
+        }))
     }
 }

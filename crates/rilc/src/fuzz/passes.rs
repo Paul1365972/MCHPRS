@@ -3,6 +3,7 @@ use super::report::{self, caught, illegal_trace, FailedCase, Failure};
 use super::rng::Rng;
 use super::scenario_generator::label;
 use super::{Cases, GivenCircuits};
+use crate::diff::CompareEvery;
 use crate::oracle::reference::ReferenceEngine;
 use crate::oracle::trace::{trace, Sight};
 use crate::oracle::{Oracle, Step, Verdict};
@@ -58,7 +59,11 @@ pub fn command(inputs: &[PathBuf], list: Option<&str>, cases: &Cases) -> Outcome
                     return Err(Failure {
                         command: format!("{command} --passes={names}"),
                         problem,
-                        case: FailedCase::Circuit(Box::new(case), [unoptimized, optimized]),
+                        case: FailedCase::Circuit(
+                            Box::new(case),
+                            [unoptimized, optimized],
+                            CompareEvery::Tick,
+                        ),
                     });
                 }
             }

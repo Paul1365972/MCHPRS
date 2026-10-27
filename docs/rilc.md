@@ -11,9 +11,9 @@ cargo run --release -p rilc -- <command>
 | --- | --- |
 | `compile <input>` | Write a world or circuit as RIL after the passes of a setup, or as Graphviz DOT with `--dot`. The setup defaults to `direct`. |
 | `run <scenario> -b <setup>` | Play a scenario of a world or a RIL circuit on a setup, the way the server runs it, and print the ticks per second. |
-| `diff <scenario> -b <setup> -b <setup>` | Play a scenario on two setups and print the first tick after which a component that both show differs. |
+| `diff <scenario> -b <setup> -b <setup>` | Play a scenario on two setups and print the first tick after which a component that both show differs. With `--steps` it runs the ticks of each step at once and compares after the step. |
 | `test <path>` | Run the [tests](RIL.md#tests) of a RIL file, or of every RIL file under a directory. |
-| `fuzz (engine \| passes \| worlds)` | Check a property on random cases. |
+| `fuzz (engine \| passes \| worlds \| agreement)` | Check a property on random cases. |
 | `update <input> <output>` | Update every block of a world, run it until no tick is pending and write it as a schematic. |
 
 `rilc <command> --help` lists the options of a command, and for `compile`, `run` and `diff` also the backends and their flags.
@@ -78,19 +78,22 @@ A target in a RIL circuit is a label such as `"reset"` or a position of the node
 `--seed <s>` sets the seed of the first case, 1 by default, and `--cases <n>` the number of cases, 1000 by default.
 `--jobs <n>` sets how many cases are checked at once, one per processor by default.
 A failing case prints the command that runs it alone and the failure: for a difference, what differs and the last input.
-A failing circuit is also written to `.scratch/fuzz` as `<seed>.ril` and `<seed>.toml`, for `rilc diff`.
+A failing circuit is also written to `.scratch/fuzz` as `<seed>.ril` and `<seed>.toml`, with the `rilc diff` command that replays it.
 
 | Command | What runs | What it checks |
 | --- | --- | --- |
 | `fuzz engine` | `direct` on random circuits, or on the worlds and RIL circuits it is given. | After every input and every tick, the state of every node and the pending ticks are legal, and the reported changes bring the observed nodes to the state of the snapshot. |
 | `fuzz passes` | Passes on a small random circuit, or on the worlds and RIL circuits it is given: each pass alone, and each pass of `direct --optimize --io-only` after its predecessors, or the list given with `--passes`. | What the observed nodes of the result show on `reference` is legal for the circuit without the passes. |
 | `fuzz worlds` | Random worlds on the interpreter of `mchprs_redstone` and on `reference`, `direct -o` and `direct -o -i`. | After every input and every tick, what the interpreter shows and its pending ticks are legal for the world's circuit. A setup may differ from the interpreter only in the components it shows, and only if its run is legal too. |
+| `fuzz agreement -b <setup> -b <setup>` | Two setups on random circuits, or on the worlds and RIL circuits it is given. A world is turned into a graph once, for both setups. | Before the first tick and after every tick, the components that both setups show agree in power, lock and played notes. Cases with an even seed run the ticks of each step at once and compare after the step. At the end, two setups that hold the same circuit and read all of it back agree in its state and pending ticks. A case that a setup does not support, or in which the setups show no component in common, is skipped. |
 
 `fuzz worlds` also stops `reference` after a random tick and lets `vanilla` run on from what it wrote back.
 
+`fuzz agreement` compares as [`diff`](#scenarios) does, for setups that must agree in every case, such as `-b phase -b "phase -o"`.
+
 ### The Order Oracle
 
-All three fuzzers judge by the [tick order of `direct`](backends/Direct.md#tick-order). *Legal* means allowed by it.
+`fuzz engine`, `fuzz passes` and `fuzz worlds` judge by the [tick order of `direct`](backends/Direct.md#tick-order). *Legal* means allowed by it.
 The order oracle in [`crates/rilc/src/oracle`](../crates/rilc/src/oracle/mod.rs) decides it: it runs the `reference` engine in every order that the tick order leaves unspecified.
 What was seen is legal if one of these runs shows it.
 

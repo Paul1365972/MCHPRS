@@ -1,0 +1,4 @@
+circuit @rear_and_side {
+  %lever = lever -> [%comparator:0, side %comparator:0]
+  %comparator = comparator(mode=subtract)
+}

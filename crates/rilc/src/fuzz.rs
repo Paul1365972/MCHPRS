@@ -1,3 +1,4 @@
+mod agreement;
 mod circuit_generator;
 mod engine;
 mod passes;
@@ -9,8 +10,9 @@ mod worlds;
 
 use crate::input::Loaded;
 use crate::runner::labelled_graph;
-use crate::setup::Setup;
+use crate::setup::{self, Setup};
 use crate::{Error, Outcome};
+use anyhow::bail;
 use circuit_generator::CircuitCase;
 use clap::{Args, Subcommand};
 use mchprs_redpiler::backend::GraphContext;
@@ -52,6 +54,30 @@ pub enum Property {
         #[command(flatten)]
         cases: Cases,
     },
+    /// Two setups show the same on random circuits
+    ///
+    /// Before the first tick and after every tick, every component that both setups show has the
+    /// same power and lock on both, and every note block that both show played on both or on
+    /// neither. Cases with an even seed run the ticks of each step at once and compare after the
+    /// step. At the end, two setups that hold the same circuit and read all of it back have the
+    /// same state and pending ticks. A circuit that a setup does not support, or in which the
+    /// setups show no component in common, is skipped.
+    #[command(after_help = setup::help())]
+    Agreement {
+        /// Schematics, plot files or RIL files of one circuit to check instead of random circuits
+        inputs: Vec<PathBuf>,
+        /// Each of the two setups, like -b phase -b "phase -o"
+        #[arg(
+            short = 'b',
+            long = "backend",
+            value_name = "SETUP",
+            value_parser = Setup::parse,
+            required = true
+        )]
+        setups: Vec<Setup>,
+        #[command(flatten)]
+        cases: Cases,
+    },
 }
 
 #[derive(Args)]
@@ -76,6 +102,16 @@ pub fn command(property: Property) -> Outcome {
             cases,
         } => passes::command(&inputs, passes.as_deref(), &cases),
         Property::Worlds { cases } => worlds::command(&cases),
+        Property::Agreement {
+            inputs,
+            setups,
+            cases,
+        } => {
+            let [first, second] = setups.as_slice() else {
+                bail!("agreement takes exactly two setups");
+            };
+            agreement::command(&inputs, [first, second], &cases)
+        }
     }
 }
 

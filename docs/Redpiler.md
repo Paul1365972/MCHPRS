@@ -16,12 +16,13 @@ A backend can run passes that rewrite the graph before it runs it.
 
 ## Backends
 
-| Backend | Description |
-| --- | --- |
-| [`direct`](backends/Direct.md) | Runs the graph node by node, one tick after another. It is built for speed. |
+| Backend | Use it for | Offered by |
+| --- | --- | --- |
+| [`direct`](backends/Direct.md) | Speed: the fastest backend on a CPU, and the one Redpiler uses unless another is configured. | The server, rilc and the library |
+| [`phase`](backends/Phase.md) | Checking a backend that runs the ticks of one priority at once: it is the reference for that tick order. | rilc and the library |
+| [`vanilla`](backends/Vanilla.md) | Comparing with a plot without Redpiler: it runs a copy of the plot with the same code. | rilc and the library |
 
 A backend owns its threads and decides when its ticks run.
-[`vanilla`](backends/Vanilla.md) runs a copy of the plot with the same code as a plot without Redpiler. The server does not offer it, [rilc](rilc.md) and the [library](Library.md) do.
 The page of a backend states its tick order, its passes, its flags and its limits. [Semantics](Semantics.md#backends) compares what the backends compute.
 
 ## Commands
