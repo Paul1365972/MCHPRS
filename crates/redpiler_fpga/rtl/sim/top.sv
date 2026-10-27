@@ -6,7 +6,9 @@ module top;
     localparam int RUN_ON_CLOCKS = 4096;
 
     logic board_clock = 0;
+    logic circuit_oscillator = 0;
     logic circuit_clock = 0;
+    logic circuit_clock_enable;
 
     logic received_valid = 0;
     logic [7:0] received = 0;
@@ -15,16 +17,31 @@ module top;
     int next_byte;
     int answers = 0;
 
+    logic pll_enable;
+    logic pll_write;
+    logic [6:0] pll_address;
+    logic [15:0] pll_write_data;
+    logic pll_reset;
+
     logic paused;
+
+    logic [15:0] ticks_run;
+    pkg::status_t last_status;
+    wire unused = &{1'b0, pll_enable, pll_write, pll_address, pll_write_data, ticks_run, last_status};
 
     // Three circuit clocks for every two board clocks, as `verilator::CIRCUIT_CLOCK_HERTZ` says.
     always #3 board_clock = ~board_clock;
-    always #2 circuit_clock = ~circuit_clock;
+    always #2 circuit_oscillator = ~circuit_oscillator;
+    always @(circuit_oscillator) circuit_clock = circuit_oscillator && circuit_clock_enable;
 
     controlled_circuit controlled_circuit (
         .board_clock(board_clock), .received_valid(received_valid), .received(received),
         .transmit_valid(transmit_valid), .transmit(transmit), .transmit_ready(1'b1),
-        .circuit_clock(circuit_clock), .paused(paused)
+        .pll_enable(pll_enable), .pll_write(pll_write), .pll_address(pll_address),
+        .pll_write_data(pll_write_data), .pll_ready(1'b0), .pll_read_data(16'd0),
+        .pll_locked(!pll_reset), .pll_reset(pll_reset), .circuit_clock_enable(circuit_clock_enable),
+        .circuit_clock(circuit_clock), .paused(paused), .ticks_run(ticks_run),
+        .last_status(last_status)
     );
 
     always @(posedge board_clock) begin

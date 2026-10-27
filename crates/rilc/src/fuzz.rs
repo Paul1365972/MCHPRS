@@ -66,7 +66,7 @@ pub enum Property {
     Agreement {
         /// Schematics, plot files or RIL files of one circuit to check instead of random circuits
         inputs: Vec<PathBuf>,
-        /// Each of the two setups, like -b phase -b fpga
+        /// Each of the two setups, like -b phase -b "fpga --simulate"
         #[arg(
             short = 'b',
             long = "backend",

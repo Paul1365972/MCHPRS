@@ -19,7 +19,7 @@ Every backend implements `Backend`. `GraphBackend: Backend` adds graph compilati
 - `Running<S>` runs by itself. It owns its threads and its timing, takes commands with `send` and answers with updates. `Simulation::start` turns a stepped simulation into a running one, paused, with its state, pending ticks, watches and tick count. The doc comments of both traits and their types state the contract.
 - `Backend::compile` turns a region of blocks into a `(Box<dyn Simulation<Blocks>>, Layout)`. `vanilla` steps the interpreter over a copy of the region. It builds no graph.
 - `GraphBackend::build` turns a circuit into a `Box<dyn Simulation<Nodes>>`. `direct`, `phase`, `fpga` and rilc's `reference` are graph backends. `graph_simulation::compile` extracts the graph, runs the passes, builds the circuit's simulation and addresses it by block position through the block map.
-- `stepper::start` gives a `Simulation` a thread that runs its ticks. `direct`, `phase`, `vanilla` and `reference` start that way. `fpga` has its own thread, which sets the circuit's run mode and reads back its state.
+- `stepper::start` gives a `Simulation` a thread that runs its ticks. `direct`, `phase`, `vanilla` and `reference` start that way. `fpga` has its own thread, which sets the board's run mode and reads the board back.
 - The simulation that a graph backend builds checks each input with the circuit's `InputKinds`.
 
 `rilc run` measures how fast a backend runs through `Running`, the way the server runs it. Speed is never measured on a stepped simulation.

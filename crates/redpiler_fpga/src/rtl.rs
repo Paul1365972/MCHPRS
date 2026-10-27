@@ -15,6 +15,7 @@ macro_rules! source {
         }
     };
 }
+pub(crate) use source;
 
 const PACKAGE: SourceFile = source!("pkg.sv");
 const CIRCUIT_PACKAGE: &str = "circuit_pkg.sv";
@@ -42,6 +43,12 @@ const DESIGN: &[SourceFile] = &[
     source!("link/frame_tx.sv"),
 ];
 pub const SIMULATION: [SourceFile; 1] = [source!("sim/top.sv")];
+pub const BOARD: [SourceFile; 4] = [
+    source!("link/uart_rx.sv"),
+    source!("link/uart_tx.sv"),
+    source!("pll_drp.sv"),
+    source!("seven_segment.sv"),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CircuitSource {

@@ -1,13 +1,14 @@
 use crate::layout::StateLayout;
 use crate::link::Controller;
-use crate::protocol::{Contents, Mode, Readout};
+use crate::protocol::{Contents, Hello, Mode, Readout};
 use crate::running;
 use crate::verilog::Design;
-use anyhow::{anyhow, ensure};
+use anyhow::{anyhow, bail, ensure};
 use mchprs_redpiler::circuit::{Circuit, InputKinds, NodeId};
 use mchprs_redpiler::graph::NodeState;
 use mchprs_redpiler::nodes::{Changes, Nodes, Snapshot};
 use mchprs_redstone::input::Input;
+use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_simulation::input::DriveError;
 use mchprs_simulation::readback::Readback;
 use mchprs_simulation::ticks::{Ran, SimulationError, Stop};
@@ -15,6 +16,16 @@ use mchprs_simulation::watch::Watch;
 use mchprs_simulation::{Capabilities, End, Running, Simulation, View};
 use std::collections::BTreeSet;
 use std::mem;
+use std::thread;
+use std::time::Duration;
+
+const LOCK_POLLS: usize = 100;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockPace {
+    RealTime,
+    Simulated,
+}
 
 #[derive(Debug)]
 pub struct FpgaEngine {
@@ -26,6 +37,7 @@ pub struct FpgaEngine {
     reported_states: Vec<NodeState>,
     unreported: Changes,
     clock_hertz: f64,
+    clock_pace: ClockPace,
     ticks: u64,
 }
 
@@ -35,8 +47,10 @@ impl FpgaEngine {
         circuit: &Circuit,
         design: &Design,
         clock_hertz: f64,
+        clock_pace: ClockPace,
     ) -> Result<FpgaEngine, SimulationError> {
-        let hello = controller.hello()?;
+        controller.release_clock()?;
+        let hello = wait_for_lock(&mut controller)?;
         ensure!(
             hello.build_nonce == design.build_nonce,
             "the board holds the build {:08x}, not {:08x}",
@@ -56,6 +70,7 @@ impl FpgaEngine {
             reported_states: initial.states.iter().map(|state| state.shown()).collect(),
             unreported: Changes::default(),
             clock_hertz,
+            clock_pace,
             ticks: 0,
         };
         let readout = engine.controller.read(Contents::Shown)?;
@@ -79,6 +94,14 @@ impl FpgaEngine {
 
     pub fn clock_hertz(&self) -> f64 {
         self.clock_hertz
+    }
+
+    pub fn run_time(&self, ticks: u64) -> Duration {
+        if self.clock_pace == ClockPace::Simulated {
+            return Duration::ZERO;
+        }
+        let clocks = ticks as f64 * TickPriority::ALL.len() as f64;
+        Duration::try_from_secs_f64(clocks / self.clock_hertz).unwrap_or(Duration::MAX)
     }
 
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), SimulationError> {
@@ -124,6 +147,16 @@ impl FpgaEngine {
     }
 }
 
+fn wait_for_lock(controller: &mut Controller) -> anyhow::Result<Hello> {
+    for _ in 0..LOCK_POLLS {
+        let hello = controller.hello()?;
+        if hello.pll_locked {
+            return Ok(hello);
+        }
+    }
+    bail!("the circuit clock did not lock")
+}
+
 impl Simulation<Nodes> for FpgaEngine {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
@@ -140,6 +173,7 @@ impl Simulation<Nodes> for FpgaEngine {
     fn run(&mut self, ticks: u64) -> Result<Ran, SimulationError> {
         self.set_mode(Mode::counted(ticks)?)?;
         let start = self.ticks;
+        thread::sleep(self.run_time(ticks));
         while self.ticks.wrapping_sub(start) < ticks {
             let readout = self.controller.read(Contents::Shown)?;
             self.record_shown(&readout)?;

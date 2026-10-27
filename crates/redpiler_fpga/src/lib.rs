@@ -1,10 +1,14 @@
 pub mod backend;
+mod board;
+mod bring_up;
 mod build_directory;
 mod engine;
 mod expr;
 mod layout;
 mod link;
 mod lower;
+mod openxc7;
+mod pll;
 mod process;
 mod progress;
 mod protocol;

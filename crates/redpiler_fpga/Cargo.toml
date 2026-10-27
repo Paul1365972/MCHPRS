@@ -18,6 +18,9 @@ mchprs_simulation = { path = "../simulation" }
 mchprs_syntax = { path = "../syntax" }
 anyhow = { workspace = true }
 rand = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serialport = { version = "4.7", default-features = false, features = ["usbportinfo-interface"] }
 strum = { workspace = true, features = ["derive"] }
 tempfile = { workspace = true }
 thiserror = { workspace = true }

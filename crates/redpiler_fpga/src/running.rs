@@ -204,7 +204,10 @@ impl Worker {
 
     fn plan_check(&mut self) {
         let delay = match self.goal {
-            Some(Goal::Ticks { .. }) => Some(Duration::ZERO),
+            Some(Goal::Ticks { start, ticks }) => {
+                let left = ticks.saturating_sub(self.engine.ticks().wrapping_sub(start));
+                Some(self.engine.run_time(left))
+            }
             Some(Goal::Settled) => Some(SETTLE_CHECK),
             None => None,
         };
