@@ -1,0 +1,7 @@
+circuit @gate_closes {
+  %lever = lever(powered) -> [%repeater:0, %source:0]
+  %repeater = repeater(delay=1, powered) -> [%gate:0]
+  %gate = torch -> [side %pass:0]
+  %source = torch -> [%pass:0]
+  %pass = comparator(mode=subtract)
+}

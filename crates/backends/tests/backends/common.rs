@@ -35,6 +35,18 @@ macro_rules! test_all_backends {
             fn direct_optimized() {
                 super::$optimized(mchprs_backends::Setup::parse("direct --optimize").unwrap());
             }
+
+            #[cfg(feature = "phase")]
+            #[test]
+            fn phase() {
+                super::$name(mchprs_backends::Setup::parse("phase").unwrap());
+            }
+
+            #[cfg(feature = "phase")]
+            #[test]
+            fn phase_optimized() {
+                super::$optimized(mchprs_backends::Setup::parse("phase --optimize").unwrap());
+            }
         }
     };
 }

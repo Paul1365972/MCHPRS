@@ -16,7 +16,7 @@ Redpiler turns these blocks into nodes:
 | Repeater | Repeater |
 | Comparator | Comparator |
 | Redstone torch, standing or on a wall | Torch |
-| Redstone wire | Wire. `direct --optimize` leaves out wire that is neither a port nor observed. |
+| Redstone wire | Wire. `--optimize` leaves out wire that is neither a port nor observed. |
 | Button | Button |
 | Lever | Lever |
 | Wooden, stone or polished blackstone pressure plate | Pressure plate |

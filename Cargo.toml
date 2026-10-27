@@ -39,7 +39,9 @@ tracing-subscriber = { workspace = true }
 tracing = { workspace = true }
 
 [features]
+default = ["phase"]
 claims = ["mchprs_core/claims"]
+phase = ["mchprs_core/phase"]
 whitelist = ["mchprs_core/whitelist"]
 
 [workspace.dependencies]

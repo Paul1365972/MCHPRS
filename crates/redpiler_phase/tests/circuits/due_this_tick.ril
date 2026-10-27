@@ -1,0 +1,6 @@
+circuit @due_this_tick {
+  %repeater = repeater(delay=1, powered) tick(delay=1, priority=higher)
+    -> [%lamp:0, %torch:0]
+  %lamp = lamp(powered) tick(delay=1, order=0)
+  %torch = torch tick(delay=1, order=1)
+}

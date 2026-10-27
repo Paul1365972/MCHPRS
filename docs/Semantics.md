@@ -83,7 +83,7 @@ A plot is not compiled into a graph in the following cases:
 ### Shown Blocks
 
 A backend does not have to show the state of every block. This changes what the blocks show, not what the build computes.
-`direct` has two flags for it:
+`direct` and `phase` each have two flags for it:
 
 - `--optimize`: redstone wire keeps the power it had at compile time, unless it is an output or read by a probe.
 - `--io-only`: only inputs, outputs and components read by probes show their state.
@@ -99,3 +99,4 @@ For every backend but `vanilla`, these come on top of the differences of [Compil
 | --- | --- | --- | --- |
 | [`vanilla`](backends/Vanilla.md) | Run in the order they were scheduled. | At once, in vanilla's order of positions. | Behaves as in vanilla. |
 | [`direct`](backends/Direct.md) | Run in the order they were scheduled. | Before the next tick runs, in an unspecified order. | Behaves as in vanilla, unless it is locational. Then its result is unspecified. |
+| [`phase`](backends/Phase.md) | Run at once: each reads the circuit as it was before any of them ran. | Once, after all of them ran. | Has one result, the same in every compile, which can differ from vanilla. |

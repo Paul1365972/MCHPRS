@@ -1,0 +1,6 @@
+circuit @two_ticks_into_one_node {
+  %lever = lever -> [%torch:0, %comparator:0]
+  %torch = torch(powered) -> [%repeater:0]
+  %comparator = comparator -> [side %repeater:0]
+  %repeater = repeater(delay=1, powered)
+}
