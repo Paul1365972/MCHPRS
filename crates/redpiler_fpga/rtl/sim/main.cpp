@@ -76,7 +76,7 @@ static void pass_board_clock(bool received_valid, uint8_t received) {
         uint64_t now = std::min(board_toggle, circuit_toggle);
         if (circuit_toggle == now) {
             circuit_clock = !circuit_clock;
-            top.circuit_clock = circuit_clock;
+            top.circuit_clock = circuit_clock && top.circuit_clock_enable;
             circuit_toggle += circuit_half_period;
         }
         if (board_toggle == now) {

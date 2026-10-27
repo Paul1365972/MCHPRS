@@ -1,8 +1,10 @@
 use crate::protocol::{self, Contents, Hello, Mode, Readout, Request, FRAME_END};
 use anyhow::{anyhow, Context};
 use mchprs_redstone::input::Input;
+use serialport::{ClearBuffer, SerialPort};
 use std::fmt;
-use std::io;
+use std::io::{self, Read, Write};
+use std::path::Path;
 use std::time::Duration;
 
 const ANSWER_TIMEOUT: Duration = Duration::from_millis(20);
@@ -12,6 +14,42 @@ pub trait ByteLink: fmt::Debug + Send {
 
     /// Returns at least one byte. No byte within `timeout` is an `io::ErrorKind::TimedOut`.
     fn read(&mut self, buffer: &mut [u8], timeout: Duration) -> io::Result<usize>;
+}
+
+pub struct SerialLink(Box<dyn SerialPort>);
+
+impl SerialLink {
+    pub fn open(path: &Path, baud: u32) -> Result<SerialLink, serialport::Error> {
+        let port = serialport::new(path.to_string_lossy(), baud).timeout(ANSWER_TIMEOUT);
+        Ok(SerialLink(port.open()?))
+    }
+
+    pub fn discard_received(&mut self) -> Result<(), serialport::Error> {
+        self.0.clear(ClearBuffer::Input)
+    }
+}
+
+impl fmt::Debug for SerialLink {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("SerialLink")
+            .field(&self.0.name())
+            .finish()
+    }
+}
+
+impl ByteLink for SerialLink {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.0.write_all(bytes)
+    }
+
+    fn read(&mut self, buffer: &mut [u8], timeout: Duration) -> io::Result<usize> {
+        self.0.set_timeout(timeout)?;
+        match self.0.read(buffer)? {
+            0 => Err(io::ErrorKind::UnexpectedEof.into()),
+            count => Ok(count),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -44,6 +82,19 @@ impl Controller {
         self.readout(Request::Read(contents))
     }
 
+    pub fn write_pll(&mut self, address: u8, data: u16) -> anyhow::Result<()> {
+        self.command(Request::PllWrite { address, data })
+    }
+
+    pub fn read_pll(&mut self, address: u8) -> anyhow::Result<u16> {
+        self.request(Request::PllRead { address })
+            .map(u16::from_le_bytes)
+    }
+
+    pub fn release_clock(&mut self) -> anyhow::Result<()> {
+        self.command(Request::ReleaseClock)
+    }
+
     fn exchange(&mut self, request: Request) -> anyhow::Result<Vec<u8>> {
         self.link.write(&protocol::frame(&request.encode()))?;
         let end = loop {
@@ -65,6 +116,11 @@ impl Controller {
             let length = payload.len();
             format!("the answer to {request:?} has only {length} bytes")
         })
+    }
+
+    fn command(&mut self, request: Request) -> anyhow::Result<()> {
+        let [] = self.request(request)?;
+        Ok(())
     }
 
     fn request<const N: usize>(&mut self, request: Request) -> anyhow::Result<[u8; N]> {

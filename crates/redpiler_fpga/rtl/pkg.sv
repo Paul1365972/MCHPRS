@@ -10,7 +10,10 @@ package pkg;
         HELLO = 8'd0,
         RUN = 8'd1,
         DRIVE = 8'd2,
-        READ = 8'd3
+        READ = 8'd3,
+        PLL_WRITE = 8'd4,
+        PLL_READ = 8'd5,
+        RELEASE_CLOCK = 8'd6
     } opcode_t;
 
     typedef enum logic [7:0] {
@@ -18,7 +21,8 @@ package pkg;
         BAD_CHECKSUM = 8'd1,
         BAD_LENGTH = 8'd2,
         BAD_ESCAPE = 8'd3,
-        UNKNOWN_OPCODE = 8'd4
+        UNKNOWN_OPCODE = 8'd4,
+        CLOCK_STOPPED = 8'd5
     } status_t;
 
     localparam int ARGUMENT_BYTES = 6;
@@ -61,6 +65,12 @@ package pkg;
         logic [23:0] node;
     } drive_t;
     localparam int DRIVE_BITS = 2 + 4 + 24;
+
+    typedef struct packed {
+        logic [6:0] address;
+        logic [15:0] data;
+    } pll_access_t;
+    localparam int PLL_ACCESS_BITS = 7 + 16;
 
     localparam int PRIORITIES = 4;
 

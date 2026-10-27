@@ -1,3 +1,5 @@
+use crate::board::BASYS3;
+use crate::bring_up;
 use crate::engine::FpgaEngine;
 use crate::link::Controller;
 use crate::progress::Progress;
@@ -15,6 +17,23 @@ use mchprs_simulation::backend::{Backend, CompileContext, CompileError, Source};
 use mchprs_simulation::layout::Layout;
 use mchprs_simulation::{Blocks, Simulation};
 use mchprs_syntax::flag::{Flag, FlagValues};
+use std::path::Path;
+
+const SIMULATE: Flag = Flag::switch(
+    "simulate",
+    None,
+    "Run the circuit in Verilator instead of on the board",
+);
+const PORT: Flag = Flag::valued(
+    "port",
+    "path",
+    "The serial port of the board, where several boards are attached",
+);
+const CLOCK: Flag = Flag::valued(
+    "clock",
+    "MHz",
+    "The fastest clock for the circuit, instead of what the routed circuit is timed to reach",
+);
 
 const SIMULATED_TIMING: Timing = Timing {
     board_half_period: 3,
@@ -36,6 +55,9 @@ impl Backend for FpgaBackend {
             WireOutputs::DOTS,
             WireOutputs::ILLEGAL_STATES,
             WireOutputs::CROSSES,
+            PORT,
+            CLOCK,
+            SIMULATE,
         ]
     }
 
@@ -61,20 +83,59 @@ impl GraphBackend for FpgaBackend {
     fn build(
         &self,
         circuit: &Circuit,
-        _: &FlagValues,
+        flags: &FlagValues,
         context: &mut GraphContext<'_>,
     ) -> Result<Box<dyn Simulation<Nodes>>, CompileError> {
-        Ok(Box::new(simulate(circuit, context)?))
+        Ok(Box::new(build_engine(circuit, flags, context)?))
     }
 }
 
-fn simulate(circuit: &Circuit, context: &mut GraphContext<'_>) -> Result<FpgaEngine, CompileError> {
+fn build_engine(
+    circuit: &Circuit,
+    flags: &FlagValues,
+    context: &mut GraphContext<'_>,
+) -> Result<FpgaEngine, CompileError> {
+    let build_nonce = rand::random();
+    let board_flag = [PORT, CLOCK].into_iter().find(|flag| flags.contains(flag));
+    match (flags.is_on(&SIMULATE), board_flag) {
+        (true, None) => simulate(circuit, build_nonce, context),
+        (true, Some(flag)) => Err(CompileError::Unsupported(format!(
+            "a simulation has no --{}",
+            flag.name()
+        ))),
+        (false, _) => {
+            let port = flags.text(&PORT).map(Path::new);
+            let clock_hertz = given_clock_hertz(flags)?;
+            bring_up::run_on_board(circuit, &BASYS3, port, clock_hertz, build_nonce, context)
+        }
+    }
+}
+
+fn given_clock_hertz(flags: &FlagValues) -> Result<Option<f64>, CompileError> {
+    let Some(text) = flags.text(&CLOCK) else {
+        return Ok(None);
+    };
+    let megahertz: f64 = text.parse().map_err(|error| {
+        CompileError::Unsupported(format!(
+            "--{} takes a frequency in MHz: {error}",
+            CLOCK.name()
+        ))
+    })?;
+    Ok(Some(megahertz * 1e6))
+}
+
+fn simulate(
+    circuit: &Circuit,
+    build_nonce: u32,
+    context: &mut GraphContext<'_>,
+) -> Result<FpgaEngine, CompileError> {
     let mut progress = Progress::new(context, 3);
     progress.start("Writing circuit")?;
-    let design = Design::new(circuit, rand::random())?;
+    let design = Design::new(circuit, build_nonce)?;
     progress.start("Building simulation")?;
     let executable = VerilatorExecutable::build(&design.source, &progress)?;
-    let link = executable.start(SIMULATED_TIMING).map_err(failed)?;
+    let link = executable.start(SIMULATED_TIMING);
+    let link = link.map_err(|error| CompileError::Failed(error.into()))?;
     progress.start("Checking circuit")?;
     let clock_hertz = SIMULATED_TIMING.circuit_clock_hertz();
     let controller = Controller::new(Box::new(link));
@@ -82,8 +143,4 @@ fn simulate(circuit: &Circuit, context: &mut GraphContext<'_>) -> Result<FpgaEng
     let engine = engine.map_err(CompileError::Failed)?;
     progress.finish();
     Ok(engine)
-}
-
-fn failed(error: impl Into<anyhow::Error>) -> CompileError {
-    CompileError::Failed(error.into())
 }

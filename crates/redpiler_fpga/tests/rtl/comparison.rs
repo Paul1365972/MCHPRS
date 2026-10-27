@@ -91,7 +91,7 @@ macro_rules! comparison_tests {
             $(#[test]
             #[ignore = "needs Verilator"]
             fn $simulation() {
-                let flags = crate::scenario::flags!($simulation);
+                let flags = concat!("--simulate ", crate::scenario::flags!($simulation));
                 crate::comparison::assert_fpga_runs_as_phase(stringify!($name), flags, &[]);
             })*
         })*

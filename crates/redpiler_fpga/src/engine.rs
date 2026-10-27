@@ -1,9 +1,9 @@
 use crate::layout::StateLayout;
 use crate::link::Controller;
-use crate::protocol::{Contents, Mode, Readout};
+use crate::protocol::{Contents, Hello, Mode, Readout};
 use crate::running;
 use crate::verilog::Design;
-use anyhow::{anyhow, ensure};
+use anyhow::{anyhow, bail, ensure};
 use mchprs_redpiler::circuit::{Circuit, InputKinds, NodeId};
 use mchprs_redpiler::graph::NodeState;
 use mchprs_redpiler::nodes::{Changes, Nodes, Snapshot};
@@ -17,6 +17,8 @@ use mchprs_simulation::{Capabilities, End, Running, Simulation, View};
 use std::mem;
 use std::thread;
 use std::time::Duration;
+
+const LOCK_POLLS: usize = 100;
 
 #[derive(Debug)]
 pub struct FpgaEngine {
@@ -37,7 +39,8 @@ impl FpgaEngine {
         design: &Design,
         clock_hertz: f64,
     ) -> Result<FpgaEngine, SimulationError> {
-        let hello = controller.hello()?;
+        controller.release_clock()?;
+        let hello = wait_for_lock(&mut controller)?;
         ensure!(
             hello.build_nonce == design.build_nonce,
             "the board holds the build {:08x}, not {:08x}",
@@ -127,6 +130,16 @@ impl FpgaEngine {
         self.record_shown(&readout)?;
         self.layout.decode_snapshot(&readout.state)
     }
+}
+
+fn wait_for_lock(controller: &mut Controller) -> anyhow::Result<Hello> {
+    for _ in 0..LOCK_POLLS {
+        let hello = controller.hello()?;
+        if hello.pll_locked {
+            return Ok(hello);
+        }
+    }
+    bail!("the circuit clock did not lock")
 }
 
 impl Simulation<Nodes> for FpgaEngine {

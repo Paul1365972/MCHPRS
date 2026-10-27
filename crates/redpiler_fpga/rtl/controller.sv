@@ -5,7 +5,8 @@
 // the reply reads the tick count and the state straight from the circuit's registers.
 //
 // An answer is the status byte, then the payload of the request, sent from the lowest byte up:
-// - HELLO: the build nonce.
+// - HELLO: the build nonce and a flags byte whose lowest bit says that the PLL is locked.
+// - PLL_READ: the register's 16 bits.
 // - RUN, DRIVE and READ: the tick count, then the shown state (DRIVE and READ with READ_SHOWN),
 //   the whole state (READ with READ_ALL) or nothing (RUN), padded to whole bytes.
 module controller (
@@ -15,6 +16,16 @@ module controller (
     output logic transmit_valid,
     output logic [7:0] transmit,
     input logic transmit_ready,
+
+    output logic pll_enable = 0,
+    output logic pll_write,
+    output logic [6:0] pll_address,
+    output logic [15:0] pll_write_data,
+    input logic pll_ready,
+    input logic [15:0] pll_read_data,
+    input logic pll_locked,
+    output logic pll_reset = 1,
+    output logic circuit_clock_enable,
 
     input logic circuit_clock,
     output logic hold,
@@ -27,7 +38,10 @@ module controller (
     output logic [23:0] drive_node,
     output logic [5:0] drive_input,
     output logic shown_read,
-    input logic [circuit_pkg::STATE_BITS-1:0] state
+    input logic [circuit_pkg::STATE_BITS-1:0] state,
+
+    output logic [15:0] ticks_run = 0,
+    output pkg::status_t last_status = pkg::OK
 );
     localparam int TICK_COUNT_BYTES = 8;
     localparam int STATE_BYTES = (circuit_pkg::STATE_BITS + 7) / 8;
@@ -36,16 +50,21 @@ module controller (
     localparam int POSITION_BITS = $clog2(REPLY_BYTES + 1);
 
     typedef struct packed {
+        logic [6:0] unused;
+        logic pll_locked;
         logic [31:0] build_nonce;
         pkg::status_t status;
     } hello_answer_t;
-    localparam int ANSWER_BYTES = 1 + 4;
+    localparam int ANSWER_BYTES = 1 + 4 + 1;
+    localparam int PLL_READ_ANSWER_BYTES = 3;
 
     typedef enum logic [2:0] {
         // Waiting for a request.
         IDLE,
         // Waiting until the circuit holds its ticks and has applied the request.
         CROSS,
+        // Waiting for the PLL's register port.
+        PLL,
         // Sending the status byte and the rest of a short answer.
         ANSWER,
         // Sending the tick count and the state.
@@ -75,12 +94,16 @@ module controller (
     logic [REPLY_BYTES*8-1:0] reply;
     logic [7:0] reply_byte = 0;
     logic reply_byte_valid = 0;
+    logic [1:0] locked_crossing = 0;
+    logic locked;
+    logic stopped;
     logic request = 0;
     logic acknowledged;
     logic apply;
     logic let_go;
     pkg::run_t run;
     pkg::drive_t drive;
+    pkg::pll_access_t pll_access;
     logic content_valid;
     logic [7:0] content;
     logic content_ready;
@@ -103,6 +126,15 @@ module controller (
         .circuit_clock(circuit_clock), .idle(idle), .hold(hold), .apply(apply), .let_go(let_go)
     );
 
+    assign locked = locked_crossing[1];
+    assign stopped = pll_reset || !locked;
+    assign circuit_clock_enable = !stopped;
+
+    assign pll_access = argument[pkg::PLL_ACCESS_BITS-1:0];
+    assign pll_write = opcode == pkg::PLL_WRITE;
+    assign pll_address = pll_access.address;
+    assign pll_write_data = pll_access.data;
+
     assign run = argument;
     assign run_start = apply && opcode == pkg::RUN;
     assign run_mode = run.mode;
@@ -119,6 +151,8 @@ module controller (
     assign content_taken = content_valid && content_ready;
     assign closing = step == CLOSE;
 
+    assign hello.unused = 0;
+    assign hello.pll_locked = locked;
     assign hello.build_nonce = circuit_pkg::BUILD_NONCE;
     assign hello.status = status;
 
@@ -133,18 +167,27 @@ module controller (
             unique case (frame_opcode)
                 pkg::HELLO: answer_bytes = 3'(ANSWER_BYTES);
                 pkg::RUN, pkg::DRIVE, pkg::READ: begin
-                    first_step = CROSS;
+                    if (stopped) status = pkg::CLOCK_STOPPED;
+                    else first_step = CROSS;
                     if (frame_opcode == pkg::READ && frame_argument == pkg::READ_ALL)
                         reply_bytes = POSITION_BITS'(TICK_COUNT_BYTES + STATE_BYTES);
                     else if (frame_opcode != pkg::RUN)
                         reply_bytes = POSITION_BITS'(TICK_COUNT_BYTES + SHOWN_BYTES);
                 end
+                pkg::PLL_WRITE: first_step = PLL;
+                pkg::PLL_READ: begin
+                    first_step = PLL;
+                    answer_bytes = 3'(PLL_READ_ANSWER_BYTES);
+                end
+                pkg::RELEASE_CLOCK: begin end
                 default: status = pkg::UNKNOWN_OPCODE;
             endcase
         end
     end
 
     always_ff @(posedge board_clock) begin
+        locked_crossing <= {locked_crossing[0], pll_locked};
+        pll_enable <= 0;
         reply_byte <= reply[position*8 +: 8];
         reply_byte_valid <= step == REPLY && !content_taken;
         unique case (step)
@@ -152,13 +195,23 @@ module controller (
                 opcode <= frame_opcode;
                 argument <= frame_argument[pkg::RUN_BITS-1:0];
                 answer <= hello;
+                last_status <= status;
                 answer_bytes_left <= answer_bytes;
                 reply_bytes_left <= reply_bytes;
                 position <= 0;
                 request <= first_step == CROSS;
+                pll_enable <= first_step == PLL;
+                if (status == pkg::OK && frame_opcode == pkg::RELEASE_CLOCK) pll_reset <= 0;
                 step <= first_step;
             end
-            CROSS: if (acknowledged) step <= ANSWER;
+            CROSS: if (acknowledged) begin
+                ticks_run <= tick_count[15:0];
+                step <= ANSWER;
+            end
+            PLL: if (pll_ready) begin
+                answer[8 +: 16] <= pll_read_data;
+                step <= ANSWER;
+            end
             ANSWER: if (content_taken) begin
                 answer <= answer >> 8;
                 answer_bytes_left <= answer_bytes_left - 1'b1;

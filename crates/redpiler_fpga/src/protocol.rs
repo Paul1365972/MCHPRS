@@ -17,6 +17,8 @@ const COUNT_BITS: u32 = 40;
 /// The most ticks a counted run and the most clocks per tick a periodic run can have.
 pub const MAX_COUNT: u64 = (1 << COUNT_BITS) - 1;
 pub const DRIVE_NODE_BITS: u32 = 24;
+const PLL_DATA_BITS: u32 = 16;
+const PLL_ADDRESS_BITS: u32 = 7;
 const INPUT_KIND_BITS: u32 = 2;
 const INPUT_VALUE_BITS: u32 = 4;
 pub const DRIVE_INPUT_BITS: u32 = INPUT_KIND_BITS + INPUT_VALUE_BITS;
@@ -46,6 +48,9 @@ codes!(Opcode {
     Run = 1,
     Drive = 2,
     Read = 3,
+    PllWrite = 4,
+    PllRead = 5,
+    ReleaseClock = 6,
 });
 
 codes!(ModeKind {
@@ -81,6 +86,8 @@ codes!(
         BadEscape = 3,
         #[error("the opcode is unknown")]
         UnknownOpcode = 4,
+        #[error("the circuit clock is stopped")]
+        ClockStopped = 5,
     }
 );
 
@@ -90,6 +97,9 @@ pub enum Request {
     Run(Mode),
     Drive { node: u32, input: Input },
     Read(Contents),
+    PllWrite { address: u8, data: u16 },
+    PllRead { address: u8 },
+    ReleaseClock,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,6 +120,7 @@ pub struct Readout {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hello {
     pub build_nonce: u32,
+    pub pll_locked: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -127,8 +138,8 @@ pub enum AnswerError {
 }
 
 impl Request {
-    /// Packs the fields of `pkg::run_t` and `pkg::drive_t` as the board unpacks them, the first
-    /// field highest.
+    /// Packs the fields of `pkg::run_t`, `pkg::drive_t` and `pkg::pll_access_t` as the board
+    /// unpacks them, the first field highest.
     pub fn encode(self) -> [u8; REQUEST_BYTES] {
         let fitting = |value: u64, bits: u32| {
             assert!(value < 1 << bits, "{self:?} does not fit a request");
@@ -158,6 +169,15 @@ impl Request {
                 (Opcode::Drive, input << DRIVE_NODE_BITS | node)
             }
             Request::Read(contents) => (Opcode::Read, contents.into()),
+            Request::PllWrite { address, data } => {
+                let address = fitting(address.into(), PLL_ADDRESS_BITS);
+                (Opcode::PllWrite, address << PLL_DATA_BITS | u64::from(data))
+            }
+            Request::PllRead { address } => {
+                let address = fitting(address.into(), PLL_ADDRESS_BITS);
+                (Opcode::PllRead, address << PLL_DATA_BITS)
+            }
+            Request::ReleaseClock => (Opcode::ReleaseClock, 0),
         };
         let mut request = [0; REQUEST_BYTES];
         request[0] = opcode as u8;
@@ -187,11 +207,13 @@ impl Readout {
 }
 
 impl Hello {
-    const PAYLOAD_BYTES: usize = size_of::<u32>();
+    const PAYLOAD_BYTES: usize = size_of::<u32>() + size_of::<u8>();
 
-    pub fn decode(build_nonce: [u8; Self::PAYLOAD_BYTES]) -> Hello {
+    pub fn decode(payload: [u8; Self::PAYLOAD_BYTES]) -> Hello {
+        let [build_nonce @ .., flags] = payload;
         Hello {
             build_nonce: u32::from_le_bytes(build_nonce),
+            pll_locked: flags & 1 != 0,
         }
     }
 }

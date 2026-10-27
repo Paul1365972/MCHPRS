@@ -1,3 +1,5 @@
+//! Bytes pass at the frame level, without the two UARTs.
+
 use crate::build_directory::BuildDirectory;
 use crate::link::ByteLink;
 use crate::process;
