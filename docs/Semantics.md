@@ -100,3 +100,4 @@ For every backend but `vanilla`, these come on top of the differences of [Compil
 | [`vanilla`](backends/Vanilla.md) | Run in the order they were scheduled. | At once, in vanilla's order of positions. | Behaves as in vanilla. |
 | [`direct`](backends/Direct.md) | Run in the order they were scheduled. | Before the next tick runs, in an unspecified order. | Behaves as in vanilla, unless it is locational. Then its result is unspecified. |
 | [`phase`](backends/Phase.md) | Run at once: each reads the circuit as it was before any of them ran. | Once, after all of them ran. | Has one result, the same in every compile, which can differ from vanilla. |
+| [`fpga`](backends/FPGA.md) | As `phase`. | As `phase`. | As `phase`. |

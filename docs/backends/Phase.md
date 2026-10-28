@@ -7,6 +7,7 @@ It is not built for speed.
 A started simulation starts paused.
 An input while paused runs no tick.
 A counted run or a settle leaves the simulation paused.
+[`fpga`](FPGA.md) runs the same tick order as a digital circuit.
 
 [Semantics](../Semantics.md#compiled-plots) lists how every compiled plot differs from vanilla. This page covers what is specific to `phase`.
 

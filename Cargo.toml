@@ -41,6 +41,7 @@ tracing = { workspace = true }
 [features]
 default = ["phase"]
 claims = ["mchprs_core/claims"]
+fpga = ["mchprs_core/fpga"]
 phase = ["mchprs_core/phase"]
 whitelist = ["mchprs_core/whitelist"]
 

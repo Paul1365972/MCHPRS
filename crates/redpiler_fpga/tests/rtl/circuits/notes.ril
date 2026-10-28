@@ -1,0 +1,11 @@
+circuit @notes {
+  %lever = lever -> [%note:0, %twice:0]
+  %note = note_block
+  %sounding = lever(powered) -> [%sounded:0]
+  %sounded = note_block(instrument=bass, note=7, powered)
+
+  %clock = torch(powered) -> [%clock_repeater:0, %beat:0, %twice:0]
+  %clock_repeater = repeater(delay=1) tick(delay=1, priority=high) -> [%clock:0]
+  %beat = note_block(powered)
+  %twice = note_block(powered)
+}

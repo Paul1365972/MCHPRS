@@ -45,5 +45,6 @@ thiserror = { workspace = true }
 
 [features]
 claims = ["dep:rusqlite"]
+fpga = ["mchprs_backends/fpga"]
 phase = ["mchprs_backends/phase"]
 whitelist = ["dep:ureq"]

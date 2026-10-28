@@ -834,6 +834,7 @@ dependencies = [
  "mchprs_blocks",
  "mchprs_redpiler",
  "mchprs_redpiler_direct",
+ "mchprs_redpiler_fpga",
  "mchprs_redpiler_phase",
  "mchprs_redstone",
  "mchprs_schematic",
@@ -942,6 +943,24 @@ dependencies = [
  "mchprs_simulation",
  "mchprs_syntax",
  "thiserror",
+]
+
+[[package]]
+name = "mchprs_redpiler_fpga"
+version = "0.5.2-dev"
+dependencies = [
+ "anyhow",
+ "mchprs_blocks",
+ "mchprs_redpiler",
+ "mchprs_redpiler_phase",
+ "mchprs_redstone",
+ "mchprs_ril",
+ "mchprs_simulation",
+ "mchprs_syntax",
+ "nix",
+ "rand",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]

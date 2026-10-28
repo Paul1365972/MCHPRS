@@ -13,6 +13,7 @@ repository.workspace = true
 default = ["direct", "vanilla"]
 graph = ["dep:mchprs_redpiler"]
 direct = ["graph", "dep:mchprs_redpiler_direct"]
+fpga = ["graph", "dep:mchprs_redpiler_fpga"]
 phase = ["graph", "dep:mchprs_redpiler_phase"]
 vanilla = ["dep:mchprs_redstone", "dep:rustc-hash"]
 
@@ -21,6 +22,7 @@ mchprs_blocks = { path = "../blocks" }
 mchprs_syntax = { path = "../syntax" }
 mchprs_redpiler = { path = "../redpiler", optional = true }
 mchprs_redpiler_direct = { path = "../redpiler_direct", optional = true }
+mchprs_redpiler_fpga = { path = "../redpiler_fpga", optional = true }
 mchprs_redpiler_phase = { path = "../redpiler_phase", optional = true }
 mchprs_redstone = { path = "../redstone", optional = true }
 mchprs_simulation = { path = "../simulation" }

@@ -40,7 +40,7 @@ mchprs_schematic = { git = "https://github.com/Paul1365972/MCHPRS" }
 | `mchprs_redstone` | `Input`, `settle`, and `Interpreter`, a world that runs block by block |
 | `mchprs_schematic` | `read`, which reads Sponge schematics |
 
-`mchprs_backends` has a feature per backend. `direct` and `vanilla` are on by default, `phase` is off.
+`mchprs_backends` has a feature per backend. `direct` and `vanilla` are on by default, `phase` and `fpga` are off.
 `backends()` does not list `vanilla`. `Setup::new(&VanillaBackend, FlagValues::default())` sets it up.
 With `default-features = false, features = ["vanilla"]`, `backends()` returns none and the Redpiler crates are not compiled.
 
@@ -68,6 +68,7 @@ A `Simulation` is stepped on the caller's thread, so a `SimulatedWorld` runs the
 | `mchprs_redpiler` | The `GraphBackend` trait, `Nodes`, the graph, the passes, the node behaviour and the block map |
 | `mchprs_redpiler_direct` | The `direct` backend |
 | `mchprs_redpiler_phase` | The `phase` backend and its `coalesce` |
+| `mchprs_redpiler_fpga` | The `fpga` backend |
 | `mchprs_backends` | `Setup`, the list of backends the server offers, and `vanilla` |
 | `mchprs_redstone` | The block-by-block simulation that runs a plot without Redpiler |
 
@@ -77,8 +78,8 @@ Every backend implements `Backend`. `GraphBackend: Backend` adds graph compilati
 - `Simulation<S>` is stepped by its caller: it runs ticks only inside `run` and `settle`. `read` returns its whole state without changing it. `stop` ends it and returns what was not shown yet with the state it reached.
 - `Running<S>` runs by itself. It owns its threads and its timing, takes commands with `send` and answers with updates. `Simulation::start` turns a stepped simulation into a running one, paused, with its state, pending ticks, watches and tick count. The doc comments of both traits and their types state the contract.
 - `Backend::compile` turns a region of blocks into a `(Box<dyn Simulation<Blocks>>, Layout)`. `vanilla` steps the interpreter over a copy of the region. It builds no graph.
-- `GraphBackend::build` turns a circuit into a `Box<dyn Simulation<Nodes>>`. `direct`, `phase` and rilc's `reference` are graph backends. `graph_simulation::compile` extracts the graph, runs the passes, builds the circuit's simulation and addresses it by block position through the block map.
-- `stepper::start` gives a `Simulation` a thread that runs its ticks. `direct`, `phase`, `vanilla` and `reference` start that way.
+- `GraphBackend::build` turns a circuit into a `Box<dyn Simulation<Nodes>>`. `direct`, `phase`, `fpga` and rilc's `reference` are graph backends. `graph_simulation::compile` extracts the graph, runs the passes, builds the circuit's simulation and addresses it by block position through the block map.
+- `stepper::start` gives a `Simulation` a thread that runs its ticks. `direct`, `phase`, `vanilla` and `reference` start that way. `fpga` starts the board in its run modes.
 - The simulation that a graph backend builds checks each input with the circuit's `InputKinds`.
 
 `rilc run` measures how fast a backend runs through `Running`, the way the server runs it. Speed is never measured on a stepped simulation.

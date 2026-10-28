@@ -1,0 +1,39 @@
+circuit @inputs {
+  %lever = lever -> [%lever_lamp:0, %lever_wire:3]
+  %lever_lamp = lamp
+  %lever_wire = wire
+  %lit_lever = lever(powered) -> [%lit_trapdoor:0]
+  %lit_trapdoor = trapdoor(powered)
+
+  %stone = button -> [%stone_trapdoor:0]
+  %stone_trapdoor = trapdoor
+  %wooden = button(press_ticks=15) -> [%wooden_trapdoor:0]
+  %wooden_trapdoor = trapdoor
+  %pressed = button(powered) tick(delay=4) -> [%pressed_trapdoor:0]
+  %pressed_trapdoor = trapdoor(powered)
+  %early = button tick(delay=6) -> [%early_trapdoor:0]
+  %early_trapdoor = trapdoor
+  %fixed_button = button(powered) internal tick(delay=3) -> [%fixed_trapdoor:0]
+  %fixed_trapdoor = trapdoor(powered)
+
+  %plate = pressure_plate -> [%plate_trapdoor:0]
+  %plate_trapdoor = trapdoor
+  %held = pressure_plate(touched, powered) tick(delay=7) -> [%held_trapdoor:0]
+  %held_trapdoor = trapdoor(powered)
+  %left = pressure_plate(powered) tick(delay=2) -> [%left_trapdoor:0]
+  %left_trapdoor = trapdoor(powered)
+  %resting = pressure_plate(touched) -> [%resting_trapdoor:0]
+  %resting_trapdoor = trapdoor
+  %waiting = pressure_plate tick(delay=5) -> [%waiting_trapdoor:0]
+  %waiting_trapdoor = trapdoor
+
+  %repeater = repeater(delay=1) input -> [%repeater_wire:1]
+  %repeater_wire = wire
+  %locked = repeater(delay=2, locked, powered) input -> [%locked_trapdoor:0]
+  %locked_trapdoor = trapdoor(powered)
+  %torch = torch(powered) input -> [%torch_lamp:0]
+  %torch_lamp = lamp(powered)
+  %knob = comparator(power=9) input -> [%knob_wire:2, %knob_lamp:9]
+  %knob_wire = wire(power=7)
+  %knob_lamp = lamp
+}
