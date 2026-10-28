@@ -41,7 +41,7 @@ mchprs_schematic = { git = "https://github.com/Paul1365972/MCHPRS" }
 | `mchprs_redstone` | `Input`, `settle`, and `Interpreter`, a world that runs block by block |
 | `mchprs_schematic` | `read`, which reads Sponge schematics |
 
-`mchprs_backends` has a feature per backend. `direct` and `vanilla` are on by default, `phase` is off.
+`mchprs_backends` has a feature per backend. `direct` and `vanilla` are on by default, `phase` and `fpga` are off.
 `backends()` does not list `vanilla`. `Setup::new(&VanillaBackend, FlagValues::default())` sets it up.
 With `default-features = false, features = ["vanilla"]`, `backends()` returns none and the Redpiler crates are not compiled.
 
@@ -57,6 +57,6 @@ With `default-features = false, features = ["vanilla"]`, `backends()` returns no
 
 ## WebAssembly
 
-`mchprs_redpiler`, `mchprs_backends` and `mchprs_simulation` build for `wasm32-unknown-unknown`.
+`mchprs_redpiler`, `mchprs_backends` without its `fpga` feature and `mchprs_simulation` build for `wasm32-unknown-unknown`.
 A `Simulation` is stepped on the caller's thread, so a `SimulatedWorld` runs there.
 `Simulation::start` needs a thread of its own, which that target lacks when it runs. There `start` returns an error.

@@ -1,8 +1,9 @@
 # phase
 
 The `phase` backend runs the [graph](../Circuits.md) of a plot with all ticks of one priority at once.
-It is the reference for this tick order.
-The server does not offer it, [rilc](../rilc.md) and the [library](../Library.md) do.
+It is the reference for this tick order, which [`fpga`](FPGA.md) runs as a digital circuit.
+A server built with the `fpga` feature offers it, so that a player can tell whether a result comes from this tick order or from its implementation in `fpga`.
+[rilc](../rilc.md) and the [library](../Library.md) offer it too.
 
 [Semantics](../Semantics.md#compiled-plots) lists how every compiled plot differs from vanilla. This page covers what is specific to `phase`.
 

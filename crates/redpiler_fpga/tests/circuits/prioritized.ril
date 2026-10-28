@@ -1,0 +1,55 @@
+circuit @prioritized {
+  %lever = lever -> [%delay_1:0, %delay_2:0, %delay_3:0, %delay_4:0, %lockable:0, %lockable_slow:0]
+  %delay_1 = repeater(delay=1, prioritized)
+    -> [%out_1:0, %follower:0, %after_torch:0, %after_repeater:0, %after_comparator:0, %after_lamp:0]
+  %follower = repeater(delay=2, prioritized) -> [%out_follower:0]
+  %out_follower = trapdoor
+  %after_torch = torch(powered) -> [%out_after_torch:0]
+  %out_after_torch = trapdoor(powered)
+  %after_repeater = repeater(delay=1) -> [%out_after_repeater:0]
+  %out_after_repeater = trapdoor
+  %after_comparator = comparator -> [%out_after_comparator:0]
+  %out_after_comparator = trapdoor
+  %after_lamp = lamp
+  %delay_2 = repeater(delay=2, prioritized) -> [%out_2:0]
+  %delay_3 = repeater(delay=3, prioritized) -> [%out_3:0]
+  %delay_4 = repeater(delay=4, prioritized) -> [%out_4:0, %chained:0]
+  %chained = repeater(delay=1, prioritized) -> [%out_chained:0]
+  %out_1 = trapdoor
+  %out_2 = trapdoor
+  %out_3 = trapdoor
+  %out_4 = trapdoor
+  %out_chained = trapdoor
+
+  %side_lever = lever -> [%lock:0, side %lockable_now:0]
+  %lock = repeater(delay=1, prioritized) -> [side %lockable:0, side %lockable_slow:0]
+  %lockable = repeater(delay=1, prioritized) -> [%out_lockable:0]
+  %lockable_slow = repeater(delay=3, prioritized) -> [%out_lockable_slow:0]
+  %lockable_now = repeater(delay=2, prioritized) -> [%out_lockable_now:0]
+  %out_lockable = trapdoor
+  %out_lockable_slow = trapdoor
+  %out_lockable_now = trapdoor
+  %lever_now = lever -> [%lockable_now:0]
+
+  %supply = constant(power=15) -> [%turning_on:0, side %latched:0, %latched:0, side %held:2]
+  %turning_on = repeater(delay=2, prioritized) tick(delay=1, priority=highest, order=0) -> [%out_turning_on:0]
+  %out_turning_on = trapdoor
+  %turning_off = repeater(delay=3, prioritized, powered) tick(delay=2, priority=highest)
+    -> [%out_turning_off:0]
+  %out_turning_off = trapdoor(powered)
+  %ending = repeater(delay=4, prioritized, powered) tick(delay=4, priority=higher) -> [%out_ending:0]
+  %out_ending = trapdoor(powered)
+  %edited = repeater(delay=2, prioritized) tick(delay=1, priority=higher)
+    -> [%out_edited:0, %rescheduled:0]
+  %falling = repeater(delay=1, prioritized, powered) tick(delay=1, priority=highest, order=2)
+    -> [%rescheduled:0]
+  %rescheduled = repeater(delay=1, prioritized) tick(delay=1, priority=highest, order=3)
+    -> [%out_rescheduled:0]
+  %out_rescheduled = trapdoor
+  %out_edited = trapdoor
+  %latched = repeater(delay=1, prioritized, locked) tick(delay=1, priority=highest, order=1)
+    -> [%out_latched:0]
+  %out_latched = trapdoor
+  %held = repeater(delay=2, prioritized, locked, powered) -> [%out_held:0]
+  %out_held = trapdoor(powered)
+}

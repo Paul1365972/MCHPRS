@@ -19,7 +19,8 @@ A backend can run passes that rewrite the graph before it runs it.
 | Backend | Use it for | Offered by |
 | --- | --- | --- |
 | [`direct`](backends/Direct.md) | Speed: the fastest backend on a CPU, and the one Redpiler uses unless another is configured. | The server, rilc and the library |
-| [`phase`](backends/Phase.md) | Checking a backend that runs the ticks of one priority at once: it is the reference for that tick order. | rilc and the library |
+| [`fpga`](backends/FPGA.md) | Running the graph as a digital circuit in Verilator, in the tick order of `phase`. | A server or rilc built with the `fpga` feature, and the library |
+| [`phase`](backends/Phase.md) | Checking `fpga`: it runs the same tick order on a CPU, so a result that differs between the two is a bug in `fpga`. | A server built with the `fpga` feature, rilc and the library |
 | [`vanilla`](backends/Vanilla.md) | Comparing with a plot without Redpiler: it runs a copy of the plot with the same code. | rilc and the library |
 
 A backend owns its threads and decides when its ticks run.

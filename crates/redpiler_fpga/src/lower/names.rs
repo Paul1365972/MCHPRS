@@ -1,0 +1,44 @@
+use strum::Display;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[strum(serialize_all = "snake_case")]
+pub enum NodeModule {
+    BinaryInput,
+    StrengthInput,
+    Button,
+    Plate,
+    Torch,
+    Repeater,
+    RepeaterPrioritized,
+    Comparator,
+    Lamp,
+    Trapdoor,
+    RedstoneWire,
+    NoteBlock,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum Parameter {
+    Powered,
+    Strength,
+    Locked,
+    Touched,
+    Delay,
+    PendingDelay,
+    Pulsing,
+    Index,
+    Subtract,
+    FarValid,
+    Far,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[strum(serialize_all = "snake_case")]
+pub enum FiringPort {
+    Firing,
+    FiringOff,
+    FiringOn,
+    FiringPulse,
+    TickStart,
+}

@@ -41,9 +41,10 @@ Once complete, the optimized executable will be located at `./target/release/mch
 | --- | --- |
 | `claims` | `/plot claim`, `/plot auto`, `/plot info` and `/plot visit` |
 | `whitelist` | `/whitelist`, and `whitelist = true` in `Config.toml` |
+| `fpga` | The [`fpga`](docs/backends/FPGA.md) and [`phase`](docs/backends/Phase.md) backends |
 
-`cargo build --release --features claims,whitelist` enables both.
-Prebuilt releases have both enabled, and so does the image the `Dockerfile` builds.
+`cargo build --release --features claims,whitelist` enables the first two.
+Prebuilt releases have these two enabled, and so does the image the `Dockerfile` builds.
 
 The image runs the server in the volume `/data` and exposes port 25565.
 
@@ -139,7 +140,7 @@ direct = "--optimize --io-only"
 
 - [Semantics](docs/Semantics.md): supported redstone and the differences from vanilla, with and without Redpiler.
 - [Redpiler](docs/Redpiler.md): compiling a plot in game, flags, probes and breakpoints.
-- The backends, each with its tick order, passes, flags and limits: [vanilla](docs/backends/Vanilla.md), [direct](docs/backends/Direct.md), [phase](docs/backends/Phase.md).
+- The backends, each with its tick order, passes, flags and limits: [vanilla](docs/backends/Vanilla.md), [direct](docs/backends/Direct.md), [phase](docs/backends/Phase.md), [fpga](docs/backends/FPGA.md).
 - [Commands](docs/Commands.md): every command. `/help` lists them in game.
 - [Circuits](docs/Circuits.md): the graph Redpiler compiles, the behaviour of its components and the passes.
 - [RIL](docs/RIL.md): the text format of a circuit.

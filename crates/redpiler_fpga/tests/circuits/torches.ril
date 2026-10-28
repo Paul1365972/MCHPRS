@@ -1,0 +1,24 @@
+circuit @torches {
+  %lever = lever -> [%inverter:0, %lamp:0, %slow:0]
+  %inverter = torch(powered) -> [%second:0, %inverted_lamp:0]
+  %second = torch -> [%second_lamp:0]
+  %inverted_lamp = lamp(powered)
+  %second_lamp = lamp
+  %lamp = lamp
+  %slow = repeater(delay=2) -> [%lamp:0]
+
+  %clock = torch(powered) -> [%clock_repeater:0, %clock_lamp:0]
+  %clock_repeater = repeater(delay=1) tick(delay=1, priority=high) -> [%clock:0]
+  %clock_lamp = lamp(powered)
+
+  %changing = torch(powered) tick(delay=1, order=0) -> [%changing_lamp:0]
+  %changing_lamp = lamp(powered)
+  %supply = constant(power=15) -> [%changing:3, %kept:0]
+  %kept = torch tick(delay=1, order=1) -> [%kept_lamp:0]
+  %kept_lamp = lamp
+  %dark = lamp(powered) tick(delay=2)
+  %darker = lamp tick(delay=1, order=2)
+
+  %blinker = torch(powered) tick(delay=1, order=3) -> [%blinker:0, %blinker_lamp:0]
+  %blinker_lamp = lamp(powered)
+}

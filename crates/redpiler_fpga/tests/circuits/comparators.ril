@@ -1,0 +1,46 @@
+circuit @comparators {
+  %knob = comparator input
+    -> [%compare:0, %subtract:0, %far:0, %prioritized:2, %mixed:1, %weak_lamp:0, %strong_lamp:6]
+  %side_knob = comparator(power=4) input -> [side %compare:0, side %subtract:1, side %far:0]
+  %compare = comparator -> [%compare_wire:0]
+  %compare_wire = wire
+  %subtract = comparator(mode=subtract) -> [%subtract_wire:0, %prioritized:0, side %chained:3]
+  %subtract_wire = wire
+  %far = comparator(far=6, power=6) -> [%far_wire:0]
+  %far_wire = wire(power=6)
+  %prioritized = comparator(prioritized) -> [%chained:0]
+  %chained = comparator(mode=subtract, prioritized) -> [%chained_wire:0]
+  %chained_wire = wire
+  %weak_lamp = lamp
+  %strong_lamp = lamp
+
+  %bit = lever -> [%binary:2, %raised:5, side %gate:0, %mixed:4, %either:2, %stepped:6]
+  %other_bit = lever -> [%either:2, %stepped:8, %binary_far:0]
+  %binary = comparator -> [%binary_wire:1, %binary_lamp:0]
+  %binary_wire = wire
+  %binary_lamp = lamp
+  %base = constant(power=4) -> [%raised:0, %mixed:1]
+  %raised = comparator(power=4) -> [%raised_wire:2, %raised_lamp:4, %raised_lit:3]
+  %raised_wire = wire(power=2)
+  %raised_lamp = lamp
+  %raised_lit = lamp(powered)
+  %full = constant(power=15) -> [%gate:1, %pending:8, %flicker:0, %wobble:0]
+  %gate = comparator(mode=subtract, power=14) -> [%gate_wire:0]
+  %gate_wire = wire(power=14)
+  %binary_far = comparator(far=3, prioritized, power=3) -> [%binary_far_wire:0]
+  %binary_far_wire = wire(power=3)
+  %mixed = wire(power=3)
+  %either = wire
+  %stepped = comparator -> [%stepped_lamp:3, %stepped_high_lamp:7, %stepped_wire:1]
+  %stepped_lamp = lamp
+  %stepped_high_lamp = lamp
+  %stepped_wire = wire
+  %pending = comparator tick(delay=1, order=0) -> [%pending_wire:0]
+  %pending_wire = wire
+
+  %flicker = comparator(mode=subtract) tick(delay=1, order=1)
+    -> [side %flicker:0, %flicker_wire:0]
+  %flicker_wire = wire
+  %wobble = comparator(mode=subtract) tick(delay=1, order=2) -> [side %wobble:5, %wobble_wire:0]
+  %wobble_wire = wire
+}

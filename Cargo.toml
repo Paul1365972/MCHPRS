@@ -40,6 +40,7 @@ tracing = { workspace = true }
 
 [features]
 claims = ["mchprs_core/claims"]
+fpga = ["mchprs_core/fpga"]
 whitelist = ["mchprs_core/whitelist"]
 
 [workspace.dependencies]
@@ -75,4 +76,6 @@ indexmap = { version = "2.13", features = ["serde"] }
 anstream = "1.0"
 owo-colors = "4.3"
 smallvec = { version = "1.15", features = ["union", "serde"] }
+strum = "0.28"
+tempfile = "3.27"
 rayon = "1.12"

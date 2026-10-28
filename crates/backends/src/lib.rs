@@ -17,6 +17,8 @@ pub const GRAPH_BACKENDS: &[&dyn GraphBackend] = &[
     &mchprs_redpiler_direct::backend::DirectBackend,
     #[cfg(feature = "phase")]
     &mchprs_redpiler_phase::backend::PhaseBackend,
+    #[cfg(feature = "fpga")]
+    &mchprs_redpiler_fpga::backend::FpgaBackend,
 ];
 
 #[cfg(feature = "graph")]
