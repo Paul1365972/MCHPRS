@@ -31,6 +31,12 @@ The clock uses the fastest supported PLL setting that the timing result allows.
 
 The same as [`phase`](Phase.md#passes).
 
+## Mapping
+
+The backend finds the signal strengths each node can produce.
+It omits comparisons whose result is fixed by those strengths.
+The analysis includes the initial state and every possible input.
+
 ## Flags
 
 | Flag | Short | Description |

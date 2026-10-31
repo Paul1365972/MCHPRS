@@ -1,4 +1,6 @@
+use crate::analysis::{strengths_of, CircuitAnalysis};
 use crate::lower::{Instance, Register};
+use mchprs_redpiler::analysis::ss_sets::SSSet;
 use mchprs_redpiler::circuit::{Circuit, Link, NodeId};
 use mchprs_redpiler::graph::LinkKind;
 
@@ -17,14 +19,20 @@ enum Term<T> {
 
 pub struct Expressions<'a> {
     circuit: &'a Circuit,
+    analysis: &'a CircuitAnalysis,
     instances: &'a [Option<Instance>],
     output_is_read: Vec<bool>,
 }
 
 impl<'a> Expressions<'a> {
-    pub fn new(circuit: &'a Circuit, instances: &'a [Option<Instance>]) -> Expressions<'a> {
+    pub fn new(
+        circuit: &'a Circuit,
+        analysis: &'a CircuitAnalysis,
+        instances: &'a [Option<Instance>],
+    ) -> Expressions<'a> {
         Expressions {
             circuit,
+            analysis,
             instances,
             output_is_read: vec![false; circuit.len()],
         }
@@ -43,6 +51,13 @@ impl<'a> Expressions<'a> {
 
     pub fn strength(&mut self, node: NodeId, kind: LinkKind) -> String {
         let links: Vec<_> = self.links(node, kind).collect();
+        let carried = links.iter().map(|link| self.carried_set(link));
+        let strengths = strengths_of(carried.fold(SSSet::ZERO, SSSet::combine));
+        if let &[low, high] = strengths.as_slice()
+            && let Term::Signal(reached) = self.any_link_reaches(node, kind, high.get())
+        {
+            return format!("({reached} ? 4'd{high} : 4'd{low})");
+        }
         let mut fixed = 0;
         let mut signals = Vec::new();
         for link in links {
@@ -63,14 +78,20 @@ impl<'a> Expressions<'a> {
         links.filter(move |link| link.kind == kind)
     }
 
+    fn carried_set(&self, link: &Link) -> SSSet {
+        self.analysis.strengths(link.source).decay(link.weight)
+    }
+
     fn output(&self, node: NodeId) -> Output {
+        let strengths = self.analysis.strengths(node);
         let power = self.instances[node.index()]
             .as_ref()
+            .filter(|_| !strengths.is_single())
             .map(|instance| instance.power);
         match power {
             Some(Register::Powered) => Output::High,
             Some(Register::Strength) => Output::Strength,
-            _ => Output::Fixed(self.circuit.node(node).state.power.get()),
+            _ => Output::Fixed(strengths.min()),
         }
     }
 
@@ -96,14 +117,17 @@ impl<'a> Expressions<'a> {
 
     fn link_reaches(&mut self, link: &Link, threshold: u8) -> Term<bool> {
         let floor = threshold + link.weight;
+        let strengths = self.analysis.strengths(link.source);
         match self.output(link.source) {
             Output::Fixed(strength) => Term::Fixed(strength >= floor),
             Output::High if floor > 15 => Term::Fixed(false),
             Output::High => Term::Signal(self.read_output_wire(link.source)),
-            Output::Strength => Term::Signal(format!(
-                "{} >= 4'd{floor}",
-                self.read_output_wire(link.source)
-            )),
+            Output::Strength if strengths.min() >= floor => Term::Fixed(true),
+            Output::Strength if strengths.max() < floor => Term::Fixed(false),
+            Output::Strength if (1..floor).any(|weak| strengths.contains(weak)) => Term::Signal(
+                format!("{} >= 4'd{floor}", self.read_output_wire(link.source)),
+            ),
+            Output::Strength => Term::Signal(format!("|{}", self.read_output_wire(link.source))),
         }
     }
 
@@ -111,6 +135,7 @@ impl<'a> Expressions<'a> {
         let carried = |strength: u8| strength.saturating_sub(link.weight);
         match self.output(link.source) {
             Output::Fixed(strength) => Term::Fixed(carried(strength)),
+            _ if self.carried_set(link).max() == 0 => Term::Fixed(0),
             Output::High => {
                 let high = carried(15);
                 Term::Signal(format!(

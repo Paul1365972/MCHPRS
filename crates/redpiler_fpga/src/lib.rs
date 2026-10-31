@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod backend;
 mod board;
 mod bring_up;

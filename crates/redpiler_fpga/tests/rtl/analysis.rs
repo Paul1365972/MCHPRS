@@ -2,6 +2,7 @@ use crate::scenario::{Step, CASES};
 use mchprs_redpiler::circuit::{Circuit, NodeId};
 use mchprs_redpiler::graph::{LinkKind, NodeKind};
 use mchprs_redpiler::nodes::Snapshot;
+use mchprs_redpiler_fpga::analysis::CircuitAnalysis;
 use mchprs_redpiler_phase::engine::PhaseEngine;
 use mchprs_simulation::Simulation;
 
@@ -34,13 +35,15 @@ fn default_input_is_on(circuit: &Circuit, snapshot: &Snapshot, node: NodeId) -> 
     links.any(|link| snapshot.states[link.source.index()].power.get() > link.weight)
 }
 
-#[test]
-fn the_analysis_holds_while_phase_runs_the_circuits() {
-    for case in CASES {
-        let circuit = case.circuit();
-        watch_phase(&circuit, &case.steps(&circuit), |snapshot| {
-            assert_states_are_not_stale(&circuit, snapshot);
-        });
+fn assert_analysis_holds(circuit: &Circuit, analysis: &CircuitAnalysis, snapshot: &Snapshot) {
+    let states = &snapshot.states;
+    for node in circuit.ids() {
+        let names = &circuit.node(node).names;
+        let power = states[node.index()].power;
+        assert!(
+            analysis.strengths(node).contains(power.get()),
+            "{names:?} has the strength {power}"
+        );
     }
 }
 
@@ -61,5 +64,17 @@ fn assert_states_are_not_stale(circuit: &Circuit, snapshot: &Snapshot) {
             ),
             _ => {}
         }
+    }
+}
+
+#[test]
+fn the_analysis_holds_while_phase_runs_the_circuits() {
+    for case in CASES {
+        let circuit = case.circuit();
+        let analysis = CircuitAnalysis::of(&circuit);
+        watch_phase(&circuit, &case.steps(&circuit), |snapshot| {
+            assert_analysis_holds(&circuit, &analysis, snapshot);
+            assert_states_are_not_stale(&circuit, snapshot);
+        });
     }
 }
