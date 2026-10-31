@@ -1,3 +1,4 @@
+use crate::analysis::CircuitAnalysis;
 use crate::expr::{output_wire, Expressions};
 use crate::layout::{ReadbackScope, StateLayout};
 use crate::lower::{lower, CircuitSignal, Instance};
@@ -24,6 +25,7 @@ impl Design {
         scope: ReadbackScope,
         build_nonce: u32,
     ) -> Result<Design, CompileError> {
+        let analysis = CircuitAnalysis::of(circuit);
         let instances = lower(circuit)?;
         let layout = StateLayout::new(circuit, &instances, scope);
         let shown_bits = layout.bits(Contents::Shown);
@@ -35,7 +37,7 @@ impl Design {
              localparam logic [31:0] BUILD_NONCE = 32'h{build_nonce:08x};\n\
              endpackage\n"
         );
-        let expressions = Expressions::new(circuit, &instances);
+        let expressions = Expressions::new(circuit, &analysis, &instances);
         let module = module(&instances, &layout, expressions);
         Ok(Design {
             source: CircuitSource { package, module },

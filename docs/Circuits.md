@@ -139,7 +139,7 @@ It may change the result of a locational build, the same way a recompile can, bu
 | `coalesce` | Merges nodes that agree in kind, port role, state, incoming links and whether they are observed into one node that stands for the blocks of all of them. The weight of a link that carries only on or off into a node that reads only on or off is not compared. Inputs, nodes with a pending tick and nodes that are their own input are not merged. Two links into the same input of a target become one. Nodes are merged only if the merged node [keeps the order](backends/Direct.md#coalesce) in which they schedule ticks, which the tick order of `direct` needs. |
 | `coalesce` of `phase` | Merges nodes as [`phase`](backends/Phase.md#coalesce) describes, also in loops and with pending ticks. Only `phase` and `fpga` run it. |
 
-`fold` and the `coalesce` of `phase` use the analysis in `mchprs_redpiler::analysis::ss_sets`, which computes for every node a set that contains every strength the node can reach.
+`fold`, the `coalesce` of `phase` and `fpga` use the analysis in `mchprs_redpiler::analysis::ss_sets`, which computes for every node a set that contains every strength the node can reach.
 
 ## Invariants
 
