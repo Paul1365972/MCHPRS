@@ -22,7 +22,7 @@ use smallvec::SmallVec;
 use std::fmt::Write;
 use std::sync::Arc;
 use std::{fmt, mem};
-use tracing::{debug, warn};
+use tracing::warn;
 
 #[derive(Default, Clone)]
 struct Queues([Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
@@ -171,15 +171,6 @@ impl DirectBackend {
 }
 
 impl JITBackend for DirectBackend {
-    fn inspect(&mut self, pos: BlockPos) {
-        let Some(node_id) = self.pos_map.get(&pos) else {
-            debug!("could not find node at pos {}", pos);
-            return;
-        };
-
-        debug!("Node {:?}: {:#?}", node_id, self.nodes[*node_id]);
-    }
-
     fn reset<W: World>(&mut self, world: &mut W) {
         for (i, node) in self.nodes.inner().iter().enumerate() {
             if node.changed {

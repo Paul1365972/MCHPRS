@@ -73,7 +73,6 @@ gen_config! {
     whitelist: bool = false,
     schemati: bool = false,
     block_in_hitbox: bool = true,
-    auto_redpiler: bool = false,
     velocity: Option<VelocityConfig> = None
 }
 

@@ -31,8 +31,6 @@ pub trait JITBackend {
     fn flush<W: World>(&mut self, world: &mut W);
     fn reset<W: World>(&mut self, world: &mut W);
     fn has_pending_ticks(&self) -> bool;
-    /// Inspect block for debugging
-    fn inspect(&mut self, pos: BlockPos);
 }
 
 use direct::DirectBackend;
