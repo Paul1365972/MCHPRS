@@ -6,6 +6,7 @@ use crate::readback::{Readback, ReadbackError};
 use crate::registers::Registers;
 use crate::stage::Stage;
 use crate::subprocess::{Process, SubprocessError};
+use mchprs_redpiler::Reporting;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -44,6 +45,8 @@ pub(crate) enum VerilatorError {
     },
     #[error("Verilator circuit stopped after a previous failure; see {}", .log.display())]
     Stopped { log: PathBuf },
+    #[error("Verilator build reads back only input and output nodes")]
+    NoStateReadback,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -162,7 +165,8 @@ pub(crate) struct Verilator {
     running: Option<Running>,
     log: PathBuf,
     readback: Readback,
-    node_count: usize,
+    snapshots_every_block: bool,
+    snapshot_nodes: Vec<usize>,
     ticks: u64,
     states: Vec<State>,
 }
@@ -170,19 +174,26 @@ pub(crate) struct Verilator {
 impl Verilator {
     pub(crate) fn compile(
         circuit: &Circuit,
+        reporting: Reporting,
         progress: &dyn Fn(Stage),
     ) -> Result<Self, VerilatorError> {
         let registers = Registers::new(circuit);
         let readback = Readback::new(&registers);
-        let node_count = circuit.nodes().len();
-        let state_bytes = readback.bytes(0..node_count);
-        let directory = compile::cached_simulator(&registers, state_bytes, progress)?;
+        let snapshots_every_block = reporting.snapshots_every_block();
+        let snapshot_nodes: Vec<_> = if snapshots_every_block {
+            (0..circuit.nodes().len()).collect()
+        } else {
+            circuit.io_nodes().to_vec()
+        };
+        let snapshot_bytes = readback.bytes(snapshot_nodes.iter().copied());
+        let directory = compile::cached_simulator(&registers, reporting, snapshot_bytes, progress)?;
         progress(Stage::StartVerilatorCircuit);
         let mut verilator = Self {
-            running: Some(Running::start(&directory, TICKS_BYTES + state_bytes)?),
+            running: Some(Running::start(&directory, TICKS_BYTES + snapshot_bytes)?),
             log: directory.join(RUNTIME_LOG),
             readback,
-            node_count,
+            snapshots_every_block,
+            snapshot_nodes,
             ticks: 0,
             states: Vec::new(),
         };
@@ -224,7 +235,9 @@ impl Verilator {
         if actual != expected {
             return Err(RuntimeError::Ticks { actual, expected });
         }
-        Ok(self.readback.decode(0..self.node_count, states)?)
+        Ok(self
+            .readback
+            .decode(self.snapshot_nodes.iter().copied(), states)?)
     }
 }
 
@@ -252,6 +265,16 @@ impl Simulator for Verilator {
     }
 
     fn states(&mut self) -> Result<Vec<State>, VerilatorError> {
+        if !self.snapshots_every_block {
+            return Err(VerilatorError::NoStateReadback);
+        }
+        Ok(self.states.clone())
+    }
+
+    fn io_states(&mut self, io_nodes: &[usize]) -> Result<Vec<State>, VerilatorError> {
+        if self.snapshots_every_block {
+            return Ok(io_nodes.iter().map(|&node| self.states[node]).collect());
+        }
         Ok(self.states.clone())
     }
 }

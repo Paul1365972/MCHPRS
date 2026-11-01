@@ -1,3 +1,4 @@
+// STATE_BYTES is zero in a build that reads back only the input and output nodes.
 module packet_controller #(
     parameter NODE_COUNT = 1,
     parameter OUTPUT_COUNT = 0,
@@ -22,9 +23,9 @@ module packet_controller #(
         CAPTURE = 7, TRANSMIT = 8, TRANSMIT_ACCEPT = 9, TRANSMIT_COMPLETE = 10;
     localparam [31:0] RESPONSE_NODE_COUNT = NODE_COUNT;
     localparam [31:0] RESPONSE_OUTPUT_COUNT = OUTPUT_COUNT;
-    localparam STATE_INDEX_WIDTH = $clog2(64'd8 * STATE_BYTES);
-    localparam OUTPUT_INDEX_WIDTH = $clog2(64'd8 * OUTPUT_BYTES);
-    localparam RESPONSE_MAX_BYTES = 64'd18 + STATE_BYTES;
+    localparam READBACK_BYTES = STATE_BYTES + OUTPUT_BYTES;
+    localparam READBACK_INDEX_WIDTH = $clog2(64'd8 * READBACK_BYTES);
+    localparam RESPONSE_MAX_BYTES = 64'd18 + (STATE_BYTES > OUTPUT_BYTES ? STATE_BYTES : OUTPUT_BYTES);
     localparam RESPONSE_POSITION_WIDTH = $clog2(RESPONSE_MAX_BYTES);
     localparam RESPONSE_LENGTH_WIDTH = $clog2(RESPONSE_MAX_BYTES + 1);
 
@@ -42,13 +43,13 @@ module packet_controller #(
     reg [15:0] response_crc = 16'hffff;
     reg [RESPONSE_POSITION_WIDTH-1:0] response_position = 0;
     reg [RESPONSE_LENGTH_WIDTH-1:0] response_bytes = 18;
-    wire [STATE_INDEX_WIDTH-1:0] response_bit_position = (response_position - 16) << 3;
+    wire [READBACK_INDEX_WIDTH-1:0] readback_bit_position =
+        (response_position - 16 + (request_opcode == 9 ? STATE_BYTES : 0)) << 3;
     wire [3:0] header_byte_position = response_position[3:0] - 4'd2;
     reg snapshot_hold = 0;
     reg set_input = 0;
     wire engine_busy;
-    wire [STATE_BYTES * 8 - 1:0] states;
-    wire [OUTPUT_BYTES * 8 - 1:0] output_states;
+    wire [READBACK_BYTES * 8 - 1:0] readback;
     reg autonomous = 0;
     reg [63:0] tick_limit = 0;
     wire autonomous_allowed = phase <= VALIDATE || (phase >= TRANSMIT && !snapshot_hold);
@@ -61,7 +62,7 @@ module packet_controller #(
         .clock(clock), .set_input(set_input),
         .input_index(request_argument[31:0]), .input_value(request_argument[32]),
         .run(run), .tick_limit(tick_limit), .busy(engine_busy), .tick_count(tick_count),
-        .states(states), .output_states(output_states)
+        .readback(readback)
     );
 
     function [15:0] crc16;
@@ -85,12 +86,9 @@ module packet_controller #(
             response_byte = 8'ha5;
         else if (response_position < 16)
             response_byte = response_header[{header_byte_position, 3'b0} +: 8];
-        else if (response_position < response_bytes - 2) begin
-            if (request_opcode == 9)
-                response_byte = output_states[response_bit_position[OUTPUT_INDEX_WIDTH-1:0] +: 8];
-            else
-                response_byte = states[response_bit_position[STATE_INDEX_WIDTH-1:0] +: 8];
-        end else if (response_position == response_bytes - 2)
+        else if (response_position < response_bytes - 2)
+            response_byte = readback[readback_bit_position +: 8];
+        else if (response_position == response_bytes - 2)
             response_byte = response_crc[7:0];
         else
             response_byte = response_crc[15:8];
@@ -143,7 +141,13 @@ module packet_controller #(
                     snapshot_hold <= !compact_response;
                     phase <= CAPTURE;
                     case (request_opcode)
-                        0, 4: autonomous <= 0;
+                        0: if (STATE_BYTES != 0) begin
+                            autonomous <= 0;
+                        end else begin
+                            response_opcode <= 8'hff;
+                            fault <= 1;
+                        end
+                        4: autonomous <= 0;
                         2: if (request_argument[31:0] < RESPONSE_NODE_COUNT && request_argument[63:33] == 0) begin
                             autonomous <= 0;
                             set_input <= 1;

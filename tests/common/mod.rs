@@ -1,9 +1,7 @@
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode, LeverFace, Repeater};
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::backend::direct::DirectEngine;
-use mchprs_redpiler::{
-    BlockMap, CompileProgress, CompilerInput, CompilerOptions, Engine, Input, Reporting,
-};
+use mchprs_redpiler::{BlockMap, CompileProgress, CompilerInput, CompilerOptions, Engine, Input};
 use mchprs_redpiler_fpga::Target;
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
@@ -39,30 +37,36 @@ impl Display for TestBackend {
     }
 }
 
-fn compile(world: &TestWorld, engine: TestEngine, optimize: bool) -> (BlockMap, Box<dyn Engine>) {
-    let options = CompilerOptions {
-        optimize,
-        ..Default::default()
-    };
+pub fn compile(
+    world: &TestWorld,
+    engine: TestEngine,
+    options: &CompilerOptions,
+) -> (BlockMap, Box<dyn Engine>) {
     let progress = CompileProgress::default();
     let input = CompilerInput {
         world,
         bounds: world.corners(),
         ticks: &world.to_be_ticked,
     };
-    let netlist = mchprs_redpiler::compile(&input, &options, &progress);
+    let netlist = mchprs_redpiler::compile(&input, options, &progress);
     let block_map = BlockMap::new(&netlist);
     let pending_ticks = block_map.pending_ticks(&world.to_be_ticked);
     let target = match engine {
         TestEngine::Direct => {
-            let engine = DirectEngine::new(&netlist, Reporting::All, &pending_ticks);
+            let engine = DirectEngine::new(&netlist, options.reporting, &pending_ticks);
             return (block_map, Box::new(engine));
         }
         TestEngine::Phase => Target::Phase,
         TestEngine::Verilator => Target::Verilator,
     };
-    let engine = mchprs_redpiler_fpga::prepare(target, &netlist, &pending_ticks, false, &progress)
-        .unwrap_or_else(|error| panic!("{target:?} rejects the circuit: {error}"));
+    let engine = mchprs_redpiler_fpga::prepare(
+        target,
+        &netlist,
+        &pending_ticks,
+        options.reporting,
+        &progress,
+    )
+    .unwrap_or_else(|error| panic!("{target:?} rejects the circuit: {error}"));
     (block_map, engine)
 }
 
@@ -87,7 +91,11 @@ impl BackendRunner {
         let runner = match backend {
             TestBackend::Redstone => Runner::Redstone,
             TestBackend::Compiled { engine, optimize } => {
-                let (block_map, engine) = compile(&world, engine, optimize);
+                let options = CompilerOptions {
+                    optimize,
+                    ..Default::default()
+                };
+                let (block_map, engine) = compile(&world, engine, &options);
                 Runner::Compiled { block_map, engine }
             }
         };

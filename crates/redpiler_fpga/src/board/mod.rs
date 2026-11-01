@@ -9,6 +9,7 @@ use crate::registers::Registers;
 use crate::rtl;
 use crate::stage::Stage;
 use device::{Command, Device, DeviceError};
+use mchprs_redpiler::Reporting;
 use std::io;
 use std::path::Path;
 use toolchain::ToolchainError;
@@ -33,6 +34,8 @@ pub(crate) enum BoardError {
     State,
     #[error("board ran to tick {reached} instead of {target}")]
     Ticks { reached: u64, target: u64 },
+    #[error("board build reads back only input and output nodes")]
+    NoStateReadback,
 }
 
 pub(crate) struct Board {
@@ -40,25 +43,37 @@ pub(crate) struct Board {
     ticks: u64,
     readback: Readback,
     node_count: usize,
+    snapshots_every_block: bool,
 }
 
 impl Board {
     pub(crate) fn program(
         circuit: &Circuit,
+        reporting: Reporting,
         progress: &dyn Fn(Stage),
     ) -> Result<Board, BoardError> {
         let port = std::env::var(PORT_VARIABLE).map_err(|_| BoardError::MissingPort)?;
         let directory = cache::unique_build_directory(&cache::board_root(), "", circuit.identity());
         progress(Stage::GenerateVerilog);
         let registers = Registers::new(circuit);
-        rtl::write(&registers, &directory).map_err(BoardError::Write)?;
+        rtl::write(&registers, reporting, &directory).map_err(BoardError::Write)?;
         progress(Stage::OpenBoardConnection);
         let readback = Readback::new(&registers);
         let node_count = circuit.nodes().len();
+        let snapshots_every_block = reporting.snapshots_every_block();
+        let (snapshot, snapshot_nodes): (_, Vec<_>) = if snapshots_every_block {
+            (Command::Snapshot, (0..node_count).collect())
+        } else {
+            (Command::Outputs, circuit.io_nodes().to_vec())
+        };
         let mut device = Device::serial(
             &port,
             circuit,
-            readback.bytes(0..node_count),
+            if snapshots_every_block {
+                readback.bytes(0..node_count)
+            } else {
+                0
+            },
             readback.bytes(circuit.io_nodes().iter().copied()),
         )?;
         let bitstream = toolchain::build(&directory, progress)?;
@@ -68,9 +83,13 @@ impl Board {
         if device.execute(Command::Identity)?.ticks != circuit.identity() {
             return Err(BoardError::Identity);
         }
-        let programmed = device.execute(Command::Snapshot)?;
-        let initial: Vec<_> = circuit.nodes().iter().map(|node| node.initial).collect();
-        if programmed.ticks != 0 || readback.decode(0..node_count, &programmed.data)? != initial {
+        let programmed = device.execute(snapshot)?;
+        let initial: Vec<_> = snapshot_nodes
+            .iter()
+            .map(|&node| circuit.nodes()[node].initial)
+            .collect();
+        let states = readback.decode(snapshot_nodes.iter().copied(), &programmed.data)?;
+        if programmed.ticks != 0 || states != initial {
             return Err(BoardError::State);
         }
         if let Err(error) = remove_build_artifacts(&directory) {
@@ -81,6 +100,7 @@ impl Board {
             ticks: 0,
             readback,
             node_count,
+            snapshots_every_block,
         })
     }
 }
@@ -122,6 +142,9 @@ impl Simulator for Board {
     }
 
     fn states(&mut self) -> Result<Vec<State>, BoardError> {
+        if !self.snapshots_every_block {
+            return Err(BoardError::NoStateReadback);
+        }
         let data = self.device.execute(Command::Snapshot)?.data;
         Ok(self.readback.decode(0..self.node_count, &data)?)
     }

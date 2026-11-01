@@ -174,8 +174,14 @@ fn world(mut plot: PlotData, [origin_x, origin_z]: [i32; 2]) -> Result<TestWorld
 
 #[cfg(feature = "fpga")]
 pub fn write_verilog(path: &Path, directory: &Path) -> Result<()> {
-    let compiled = Loaded::open(path)?.compile();
-    mchprs_redpiler_fpga::write_verilog(&compiled.netlist, &compiled.pending_ticks, directory)?;
+    let loaded = Loaded::open(path)?;
+    let compiled = loaded.compile();
+    mchprs_redpiler_fpga::write_verilog(
+        &compiled.netlist,
+        &compiled.pending_ticks,
+        loaded.options.reporting,
+        directory,
+    )?;
     eprintln!(
         "{} nodes written to {}",
         compiled.netlist.len(),
@@ -259,7 +265,7 @@ impl Compiled {
                     target,
                     &self.netlist,
                     &self.pending_ticks,
-                    reporting == Reporting::InputsAndOutputs,
+                    reporting,
                     &progress,
                 );
                 drop(finished_sender);

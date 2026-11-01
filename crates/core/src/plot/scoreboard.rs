@@ -3,7 +3,7 @@ use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
-use mchprs_redpiler::{CompilerOptions, PassStatus};
+use mchprs_redpiler::{CompilerOptions, PassStatus, Reporting};
 use mchprs_text::{ColorCode, TextComponent, TextComponentBuilder};
 use std::borrow::Cow;
 
@@ -161,8 +161,10 @@ impl Scoreboard {
         if options.export {
             flags.push(("e", "- export".into()));
         }
-        if options.io_only {
-            flags.push(("i", "- io only".into()));
+        match options.reporting {
+            Reporting::All => {}
+            Reporting::InputsAndOutputsWhileRunning => flags.push(("i", "- io only".into())),
+            Reporting::InputsAndOutputs => flags.push(("i", "- io snapshots".into())),
         }
         if options.update {
             flags.push(("u", "- update".into()));

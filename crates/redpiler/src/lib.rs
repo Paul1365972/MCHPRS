@@ -31,8 +31,9 @@ pub struct CompilerOptions {
     pub optimize: bool,
     /// Export the graph to a binary format. See the [`redpiler_graph`] crate.
     pub export: bool,
-    /// While running, only report changes of input and output blocks. Stop reports every block.
-    pub io_only: bool,
+    /// Which blocks report their changes while running and appear in snapshots, including the one
+    /// when stopping: `--io-only` limits changes, `--io-snapshots` also limits snapshots.
+    pub reporting: Reporting,
     /// Update all blocks in the input region after reset.
     pub update: bool,
     /// Consider a redstone dot to be an output block (for color screens)
@@ -52,12 +53,8 @@ pub struct CompilerOptions {
 }
 
 impl CompilerOptions {
-    pub fn reporting(&self) -> Reporting {
-        if self.io_only {
-            Reporting::InputsAndOutputs
-        } else {
-            Reporting::All
-        }
+    fn limit_reporting(&mut self, reporting: Reporting) {
+        self.reporting = self.reporting.max(reporting);
     }
 
     fn parse_option(&mut self, option: &str) {
@@ -74,7 +71,8 @@ impl CompilerOptions {
             match option {
                 "--optimize" => self.optimize = true,
                 "--export" => self.export = true,
-                "--io-only" => self.io_only = true,
+                "--io-only" => self.limit_reporting(Reporting::InputsAndOutputsWhileRunning),
+                "--io-snapshots" => self.limit_reporting(Reporting::InputsAndOutputs),
                 "--update" => self.update = true,
                 "--wire-dot-out" => self.wire_dot_out = true,
                 "--illegal-states-out" => self.illegal_states_out = true,
@@ -90,7 +88,7 @@ impl CompilerOptions {
                 match lower.as_str() {
                     "o" => self.optimize = true,
                     "e" => self.export = true,
-                    "i" => self.io_only = true,
+                    "i" => self.limit_reporting(Reporting::InputsAndOutputsWhileRunning),
                     "u" => self.update = true,
                     "d" => self.wire_dot_out = true,
                     "l" => self.illegal_states_out = true,
@@ -144,9 +142,9 @@ mod tests {
 
     #[test]
     fn parse_options() {
-        let input = "-io -u --export --backend=phase";
+        let input = "--io-snapshots -io -u --export --backend=phase";
         let expected_options = CompilerOptions {
-            io_only: true,
+            reporting: Reporting::InputsAndOutputs,
             optimize: true,
             export: true,
             update: true,

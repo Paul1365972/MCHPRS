@@ -4,6 +4,7 @@ use crate::registers::Registers;
 use crate::rtl;
 use crate::stage::Stage;
 use crate::subprocess;
+use mchprs_redpiler::Reporting;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -123,7 +124,7 @@ fn build(
     directory: &Path,
     sources: &[PathBuf],
     node_count: usize,
-    state_bytes: usize,
+    snapshot_bytes: usize,
     progress: &dyn Fn(Stage),
 ) -> Result<(), VerilatorError> {
     let log = directory.join(BUILD_LOG);
@@ -134,7 +135,7 @@ fn build(
             .args(VERILATOR_ARGUMENTS)
             .arg("-CFLAGS")
             .arg(format!(
-                "-std=c++17 -DMCHPRS_NODE_COUNT={node_count} -DMCHPRS_STATE_BYTES={state_bytes}"
+                "-std=c++17 -DMCHPRS_NODE_COUNT={node_count} -DMCHPRS_SNAPSHOT_BYTES={snapshot_bytes}"
             ))
             .args(sources)
             .current_dir(directory),
@@ -157,14 +158,15 @@ fn build(
 
 pub(super) fn cached_simulator(
     registers: &Registers,
-    state_bytes: usize,
+    reporting: Reporting,
+    snapshot_bytes: usize,
     progress: &dyn Fn(Stage),
 ) -> Result<PathBuf, VerilatorError> {
     let circuit = registers.circuit;
     let root = cache::verilator_root();
     let staging = cache::unique_build_directory(&root, STAGING_PREFIX, circuit.identity());
     progress(Stage::WriteVerilatorCircuit);
-    rtl::write(registers, &staging)?;
+    rtl::write(registers, reporting, &staging)?;
     fs::write(staging.join(RUNNER), include_str!("runner.cpp"))?;
     let mut sources = rtl::sources();
     sources.push(PathBuf::from(RUNNER));
@@ -177,7 +179,7 @@ pub(super) fn cached_simulator(
             &staging,
             &sources,
             circuit.nodes().len(),
-            state_bytes,
+            snapshot_bytes,
             progress,
         )?;
         if let Err(error) = fs::rename(&staging, &directory) {

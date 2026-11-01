@@ -5,6 +5,7 @@ use crate::engine::Simulator;
 use crate::reference::{settled_initial_state, Reference};
 use crate::verilator::Verilator;
 use mchprs_redpiler::compile_graph::SignalStrength;
+use mchprs_redpiler::Reporting;
 use std::num::NonZeroU8;
 
 const LINK_WINDOW: usize = 24;
@@ -150,24 +151,35 @@ fn assert_same_states(
     circuit: &Circuit,
     reference: &mut Reference,
     simulator: &mut impl Simulator,
+    reporting: Reporting,
     seed: u64,
     moment: impl Fn() -> String,
 ) {
-    let expected = reference.states().unwrap();
-    let actual = simulator.states().unwrap();
+    let every_state = reference.states().unwrap();
+    let (nodes, actual): (Vec<_>, _) = if reporting.snapshots_every_block() {
+        (
+            (0..every_state.len()).collect(),
+            simulator.states().unwrap(),
+        )
+    } else {
+        let io_nodes = circuit.io_nodes();
+        (io_nodes.to_vec(), simulator.io_states(io_nodes).unwrap())
+    };
+    let expected: Vec<_> = nodes.iter().map(|&node| every_state[node]).collect();
     assert_eq!(
         expected.len(),
         actual.len(),
         "seed {seed}, {}: state counts differ",
         moment()
     );
-    let Some(index) = expected
+    let Some(position) = expected
         .iter()
         .zip(&actual)
         .position(|(expected, actual)| expected != actual)
     else {
         return;
     };
+    let index = nodes[position];
     let node = &circuit.nodes()[index];
     panic!(
         "seed {seed}, {}: node {index} ({:?}, inputs {:?}, sides {:?}, initial {:?}) is {:?} in the reference and {:?} in the circuit",
@@ -176,8 +188,8 @@ fn assert_same_states(
         node.inputs,
         node.sides,
         node.initial,
-        expected[index],
-        actual[index]
+        expected[position],
+        actual[position]
     );
 }
 
@@ -216,11 +228,12 @@ fn compare_with_reference(
     circuit: &Circuit,
     ticks: u64,
     simulator: &mut impl Simulator,
+    reporting: Reporting,
 ) {
     let mut reference = Reference::new(circuit);
     let inputs = input_nodes(circuit);
     let mut random = Random(seed ^ 0x5851f42d4c957f2d);
-    assert_same_states(circuit, &mut reference, simulator, seed, || {
+    assert_same_states(circuit, &mut reference, simulator, reporting, seed, || {
         "initially".to_owned()
     });
     for tick in 0..ticks {
@@ -229,13 +242,13 @@ fn compare_with_reference(
             let powered = random.chance(1, 2);
             reference.input(node, powered).unwrap();
             simulator.input(node, powered).unwrap();
-            assert_same_states(circuit, &mut reference, simulator, seed, || {
+            assert_same_states(circuit, &mut reference, simulator, reporting, seed, || {
                 format!("after input {powered} to node {node} at tick {tick}")
             });
         }
         reference.advance(1).unwrap();
         simulator.advance(1).unwrap();
-        assert_same_states(circuit, &mut reference, simulator, seed, || {
+        assert_same_states(circuit, &mut reference, simulator, reporting, seed, || {
             format!("at tick {}", tick + 1)
         });
     }
@@ -255,7 +268,18 @@ fn random_circuits_match_the_reference_in_verilator() {
         .map(|seed| (seed, random_circuit(seed, 1500)))
         .chain((8..12).map(|seed| (seed, simulated_circuit(seed, 1500, 200))));
     for (seed, circuit) in circuits {
-        let mut verilator = Verilator::compile(&circuit, &|_| {}).unwrap();
-        compare_with_reference(seed, &circuit, 2000, &mut verilator);
+        let mut verilator = Verilator::compile(&circuit, Reporting::All, &|_| {}).unwrap();
+        compare_with_reference(seed, &circuit, 2000, &mut verilator, Reporting::All);
+    }
+}
+
+#[test]
+#[ignore = "needs Verilator"]
+fn io_readback_matches_the_reference_in_verilator() {
+    for seed in 0..4 {
+        let circuit = simulated_circuit(seed, 1500, 200);
+        let reporting = Reporting::InputsAndOutputs;
+        let mut verilator = Verilator::compile(&circuit, reporting, &|_| {}).unwrap();
+        compare_with_reference(seed, &circuit, 2000, &mut verilator, reporting);
     }
 }

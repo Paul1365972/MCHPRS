@@ -37,7 +37,7 @@ pub fn build_pass_pipeline<'p, W: World>(
         builder.add_pass::<unreachable_output::UnreachableOutput>();
         builder.add_pass::<constant_coalesce::ConstantCoalesce>();
         builder.add_pass::<coalesce::Coalesce>();
-        if options.io_only {
+        if !options.reporting.reports_every_block_while_running() {
             builder.add_pass::<prune_orphans::PruneOrphans>();
         }
     }

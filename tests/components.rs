@@ -3,7 +3,9 @@ use common::*;
 
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockDirection;
+use mchprs_redpiler::{CompilerOptions, Engine, Input, NodeId, Reporting};
 use mchprs_world::{testing::TestWorld, TickPriority, World};
+use std::time::{Duration, Instant};
 
 test_all_backends!(lever_on_off);
 fn lever_on_off(backend: TestBackend) {
@@ -216,4 +218,67 @@ fn pending_repeater_pulses_without_input(backend: TestBackend) {
     runner.check_block_powered(trapdoor_pos, true);
     runner.tick();
     runner.check_block_powered(trapdoor_pos, false);
+}
+
+fn run_ticks(engine: &mut dyn Engine, ticks: u64) {
+    engine
+        .run_ticks(ticks, Instant::now() + Duration::from_secs(10))
+        .unwrap();
+}
+
+fn snapshots_cover_the_reported_blocks(engine_kind: TestEngine) {
+    let lever_pos = pos(0, 2, 0);
+    let repeater_pos = pos(1, 1, 0);
+    let trapdoor_pos = pos(2, 1, 0);
+    for reporting in [
+        Reporting::All,
+        Reporting::InputsAndOutputsWhileRunning,
+        Reporting::InputsAndOutputs,
+    ] {
+        let mut world = TestWorld::new(1, 1, 1);
+        make_lever(&mut world, lever_pos);
+        make_repeater(&mut world, repeater_pos, 2, BlockDirection::West);
+        world.set_block(trapdoor_pos, trapdoor());
+        let options = CompilerOptions {
+            reporting,
+            ..Default::default()
+        };
+        let (block_map, mut engine) = compile(&world, engine_kind, &options);
+        let node = |pos| block_map.node_at(pos).unwrap();
+        let every_block = reporting.snapshots_every_block();
+
+        engine.input(node(lever_pos), Input::Interact).unwrap();
+        run_ticks(engine.as_mut(), 1);
+        let pending_ticks = engine.snapshot().unwrap().pending_ticks;
+        let repeater_pending = pending_ticks
+            .iter()
+            .any(|tick| tick.node == node(repeater_pos));
+        assert_eq!(repeater_pending, every_block, "{reporting:?}");
+
+        run_ticks(engine.as_mut(), 2);
+        let changes = engine.snapshot().unwrap().changes;
+        let changed: Vec<NodeId> = changes.outputs.iter().map(|&(node, _)| node).collect();
+        assert!(changed.contains(&node(trapdoor_pos)), "{reporting:?}");
+        assert_eq!(
+            changed.contains(&node(repeater_pos)),
+            every_block,
+            "{reporting:?}"
+        );
+    }
+}
+
+#[test]
+fn snapshots_cover_the_reported_blocks_rp_direct() {
+    snapshots_cover_the_reported_blocks(TestEngine::Direct);
+}
+
+#[test]
+fn snapshots_cover_the_reported_blocks_rp_phase() {
+    snapshots_cover_the_reported_blocks(TestEngine::Phase);
+}
+
+#[test]
+#[ignore = "needs Verilator"]
+fn snapshots_cover_the_reported_blocks_rp_verilator() {
+    snapshots_cover_the_reported_blocks(TestEngine::Verilator);
 }

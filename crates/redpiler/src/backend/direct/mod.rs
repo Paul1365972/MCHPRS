@@ -101,6 +101,7 @@ pub struct DirectEngine {
     scheduler: TickScheduler,
     notes: Vec<NodeId>,
     changed_since_take: bool,
+    reporting: Reporting,
 }
 
 impl DirectEngine {
@@ -233,9 +234,14 @@ impl Engine for DirectEngine {
 
     fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError> {
         self.changed_since_take = false;
+        let every_block = self.reporting.snapshots_every_block();
+        let mut pending_ticks = self.scheduler.pending_ticks();
+        if !every_block {
+            pending_ticks.retain(|tick| self.node(tick.node).visible);
+        }
         Ok(EngineSnapshot {
-            changes: self.take_changed_nodes(|_| true),
-            pending_ticks: self.scheduler.pending_ticks(),
+            changes: self.take_changed_nodes(|node| every_block || node.visible),
+            pending_ticks,
         })
     }
 }

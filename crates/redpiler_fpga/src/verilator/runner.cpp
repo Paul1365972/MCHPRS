@@ -102,8 +102,8 @@ public:
     void snapshot() {
         std::cout.write("MCHP", 4);
         write_integer(circuit.tick_count, 8);
-        for (size_t index = 0; index < MCHPRS_STATE_BYTES; ++index) {
-            std::cout.put(char(word(circuit.states, index / 4) >> (index % 4 * 8)));
+        for (size_t index = 0; index < MCHPRS_SNAPSHOT_BYTES; ++index) {
+            std::cout.put(char(word(circuit.readback, index / 4) >> (index % 4 * 8)));
         }
         std::cout.flush();
         if (!std::cout) throw std::runtime_error("snapshot pipe failed");

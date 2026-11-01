@@ -2,6 +2,7 @@ use crate::circuit::{Circuit, Kind, State};
 use mchprs_redpiler::compile_graph::SignalStrength;
 use mchprs_redpiler::{
     Engine, EngineError, EngineSnapshot, Input, NodeChanges, NodeId, NodeOutput, PendingTick,
+    Reporting,
 };
 use std::error::Error;
 use std::mem;
@@ -37,7 +38,7 @@ pub(crate) struct PhaseEngine<S> {
     simulator: S,
     kinds: Vec<Kind>,
     io_nodes: Vec<usize>,
-    io_only: bool,
+    reporting: Reporting,
     input_powered: Vec<bool>,
     reported: Vec<State>,
     ticks: u64,
@@ -45,12 +46,12 @@ pub(crate) struct PhaseEngine<S> {
 }
 
 impl<S: Simulator> PhaseEngine<S> {
-    pub(crate) fn new(simulator: S, circuit: &Circuit, io_only: bool) -> PhaseEngine<S> {
+    pub(crate) fn new(simulator: S, circuit: &Circuit, reporting: Reporting) -> PhaseEngine<S> {
         PhaseEngine {
             simulator,
             kinds: circuit.nodes().iter().map(|node| node.kind).collect(),
             io_nodes: circuit.io_nodes().to_vec(),
-            io_only,
+            reporting,
             input_powered: circuit
                 .nodes()
                 .iter()
@@ -60,6 +61,15 @@ impl<S: Simulator> PhaseEngine<S> {
             ticks: 0,
             ticks_per_second: 0.0,
         }
+    }
+
+    fn states(&mut self, every_block: bool) -> Result<Vec<(usize, State)>, S::Error> {
+        Ok(if every_block {
+            self.simulator.states()?.into_iter().enumerate().collect()
+        } else {
+            let states = self.simulator.io_states(&self.io_nodes)?;
+            self.io_nodes.iter().copied().zip(states).collect()
+        })
     }
 
     fn report(&mut self, node: usize, state: State, changes: &mut NodeChanges) {
@@ -130,24 +140,18 @@ impl<S: Simulator> Engine for PhaseEngine<S> {
 
     fn take_changes(&mut self) -> Result<NodeChanges, EngineError> {
         let mut changes = NodeChanges::default();
-        if self.io_only {
-            let states = self.simulator.io_states(&self.io_nodes)?;
-            for (offset, state) in states.into_iter().enumerate() {
-                self.report(self.io_nodes[offset], state, &mut changes);
-            }
-        } else {
-            for (node, state) in self.simulator.states()?.into_iter().enumerate() {
-                self.report(node, state, &mut changes);
-            }
+        let every_block = self.reporting.reports_every_block_while_running();
+        for (node, state) in self.states(every_block)? {
+            self.report(node, state, &mut changes);
         }
         Ok(changes)
     }
 
     fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError> {
-        let states = self.simulator.states()?;
+        let states = self.states(self.reporting.snapshots_every_block())?;
         let mut changes = NodeChanges::default();
         let mut pending_ticks = Vec::new();
-        for (node, state) in states.into_iter().enumerate() {
+        for (node, state) in states {
             if let Some(pending) = state.pending {
                 pending_ticks.push(PendingTick {
                     node: NodeId::new(node),

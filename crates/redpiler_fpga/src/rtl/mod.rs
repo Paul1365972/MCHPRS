@@ -8,6 +8,7 @@ use crate::registers::{ReadbackLayout, Registers};
 use expression::signal_name;
 use include_dir::{include_dir, Dir};
 use instance::{Instance, StatesSlice};
+use mchprs_redpiler::Reporting;
 use node_modules::NodeModules;
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -21,13 +22,17 @@ pub(crate) const LIBRARY_DIRECTORY: &str = "rtl";
 const CIRCUIT_FILE: &str = "circuit.v";
 const ITEMS_PER_LINE: usize = 16;
 
-pub(crate) fn write(registers: &Registers, directory: &Path) -> io::Result<()> {
+pub(crate) fn write(
+    registers: &Registers,
+    reporting: Reporting,
+    directory: &Path,
+) -> io::Result<()> {
     let library = directory.join(LIBRARY_DIRECTORY);
     fs::create_dir_all(&library)?;
     LIBRARY.extract(library)?;
     fs::write(
         directory.join(CIRCUIT_FILE),
-        Writer::new(registers).verilog(),
+        Writer::new(registers, reporting).verilog(),
     )
 }
 
@@ -46,14 +51,16 @@ pub(crate) fn sources() -> Vec<PathBuf> {
 struct Writer<'a> {
     circuit: &'a Circuit,
     registers: &'a Registers<'a>,
+    reporting: Reporting,
     output: String,
 }
 
 impl<'a> Writer<'a> {
-    fn new(registers: &'a Registers<'a>) -> Self {
+    fn new(registers: &'a Registers<'a>, reporting: Reporting) -> Self {
         Self {
             circuit: registers.circuit,
             registers,
+            reporting,
             output: String::new(),
         }
     }
@@ -70,7 +77,12 @@ impl<'a> Writer<'a> {
         let layout = self.registers.readback_layout();
         let state_bits = layout.bytes(all.clone()) * 8;
         let output_bits = layout.bytes(io_nodes.iter().copied()) * 8;
-        self.header(state_bits, output_bits);
+        let readback_state_bits = if self.reporting.snapshots_every_block() {
+            state_bits
+        } else {
+            0
+        };
+        self.header(state_bits, output_bits, readback_state_bits + output_bits);
         let (instances, read) = self.instances(&layout);
         self.signal_declarations(&read);
         self.output.push('\n');
@@ -84,12 +96,17 @@ impl<'a> Writer<'a> {
         }
         let output_states = self.packed(&layout, io_nodes, output_bits);
         self.line(format!("assign output_states = {output_states};"));
+        if readback_state_bits == 0 {
+            self.line("assign readback = output_states;");
+        } else {
+            self.line("assign readback = {output_states, states};");
+        }
         self.output.push_str("endmodule\n");
-        self.system(state_bits / 8, output_bits / 8);
+        self.system(readback_state_bits / 8, output_bits / 8);
         self.output
     }
 
-    fn header(&mut self, state_bits: usize, output_bits: usize) {
+    fn header(&mut self, state_bits: usize, output_bits: usize, readback_bits: usize) {
         writeln!(
             self.output,
             "module compiled_circuit(
@@ -99,9 +116,10 @@ impl<'a> Writer<'a> {
     input wire [63:0] tick_limit,
     output wire busy,
     output wire [63:0] tick_count,
-    output wire [{}:0] states,
-    output wire [{}:0] output_states
+    output wire [{}:0] readback
 );
+    wire [{}:0] states;
+    wire [{}:0] output_states;
     function [3:0] maximum(input [3:0] left, input [3:0] right);
         maximum = left > right ? left : right;
     endfunction
@@ -116,6 +134,7 @@ impl<'a> Writer<'a> {
         .firing(firing), .busy(busy), .tick_count(tick_count)
     );
 ",
+            readback_bits - 1,
             state_bits - 1,
             output_bits - 1
         )

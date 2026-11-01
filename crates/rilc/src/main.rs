@@ -4,7 +4,7 @@ use mchprs_blocks::BlockPos;
 use mchprs_redpiler::{
     passes::{PassPipeline, PassPipelineBuilder, PassRegistry},
     ril::RILModule,
-    CompilerOptions,
+    CompilerOptions, Reporting,
 };
 use mchprs_schematic::{load_schematic, paste_clipboard};
 use mchprs_world::testing::TestWorld;
@@ -49,6 +49,9 @@ enum Command {
         /// While running, only report changes of input and output blocks.
         #[arg(long, short)]
         io_only: bool,
+        /// Also limit snapshots, including the one when stopping, to input and output blocks.
+        #[arg(long)]
+        io_snapshots: bool,
         /// Consider a redstone dot to be an output block (for color screens)
         #[arg(long, short = 'd')]
         wire_dot_out: bool,
@@ -219,6 +222,7 @@ fn execute(command: Command) -> experiment::Result<ExitCode> {
             optimize,
             export,
             io_only,
+            io_snapshots,
             wire_dot_out,
             illegal_states_out,
             wire_cross_out,
@@ -228,7 +232,13 @@ fn execute(command: Command) -> experiment::Result<ExitCode> {
             let options = CompilerOptions {
                 optimize,
                 export,
-                io_only,
+                reporting: if io_snapshots {
+                    Reporting::InputsAndOutputs
+                } else if io_only {
+                    Reporting::InputsAndOutputsWhileRunning
+                } else {
+                    Reporting::All
+                },
                 update: false,
                 wire_dot_out,
                 illegal_states_out,

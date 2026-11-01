@@ -127,9 +127,10 @@ Rules for every backend:
 - The plot waits on the worker only in `next_batch`, `snapshot` and `stop`. The worker never waits on the plot.
 - `Paused` runs nothing. `PerSecond` catches up a bounded backlog and never runs ahead. `Unlimited` runs as fast as the engine can. `Ticks(n)` runs `n` ticks as fast as possible and then behaves as `Paused` until the plot sets a rate again.
 - `Input::Interact` flicks a lever or presses a button, `Input::PressurePlate` sets a plate. An input takes effect within one slice. The worker logs and drops an input that no node at its position accepts (`Input::is_accepted_by`); an engine given such an input returns an error.
-- A batch is published at most once per slice and no more often than the send rate, except that the slice which finishes a `Ticks(n)` rate always publishes one. Otherwise `SendRate::Never` publishes nothing; the plot then learns of changes through snapshots only. `Reporting::InputsAndOutputs`, set by `--io-only`, limits batches to input and output nodes.
+- A batch is published at most once per slice and no more often than the send rate, except that the slice which finishes a `Ticks(n)` rate always publishes one. Otherwise `SendRate::Never` publishes nothing; the plot then learns of changes through snapshots only. `Reporting::InputsAndOutputsWhileRunning`, set by `--io-only`, limits batches to input and output nodes.
 - `next_batch` blocks for at most `timeout` and returns `None` when nothing was published.
 - `snapshot` and `stop` are answered at the end of the running slice with every block that differs from the last report, hidden nodes included, plus all pending ticks. Batches published before the answer are folded into it, so applying a snapshot never rewinds a block.
+- `Reporting::InputsAndOutputs`, set by `--io-snapshots`, also limits snapshots to input and output nodes and their pending ticks, so every other block keeps its state from before compiling. The FPGA backend then builds no readback of the other nodes.
 - `Err(BackendFailure)` means the worker has died. The plot drops it and keeps interpreting.
 
 ## How Redstone Works

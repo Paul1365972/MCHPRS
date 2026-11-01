@@ -230,14 +230,14 @@ fn start_backend(
 ) -> Result<Worker, String> {
     let name = options.backend.as_deref().unwrap_or("direct");
     if name == "direct" {
-        return Ok(direct::start(netlist, ticks, options.reporting()));
+        return Ok(direct::start(netlist, ticks, options.reporting));
     }
     #[cfg(feature = "fpga")]
     {
         let target = name
             .parse::<mchprs_redpiler_fpga::Target>()
             .map_err(|_| format!("unknown backend {name}; use direct, phase, verilator or fpga"))?;
-        mchprs_redpiler_fpga::start(target, netlist, ticks, options.io_only, progress)
+        mchprs_redpiler_fpga::start(target, netlist, ticks, options.reporting, progress)
             .map_err(|error| mchprs_utils::ErrorChain(&*error).to_string())
     }
     #[cfg(not(feature = "fpga"))]

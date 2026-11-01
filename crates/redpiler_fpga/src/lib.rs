@@ -18,7 +18,8 @@ use board::Board;
 use circuit::Circuit;
 use engine::PhaseEngine;
 use mchprs_redpiler::{
-    BlockMap, CompileProgress, Engine, EngineError, Netlist, PassStatus, PendingTick, Worker,
+    BlockMap, CompileProgress, Engine, EngineError, Netlist, PassStatus, PendingTick, Reporting,
+    Worker,
 };
 use mchprs_world::TickEntry;
 use reference::Reference;
@@ -97,10 +98,11 @@ impl FromStr for Target {
 pub fn write_verilog(
     netlist: &Netlist,
     pending_ticks: &[PendingTick],
+    reporting: Reporting,
     directory: &Path,
 ) -> Result<(), EngineError> {
     let circuit = Circuit::lower(netlist, pending_ticks)?;
-    rtl::write(&Registers::new(&circuit), directory)?;
+    rtl::write(&Registers::new(&circuit), reporting, directory)?;
     Ok(())
 }
 
@@ -108,7 +110,7 @@ pub fn prepare(
     target: Target,
     netlist: &Netlist,
     pending_ticks: &[PendingTick],
-    io_only: bool,
+    reporting: Reporting,
     progress: &CompileProgress,
 ) -> Result<Box<dyn Engine>, EngineError> {
     let stages = target.stages();
@@ -129,17 +131,17 @@ pub fn prepare(
         Target::Phase => Box::new(PhaseEngine::new(
             Reference::new(&circuit),
             &circuit,
-            io_only,
+            reporting,
         )),
         Target::Verilator => Box::new(PhaseEngine::new(
-            Verilator::compile(&circuit, &report)?,
+            Verilator::compile(&circuit, reporting, &report)?,
             &circuit,
-            io_only,
+            reporting,
         )),
         Target::Fpga => Box::new(PhaseEngine::new(
-            Board::program(&circuit, &report)?,
+            Board::program(&circuit, reporting, &report)?,
             &circuit,
-            io_only,
+            reporting,
         )),
     };
     progress.set(None);
@@ -150,11 +152,11 @@ pub fn start(
     target: Target,
     netlist: &Netlist,
     ticks: &[TickEntry],
-    io_only: bool,
+    reporting: Reporting,
     progress: &CompileProgress,
 ) -> Result<Worker, EngineError> {
     let block_map = BlockMap::new(netlist);
     let pending_ticks = block_map.pending_ticks(ticks);
-    let engine = prepare(target, netlist, &pending_ticks, io_only, progress)?;
+    let engine = prepare(target, netlist, &pending_ticks, reporting, progress)?;
     Ok(Worker::start(block_map, engine))
 }

@@ -545,7 +545,11 @@ impl Plot {
             if lever_or_button && !self.players[player].crouching {
                 self.with_worker(|worker| worker.input(block_pos, Input::Interact));
                 return;
-            } else if redpiler.options.io_only {
+            } else if !redpiler
+                .options
+                .reporting
+                .reports_every_block_while_running()
+            {
                 self.players[player].send_error_message(ERROR_IO_ONLY);
                 cancel(self);
                 return;
@@ -624,11 +628,12 @@ impl Plot {
             return;
         }
 
-        if self
-            .redpiler
-            .as_ref()
-            .is_some_and(|redpiler| redpiler.options.io_only)
-        {
+        if self.redpiler.as_ref().is_some_and(|redpiler| {
+            !redpiler
+                .options
+                .reporting
+                .reports_every_block_while_running()
+        }) {
             self.players[player].send_error_message(ERROR_IO_ONLY);
             self.send_block_corrections(&[block_pos]);
             return;

@@ -46,10 +46,22 @@ pub struct EngineSnapshot {
     pub pending_ticks: Vec<PendingTick>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Reporting {
+    #[default]
     All,
+    InputsAndOutputsWhileRunning,
     InputsAndOutputs,
+}
+
+impl Reporting {
+    pub fn reports_every_block_while_running(self) -> bool {
+        self == Reporting::All
+    }
+
+    pub fn snapshots_every_block(self) -> bool {
+        self != Reporting::InputsAndOutputs
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

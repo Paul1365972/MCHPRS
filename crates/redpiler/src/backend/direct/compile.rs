@@ -95,7 +95,7 @@ fn compile_node(
         repeater_locked: node.state.repeater_locked,
         changed: false,
         pending_tick: false,
-        visible: reporting == Reporting::All || node.is_input || node.is_output,
+        visible: reporting.reports_every_block_while_running() || node.is_input || node.is_output,
     }
 }
 
@@ -127,6 +127,7 @@ impl DirectEngine {
             scheduler,
             notes: Vec::new(),
             changed_since_take: false,
+            reporting,
         }
     }
 }
