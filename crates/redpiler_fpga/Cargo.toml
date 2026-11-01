@@ -16,4 +16,5 @@ mchprs_world = { path = "../world" }
 include_dir = { version = "0.7.4", features = ["glob"] }
 serialport = { version = "4", default-features = false }
 sha2 = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }

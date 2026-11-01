@@ -1,12 +1,10 @@
 mod compile;
-mod process;
 
 use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
 use crate::readback::Readback;
 use crate::registers::Registers;
-use compile::SIMULATOR;
-use process::Process;
+use crate::subprocess::Process;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -55,12 +53,13 @@ struct Running {
 impl Running {
     fn start(directory: &Path, packet_size: usize) -> io::Result<Self> {
         let mut process = Process::spawn(
-            Command::new(directory.join("obj_dir").join(SIMULATOR))
+            Command::new(compile::simulator(directory))
                 .current_dir(directory)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(File::create(directory.join(RUNTIME_LOG))?),
-        )?;
+        )
+        .map_err(io::Error::other)?;
         let input = process
             .take_stdin()
             .ok_or_else(|| io::Error::other("missing simulator stdin"))?;

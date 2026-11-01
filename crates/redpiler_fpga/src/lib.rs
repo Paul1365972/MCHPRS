@@ -1,4 +1,5 @@
 mod board;
+mod cache;
 mod circuit;
 mod engine;
 #[cfg(test)]
@@ -7,6 +8,7 @@ mod readback;
 mod reference;
 mod registers;
 mod rtl;
+mod subprocess;
 mod verilator;
 
 use board::Board;

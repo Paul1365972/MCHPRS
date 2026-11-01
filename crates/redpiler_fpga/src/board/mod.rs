@@ -1,6 +1,7 @@
 mod device;
 mod toolchain;
 
+use crate::cache;
 use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
 use crate::readback::Readback;
@@ -8,10 +9,7 @@ use crate::registers::Registers;
 use crate::rtl;
 use device::{Command, Device};
 use std::io;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static BUILD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+use std::path::Path;
 
 pub(crate) struct Board {
     device: Device,
@@ -25,15 +23,7 @@ impl Board {
         let port = std::env::var("MCHPRS_FPGA_PORT").map_err(|_| {
             io::Error::other("set MCHPRS_FPGA_PORT to the board UART device before compiling")
         })?;
-        let root = std::env::var_os("MCHPRS_FPGA_CACHE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::temp_dir().join("mchprs-fpga"));
-        let directory = root.join(format!(
-            "{:016x}-{}-{}",
-            circuit.identity(),
-            std::process::id(),
-            BUILD_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
+        let directory = cache::build_directory(&cache::board_root(), "", circuit.identity());
         progress("Generating Verilog");
         let registers = Registers::new(circuit);
         rtl::write(&registers, &directory)?;

@@ -1452,6 +1452,7 @@ dependencies = [
  "mchprs_world",
  "serialport",
  "sha2",
+ "thiserror 2.0.18",
  "tracing",
 ]
 

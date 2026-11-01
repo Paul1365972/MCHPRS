@@ -1,19 +1,24 @@
-use super::process::Process;
+use crate::cache;
 use crate::registers::Registers;
-use crate::rtl::{self, RTL};
+use crate::rtl;
+use crate::subprocess;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 const BUILD_TIMEOUT: Duration = Duration::from_secs(3 * 60 * 60);
 const COMPILE_MEMORY_BASE: u64 = 512 << 20;
 const COMPILE_MEMORY_PER_NODE: u64 = 16 << 10;
-pub(super) const SIMULATOR: &str = if cfg!(windows) {
+const STAGING_PREFIX: &str = "staging-";
+const BUILD_LOG: &str = "verilator-build.log";
+const RUNNER: &str = "runner.cpp";
+const MODEL_PREFIX: &str = "Vcompiled_circuit";
+const OBJECT_DIRECTORY: &str = "obj_dir";
+const SIMULATOR: &str = if cfg!(windows) {
     "simulator.exe"
 } else {
     "simulator"
@@ -24,9 +29,9 @@ const VERILATOR_ARGUMENTS: &[&str] = &[
     "--top-module",
     "compiled_circuit",
     "--prefix",
-    "Vcompiled_circuit",
+    MODEL_PREFIX,
     "--Mdir",
-    "obj_dir",
+    OBJECT_DIRECTORY,
     "-o",
     SIMULATOR,
     "-Wno-fatal",
@@ -40,11 +45,8 @@ const VERILATOR_ARGUMENTS: &[&str] = &[
     "0",
 ];
 
-fn cache_root() -> PathBuf {
-    match std::env::var_os("MCHPRS_FPGA_CACHE") {
-        Some(root) => PathBuf::from(root).join("verilator"),
-        None => std::env::temp_dir().join("mchprs-verilator"),
-    }
+pub(super) fn simulator(directory: &Path) -> PathBuf {
+    directory.join(OBJECT_DIRECTORY).join(SIMULATOR)
 }
 
 fn available_memory() -> Option<u64> {
@@ -103,31 +105,49 @@ fn build_key(directory: &Path, sources: &[PathBuf]) -> io::Result<String> {
         .collect())
 }
 
-fn run_build_step(command: &mut Command, log: &Path, started: Instant) -> io::Result<()> {
+fn run_build_step(command: &mut Command, log: &Path, deadline: Instant) -> io::Result<()> {
     let output = File::options().create(true).append(true).open(log)?;
     command
         .stdin(Stdio::null())
         .stdout(output.try_clone()?)
         .stderr(output);
-    let mut process = Process::spawn(command)?;
-    loop {
-        if started.elapsed() >= BUILD_TIMEOUT {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "Verilator build timed out",
-            ));
-        }
-        if let Some(status) = process.try_wait()? {
-            return if status.success() {
-                Ok(())
-            } else {
-                Err(io::Error::other(format!(
-                    "Verilator build failed with {status}"
-                )))
-            };
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
+    subprocess::run(command, deadline).map_err(io::Error::other)
+}
+
+fn generate_and_compile(
+    directory: &Path,
+    sources: &[PathBuf],
+    node_count: usize,
+    state_bytes: usize,
+    progress: &dyn Fn(&'static str),
+) -> io::Result<()> {
+    let log = directory.join(BUILD_LOG);
+    let deadline = Instant::now() + BUILD_TIMEOUT;
+    progress("Generating Verilator model");
+    run_build_step(
+        Command::new("verilator")
+            .args(VERILATOR_ARGUMENTS)
+            .arg("-CFLAGS")
+            .arg(format!(
+                "-std=c++17 -DMCHPRS_NODE_COUNT={node_count} -DMCHPRS_STATE_BYTES={state_bytes}"
+            ))
+            .args(sources)
+            .current_dir(directory),
+        &log,
+        deadline,
+    )?;
+    progress("Compiling Verilator model");
+    run_build_step(
+        Command::new("make")
+            .arg("-f")
+            .arg(format!("{MODEL_PREFIX}.mk"))
+            .arg("-j")
+            .arg(compile_jobs(node_count).to_string())
+            .arg(SIMULATOR)
+            .current_dir(directory.join(OBJECT_DIRECTORY)),
+        &log,
+        deadline,
+    )
 }
 
 fn build(
@@ -137,34 +157,12 @@ fn build(
     state_bytes: usize,
     progress: &dyn Fn(&'static str),
 ) -> io::Result<()> {
-    let log = directory.join("verilator-build.log");
-    let started = Instant::now();
-    let result = (|| {
-        progress("Generating Verilator model");
-        run_build_step(
-            Command::new("verilator")
-                .args(VERILATOR_ARGUMENTS)
-                .arg("-CFLAGS")
-                .arg(format!(
-                    "-std=c++17 -DMCHPRS_NODE_COUNT={node_count} -DMCHPRS_STATE_BYTES={state_bytes}"
-                ))
-                .args(sources)
-                .current_dir(directory),
-            &log,
-            started,
-        )?;
-        progress("Compiling Verilator model");
-        run_build_step(
-            Command::new("make")
-                .args(["-f", "Vcompiled_circuit.mk", "-j"])
-                .arg(compile_jobs(node_count).to_string())
-                .arg(SIMULATOR)
-                .current_dir(directory.join("obj_dir")),
-            &log,
-            started,
+    generate_and_compile(directory, sources, node_count, state_bytes, progress).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("{error}; see {}", directory.join(BUILD_LOG).display()),
         )
-    })();
-    result.map_err(|error| io::Error::new(error.kind(), format!("{error}; see {}", log.display())))
+    })
 }
 
 pub(super) fn cached_simulator(
@@ -172,28 +170,16 @@ pub(super) fn cached_simulator(
     state_bytes: usize,
     progress: &dyn Fn(&'static str),
 ) -> io::Result<PathBuf> {
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let circuit = registers.circuit;
-    let root = cache_root();
-    let staging = root.join(format!(
-        "staging-{:016x}-{}-{}",
-        circuit.identity(),
-        std::process::id(),
-        SEQUENCE.fetch_add(1, Ordering::Relaxed)
-    ));
+    let root = cache::verilator_root();
+    let staging = cache::build_directory(&root, STAGING_PREFIX, circuit.identity());
     progress("Writing Verilator circuit");
     rtl::write(registers, &staging)?;
-    fs::write(staging.join("runner.cpp"), include_str!("runner.cpp"))?;
-    let mut sources: Vec<_> = RTL
-        .find("**/*.v")
-        .expect("valid Verilog glob")
-        .map(|entry| Path::new("rtl").join(entry.path()))
-        .collect();
-    sources.sort();
-    sources.push(PathBuf::from("circuit.v"));
-    sources.push(PathBuf::from("runner.cpp"));
+    fs::write(staging.join(RUNNER), include_str!("runner.cpp"))?;
+    let mut sources = rtl::sources();
+    sources.push(PathBuf::from(RUNNER));
     let directory = root.join(build_key(&staging, &sources)?);
-    let simulator = directory.join("obj_dir").join(SIMULATOR);
+    let simulator = simulator(&directory);
     if simulator.exists() {
         fs::remove_dir_all(&staging)?;
     } else {

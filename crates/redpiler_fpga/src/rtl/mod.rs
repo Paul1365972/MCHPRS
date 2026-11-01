@@ -11,20 +11,36 @@ use instance::Instance;
 use node_modules::NodeModules;
 use std::collections::BTreeSet;
 use std::fmt::Write;
-use std::{fs, io, path::Path};
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 
-pub(crate) static RTL: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/rtl");
+static LIBRARY: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/rtl");
 
+pub(crate) const LIBRARY_DIRECTORY: &str = "rtl";
+const CIRCUIT_FILE: &str = "circuit.v";
 const ITEMS_PER_LINE: usize = 16;
 
 pub(crate) fn write(registers: &Registers, directory: &Path) -> io::Result<()> {
-    let rtl = directory.join("rtl");
-    fs::create_dir_all(&rtl)?;
-    RTL.extract(rtl)?;
+    let library = directory.join(LIBRARY_DIRECTORY);
+    fs::create_dir_all(&library)?;
+    LIBRARY.extract(library)?;
     fs::write(
-        directory.join("circuit.v"),
+        directory.join(CIRCUIT_FILE),
         Writer::new(registers).verilog(),
     )
+}
+
+/// The Verilog sources that `write` creates, relative to its directory, with the circuit last.
+pub(crate) fn sources() -> Vec<PathBuf> {
+    let mut sources: Vec<_> = LIBRARY
+        .find("**/*.v")
+        .expect("valid Verilog glob")
+        .map(|entry| Path::new(LIBRARY_DIRECTORY).join(entry.path()))
+        .collect();
+    sources.sort();
+    sources.push(PathBuf::from(CIRCUIT_FILE));
+    sources
 }
 
 struct Writer<'a> {

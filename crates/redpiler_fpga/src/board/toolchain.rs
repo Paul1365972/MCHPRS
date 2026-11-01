@@ -1,14 +1,16 @@
-use crate::rtl::RTL;
+use crate::cache;
+use crate::rtl;
+use crate::subprocess::{self, SubprocessError};
 use std::env;
-use std::fs::{self, File, TryLockError};
+use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::thread;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 const DEVICE: &str = "xc7a35tcpg236-1";
-const POLL_INTERVAL: Duration = Duration::from_millis(25);
+// The XC7A35T is an XC7A50T die, and nextpnr only has a chip database for the latter.
+const CHIP_DATABASE_DEVICE: &str = "xc7a50t";
 const BUILD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const ASSEMBLY_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const CONVERSION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -17,94 +19,115 @@ const LOCK_TIMEOUT: Duration = Duration::from_secs(45 * 60);
 
 pub(super) fn build(directory: &Path, progress: &dyn Fn(&'static str)) -> io::Result<PathBuf> {
     let directory = directory.canonicalize()?;
-    let output_root = directory
+    let cache = directory
         .parent()
         .ok_or_else(|| io::Error::other("missing build cache directory"))?;
-    let circuit = directory.join("circuit.v").canonicalize()?;
-    let mut sources: Vec<_> = RTL
-        .find("**/*.v")
-        .expect("valid Verilog glob")
-        .map(|entry| directory.join("rtl").join(entry.path()))
-        .collect();
-    sources.sort();
-    sources.push(circuit);
-    let constraints = directory.join("rtl/basys3.xdc");
     let database = environment_path("PRJXRAY_DB_DIR")?.join("artix7");
     let nextpnr = environment_path("NEXTPNR_XILINX_DIR")?;
-    let circuit = directory.join("circuit.json");
-    let assembly = directory.join("circuit.fasm");
-    let frames = directory.join("circuit.frames");
-    let bitstream = directory.join("circuit.bit");
+    let netlist = synthesize(&directory, progress)?;
+    let chip_database = chip_database(cache, &database, &nextpnr, progress)?;
+    let assembly = place_and_route(&directory, &chip_database, &netlist, progress)?;
+    let frames = generate_frames(&directory, &database, &assembly, progress)?;
+    write_bitstream(&directory, &database, &frames, progress)
+}
+
+fn synthesize(directory: &Path, progress: &dyn Fn(&'static str)) -> io::Result<PathBuf> {
+    let netlist = directory.join("circuit.json");
     let script = directory.join("synthesis.ys");
-    let inputs = sources
+    let sources = rtl::sources()
         .iter()
-        .map(|source| yosys_path(source))
+        .map(|source| yosys_path(&directory.join(source)))
         .collect::<io::Result<Vec<_>>>()?
         .join(" ");
     fs::write(
         &script,
         format!(
-            "read_verilog -sv {inputs}\nsynth_xilinx -flatten -abc9 -arch xc7 -top basys3\nwrite_json {}\n",
-            yosys_path(&circuit)?
+            "read_verilog -sv {sources}\nsynth_xilinx -flatten -abc9 -arch xc7 -top basys3\nwrite_json {}\n",
+            yosys_path(&netlist)?
         ),
     )?;
     progress("Synthesizing logic");
     run(
         Command::new("yosys").arg("-s").arg(script),
-        &directory,
+        directory,
         "synthesis",
         BUILD_TIMEOUT,
     )?;
+    Ok(netlist)
+}
 
-    let chip_database = output_root.join("chipdb-xc7a50t.bin");
-    {
-        let cache_lock = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(output_root.join("chipdb.lock"))?;
-        progress("Waiting for device database");
-        wait_for_lock(&cache_lock, LOCK_TIMEOUT).map_err(|error| {
-            io::Error::new(
-                error.kind(),
-                format!(
-                    "FPGA chip database lock {}: {error}",
-                    output_root.join("chipdb.lock").display()
-                ),
-            )
-        })?;
-        if !chip_database.is_file() {
-            let intermediate = output_root.join("chipdb-xc7a50t.bba");
-            let pending = output_root.join("chipdb-xc7a50t.bin.partial");
-            progress("Building device database");
-            run(
-                Command::new("uv")
-                    .args(["run", "--no-project", "--python", "python3"])
-                    .arg(nextpnr.join("share/nextpnr/himbaechel/uarch/xilinx/gen/xilinx_gen.py"))
-                    .arg("--xray")
-                    .arg(&database)
-                    .args(["--device", "xc7a50t", "--bba"])
-                    .arg(&intermediate),
-                output_root,
-                "chipdb-generate",
-                BUILD_TIMEOUT,
-            )?;
-            progress("Assembling device database");
-            run(
-                Command::new("bbasm")
-                    .arg("-l")
-                    .arg(&intermediate)
-                    .arg(&pending),
-                output_root,
-                "chipdb-assemble",
-                ASSEMBLY_TIMEOUT,
-            )?;
-            fs::rename(pending, &chip_database)?;
-            fs::remove_file(intermediate)?;
-        }
+fn chip_database(
+    cache: &Path,
+    database: &Path,
+    nextpnr: &Path,
+    progress: &dyn Fn(&'static str),
+) -> io::Result<PathBuf> {
+    let chip_database = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bin"));
+    let lock_path = cache.join("chipdb.lock");
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)?;
+    progress("Waiting for device database");
+    cache::lock(&lock, Instant::now() + LOCK_TIMEOUT).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("FPGA chip database lock {}: {error}", lock_path.display()),
+        )
+    })?;
+    if !chip_database.is_file() {
+        build_chip_database(cache, database, nextpnr, &chip_database, progress)?;
     }
+    lock.unlock()?;
+    Ok(chip_database)
+}
 
+fn build_chip_database(
+    cache: &Path,
+    database: &Path,
+    nextpnr: &Path,
+    chip_database: &Path,
+    progress: &dyn Fn(&'static str),
+) -> io::Result<()> {
+    let intermediate = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bba"));
+    let partial = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bin.partial"));
+    progress("Building device database");
+    run(
+        Command::new("uv")
+            .args(["run", "--no-project", "--python", "python3"])
+            .arg(nextpnr.join("share/nextpnr/himbaechel/uarch/xilinx/gen/xilinx_gen.py"))
+            .arg("--xray")
+            .arg(database)
+            .args(["--device", CHIP_DATABASE_DEVICE, "--bba"])
+            .arg(&intermediate),
+        cache,
+        "chipdb-generate",
+        BUILD_TIMEOUT,
+    )?;
+    progress("Assembling device database");
+    run(
+        Command::new("bbasm")
+            .arg("-l")
+            .arg(&intermediate)
+            .arg(&partial),
+        cache,
+        "chipdb-assemble",
+        ASSEMBLY_TIMEOUT,
+    )?;
+    fs::rename(partial, chip_database)?;
+    fs::remove_file(intermediate)
+}
+
+fn place_and_route(
+    directory: &Path,
+    chip_database: &Path,
+    netlist: &Path,
+    progress: &dyn Fn(&'static str),
+) -> io::Result<PathBuf> {
+    let constraints = directory.join(rtl::LIBRARY_DIRECTORY).join("basys3.xdc");
+    let assembly = directory.join("circuit.fasm");
     progress("Placing and routing");
     run(
         Command::new("nextpnr-himbaechel")
@@ -113,26 +136,46 @@ pub(super) fn build(directory: &Path, progress: &dyn Fn(&'static str)) -> io::Re
             .args(["--device", DEVICE, "-o"])
             .arg(format!("xdc={}", constraints.display()))
             .arg("--json")
-            .arg(circuit)
+            .arg(netlist)
             .arg("-o")
             .arg(format!("fasm={}", assembly.display()))
             .args(["--freq", "100"]),
-        &directory,
+        directory,
         "place-route",
         BUILD_TIMEOUT,
     )?;
+    Ok(assembly)
+}
+
+fn generate_frames(
+    directory: &Path,
+    database: &Path,
+    assembly: &Path,
+    progress: &dyn Fn(&'static str),
+) -> io::Result<PathBuf> {
+    let frames = directory.join("circuit.frames");
     progress("Generating configuration frames");
     run(
         Command::new("fasm2frames")
             .arg("--db-root")
-            .arg(&database)
+            .arg(database)
             .args(["--part", DEVICE])
             .arg(assembly)
             .arg(&frames),
-        &directory,
+        directory,
         "frames",
         CONVERSION_TIMEOUT,
     )?;
+    Ok(frames)
+}
+
+fn write_bitstream(
+    directory: &Path,
+    database: &Path,
+    frames: &Path,
+    progress: &dyn Fn(&'static str),
+) -> io::Result<PathBuf> {
+    let bitstream = directory.join("circuit.bit");
     progress("Writing bitstream");
     run(
         Command::new("xc7frames2bit")
@@ -142,7 +185,7 @@ pub(super) fn build(directory: &Path, progress: &dyn Fn(&'static str)) -> io::Re
             .arg(frames)
             .arg("--output_file")
             .arg(&bitstream),
-        &directory,
+        directory,
         "bitstream",
         CONVERSION_TIMEOUT,
     )?;
@@ -153,8 +196,7 @@ pub(super) fn program(bitstream: &Path) -> io::Result<()> {
     let bitstream = bitstream.canonicalize()?;
     let directory = bitstream
         .parent()
-        .ok_or_else(|| io::Error::other("missing bitstream directory"))?
-        .to_path_buf();
+        .ok_or_else(|| io::Error::other("missing bitstream directory"))?;
     let mut command = Command::new("openFPGALoader");
     command.args(["-b", "basys3", "--write-sram"]);
     if let Some(serial) = env::var_os("MCHPRS_FPGA_SERIAL").filter(|serial| !serial.is_empty()) {
@@ -162,7 +204,7 @@ pub(super) fn program(bitstream: &Path) -> io::Result<()> {
     }
     run(
         command.arg(&bitstream),
-        &directory,
+        directory,
         "program",
         PROGRAM_TIMEOUT,
     )
@@ -197,30 +239,7 @@ fn environment_path(name: &str) -> io::Result<PathBuf> {
 fn run(command: &mut Command, directory: &Path, stage: &str, timeout: Duration) -> io::Result<()> {
     let stdout = directory.join(format!("{stage}.stdout.log"));
     let stderr = directory.join(format!("{stage}.stderr.log"));
-    let result = (|| {
-        let mut child = command
-            .current_dir(directory)
-            .stdin(Stdio::null())
-            .stdout(File::create(&stdout)?)
-            .stderr(File::create(&stderr)?)
-            .spawn()
-            .map_err(|error| {
-                io::Error::new(
-                    error.kind(),
-                    format!(
-                        "could not start {}: {error}; enter the FPGA Nix development shell",
-                        command.get_program().to_string_lossy()
-                    ),
-                )
-            })?;
-        let status = wait_for_child(&mut child, timeout)?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(io::Error::other(format!("failed with {status}")))
-        }
-    })();
-    result.map_err(|error| {
+    run_logged(command, directory, &stdout, &stderr, timeout).map_err(|error| {
         io::Error::new(
             error.kind(),
             format!(
@@ -232,50 +251,22 @@ fn run(command: &mut Command, directory: &Path, stage: &str, timeout: Duration) 
     })
 }
 
-fn check_wait(started: Instant, timeout: Duration) -> io::Result<()> {
-    if started.elapsed() >= timeout {
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!("timed out after {} seconds", timeout.as_secs_f64()),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-fn wait_for_child(child: &mut Child, timeout: Duration) -> io::Result<ExitStatus> {
-    let started = Instant::now();
-    loop {
-        let result = check_wait(started, timeout).and_then(|()| child.try_wait());
-        match result {
-            Ok(Some(status)) => return Ok(status),
-            Ok(None) => thread::sleep(POLL_INTERVAL.min(timeout.saturating_sub(started.elapsed()))),
-            Err(error) => {
-                let kill_error = child.kill().err();
-                return match child.wait() {
-                    Ok(_) => Err(error),
-                    Err(wait_error) => Err(io::Error::new(
-                        error.kind(),
-                        format!(
-                            "{error}; child cleanup failed: kill={kill_error:?}, wait={wait_error}"
-                        ),
-                    )),
-                };
-            }
+fn run_logged(
+    command: &mut Command,
+    directory: &Path,
+    stdout: &Path,
+    stderr: &Path,
+    timeout: Duration,
+) -> io::Result<()> {
+    command
+        .current_dir(directory)
+        .stdin(Stdio::null())
+        .stdout(File::create(stdout)?)
+        .stderr(File::create(stderr)?);
+    subprocess::run(command, Instant::now() + timeout).map_err(|error| match error {
+        SubprocessError::Start { .. } => {
+            io::Error::other(format!("{error}; enter the FPGA Nix development shell"))
         }
-    }
-}
-
-fn wait_for_lock(file: &File, timeout: Duration) -> io::Result<()> {
-    let started = Instant::now();
-    loop {
-        check_wait(started, timeout)?;
-        match file.try_lock() {
-            Ok(()) => return Ok(()),
-            Err(TryLockError::WouldBlock) => {
-                thread::sleep(POLL_INTERVAL.min(timeout.saturating_sub(started.elapsed())));
-            }
-            Err(TryLockError::Error(error)) => return Err(error),
-        }
-    }
+        error => io::Error::other(error),
+    })
 }
