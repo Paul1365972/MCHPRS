@@ -397,7 +397,7 @@ impl ServerBoundPacketHandler for Plot {
             return;
         }
         let block = self.world.get_block(pos);
-        if !(block.is_sign() || block.is_wall_sign()) {
+        if !block.is_any_sign() {
             return;
         }
         let mut rows = packet

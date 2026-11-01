@@ -73,7 +73,7 @@ fn for_pos<W: World>(
     let id = world.get_block_raw(pos);
     let block = Block::from_id(id);
 
-    if block.is_sign() || block.is_wall_sign() {
+    if block.is_any_sign() {
         second_pass.insert(pos);
         return;
     }
@@ -191,7 +191,10 @@ fn apply_annotations<W: World>(
         return;
     }
 
-    let targets = match (block.get_sign_rotation(), block.get_wall_sign_facing()) {
+    let targets = match (
+        block.standing_sign().map(|sign| sign.rotation),
+        block.wall_sign().map(|sign| sign.facing),
+    ) {
         (Some(rotation), None) => {
             if let Some(facing) = BlockDirection::from_rotation(rotation) {
                 let behind = pos.offset(facing.opposite().block_face());

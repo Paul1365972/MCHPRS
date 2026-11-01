@@ -5,12 +5,12 @@ use crate::worldedit::WorldEditUndo;
 use byteorder::{BigEndian, ReadBytesExt};
 use mchprs_blocks::block_entities::{ContainerType, InventoryEntry};
 use mchprs_blocks::items::Item;
+use mchprs_blocks::registries::entity_type;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::{PacketEncoder, PlayerProperty, SlotData};
 use mchprs_network::text::{ColorCode, TextComponent, TextComponentBuilder};
 use mchprs_network::{PlayerConn, PlayerPacketSender};
-use mchprs_proc_macros::protocol_id;
 use mchprs_schematic::WorldEditClipboard;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -526,7 +526,7 @@ impl Player {
 
         let open_window = COpenScreen {
             window_id: 1,
-            window_type: container_type.window_type(),
+            window_type: container_type.menu(),
             window_title: "Container".into(),
         }
         .encode();
@@ -559,7 +559,7 @@ impl Player {
         CSpawnEntity {
             entity_id: self.entity_id as i32,
             entity_uuid: self.uuid,
-            entity_type: protocol_id!("minecraft:entity_type", "minecraft:player"),
+            entity_type: entity_type::PLAYER,
             pitch: self.pitch,
             yaw: self.yaw,
             // TODO: probably not the same

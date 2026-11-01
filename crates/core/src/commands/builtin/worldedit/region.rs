@@ -13,9 +13,9 @@ use crate::worldedit::pattern::WorldEditPattern;
 use crate::worldedit::{clear_area, region_positions, update as update_region};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
-use mchprs_blocks::blocks::{Block, HopperFacing};
+use mchprs_blocks::blocks::Block;
 use mchprs_blocks::items::Item;
-use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
+use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_network::packets::clientbound::ClientBoundPacket;
 use mchprs_schematic::{create_clipboard, paste_clipboard};
 use mchprs_syntax::flag::Flag;
@@ -243,28 +243,12 @@ fn exec_replace_container(
 
     let start_time = Instant::now();
 
-    let new_block = match to {
-        ContainerType::Furnace => Block::Furnace {
-            facing: BlockDirection::North,
-            lit: false,
-        },
-        ContainerType::Barrel => Block::Barrel {
-            open: false,
-            facing: BlockFacing::Up,
-        },
-        ContainerType::Hopper => Block::Hopper {
-            enabled: false,
-            facing: HopperFacing::Down,
-        },
-    };
+    let new_block = to.block(BlockDirection::North, false);
 
     let world = ctx.world_mut();
     for pos in region_positions(first_pos, second_pos) {
-        let block_container = match world.get_block(pos) {
-            Block::Furnace { .. } => ContainerType::Furnace,
-            Block::Barrel { .. } => ContainerType::Barrel,
-            Block::Hopper { .. } => ContainerType::Hopper,
-            _ => continue,
+        let Some(block_container) = world.get_block(pos).container_type() else {
+            continue;
         };
 
         let (container, strength) = match world.get_block_entity(pos) {

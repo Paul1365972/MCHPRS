@@ -1,7 +1,10 @@
 #[cfg(feature = "nbt")]
 mod nbt_codec;
 
-use mchprs_proc_macros::protocol_id;
+use crate::blocks::{Block, HopperFacing};
+use crate::items::Item;
+use crate::registries::{block_entity_type, menu};
+use crate::{BlockDirection, BlockFacing};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -37,7 +40,7 @@ impl FromStr for ContainerType {
 
 impl std::fmt::Display for ContainerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "minecraft:{}", self.name())
+        f.write_str(self.name())
     }
 }
 
@@ -73,12 +76,45 @@ impl ContainerType {
         }
     }
 
-    pub fn window_type(self) -> i32 {
+    pub fn block_entity_type(self) -> i32 {
+        match self {
+            ContainerType::Furnace => block_entity_type::FURNACE,
+            ContainerType::Barrel => block_entity_type::BARREL,
+            ContainerType::Hopper => block_entity_type::HOPPER,
+        }
+    }
+
+    pub fn menu(self) -> i32 {
         // https://wiki.vg/Inventory
         match self {
-            ContainerType::Furnace => protocol_id!("minecraft:menu", "minecraft:furnace"),
-            ContainerType::Barrel => protocol_id!("minecraft:menu", "minecraft:generic_9x3"),
-            ContainerType::Hopper => protocol_id!("minecraft:menu", "minecraft:hopper"),
+            ContainerType::Furnace => menu::FURNACE,
+            ContainerType::Barrel => menu::GENERIC_9X3,
+            ContainerType::Hopper => menu::HOPPER,
+        }
+    }
+
+    pub fn item(self) -> Item {
+        match self {
+            ContainerType::Furnace => Item::Furnace {},
+            ContainerType::Barrel => Item::Barrel {},
+            ContainerType::Hopper => Item::Hopper {},
+        }
+    }
+
+    pub fn block(self, furnace_facing: BlockDirection, hopper_enabled: bool) -> Block {
+        match self {
+            ContainerType::Furnace => Block::Furnace {
+                facing: furnace_facing,
+                lit: false,
+            },
+            ContainerType::Barrel => Block::Barrel {
+                facing: BlockFacing::Up,
+                open: false,
+            },
+            ContainerType::Hopper => Block::Hopper {
+                enabled: hopper_enabled,
+                facing: HopperFacing::Down,
+            },
         }
     }
 }
@@ -98,19 +134,21 @@ pub enum BlockEntity {
 
 impl BlockEntity {
     pub fn ty(&self) -> i32 {
-        macro_rules! block_entity_id {
-            ($name:literal) => {
-                protocol_id!("minecraft:block_entity_type", $name)
-            };
-        }
         match self {
-            BlockEntity::Comparator { .. } => block_entity_id!("minecraft:comparator"),
-            BlockEntity::Container { ty, .. } => match ty {
-                ContainerType::Furnace => block_entity_id!("minecraft:furnace"),
-                ContainerType::Barrel => block_entity_id!("minecraft:barrel"),
-                ContainerType::Hopper => block_entity_id!("minecraft:hopper"),
-            },
-            BlockEntity::Sign(_) => block_entity_id!("minecraft:sign"),
+            BlockEntity::Comparator { .. } => block_entity_type::COMPARATOR,
+            BlockEntity::Container { ty, .. } => ty.block_entity_type(),
+            BlockEntity::Sign(_) => block_entity_type::SIGN,
+        }
+    }
+}
+
+impl Block {
+    pub fn container_type(self) -> Option<ContainerType> {
+        match self {
+            Block::Furnace { .. } => Some(ContainerType::Furnace),
+            Block::Barrel { .. } => Some(ContainerType::Barrel),
+            Block::Hopper { .. } => Some(ContainerType::Hopper),
+            _ => None,
         }
     }
 }

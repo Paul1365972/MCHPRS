@@ -94,6 +94,7 @@ secret = "<secret>"
 
 - [Redpiler](docs/Redpiler.md): compiling a plot in game, and flags.
 - [Commands](docs/Commands.md): every command. `/help` lists them in game.
+- [Adding a Block](docs/Adding_a_block.md): the block data generator.
 
 ## Acknowledgments
 - [@AL1L](https://github.com/AL1L) for his contributions to worldedit and other various features.
