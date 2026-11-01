@@ -2,11 +2,11 @@ use crate::{extract_schematic, run_pipeline};
 use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
 use mchprs_redpiler::ril::ast::Global;
 use mchprs_redpiler::ril::dump_graph;
-use mchprs_redpiler::CompilerOptions;
+use mchprs_redpiler::ril::RILOptions;
 use std::path::{Path, PathBuf};
 use std::{fs, process};
 
-pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &CompilerOptions) {
+pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &RILOptions) {
     let ril_src = match fs::read_to_string(input_path) {
         Ok(src) => src,
         Err(err) => {
@@ -30,7 +30,9 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
     let mut result = String::new();
     for (name, global) in &module.globals {
         let graph = match global {
-            Global::Circuit(circuit) => module.get_graph(circuit),
+            Global::Circuit(circuit) => {
+                module.get_graph(circuit, options.compile_options().observed)
+            }
             Global::Schematic(schematic) => {
                 match extract_schematic(input_path, &schematic.path, &options.compile_options()) {
                     Some(graph) => graph,

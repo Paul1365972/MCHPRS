@@ -2,11 +2,11 @@ use clap::{Parser, Subcommand};
 use line_index::{LineIndex, TextSize};
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::{
+    compile::CompileOptions,
     extract::extract,
     graph::Graph,
     passes::{PassPipeline, PassPipelineBuilder, PassRegistry},
-    ril::{DumpGraph, RILModule},
-    CompileOptions, CompilerOptions,
+    ril::{DumpGraph, RILModule, RILOptions},
 };
 use std::fs;
 use std::ops::ControlFlow;
@@ -176,18 +176,14 @@ fn main() -> ExitCode {
             print_after_all,
             passes,
         } => {
-            let options = CompilerOptions {
+            let options = RILOptions {
                 optimize,
                 reorder,
                 io_only,
-                update: false,
-                export_dot_graph: false,
                 wire_dot_out,
                 illegal_states_out,
                 wire_cross_out,
                 print_after_all,
-                print_before_backend: false,
-                backend_variant: Default::default(),
                 passes,
             };
             compile::compile(&input_path, &output_path, &options);

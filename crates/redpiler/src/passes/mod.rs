@@ -1,9 +1,9 @@
 mod analysis;
 mod opt;
 
+use crate::compile::CompileOptions;
 use crate::graph::Graph;
 use crate::ports::Observed;
-use crate::CompileOptions;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;

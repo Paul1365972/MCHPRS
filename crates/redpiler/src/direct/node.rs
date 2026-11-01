@@ -1,3 +1,4 @@
+use crate::graph::NodeState;
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
 use std::num::NonZeroU128;
@@ -7,6 +8,11 @@ use std::ops::{Index, IndexMut};
 pub struct NodeId(u32);
 
 impl NodeId {
+    pub fn new(index: usize, node_count: usize) -> NodeId {
+        assert!(index < node_count, "node index out of bounds: {index}");
+        NodeId(index as u32)
+    }
+
     pub fn index(self) -> usize {
         self.0 as usize
     }
@@ -105,12 +111,6 @@ impl std::fmt::Debug for ForwardLink {
 #[derive(Clone, Debug, Default)]
 pub struct ForwardLinkRange(std::ops::Range<usize>);
 
-impl ForwardLinkRange {
-    pub fn len(&self) -> usize {
-        self.0.end - self.0.start
-    }
-}
-
 #[derive(Default)]
 pub struct ForwardLinks {
     links: Vec<ForwardLink>,
@@ -130,14 +130,10 @@ impl ForwardLinks {
         // Safety: there's only one instance of ForwardLinks in the backend
         unsafe { self.links.get_unchecked(range.0.clone()) }
     }
-
-    /// After this point, all existing `ForwardLinkRange`s are invalidated.
-    pub fn clear(&mut self) {
-        self.links.clear();
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 pub enum NodeKind {
     Repeater {
         delay: u8,
@@ -156,9 +152,7 @@ pub enum NodeKind {
     Trapdoor,
     Wire,
     Constant,
-    NoteBlock {
-        noteblock_id: u16,
-    },
+    NoteBlock,
 }
 
 #[repr(align(16))]
@@ -195,21 +189,6 @@ impl NodeInput {
     }
 }
 
-impl FromIterator<SignalStrength> for NodeInput {
-    fn from_iter<T: IntoIterator<Item = SignalStrength>>(powers: T) -> Self {
-        let mut inputs = Self::new();
-        for (index, power) in powers.into_iter().enumerate() {
-            assert!(
-                index < u8::MAX as usize,
-                "Exceeded the maximum number of inputs {}",
-                u8::MAX
-            );
-            inputs.update_power(SignalStrength::Zero, power);
-        }
-        inputs
-    }
-}
-
 // The `Node` struct's size is currently 64 bytes which happens to be the same
 // size as an L1 cache line on most modern processors. By forcing a 64-byte
 // alignment, we make sure that the entire `Node` can fit on one cache line,
@@ -235,6 +214,13 @@ pub struct Node {
 impl Node {
     pub fn is_powered(&self) -> bool {
         !self.power.is_zero()
+    }
+
+    pub fn state(&self) -> NodeState {
+        NodeState {
+            power: self.power,
+            repeater_locked: self.repeater_locked,
+        }
     }
 
     pub fn set_power(&mut self, power: SignalStrength) {

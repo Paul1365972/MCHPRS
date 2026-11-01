@@ -1,4 +1,4 @@
-test_args "--passes=prune-orphans"
+test_args "--passes=prune-orphans --io-only"
 
 
 circuit @unused_torch_input {

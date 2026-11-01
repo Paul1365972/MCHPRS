@@ -1,10 +1,10 @@
+use super::RedpilerOptions;
 use crate::player::{PacketSender, Player};
 use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
 use mchprs_network::text::{ColorCode, TextComponent, TextComponentBuilder};
-use mchprs_redpiler::CompilerOptions;
 
 #[derive(PartialEq, Eq, Default, Clone, Copy)]
 pub enum RedpilerState {
@@ -139,7 +139,7 @@ impl Scoreboard {
         );
     }
 
-    pub fn set_redpiler_options(&mut self, players: &[Player], options: &CompilerOptions) {
+    pub fn set_redpiler_options(&mut self, players: &[Player], options: &RedpilerOptions) {
         let mut new_lines = vec![self.current_state[0].clone()];
 
         let mut flags = Vec::new();

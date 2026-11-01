@@ -1,6 +1,7 @@
+use crate::compile::CompileOptions;
 use crate::graph::{Direction, Graph, Link, LinkKind, Node, NodeIdx, NodeKind, NodeState};
+use crate::ports::{Observed, Ports};
 use crate::string_replacer::StringReplacer;
-use crate::CompilerOptions;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use mchprs_blocks::blocks::{ComparatorMode, Instrument};
@@ -9,6 +10,82 @@ use rustc_hash::FxHashMap;
 use std::iter::Peekable;
 use std::str::CharIndices;
 use std::{fmt, vec};
+use tracing::warn;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RILOptions {
+    pub optimize: bool,
+    pub reorder: bool,
+    pub io_only: bool,
+    pub wire_dot_out: bool,
+    pub illegal_states_out: bool,
+    pub wire_cross_out: bool,
+    pub print_after_all: bool,
+    /// A comma separated list of passes to run instead of the pipeline
+    pub passes: Option<String>,
+}
+
+impl RILOptions {
+    pub fn parse(arguments: &str) -> RILOptions {
+        let mut options = RILOptions::default();
+        for argument in arguments.split_whitespace() {
+            if let Some(passes) = argument.strip_prefix("--passes=") {
+                options.passes = Some(passes.to_owned());
+                continue;
+            }
+            match argument {
+                "--optimize" => options.optimize = true,
+                "--reorder" => options.reorder = true,
+                "--io-only" => options.io_only = true,
+                "--wire-dot-out" => options.wire_dot_out = true,
+                "--illegal-states-out" => options.illegal_states_out = true,
+                "--wire-cross-out" => options.wire_cross_out = true,
+                "--print-after-all" => options.print_after_all = true,
+                _ if !argument.starts_with("--") && argument.starts_with('-') => {
+                    for flag in argument[1..].chars() {
+                        match flag.to_ascii_lowercase() {
+                            'o' => options.optimize = true,
+                            'r' => options.reorder = true,
+                            'i' => options.io_only = true,
+                            'd' => options.wire_dot_out = true,
+                            'l' => options.illegal_states_out = true,
+                            'c' => options.wire_cross_out = true,
+                            _ => warn!("Unrecognized option: -{flag}"),
+                        }
+                    }
+                }
+                _ => warn!("Unrecognized option: {argument}"),
+            }
+        }
+        options
+    }
+
+    pub fn compile_options(&self) -> CompileOptions {
+        let mut ports = Ports::conventional();
+        if self.wire_dot_out {
+            ports = ports.with_wire_dots();
+        }
+        if self.wire_cross_out {
+            ports = ports.with_wire_crosses();
+        }
+        if self.illegal_states_out {
+            ports = ports.with_illegal_wires();
+        }
+        let observed = if self.io_only {
+            Observed::Ports
+        } else if self.optimize {
+            Observed::Components
+        } else {
+            Observed::Everything
+        };
+        CompileOptions {
+            ports,
+            observed,
+            optimize: self.optimize,
+            reorder: self.reorder,
+        }
+    }
+}
 
 fn dump_node_name(f: &mut impl fmt::Write, graph: &Graph, node_idx: NodeIdx) -> fmt::Result {
     write!(f, "%")?;
@@ -84,6 +161,9 @@ fn dump_node(f: &mut impl fmt::Write, graph: &Graph, node_idx: NodeIdx) -> fmt::
         NodeKind::PressurePlate => write!(f, "pressure_plate {}", node.state.is_powered()),
         NodeKind::Trapdoor => write!(f, "trapdoor {}", node.state.is_powered()),
         NodeKind::Wire => write!(f, "wire {}", node.state.power),
+        NodeKind::Constant if node.state.repeater_locked => {
+            write!(f, "constant {}, true", node.state.power)
+        }
         NodeKind::Constant => write!(f, "constant {}", node.state.power),
         NodeKind::NoteBlock { instrument, note } => write!(
             f,
@@ -95,9 +175,9 @@ fn dump_node(f: &mut impl fmt::Write, graph: &Graph, node_idx: NodeIdx) -> fmt::
     }?;
     dump_outputs(f, graph, node_idx)?;
 
-    if !node.block.is_empty() {
+    if !node.blocks.is_empty() {
         write!(f, "  # Loc: ")?;
-        for (idx, (pos, _)) in node.block.iter().copied().enumerate() {
+        for (idx, (pos, _)) in node.blocks.iter().copied().enumerate() {
             if idx != 0 {
                 write!(f, ", ")?;
             }
@@ -528,7 +608,7 @@ pub struct RILTest {
     pub name: String,
     pub schematic_path: Option<String>,
     pub graph: Graph,
-    pub options: CompilerOptions,
+    pub options: RILOptions,
 }
 
 #[derive(Default)]
@@ -544,16 +624,19 @@ impl RILModule {
         Parser::parse(tokens)
     }
 
-    pub fn get_graph(&self, circuit: &ast::Circuit) -> Graph {
+    pub fn get_graph(&self, circuit: &ast::Circuit, observed: Observed) -> Graph {
         let mut graph = Graph::default();
         let mut name_map = FxHashMap::default();
         for component in &circuit.components {
+            let port = component.node_kind.conventional_role();
             let node_idx = graph.add_node(Node {
                 kind: component.node_kind.clone(),
-                state: component.node_state.clone(),
+                state: component.node_state,
                 name: Some(component.name.clone()),
-                block: Default::default(),
-                port: component.node_kind.conventional_role(),
+                blocks: Default::default(),
+                pending_tick: None,
+                port,
+                observed: observed.includes(&component.node_kind, port),
             });
             name_map.insert(component.name.clone(), node_idx);
         }
@@ -567,20 +650,21 @@ impl RILModule {
     }
 
     fn get_test(&self, name: &str, test: &ast::Test) -> RILTest {
-        let (graph, schematic_path) = match self.globals.get(&test.input) {
-            Some(ast::Global::Circuit(circuit)) => (self.get_graph(circuit), None),
-            Some(ast::Global::Schematic(schematic)) => {
-                (Graph::default(), Some(schematic.path.clone()))
-            }
-            Some(_) => panic!("invalid test input"),
-            None => panic!("could not find test input with name: {}", test.input),
-        };
         let options = test
             .test_args
             .as_ref()
             .or(self.test_args.as_ref().map(|args| &args.args))
             .expect("could not determine test arguments")
             .clone();
+        let observed = options.compile_options().observed;
+        let (graph, schematic_path) = match self.globals.get(&test.input) {
+            Some(ast::Global::Circuit(circuit)) => (self.get_graph(circuit, observed), None),
+            Some(ast::Global::Schematic(schematic)) => {
+                (Graph::default(), Some(schematic.path.clone()))
+            }
+            Some(_) => panic!("invalid test input"),
+            None => panic!("could not find test input with name: {}", test.input),
+        };
         RILTest {
             name: name.to_owned(),
             graph,
@@ -818,12 +902,24 @@ impl Parser {
                     NodeState::from_powered(powered),
                 )
             }
-            ComponentType::Wire | ComponentType::Constant => {
+            ComponentType::Wire => {
                 let power = self.expect_power()?;
                 (
                     component_ty.simple_node_kind(),
                     NodeState::from_power(power),
                 )
+            }
+            ComponentType::Constant => {
+                let power = self.expect_power()?;
+                let mut state = NodeState::from_power(power);
+                if self
+                    .tokens
+                    .next_if(|token| token.kind == TokenType::Comma)
+                    .is_some()
+                {
+                    state.repeater_locked = self.expect_bool()?.1;
+                }
+                (component_ty.simple_node_kind(), state)
             }
             ComponentType::NoteBlock => {
                 let instrument = self
@@ -886,7 +982,7 @@ impl Parser {
             TokenType::Comma => {
                 let (_, args) = self.expect_string()?;
                 self.expect_token(&[TokenType::RightParens])?;
-                Some(CompilerOptions::parse(&args))
+                Some(RILOptions::parse(&args))
             }
             _ => unreachable!(),
         };
@@ -915,7 +1011,7 @@ impl Parser {
 
     fn parse_test_args(&mut self) -> RILParserResult<()> {
         let (_, args) = self.expect_string()?;
-        let args = CompilerOptions::parse(&args);
+        let args = RILOptions::parse(&args);
         self.module.test_args = Some(ast::TestArgs { args });
         Ok(())
     }
@@ -1045,10 +1141,8 @@ impl Parser {
 }
 
 pub mod ast {
-    use crate::{
-        graph::{Link, NodeKind, NodeState},
-        CompilerOptions,
-    };
+    use super::RILOptions;
+    use crate::graph::{Link, NodeKind, NodeState};
 
     pub enum Global {
         Circuit(Circuit),
@@ -1082,12 +1176,12 @@ pub mod ast {
 
     pub struct Test {
         pub input: String,
-        pub test_args: Option<CompilerOptions>,
+        pub test_args: Option<RILOptions>,
         pub result: TestResult,
     }
 
     pub struct TestArgs {
-        pub args: CompilerOptions,
+        pub args: RILOptions,
     }
 
     #[derive(Clone, PartialEq)]

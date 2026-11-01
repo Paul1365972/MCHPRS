@@ -15,9 +15,9 @@ repository.workspace = true
 [dependencies]
 mchprs_blocks = { path = "../blocks" }
 mchprs_redstone = { path = "../redstone" }
+serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 itertools = { workspace = true }
 rustc-hash = { workspace = true }
-enum_dispatch = { workspace = true }
 indexmap = { workspace = true }
 smallvec = { workspace = true }

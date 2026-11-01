@@ -333,7 +333,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
             if !self.graph.contains_node(idx) || self.graph[idx].is_input() {
                 continue;
             }
-            if let Some(block) = self.graph[idx].block.first().copied() {
+            if let Some(block) = self.graph[idx].blocks.first().copied() {
                 self.search_node(idx, block);
             }
         }

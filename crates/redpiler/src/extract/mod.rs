@@ -1,9 +1,9 @@
 mod links;
 mod nodes;
 
-use crate::graph::{Graph, NodeKind, PendingTick, QueuedTick};
+use crate::compile::CompileOptions;
+use crate::graph::{Graph, PendingTick, QueuedTick};
 use crate::ports::Role;
-use crate::CompileOptions;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
@@ -44,7 +44,7 @@ pub fn extract(
         let Some(&node) = nodes_by_position.get(&pos) else {
             return Err(ExtractError::NoComponent(pos));
         };
-        if role == Role::Input && !graph[node].kind.is_drivable() {
+        if role == Role::Input && graph[node].kind.drive_kind().is_none() {
             return Err(ExtractError::NotDrivable(pos));
         }
     }
@@ -57,12 +57,13 @@ pub fn extract(
             continue;
         };
         let node = &mut graph[node];
-        if node.is_input() && node.kind != NodeKind::Button {
+        if !node.can_tick() {
             continue;
         }
-        node.state.pending_tick = Some(QueuedTick {
+        // A tick due in this tick but not yet run runs in the next one
+        node.pending_tick = Some(QueuedTick {
             tick: PendingTick {
-                delay: tick.ticks_left,
+                delay: tick.ticks_left.max(1),
                 priority: tick.priority,
             },
             order,

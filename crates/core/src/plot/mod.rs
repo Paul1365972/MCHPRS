@@ -3,9 +3,11 @@ mod data;
 pub mod database;
 mod monitor;
 mod packet_handlers;
+pub mod redpiler;
 mod scoreboard;
 
 use self::data::sleep_time_for_tps;
+use self::redpiler::{Redpiler, RedpilerOptions};
 use self::scoreboard::Scoreboard;
 use crate::commands::COMMAND_REGISTRY;
 use crate::config::CONFIG;
@@ -27,8 +29,9 @@ use mchprs_network::chunk::{encode_block_changes, encode_chunk, encode_empty_chu
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
-use mchprs_redpiler::extract::ExtractError;
-use mchprs_redpiler::{Compiler, CompilerOptions};
+use mchprs_redpiler::direct::DirectEngine;
+use mchprs_redpiler::engine::{DriveError, EngineError, Input};
+use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
@@ -41,13 +44,13 @@ use scoreboard::RedpilerState;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-#[cfg(feature = "whitelist")]
-use tracing::warn;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace, warn};
 
 /// The width of a plot (2^n)
 pub const PLOT_SCALE: u32 = 5;
@@ -70,7 +73,7 @@ const MAX_BATCH_SIZE: u32 = 50_000;
 pub struct Plot {
     pub world: PlotWorld,
     pub players: Vec<Player>,
-    pub redpiler: Compiler,
+    pub redpiler: Option<Redpiler>,
 
     // Thread communication
     message_receiver: BusReader<BroadcastMessage>,
@@ -320,9 +323,9 @@ impl RedstoneWorld for PlotWorld {
 
 impl Plot {
     pub fn tickn(&mut self, ticks: u64) {
-        if self.redpiler.is_active() {
+        if self.redpiler.is_some() {
             self.timings.tickn(ticks);
-            self.redpiler.tickn(ticks);
+            self.with_simulation(|simulation| simulation.run(ticks));
             return;
         }
 
@@ -333,8 +336,8 @@ impl Plot {
 
     fn tick(&mut self) {
         self.timings.tick();
-        if self.redpiler.is_active() {
-            self.redpiler.tick();
+        if self.redpiler.is_some() {
+            self.with_simulation(|simulation| simulation.run(1));
             return;
         }
 
@@ -374,7 +377,7 @@ impl Plot {
     fn step(&mut self, from: Option<BlockPos>, to: Option<BlockPos>) {
         if from == to {
             if let Some(to) = to
-                && !self.redpiler.is_active()
+                && self.redpiler.is_none()
                 && let Some(false) = self.world.block(to).get_pressure_plate_powered()
             {
                 self.set_pressure_plate(to, true);
@@ -395,8 +398,8 @@ impl Plot {
         if self.world.block(pos).get_pressure_plate_powered().is_none() {
             return;
         }
-        if self.redpiler.is_active() {
-            self.redpiler.set_pressure_plate(pos, pressed);
+        if self.redpiler.is_some() {
+            self.drive_redpiler(pos, Input::Set(pressed.into()));
         } else {
             mchprs_redstone::set_pressure_plate(&mut self.world, pos, pressed);
         }
@@ -575,24 +578,29 @@ impl Plot {
             return;
         }
 
-        if self.redpiler.is_active() {
-            let block = self.world.block(block_pos);
-            let lever_or_button = matches!(block, Block::Lever { .. } | Block::StoneButton { .. });
-            if lever_or_button && !self.players[player].crouching {
-                self.redpiler.on_use_block(block_pos);
+        if let Some(redpiler) = &mut self.redpiler {
+            let input = match self.world.block(block_pos) {
+                Block::Lever { .. } => Some(Input::Toggle),
+                Block::StoneButton { .. } => Some(Input::Press),
+                _ => None,
+            };
+            let circuit = redpiler.simulation.circuit();
+            let is_input = circuit
+                .node_at(block_pos)
+                .is_some_and(|node| circuit.node(node).is_input());
+            if let Some(input) = input
+                && is_input
+                && !self.players[player].crouching
+            {
+                self.drive_redpiler(block_pos, input);
                 self.publish_world();
                 return;
-            } else {
-                match self.redpiler.current_flags() {
-                    Some(flags) if flags.io_only => {
-                        self.players[player].send_error_message(ERROR_IO_ONLY);
-                        cancel(self);
-                        return;
-                    }
-                    _ => {}
-                }
-                self.reset_redpiler();
+            } else if redpiler.options.io_only {
+                self.players[player].send_error_message(ERROR_IO_ONLY);
+                cancel(self);
+                return;
             }
+            self.reset_redpiler();
         }
 
         if let Some(item) = item_in_hand {
@@ -652,13 +660,12 @@ impl Plot {
             return;
         }
 
-        match self.redpiler.current_flags() {
-            Some(flags) if flags.io_only => {
-                self.players[player].send_error_message(ERROR_IO_ONLY);
-                self.send_block_corrections(&[block_pos]);
-                return;
-            }
-            _ => {}
+        if let Some(redpiler) = &self.redpiler
+            && redpiler.options.io_only
+        {
+            self.players[player].send_error_message(ERROR_IO_ONLY);
+            self.send_block_corrections(&[block_pos]);
+            return;
         }
 
         self.reset_redpiler();
@@ -694,14 +701,53 @@ impl Plot {
     }
 
     pub fn publish_world(&mut self) {
-        if self.redpiler.is_active() {
-            self.redpiler.flush(&mut self.world);
+        if let Some(changes) = self.with_simulation(|simulation| simulation.sync()) {
+            changes.apply(&mut self.world);
         }
         self.world.flush_block_changes();
         self.last_world_send_time = Instant::now();
     }
 
-    pub fn start_redpiler(&mut self, options: CompilerOptions) -> Result<(), ExtractError> {
+    /// Writes the state of every node to the world, including the nodes that aren't observed.
+    pub fn sync_redpiler(&mut self) {
+        if let Some(changes) = self.with_simulation(|simulation| simulation.sync_all()) {
+            changes.apply(&mut self.world);
+        }
+    }
+
+    /// Stops redpiler when the engine fails, since its state is lost.
+    fn with_simulation<T>(
+        &mut self,
+        operation: impl FnOnce(&mut Simulation) -> Result<T, EngineError>,
+    ) -> Option<T> {
+        let redpiler = self.redpiler.as_mut()?;
+        match operation(&mut redpiler.simulation) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                error!("Redpiler failed and was stopped: {error}");
+                self.redpiler = None;
+                self.scoreboard
+                    .set_redpiler_state(&self.players, RedpilerState::Stopped);
+                self.scoreboard
+                    .set_redpiler_options(&self.players, &Default::default());
+                None
+            }
+        }
+    }
+
+    /// An input the circuit rejects is ignored; an engine failure stops redpiler.
+    fn drive_redpiler(&mut self, pos: BlockPos, input: Input) {
+        self.with_simulation(|simulation| match simulation.drive(pos, input) {
+            Ok(()) => Ok(()),
+            Err(DriveError::Engine(error)) => Err(error),
+            Err(error) => {
+                warn!("Redpiler rejected {input:?} at {pos}: {error}");
+                Ok(())
+            }
+        });
+    }
+
+    pub fn start_redpiler(&mut self, options: RedpilerOptions) -> Result<(), EngineError> {
         debug!("Starting redpiler");
         self.reset_pressure_plates();
         self.scoreboard
@@ -710,15 +756,26 @@ impl Plot {
             .set_redpiler_options(&self.players, &options);
 
         let region = self.world.region();
-        // TODO: use monitor
-        let monitor = Default::default();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
+        let compile_options = options.compile_options();
 
         let mut players_need_updates = HashSet::new();
         let result = thread::scope(|s| {
-            let handle = s.spawn(|| {
-                self.redpiler
-                    .compile(&self.world, region, options, ticks, monitor)
+            let handle = s.spawn(|| -> Result<Simulation, EngineError> {
+                let start = Instant::now();
+                let circuit = mchprs_redpiler::compile::compile(
+                    &self.world,
+                    region,
+                    &ticks,
+                    &compile_options,
+                    &mut |stage| {
+                        trace!("Redpiler compile stage {stage:?}");
+                        ControlFlow::Continue(())
+                    },
+                )?;
+                let engine = DirectEngine::new(&circuit)?;
+                debug!("Compile completed in {:?}", start.elapsed());
+                Ok(Simulation::new(Arc::new(circuit), Box::new(engine)))
             });
             while !handle.is_finished() {
                 // We'll update the players so that they don't time out.
@@ -740,11 +797,21 @@ impl Plot {
             self.update_view_pos_for_player(player_idx, false);
         }
 
-        if result.is_err() {
-            self.scoreboard
-                .set_redpiler_state(&self.players, RedpilerState::Stopped);
-            return result;
-        }
+        let simulation = match result {
+            Ok(simulation) => simulation,
+            Err(error) => {
+                self.world.ticks = TickQueue::new(ticks);
+                self.scoreboard
+                    .set_redpiler_state(&self.players, RedpilerState::Stopped);
+                self.scoreboard
+                    .set_redpiler_options(&self.players, &Default::default());
+                return Err(error);
+            }
+        };
+        self.redpiler = Some(Redpiler {
+            options,
+            simulation,
+        });
         self.scoreboard
             .set_redpiler_state(&self.players, RedpilerState::Running);
 
@@ -755,10 +822,29 @@ impl Plot {
     /// Redpiler needs to reset implicitly in the case of any block changes done by a player. This
     /// can be
     pub fn reset_redpiler(&mut self) {
-        if self.redpiler.is_active() {
+        if self.redpiler.is_some() {
             debug!("Discarding redpiler");
-            let region = self.world.region();
-            self.redpiler.reset(&mut self.world, region);
+            self.sync_redpiler();
+            let ticks = self.with_simulation(|simulation| simulation.pending_ticks());
+            let Some(redpiler) = self.redpiler.take() else {
+                return;
+            };
+            for tick in ticks.into_iter().flatten() {
+                self.world
+                    .schedule_tick(tick.pos, tick.ticks_left, tick.priority);
+            }
+            if redpiler.options.update {
+                let region = self.world.region();
+                for pos in self
+                    .world
+                    .occupied_regions(region)
+                    .into_iter()
+                    .flat_map(Region::positions)
+                {
+                    let block = self.world.block(pos);
+                    mchprs_redstone::update(block, &mut self.world, pos);
+                }
+            }
             self.scoreboard
                 .set_redpiler_state(&self.players, RedpilerState::Stopped);
             self.scoreboard
@@ -1152,9 +1238,11 @@ impl Plot {
             self.last_update_time = now;
             if batch_size != 0 {
                 let mut ticks_completed = batch_size;
-                if self.redpiler.is_active() {
+                if self.redpiler.is_some() {
                     self.tickn(batch_size as u64);
-                    self.redpiler.flush(&mut self.world);
+                    if let Some(changes) = self.with_simulation(|simulation| simulation.sync()) {
+                        changes.apply(&mut self.world);
+                    }
                 } else {
                     for i in 0..batch_size {
                         self.tick();
@@ -1282,7 +1370,7 @@ impl Plot {
             running: true,
             tps,
             always_running,
-            redpiler: Default::default(),
+            redpiler: None,
             timings: TimingsMonitor::new(tps),
             scoreboard: Default::default(),
             world,

@@ -43,7 +43,7 @@ Sometimes, the breadth-first search done by extraction can result in two differe
 ## The `ConstantFold` Pass
 
 While nodes that are never updated in theory have no affect on the number of instructions that are run at runtime, therefore the time taken to perform a tick at runtime, keeping the size of the graph small helps to avoid cache misses that to end up taking time at runtime. This optimization pass reduces the size of the final graph by recognizing situations where a node only has constant inputs and tranforming that node into a constant node, breaking the links to the other constant nodes.
-Nodes with pending ticks are not folded. A folded node keeps its current output strength, because a node whose inputs are all constant is never updated again.
+Nodes with pending ticks are not folded. A folded node keeps its current output strength and, for a repeater, its lock, because a node whose inputs are all constant is never updated again.
 
 ## The `UnreachableOutput` Pass
 
