@@ -8,6 +8,7 @@ mod readback;
 mod reference;
 mod registers;
 mod rtl;
+mod stage;
 mod subprocess;
 mod verilator;
 
@@ -20,57 +21,81 @@ use mchprs_redpiler::{
 use mchprs_world::TickEntry;
 use reference::Reference;
 use registers::Registers;
+use stage::Stage;
+use std::fmt;
+use std::path::Path;
+use std::str::FromStr;
 use verilator::Verilator;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
-    Reference,
+    Phase,
     Verilator,
-    Board,
+    Fpga,
 }
 
 impl Target {
-    pub fn from_name(name: &str) -> Option<Target> {
-        match name {
-            "phase" => Some(Target::Reference),
-            "verilator" => Some(Target::Verilator),
-            "fpga" => Some(Target::Board),
-            _ => None,
+    fn name(self) -> &'static str {
+        match self {
+            Target::Phase => "phase",
+            Target::Verilator => "verilator",
+            Target::Fpga => "fpga",
         }
     }
 
-    fn stages(self) -> &'static [&'static str] {
+    fn stages(self) -> &'static [Stage] {
         match self {
-            Target::Reference => &["Lowering circuit"],
+            Target::Phase => &[Stage::LowerCircuit],
             Target::Verilator => &[
-                "Lowering circuit",
-                "Writing Verilator circuit",
-                "Generating Verilator model",
-                "Compiling Verilator model",
-                "Starting Verilator circuit",
+                Stage::LowerCircuit,
+                Stage::WriteVerilatorCircuit,
+                Stage::GenerateVerilatorModel,
+                Stage::CompileVerilatorModel,
+                Stage::StartVerilatorCircuit,
             ],
-            Target::Board => &[
-                "Lowering circuit",
-                "Generating Verilog",
-                "Opening board connection",
-                "Synthesizing logic",
-                "Waiting for device database",
-                "Building device database",
-                "Assembling device database",
-                "Placing and routing",
-                "Generating configuration frames",
-                "Writing bitstream",
-                "Programming board",
-                "Verifying circuit",
+            Target::Fpga => &[
+                Stage::LowerCircuit,
+                Stage::GenerateVerilog,
+                Stage::OpenBoardConnection,
+                Stage::SynthesizeLogic,
+                Stage::WaitForDeviceDatabase,
+                Stage::BuildDeviceDatabase,
+                Stage::AssembleDeviceDatabase,
+                Stage::PlaceAndRoute,
+                Stage::GenerateConfigurationFrames,
+                Stage::WriteBitstream,
+                Stage::ProgramBoard,
+                Stage::VerifyCircuit,
             ],
         }
+    }
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("unknown target {0}; use phase, verilator or fpga")]
+pub struct UnknownTarget(String);
+
+impl FromStr for Target {
+    type Err = UnknownTarget;
+
+    fn from_str(name: &str) -> Result<Self, UnknownTarget> {
+        [Target::Phase, Target::Verilator, Target::Fpga]
+            .into_iter()
+            .find(|target| target.name() == name)
+            .ok_or_else(|| UnknownTarget(name.to_owned()))
     }
 }
 
 pub fn write_verilog(
     netlist: &Netlist,
     pending_ticks: &[PendingTick],
-    directory: &std::path::Path,
+    directory: &Path,
 ) -> Result<(), EngineError> {
     let circuit = Circuit::lower(netlist, pending_ticks)?;
     rtl::write(&Registers::new(&circuit), directory)?;
@@ -85,18 +110,21 @@ pub fn prepare(
     progress: &CompileProgress,
 ) -> Result<Box<dyn Engine>, EngineError> {
     let stages = target.stages();
-    let report = |name: &'static str| {
-        let index = stages.iter().position(|stage| *stage == name).unwrap();
+    let report = |stage: Stage| {
+        let index = stages
+            .iter()
+            .position(|&listed| listed == stage)
+            .expect("each target lists the stages it reports");
         progress.set(Some(PassStatus {
             index,
             count: stages.len(),
-            name,
+            name: stage.name(),
         }));
     };
-    report("Lowering circuit");
+    report(Stage::LowerCircuit);
     let circuit = Circuit::lower(netlist, pending_ticks)?;
     let engine: Box<dyn Engine> = match target {
-        Target::Reference => Box::new(PhaseEngine::new(
+        Target::Phase => Box::new(PhaseEngine::new(
             Reference::new(&circuit),
             &circuit,
             io_only,
@@ -106,7 +134,7 @@ pub fn prepare(
             &circuit,
             io_only,
         )),
-        Target::Board => Box::new(PhaseEngine::new(
+        Target::Fpga => Box::new(PhaseEngine::new(
             Board::program(&circuit, &report)?,
             &circuit,
             io_only,

@@ -2,6 +2,7 @@ use super::VerilatorError;
 use crate::cache;
 use crate::registers::Registers;
 use crate::rtl;
+use crate::stage::Stage;
 use crate::subprocess;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
@@ -123,11 +124,11 @@ fn build(
     sources: &[PathBuf],
     node_count: usize,
     state_bytes: usize,
-    progress: &dyn Fn(&'static str),
+    progress: &dyn Fn(Stage),
 ) -> Result<(), VerilatorError> {
     let log = directory.join(BUILD_LOG);
     let deadline = Instant::now() + BUILD_TIMEOUT;
-    progress("Generating Verilator model");
+    progress(Stage::GenerateVerilatorModel);
     run_build_step(
         Command::new("verilator")
             .args(VERILATOR_ARGUMENTS)
@@ -140,7 +141,7 @@ fn build(
         &log,
         deadline,
     )?;
-    progress("Compiling Verilator model");
+    progress(Stage::CompileVerilatorModel);
     run_build_step(
         Command::new("make")
             .arg("-f")
@@ -157,12 +158,12 @@ fn build(
 pub(super) fn cached_simulator(
     registers: &Registers,
     state_bytes: usize,
-    progress: &dyn Fn(&'static str),
+    progress: &dyn Fn(Stage),
 ) -> Result<PathBuf, VerilatorError> {
     let circuit = registers.circuit;
     let root = cache::verilator_root();
     let staging = cache::build_directory(&root, STAGING_PREFIX, circuit.identity());
-    progress("Writing Verilator circuit");
+    progress(Stage::WriteVerilatorCircuit);
     rtl::write(registers, &staging)?;
     fs::write(staging.join(RUNNER), include_str!("runner.cpp"))?;
     let mut sources = rtl::sources();

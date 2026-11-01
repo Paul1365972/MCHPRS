@@ -228,9 +228,9 @@ fn start_backend(
     }
     #[cfg(feature = "fpga")]
     {
-        let target = mchprs_redpiler_fpga::Target::from_name(name).ok_or_else(|| {
-            format!("unknown backend {name}; use direct, phase, verilator or fpga")
-        })?;
+        let target = name
+            .parse::<mchprs_redpiler_fpga::Target>()
+            .map_err(|_| format!("unknown backend {name}; use direct, phase, verilator or fpga"))?;
         mchprs_redpiler_fpga::start(target, netlist, ticks, options.io_only, progress)
             .map(|worker| Box::new(worker) as Box<dyn Backend>)
             .map_err(|error| error.to_string())

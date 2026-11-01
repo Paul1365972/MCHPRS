@@ -218,7 +218,7 @@ impl Compiled {
             )));
         }
         #[cfg(feature = "fpga")]
-        if let Some(target) = mchprs_redpiler_fpga::Target::from_name(backend) {
+        if let Ok(target) = backend.parse::<mchprs_redpiler_fpga::Target>() {
             let progress = CompileProgress::default();
             let (netlist, pending_ticks) = (&self.netlist, &self.pending_ticks);
             return std::thread::scope(|scope| {

@@ -1,5 +1,6 @@
 use crate::cache;
 use crate::rtl;
+use crate::stage::Stage;
 use crate::subprocess::{self, SubprocessError};
 use std::env;
 use std::fs::{self, File};
@@ -50,10 +51,7 @@ pub(crate) enum ToolchainError {
     },
 }
 
-pub(super) fn build(
-    directory: &Path,
-    progress: &dyn Fn(&'static str),
-) -> Result<PathBuf, ToolchainError> {
+pub(super) fn build(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, ToolchainError> {
     let directory = directory.canonicalize()?;
     let cache = parent(&directory)?;
     let database = environment_path("PRJXRAY_DB_DIR")?.join("artix7");
@@ -65,10 +63,7 @@ pub(super) fn build(
     write_bitstream(&directory, &database, &frames, progress)
 }
 
-fn synthesize(
-    directory: &Path,
-    progress: &dyn Fn(&'static str),
-) -> Result<PathBuf, ToolchainError> {
+fn synthesize(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, ToolchainError> {
     let netlist = directory.join("circuit.json");
     let script = directory.join("synthesis.ys");
     let sources = rtl::sources()
@@ -83,7 +78,7 @@ fn synthesize(
             yosys_path(&netlist)?
         ),
     )?;
-    progress("Synthesizing logic");
+    progress(Stage::SynthesizeLogic);
     run(
         Command::new("yosys").arg("-s").arg(script),
         directory,
@@ -97,7 +92,7 @@ fn chip_database(
     cache: &Path,
     database: &Path,
     nextpnr: &Path,
-    progress: &dyn Fn(&'static str),
+    progress: &dyn Fn(Stage),
 ) -> Result<PathBuf, ToolchainError> {
     let chip_database = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bin"));
     let lock_path = cache.join("chipdb.lock");
@@ -107,7 +102,7 @@ fn chip_database(
         .create(true)
         .truncate(false)
         .open(&lock_path)?;
-    progress("Waiting for device database");
+    progress(Stage::WaitForDeviceDatabase);
     cache::lock(&lock, Instant::now() + LOCK_TIMEOUT).map_err(|source| ToolchainError::Lock {
         path: lock_path,
         source,
@@ -124,11 +119,11 @@ fn build_chip_database(
     database: &Path,
     nextpnr: &Path,
     chip_database: &Path,
-    progress: &dyn Fn(&'static str),
+    progress: &dyn Fn(Stage),
 ) -> Result<(), ToolchainError> {
     let intermediate = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bba"));
     let partial = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bin.partial"));
-    progress("Building device database");
+    progress(Stage::BuildDeviceDatabase);
     run(
         Command::new("uv")
             .args(["run", "--no-project", "--python", "python3"])
@@ -141,7 +136,7 @@ fn build_chip_database(
         "chipdb-generate",
         BUILD_TIMEOUT,
     )?;
-    progress("Assembling device database");
+    progress(Stage::AssembleDeviceDatabase);
     run(
         Command::new("bbasm")
             .arg("-l")
@@ -160,11 +155,11 @@ fn place_and_route(
     directory: &Path,
     chip_database: &Path,
     netlist: &Path,
-    progress: &dyn Fn(&'static str),
+    progress: &dyn Fn(Stage),
 ) -> Result<PathBuf, ToolchainError> {
     let constraints = directory.join(rtl::LIBRARY_DIRECTORY).join("basys3.xdc");
     let assembly = directory.join("circuit.fasm");
-    progress("Placing and routing");
+    progress(Stage::PlaceAndRoute);
     run(
         Command::new("nextpnr-himbaechel")
             .arg("--chipdb")
@@ -187,10 +182,10 @@ fn generate_frames(
     directory: &Path,
     database: &Path,
     assembly: &Path,
-    progress: &dyn Fn(&'static str),
+    progress: &dyn Fn(Stage),
 ) -> Result<PathBuf, ToolchainError> {
     let frames = directory.join("circuit.frames");
-    progress("Generating configuration frames");
+    progress(Stage::GenerateConfigurationFrames);
     run(
         Command::new("fasm2frames")
             .arg("--db-root")
@@ -209,10 +204,10 @@ fn write_bitstream(
     directory: &Path,
     database: &Path,
     frames: &Path,
-    progress: &dyn Fn(&'static str),
+    progress: &dyn Fn(Stage),
 ) -> Result<PathBuf, ToolchainError> {
     let bitstream = directory.join("circuit.bit");
-    progress("Writing bitstream");
+    progress(Stage::WriteBitstream);
     run(
         Command::new("xc7frames2bit")
             .arg("--part_file")

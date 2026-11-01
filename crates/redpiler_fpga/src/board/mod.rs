@@ -7,6 +7,7 @@ use crate::engine::Simulator;
 use crate::readback::{Readback, ReadbackError};
 use crate::registers::Registers;
 use crate::rtl;
+use crate::stage::Stage;
 use device::{Command, Device, DeviceError};
 use std::io;
 use std::path::Path;
@@ -44,14 +45,14 @@ pub(crate) struct Board {
 impl Board {
     pub(crate) fn program(
         circuit: &Circuit,
-        progress: &dyn Fn(&'static str),
+        progress: &dyn Fn(Stage),
     ) -> Result<Board, BoardError> {
         let port = std::env::var(PORT_VARIABLE).map_err(|_| BoardError::MissingPort)?;
         let directory = cache::build_directory(&cache::board_root(), "", circuit.identity());
-        progress("Generating Verilog");
+        progress(Stage::GenerateVerilog);
         let registers = Registers::new(circuit);
         rtl::write(&registers, &directory).map_err(BoardError::Write)?;
-        progress("Opening board connection");
+        progress(Stage::OpenBoardConnection);
         let readback = Readback::new(&registers);
         let node_count = circuit.nodes().len();
         let mut device = Device::serial(
@@ -61,9 +62,9 @@ impl Board {
             readback.bytes(circuit.io_nodes().iter().copied()),
         )?;
         let bitstream = toolchain::build(&directory, progress)?;
-        progress("Programming board");
+        progress(Stage::ProgramBoard);
         toolchain::program(&bitstream)?;
-        progress("Verifying circuit");
+        progress(Stage::VerifyCircuit);
         if device.execute(Command::Identity)?.ticks != circuit.identity() {
             return Err(BoardError::Identity);
         }

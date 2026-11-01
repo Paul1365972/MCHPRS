@@ -4,6 +4,7 @@ use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
 use crate::readback::{Readback, ReadbackError};
 use crate::registers::Registers;
+use crate::stage::Stage;
 use crate::subprocess::{Process, SubprocessError};
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
@@ -169,14 +170,14 @@ pub(crate) struct Verilator {
 impl Verilator {
     pub(crate) fn compile(
         circuit: &Circuit,
-        progress: &dyn Fn(&'static str),
+        progress: &dyn Fn(Stage),
     ) -> Result<Self, VerilatorError> {
         let registers = Registers::new(circuit);
         let readback = Readback::new(&registers);
         let node_count = circuit.nodes().len();
         let state_bytes = readback.bytes(0..node_count);
         let directory = compile::cached_simulator(&registers, state_bytes, progress)?;
-        progress("Starting Verilator circuit");
+        progress(Stage::StartVerilatorCircuit);
         let mut verilator = Self {
             running: Some(Running::start(&directory, TICKS_BYTES + state_bytes)?),
             log: directory.join(RUNTIME_LOG),

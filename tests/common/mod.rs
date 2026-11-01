@@ -38,7 +38,7 @@ pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn En
     let block_map = BlockMap::new(&netlist);
     let pending_ticks = block_map.map_ticks(&world.to_be_ticked);
     let target = match backend {
-        TestBackend::Phase { .. } => Target::Reference,
+        TestBackend::Phase { .. } => Target::Phase,
         TestBackend::Verilator { .. } => Target::Verilator,
         _ => {
             let engine = DirectEngine::new(&netlist, options.io_only, pending_ticks);
