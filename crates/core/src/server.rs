@@ -9,7 +9,6 @@ use crate::plot::{Plot, PLOT_BLOCK_HEIGHT};
 use crate::utils;
 #[cfg(feature = "whitelist")]
 use crate::utils::HyphenatedUUID;
-use backtrace::Backtrace;
 use bus::Bus;
 use hmac::{Hmac, Mac};
 use mchprs_network::packets::clientbound::{
@@ -153,10 +152,10 @@ impl MinecraftServer {
     /// Start the server
     pub fn run() {
         std::panic::set_hook(Box::new(|panic_info| {
-            let backtrace = Backtrace::new();
+            let backtrace = std::backtrace::Backtrace::force_capture();
             let thread = std::thread::current();
             let name = thread.name().unwrap_or("unnamed");
-            error!("Thread '{name}' {panic_info}\n{backtrace:?}");
+            error!("Thread '{name}' {panic_info}\n{backtrace}");
         }));
 
         info!("Starting server...");
