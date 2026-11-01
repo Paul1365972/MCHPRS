@@ -1,3 +1,5 @@
+#[cfg(feature = "claims")]
+use crate::plot::database;
 use crate::{
     commands::{
         argument::ArgumentType,
@@ -10,7 +12,6 @@ use crate::{
     item_stack::ItemStack,
     player::{Gamemode, PlayerPos},
     plot::{
-        database,
         redpiler::{EngineKind, RedpilerOptions},
         Plot,
     },
@@ -241,110 +242,110 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
         Ok(())
     }
 
-    registry.register(
-        Command::new("plot")
-            .alias("p")
-            .subcommand(Command::new("info").alias("i").executes(|ctx| {
-                let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
-                if let Some(owner) = database::get_plot_owner(plot_x, plot_z) {
-                    let username = database::get_cached_username(owner.clone()).unwrap_or(owner);
-                    ctx.reply(&format!("Plot owner is: {}", username))
-                } else {
-                    ctx.reply("Plot is not owned by anyone.")
-                }
-            }))
-            .subcommand(Command::new("claim").alias("c").executes(|ctx| {
-                let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
-                if database::is_claimed(plot_x, plot_z).unwrap() {
-                    ctx.reply("Plot is already claimed!")
-                } else {
-                    let player_idx = ctx.player_index();
-                    ctx.plot_mut().claim_plot(plot_x, plot_z, player_idx);
-                    Ok(())
-                }
-            }))
-            .subcommand(Command::new("auto").alias("a").executes(|ctx| {
-                let mut plot = (0, 0);
-                while database::is_claimed(plot.0, plot.1).unwrap() {
-                    plot = Plot::get_next_plot(plot.0, plot.1);
-                }
+    let plot = Command::new("plot").alias("p");
+    #[cfg(feature = "claims")]
+    let plot = plot
+        .subcommand(Command::new("info").alias("i").executes(|ctx| {
+            let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
+            if let Some(owner) = database::get_plot_owner(plot_x, plot_z) {
+                let username = database::get_cached_username(owner.clone()).unwrap_or(owner);
+                ctx.reply(&format!("Plot owner is: {}", username))
+            } else {
+                ctx.reply("Plot is not owned by anyone.")
+            }
+        }))
+        .subcommand(Command::new("claim").alias("c").executes(|ctx| {
+            let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
+            if database::is_claimed(plot_x, plot_z).unwrap() {
+                ctx.reply("Plot is already claimed!")
+            } else {
                 let player_idx = ctx.player_index();
-                ctx.plot_mut().claim_plot(plot.0, plot.1, player_idx);
+                ctx.plot_mut().claim_plot(plot_x, plot_z, player_idx);
                 Ok(())
-            }))
-            .subcommand(Command::new("middle").executes(|ctx| {
-                let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
-                teleport_to_plot(ctx, plot_x, plot_z)?;
-                ctx.reply("Teleported to plot middle.")
-            }))
-            .subcommand(
-                Command::new("visit")
-                    .alias("v")
-                    .arg("username", ArgumentType::Word)
-                    .optional("index", ArgumentType::integer(1, 999))
-                    .executes(|ctx| {
-                        let username: String = ctx.arg("username")?;
-                        let index = ctx.arg_opt::<i32>("index")?;
+            }
+        }))
+        .subcommand(Command::new("auto").alias("a").executes(|ctx| {
+            let mut plot = (0, 0);
+            while database::is_claimed(plot.0, plot.1).unwrap() {
+                plot = Plot::get_next_plot(plot.0, plot.1);
+            }
+            let player_idx = ctx.player_index();
+            ctx.plot_mut().claim_plot(plot.0, plot.1, player_idx);
+            Ok(())
+        }))
+        .subcommand(
+            Command::new("visit")
+                .alias("v")
+                .arg("username", ArgumentType::Word)
+                .optional("index", ArgumentType::integer(1, 999))
+                .executes(|ctx| {
+                    let username: String = ctx.arg("username")?;
+                    let index = ctx.arg_opt::<i32>("index")?;
 
-                        let plots = database::get_owned_plots(&username);
-                        if plots.is_empty() {
-                            return ctx.reply(&format!("{} does not own any plots.", username));
+                    let plots = database::get_owned_plots(&username);
+                    if plots.is_empty() {
+                        return ctx.reply(&format!("{} does not own any plots.", username));
+                    }
+
+                    let Some(&(plot_x, plot_z)) = plots.get(index.unwrap_or(1) as usize - 1) else {
+                        return ctx.reply(&format!("Plot range (1, {}).", plots.len()));
+                    };
+                    teleport_to_plot(ctx, plot_x, plot_z)?;
+
+                    match index {
+                        Some(index) => {
+                            ctx.reply(&format!("Teleported to {}'s plot #{}.", username, index))
                         }
-
-                        let Some(&(plot_x, plot_z)) = plots.get(index.unwrap_or(1) as usize - 1)
-                        else {
-                            return ctx.reply(&format!("Plot range (1, {}).", plots.len()));
-                        };
-                        teleport_to_plot(ctx, plot_x, plot_z)?;
-
-                        match index {
-                            Some(index) => {
-                                ctx.reply(&format!("Teleported to {}'s plot #{}.", username, index))
-                            }
-                            None => ctx.reply(&format!("Teleported to {}'s plot.", username)),
-                        }
-                    }),
-            )
-            .subcommand(
-                Command::new("teleport")
-                    .alias("tp")
-                    .arg("location", ArgumentType::PlotPos)
-                    .executes(|ctx| {
-                        let location: PlotCoordinates = ctx.arg("location")?;
-                        let current_plot_pos = ctx.player()?.pos.plot_pos();
-                        let (plot_x, plot_z) = location.resolve(current_plot_pos)?;
-                        teleport_to_plot(ctx, plot_x, plot_z)?;
-                        ctx.reply(&format!("Teleported to plot ({}, {}).", plot_x, plot_z))
-                    }),
-            )
-            .subcommand(Command::new("lock").executes(|ctx| {
-                let entity_id = ctx.player()?.entity_id;
-                if ctx.plot_mut().add_locked_player(entity_id) {
-                    let world = ctx.world();
-                    let (x, z) = (world.x, world.z);
-                    ctx.reply(&format!(
-                        "Locked to plot ({}, {}). Use '/p unlock' to unlock.",
-                        x, z
-                    ))
-                } else {
-                    ctx.reply("You are already locked to this plot.")
-                }
-            }))
-            .subcommand(Command::new("unlock").executes(|ctx| {
-                let entity_id = ctx.player()?.entity_id;
-                if ctx.plot_mut().remove_locked_player(entity_id) {
-                    ctx.reply("You are now unlocked.")
-                } else {
-                    ctx.reply("You are not locked to this plot.")
-                }
-            }))
-            .subcommand(Command::new("select").alias("sel").executes(|ctx| {
-                let region = ctx.world().region();
-                let player = ctx.player_mut()?;
-                player.worldedit_set_first_pos(region.min());
-                player.worldedit_set_second_pos(region.max());
-                Ok(())
-            })),
+                        None => ctx.reply(&format!("Teleported to {}'s plot.", username)),
+                    }
+                }),
+        );
+    registry.register(
+        plot.subcommand(Command::new("middle").executes(|ctx| {
+            let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
+            teleport_to_plot(ctx, plot_x, plot_z)?;
+            ctx.reply("Teleported to plot middle.")
+        }))
+        .subcommand(
+            Command::new("teleport")
+                .alias("tp")
+                .arg("location", ArgumentType::PlotPos)
+                .executes(|ctx| {
+                    let location: PlotCoordinates = ctx.arg("location")?;
+                    let current_plot_pos = ctx.player()?.pos.plot_pos();
+                    let (plot_x, plot_z) = location.resolve(current_plot_pos)?;
+                    teleport_to_plot(ctx, plot_x, plot_z)?;
+                    ctx.reply(&format!("Teleported to plot ({}, {}).", plot_x, plot_z))
+                }),
+        )
+        .subcommand(Command::new("lock").executes(|ctx| {
+            let entity_id = ctx.player()?.entity_id;
+            if ctx.plot_mut().add_locked_player(entity_id) {
+                let world = ctx.world();
+                let (x, z) = (world.x, world.z);
+                ctx.reply(&format!(
+                    "Locked to plot ({}, {}). Use '/p unlock' to unlock.",
+                    x, z
+                ))
+            } else {
+                ctx.reply("You are already locked to this plot.")
+            }
+        }))
+        .subcommand(Command::new("unlock").executes(|ctx| {
+            let entity_id = ctx.player()?.entity_id;
+            if ctx.plot_mut().remove_locked_player(entity_id) {
+                ctx.reply("You are now unlocked.")
+            } else {
+                ctx.reply("You are not locked to this plot.")
+            }
+        }))
+        .subcommand(Command::new("select").alias("sel").executes(|ctx| {
+            let region = ctx.world().region();
+            let player = ctx.player_mut()?;
+            player.worldedit_set_first_pos(region.min());
+            player.worldedit_set_second_pos(region.max());
+            Ok(())
+        })),
     );
 
     registry.register(

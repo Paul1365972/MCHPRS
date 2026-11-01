@@ -1,3 +1,5 @@
+#[cfg(feature = "claims")]
+use crate::plot::database;
 #[cfg(feature = "whitelist")]
 use crate::utils::HyphenatedUUID;
 use crate::{
@@ -8,7 +10,7 @@ use crate::{
     },
     config::CONFIG,
     player::{Gamemode, PacketSender, Player},
-    plot::{self, database, Plot, PLOT_BLOCK_HEIGHT},
+    plot::{Plot, PLOT_BLOCK_HEIGHT},
     utils,
 };
 use backtrace::Backtrace;
@@ -39,6 +41,8 @@ use serde_json::json;
 use sha2::Sha256;
 #[cfg(feature = "whitelist")]
 use std::io;
+#[cfg(not(feature = "claims"))]
+use std::path::Path;
 use std::{
     collections::HashMap,
     fs,
@@ -167,7 +171,12 @@ impl MinecraftServer {
         fs::create_dir_all("./world/plots").unwrap();
         fs::create_dir_all("./schems").unwrap();
 
-        plot::database::init();
+        #[cfg(not(feature = "claims"))]
+        if Path::new("./world/plots.db").exists() {
+            panic!("world/plots.db holds plot claims, but this build has no claims feature. Build with `--features claims` to keep them, or delete the file");
+        }
+        #[cfg(feature = "claims")]
+        database::init();
 
         let bind_addr = CONFIG.bind_address.clone();
 
@@ -554,6 +563,7 @@ impl MinecraftServer {
                     gamemode: player.gamemode,
                     properties: player.properties.clone(),
                 };
+                #[cfg(feature = "claims")]
                 database::ensure_user(&format!("{:032x}", player.uuid), &player.username);
                 self.broadcaster
                     .broadcast(BroadcastMessage::PlayerJoinedInfo(player_join_info));
