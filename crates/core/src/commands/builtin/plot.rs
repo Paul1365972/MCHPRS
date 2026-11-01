@@ -1,15 +1,18 @@
 use crate::commands::argument_parser::PlotPositionParser;
+#[cfg(feature = "claims")]
 use crate::commands::argument_parser::{IntegerParser, WordParser};
 use crate::commands::context::ExecutionContext;
 use crate::commands::define::Command;
 use crate::commands::error::CommandResult;
 use crate::commands::registry::CommandRegistry;
 use crate::player::PlayerPos;
+#[cfg(feature = "claims")]
 use crate::plot::database;
 use crate::plot::Plot;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
     let plot = Command::new("plot").alias("p");
+    #[cfg(feature = "claims")]
     let plot = {
         let mut visit = Command::new("visit").alias("v");
         let username = visit.required("username", WordParser);
@@ -57,6 +60,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
     );
 }
 
+#[cfg(feature = "claims")]
 fn exec_info(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
     if let Some(owner) = database::get_plot_owner(plot_x, plot_z) {
@@ -67,6 +71,7 @@ fn exec_info(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     }
 }
 
+#[cfg(feature = "claims")]
 fn exec_claim(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
     if database::is_claimed(plot_x, plot_z).unwrap() {
@@ -78,6 +83,7 @@ fn exec_claim(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     }
 }
 
+#[cfg(feature = "claims")]
 fn exec_auto(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let mut plot = (0, 0);
     while database::is_claimed(plot.0, plot.1).unwrap() {
@@ -88,6 +94,7 @@ fn exec_auto(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     Ok(())
 }
 
+#[cfg(feature = "claims")]
 fn exec_visit(
     ctx: &mut ExecutionContext<'_>,
     username: &str,
