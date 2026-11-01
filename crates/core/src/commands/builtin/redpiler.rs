@@ -8,7 +8,6 @@ use std::time::Instant;
 use tracing::{debug, warn};
 
 const OPTIMIZE: Flag = Flag::switch("optimize", Some('o'), "Enable redpiler optimizations");
-const EXPORT: Flag = Flag::switch("export", Some('e'), "Export the compile graph");
 const IO_ONLY: Flag = Flag::switch(
     "io-only",
     Some('i'),
@@ -47,7 +46,6 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
     let mut compile = Command::new("compile").alias("c");
     let flags = compile.flags_from(&[
         OPTIMIZE,
-        EXPORT,
         IO_ONLY,
         UPDATE,
         WIRE_DOT_OUT,
@@ -77,7 +75,6 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
 fn exec_compile(ctx: &mut ExecutionContext<'_>, flags: FlagValues) -> CommandResult<()> {
     let options = CompilerOptions {
         optimize: flags.is_on(&OPTIMIZE),
-        export: flags.is_on(&EXPORT),
         io_only: flags.is_on(&IO_ONLY),
         update: flags.is_on(&UPDATE),
         export_dot_graph: flags.is_on(&EXPORT_DOT),
