@@ -1,0 +1,19 @@
+[package]
+name = "mchprs_ril"
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+readme.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mchprs_blocks = { path = "../blocks" }
+mchprs_redpiler = { path = "../redpiler" }
+indexmap = { workspace = true }
+itertools = { workspace = true }
+rustc-hash = { workspace = true }
+tracing = { workspace = true }

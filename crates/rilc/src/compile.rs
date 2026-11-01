@@ -1,7 +1,7 @@
 use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
-use mchprs_redpiler::ril::ast::Global;
-use mchprs_redpiler::ril::dump_graph;
-use mchprs_redpiler::ril::RilOptions;
+use mchprs_ril::ast::Global;
+use mchprs_ril::dump_graph;
+use mchprs_ril::RilOptions;
 use std::path::{Path, PathBuf};
 use std::{fs, process};
 

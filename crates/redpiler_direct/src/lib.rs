@@ -1,14 +1,12 @@
-//! Runs the circuit node by node, in the order the vanilla game would.
-
 mod node;
 mod tick;
 mod update;
 
-use crate::circuit::{self, Circuit};
-use crate::engine::{Changes, Engine, EngineError, Input, Snapshot};
-use crate::graph::{self, LinkKind, NodeState, PendingTick};
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_redpiler::circuit::{self, Circuit};
+use mchprs_redpiler::engine::{Changes, Engine, EngineError, Input, Snapshot};
+use mchprs_redpiler::graph::{self, LinkKind, NodeState, PendingTick};
 use mchprs_redstone::tick_queue::TickPriority;
 use node::{ForwardLink, ForwardLinks, Node, NodeId, NodeInput, NodeKind, Nodes};
 use std::mem;
@@ -100,7 +98,6 @@ impl TickScheduler {
             .any(|queues| queues.0.iter().any(|queue| !queue.is_empty()))
     }
 
-    /// Every pending tick, soonest first, in the order they run.
     fn pending_ticks(&self) -> impl Iterator<Item = (NodeId, PendingTick)> + '_ {
         (1..=Self::NUM_QUEUES).flat_map(move |delay| {
             let queues = &self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES];
@@ -135,11 +132,8 @@ pub struct DirectEngine {
 }
 
 impl DirectEngine {
-    /// The input counters of a node hold this many links of each kind.
     const MAX_LINKS_PER_KIND: usize = u8::MAX as usize;
 
-    /// Rejects circuits beyond what the engine can hold: more than 255 links of one kind into
-    /// a node, or a pending tick more than 16 ticks away.
     pub fn new(circuit: Arc<Circuit>) -> Result<DirectEngine, EngineError> {
         for id in circuit.ids() {
             for kind in [LinkKind::Default, LinkKind::Side] {
