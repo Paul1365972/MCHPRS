@@ -8,23 +8,38 @@ use mchprs_redpiler_fpga::Target;
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
 use mchprs_world::World;
+use std::fmt::{self, Display, Formatter};
 use std::time::{Duration, Instant};
 
 #[derive(Copy, Clone)]
 pub enum TestBackend {
     Redstone,
-    Direct { optimize: bool },
-    Phase { optimize: bool },
-    Verilator { optimize: bool },
+    Compiled { engine: TestEngine, optimize: bool },
 }
 
-pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn Engine>) {
-    let optimize = match backend {
-        TestBackend::Redstone => unreachable!("the base redstone implementation is not compiled"),
-        TestBackend::Direct { optimize }
-        | TestBackend::Phase { optimize }
-        | TestBackend::Verilator { optimize } => optimize,
-    };
+#[derive(Copy, Clone)]
+pub enum TestEngine {
+    Direct,
+    Phase,
+    Verilator,
+}
+
+impl Display for TestBackend {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let TestBackend::Compiled { engine, optimize } = self else {
+            return f.write_str("the base redstone implementation");
+        };
+        let optimized = if *optimize { "optimized " } else { "" };
+        let engine = match engine {
+            TestEngine::Direct => "direct backend",
+            TestEngine::Phase => "phase reference",
+            TestEngine::Verilator => "Verilator circuit",
+        };
+        write!(f, "the {optimized}{engine}")
+    }
+}
+
+fn compile(world: &TestWorld, engine: TestEngine, optimize: bool) -> (BlockMap, Box<dyn Engine>) {
     let options = CompilerOptions {
         optimize,
         ..Default::default()
@@ -38,16 +53,16 @@ pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn En
     let netlist = mchprs_redpiler::compile(&input, &options, &progress);
     let block_map = BlockMap::new(&netlist);
     let pending_ticks = block_map.map_ticks(&world.to_be_ticked);
-    let target = match backend {
-        TestBackend::Phase { .. } => Target::Phase,
-        TestBackend::Verilator { .. } => Target::Verilator,
-        _ => {
+    let target = match engine {
+        TestEngine::Direct => {
             let engine = DirectEngine::new(&netlist, Reporting::All, &pending_ticks);
             return (block_map, Box::new(engine));
         }
+        TestEngine::Phase => Target::Phase,
+        TestEngine::Verilator => Target::Verilator,
     };
     let engine = mchprs_redpiler_fpga::prepare(target, &netlist, &pending_ticks, false, &progress)
-        .expect("the phase backend accepts the circuit");
+        .unwrap_or_else(|error| panic!("{target:?} rejects the circuit: {error}"));
     (block_map, engine)
 }
 
@@ -62,33 +77,24 @@ enum Runner {
 pub struct BackendRunner {
     world: TestWorld,
     runner: Runner,
-    description: &'static str,
+    backend: TestBackend,
 }
 
 impl BackendRunner {
     pub fn new(mut world: TestWorld, backend: TestBackend) -> BackendRunner {
         let (first_pos, second_pos) = world.corners();
         mchprs_redstone::update_region(&mut world, first_pos, second_pos);
-        let description = match backend {
-            TestBackend::Redstone => "the base redstone implementation",
-            TestBackend::Direct { optimize: false } => "the direct backend",
-            TestBackend::Direct { optimize: true } => "the optimized direct backend",
-            TestBackend::Phase { optimize: false } => "the phase reference",
-            TestBackend::Phase { optimize: true } => "the optimized phase reference",
-            TestBackend::Verilator { optimize: false } => "the Verilator circuit",
-            TestBackend::Verilator { optimize: true } => "the optimized Verilator circuit",
-        };
         let runner = match backend {
             TestBackend::Redstone => Runner::Redstone,
-            _ => {
-                let (block_map, engine) = compile(&world, backend);
+            TestBackend::Compiled { engine, optimize } => {
+                let (block_map, engine) = compile(&world, engine, optimize);
                 Runner::Compiled { block_map, engine }
             }
         };
         BackendRunner {
             world,
             runner,
-            description,
+            backend,
         }
     }
 
@@ -141,7 +147,7 @@ impl BackendRunner {
             is_block_powered(self.world.get_block(pos)),
             Some(powered),
             "when testing with {}",
-            self.description
+            self.backend
         );
     }
 
@@ -177,19 +183,19 @@ macro_rules! test_all_backends {
             #[test]
             fn [< $name _redstone >]() { $name(TestBackend::Redstone) }
             #[test]
-            fn [< $name _rp_direct >]() { $name(TestBackend::Direct { optimize: false }) }
+            fn [< $name _rp_direct >]() { $name(TestBackend::Compiled { engine: TestEngine::Direct, optimize: false }) }
             #[test]
-            fn [< $name _rp_direct_optimized >]() { $name(TestBackend::Direct { optimize: true }) }
+            fn [< $name _rp_direct_optimized >]() { $name(TestBackend::Compiled { engine: TestEngine::Direct, optimize: true }) }
             #[test]
-            fn [< $name _rp_phase >]() { $name(TestBackend::Phase { optimize: false }) }
+            fn [< $name _rp_phase >]() { $name(TestBackend::Compiled { engine: TestEngine::Phase, optimize: false }) }
             #[test]
-            fn [< $name _rp_phase_optimized >]() { $name(TestBackend::Phase { optimize: true }) }
-            #[test]
-            #[ignore = "needs Verilator"]
-            fn [< $name _rp_verilator >]() { $name(TestBackend::Verilator { optimize: false }) }
+            fn [< $name _rp_phase_optimized >]() { $name(TestBackend::Compiled { engine: TestEngine::Phase, optimize: true }) }
             #[test]
             #[ignore = "needs Verilator"]
-            fn [< $name _rp_verilator_optimized >]() { $name(TestBackend::Verilator { optimize: true }) }
+            fn [< $name _rp_verilator >]() { $name(TestBackend::Compiled { engine: TestEngine::Verilator, optimize: false }) }
+            #[test]
+            #[ignore = "needs Verilator"]
+            fn [< $name _rp_verilator_optimized >]() { $name(TestBackend::Compiled { engine: TestEngine::Verilator, optimize: true }) }
         }
     };
 }
