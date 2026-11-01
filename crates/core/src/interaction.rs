@@ -263,15 +263,12 @@ pub fn get_state_for_placement(
 }
 
 fn read_block_entity_tag(nbt: &nbt::Blob, block_id: &str) -> Option<BlockEntity> {
-    if let nbt::Value::Compound(compound) = &nbt["BlockEntityTag"] {
-        let id = match nbt.get("Id").or_else(|| nbt.get("id")) {
-            Some(id) => nbt_unwrap_val!(id, nbt::Value::String),
-            None => block_id,
-        };
-        return BlockEntity::from_nbt(id, compound);
-    }
-
-    None
+    let compound = nbt_unwrap_val!(nbt.get("BlockEntityTag")?, nbt::Value::Compound);
+    let id = match compound.get("Id").or_else(|| compound.get("id")) {
+        Some(id) => nbt_unwrap_val!(id, nbt::Value::String),
+        None => block_id,
+    };
+    BlockEntity::from_nbt(id, compound)
 }
 
 pub fn place_in_world(
