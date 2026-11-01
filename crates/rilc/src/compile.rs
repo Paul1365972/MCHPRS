@@ -39,12 +39,12 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
             Global::BackendCircuit(_) => todo!("backend circuit compilation"),
         };
 
-        let Some((world, bounds)) = crate::load_world(input_path, &schem_path) else {
+        let Some((world, region)) = crate::load_world(input_path, &schem_path) else {
             process::exit(1);
         };
         let input = CompilerInput {
             world: &world,
-            bounds,
+            region,
             ticks: &[],
         };
 

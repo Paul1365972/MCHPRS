@@ -223,8 +223,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .flag('p', "plot", "Update the entire plot")
             .executes(|ctx| {
                 if ctx.flag("plot") {
-                    let corners = ctx.world().get_corners();
-                    update(ctx.world_mut(), corners.0, corners.1);
+                    let region = ctx.world().region();
+                    update(ctx.world_mut(), region.min(), region.max());
                     ctx.worldedit_message("Updated entire plot.")
                 } else {
                     let (first_pos, second_pos) = ctx.get_selection()?;

@@ -37,9 +37,9 @@ impl<W: World> Pass<W> for IdentifyNodes {
         let mut first_pass = FxHashMap::default();
         let mut second_pass = FxHashSet::default();
 
-        let (first_pos, second_pos) = input.bounds;
+        let region = input.region;
 
-        for_each_block_optimized(plot, first_pos, second_pos, |pos| {
+        for_each_block_optimized(plot, region.min(), region.max(), |pos| {
             for_pos(graph, &mut first_pass, &mut second_pass, options, plot, pos);
         });
 

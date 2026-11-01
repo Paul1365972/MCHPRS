@@ -1,4 +1,5 @@
 use mchprs_blocks::blocks::{Block, LeverFace, Repeater};
+use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::{BackendVariant, Compiler, CompilerOptions};
 use mchprs_redstone::wire::make_cross;
@@ -21,10 +22,10 @@ impl RedpilerInstance {
         let max_x = world.x_size * 16 - 1;
         let max_y = world.y_size * 16 - 1;
         let max_z = world.z_size * 16 - 1;
-        let bounds = (BlockPos::new(0, 0, 0), BlockPos::new(max_x, max_y, max_z));
+        let region = Region::new(BlockPos::new(0, 0, 0), BlockPos::new(max_x, max_y, max_z));
         let monitor = Default::default();
         let ticks = world.to_be_ticked.clone();
-        compiler.compile(world, bounds, options.clone(), ticks, monitor);
+        compiler.compile(world, region, options.clone(), ticks, monitor);
         RedpilerInstance { options, compiler }
     }
 }
