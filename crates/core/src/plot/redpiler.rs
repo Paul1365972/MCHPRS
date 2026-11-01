@@ -1,11 +1,10 @@
-use super::scoreboard::RedpilerState;
 use super::Plot;
 use crate::player::PacketSender;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::circuit::Circuit;
-use mchprs_redpiler::compile::CompileOptions;
+use mchprs_redpiler::compile::{CompileOptions, Stage};
 use mchprs_redpiler::engine::{Engine, EngineError};
 use mchprs_redpiler::ports::{Observed, Ports};
 use mchprs_redpiler::simulation::Simulation;
@@ -87,9 +86,11 @@ pub struct Redpiler {
     pub options: RedpilerOptions,
     pub engine: EngineKind,
     pub worker: Worker,
+    pub stage: Option<Stage>,
     pub circuit: Option<Arc<Circuit>>,
     pub plot_ticks: Vec<TickEntry>,
     pub started: Instant,
+    pub report_requested: bool,
     pub advances: HashMap<RequestId, Advance>,
     pub paused: bool,
 }
@@ -141,6 +142,10 @@ impl Plot {
             };
             redpiler.worker.set_tick_rate(rate);
         }
+        if !redpiler.report_requested {
+            redpiler.worker.report_ticks();
+            redpiler.report_requested = true;
+        }
         for event in redpiler.worker.poll() {
             self.apply_redpiler_event(event);
         }
@@ -148,7 +153,11 @@ impl Plot {
 
     fn apply_redpiler_event(&mut self, event: Event) -> Option<Vec<TickEntry>> {
         match event {
-            Event::Progress(stage) => trace!("Redpiler compile stage {stage:?}"),
+            Event::Progress(stage) => {
+                trace!("Redpiler compile stage {stage:?}");
+                self.redpiler.as_mut()?.stage = Some(stage);
+                self.refresh_scoreboard();
+            }
             Event::Started(circuit) => {
                 let redpiler = self.redpiler.as_mut()?;
                 let message = format!(
@@ -157,16 +166,22 @@ impl Plot {
                     redpiler.engine,
                     redpiler.started.elapsed()
                 );
+                redpiler.stage = None;
                 redpiler.circuit = Some(circuit);
                 debug!("{message}");
                 self.broadcast(&message);
-                self.scoreboard
-                    .set_redpiler_state(&self.players, RedpilerState::Running);
                 self.reset_timings();
+                self.refresh_scoreboard();
             }
-            Event::Batch { changes, ticks } => {
+            Event::Ticked(report) => {
+                self.redpiler.as_mut()?.report_requested = false;
+                if report.ticks > 0 {
+                    self.timings.tickn(report.ticks);
+                    self.tick_time = Some(report.ticking.div_f64(report.ticks as f64));
+                }
+            }
+            Event::Batch(changes) => {
                 changes.apply(&mut self.world);
-                self.timings.tickn(ticks);
                 self.publish_world();
             }
             Event::Advanced(request) => {
@@ -222,21 +237,13 @@ impl Plot {
                 ));
             }
         }
-        self.scoreboard
-            .set_redpiler_state(&self.players, RedpilerState::Stopped);
-        self.scoreboard
-            .set_redpiler_options(&self.players, &Default::default());
         self.publish_world();
         self.reset_timings();
+        self.refresh_scoreboard();
     }
 
     pub fn start_redpiler(&mut self, options: RedpilerOptions, engine: EngineKind) {
         debug!("Starting redpiler with the {engine} engine");
-        self.scoreboard
-            .set_redpiler_state(&self.players, RedpilerState::Compiling);
-        self.scoreboard
-            .set_redpiler_options(&self.players, &options);
-
         let region = self.world.region();
         let blocks = self.world.copy_blocks();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
@@ -260,12 +267,15 @@ impl Plot {
             options,
             engine,
             worker,
+            stage: None,
             circuit: None,
             plot_ticks: ticks,
             started: Instant::now(),
+            report_requested: false,
             advances: HashMap::new(),
             paused: false,
         });
+        self.refresh_scoreboard();
     }
 
     pub fn stop_redpiler(&mut self, restore: bool, update: bool) {

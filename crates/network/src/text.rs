@@ -56,7 +56,7 @@ fn is_valid_hex(ch: char) -> bool {
     ch.is_numeric() || ('a'..='f').contains(&ch) || ('A'..='F').contains(&ch)
 }
 
-#[derive(Serialize, Debug, Clone, Copy)]
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ColorCode {
     Black,
@@ -121,7 +121,7 @@ impl ColorCode {
     }
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum TextColor {
     Hex(String),
@@ -134,7 +134,7 @@ impl From<ColorCode> for TextColor {
     }
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum ClickEventType {
     OpenUrl,
@@ -142,7 +142,7 @@ enum ClickEventType {
     // SuggestCommand,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct ClickEvent {
     action: ClickEventType,
     value: String,
@@ -192,7 +192,7 @@ impl TextComponentBuilder {
     }
 }
 
-#[derive(Serialize, Default, Debug, Clone)]
+#[derive(Serialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct TextComponent {
     pub text: String,
     #[serde(skip_serializing_if = "is_false")]

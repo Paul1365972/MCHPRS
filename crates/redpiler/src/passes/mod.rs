@@ -180,6 +180,10 @@ impl PassPipeline<'_> {
         self.passes.is_empty()
     }
 
+    pub fn passes(&self) -> &[&dyn Pass] {
+        &self.passes
+    }
+
     /// Runs every pass in order, then calls `after_each`, which can stop the pipeline.
     pub fn run_passes(
         &self,
