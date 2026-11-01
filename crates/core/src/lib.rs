@@ -5,6 +5,7 @@ mod utils;
 mod commands;
 mod config;
 mod interaction;
+mod item_stack;
 mod permissions;
 mod player;
 mod plot;

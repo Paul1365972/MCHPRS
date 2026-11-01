@@ -7,6 +7,7 @@ use crate::{
         registry::CommandRegistry,
         value::{Direction, ReplacementOperand},
     },
+    item_stack::ItemStack,
     utils,
     worldedit::{
         clear_area, mask::WorldEditMask, pattern::WorldEditPattern, region_positions, update,
@@ -16,7 +17,7 @@ use itertools::Itertools;
 use mchprs_blocks::{
     block_entities::{BlockEntity, ContainerType, InventoryEntry},
     blocks::{Block, HopperFacing},
-    items::{Item, ItemStack},
+    items::Item,
     BlockDirection, BlockFacing, BlockPos,
 };
 use mchprs_network::packets::clientbound::*;

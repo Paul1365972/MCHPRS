@@ -1,11 +1,12 @@
 use crate::config::CONFIG;
+use crate::item_stack::ItemStack;
 use crate::permissions::{self, PlayerPermissionsCache};
 use crate::plot::PLOT_SCALE;
 use crate::utils::{self, HyphenatedUUID};
 use crate::worldedit::WorldEditUndo;
 use byteorder::{BigEndian, ReadBytesExt};
 use mchprs_blocks::block_entities::{ContainerType, InventoryEntry};
-use mchprs_blocks::items::{Item, ItemStack};
+use mchprs_blocks::items::Item;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::{PacketEncoder, PlayerProperty, SlotData};

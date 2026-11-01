@@ -7,13 +7,13 @@ use crate::{
         registry::CommandRegistry,
         value::{PlayerTarget, PlotCoordinates},
     },
+    item_stack::ItemStack,
     player::{Gamemode, PlayerPos},
     plot::{database, Plot},
     server::{get_version_string, Message},
     utils::HyphenatedUUID,
 };
 use mchprs_blocks::block_entities::ContainerType;
-use mchprs_blocks::items::ItemStack;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::CompilerOptions;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};

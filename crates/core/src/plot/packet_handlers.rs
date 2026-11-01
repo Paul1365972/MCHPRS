@@ -1,15 +1,12 @@
 use super::{Plot, PLOT_BLOCK_HEIGHT};
 use crate::{
     commands::{schematic::schematic_names, suggestions::SuggestionSource, COMMAND_REGISTRY},
+    item_stack::ItemStack,
     player::{PacketSender, PlayerPos, SkinParts},
     server::Message,
     utils,
 };
-use mchprs_blocks::{
-    block_entities::BlockEntity,
-    items::{Item, ItemStack},
-    BlockPos,
-};
+use mchprs_blocks::{block_entities::BlockEntity, items::Item, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::*;
 use mchprs_world::World;
