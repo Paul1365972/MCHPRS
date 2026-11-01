@@ -2,13 +2,13 @@ pub mod clientbound;
 pub mod serverbound;
 
 use crate::nbt_util::NBTCompound;
+use crate::text::TextComponent;
 
 use super::NetworkState;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use flate2::bufread::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use mchprs_text::TextComponent;
 use serde::Serialize;
 use serverbound::*;
 use std::io::{self, Cursor, Read, Write};
