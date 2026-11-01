@@ -2,7 +2,7 @@ pub mod mask;
 pub mod pattern;
 
 use crate::player::PlayerPos;
-use crate::plot::PlotWorld;
+use crate::plot::world::PlotWorld;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;

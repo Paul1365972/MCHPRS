@@ -1,6 +1,7 @@
 use crate::item_stack::ItemStack;
 use crate::player::Player;
-use crate::plot::{PlotWorld, PLOT_BLOCK_HEIGHT};
+use crate::plot::world::PlotWorld;
+use crate::plot::PLOT_BLOCK_HEIGHT;
 use fastnbt::Value;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::items::Item;

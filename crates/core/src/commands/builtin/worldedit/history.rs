@@ -3,7 +3,7 @@ use crate::commands::context::ExecutionContext;
 use crate::commands::define::Command;
 use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
-use crate::plot::PlotWorld;
+use crate::plot::world::PlotWorld;
 use crate::worldedit::WorldEditUndo;
 use mchprs_blocks::BlockPos;
 use mchprs_schematic::{create_clipboard, paste_clipboard};
