@@ -22,10 +22,10 @@ use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::{Compiler, CompilerOptions};
-use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
+use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
 use mchprs_text::TextComponent;
 use mchprs_world::storage::Chunk;
-use mchprs_world::{TickEntry, TickPriority, World};
+use mchprs_world::{has_tick_entry, schedule_tick_entry, TickEntry, TickPriority, World};
 use monitor::TimingsMonitor;
 use rustc_hash::FxHashMap;
 use scoreboard::RedpilerState;
@@ -215,15 +215,12 @@ impl World for PlotWorld {
     }
 
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority) {
-        self.to_be_ticked.push(TickEntry {
-            pos,
-            ticks_left: delay,
-            tick_priority: priority,
-        });
+        let block = self.get_block(pos);
+        schedule_tick_entry(&mut self.to_be_ticked, block, pos, delay, priority);
     }
 
     fn pending_tick_at(&mut self, pos: BlockPos) -> bool {
-        self.to_be_ticked.iter().any(|e| e.pos == pos)
+        has_tick_entry(&self.to_be_ticked, self.get_block(pos), pos)
     }
 
     fn play_sound(
@@ -310,7 +307,10 @@ impl Plot {
         }
         while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
             let entry = self.world.to_be_ticked.remove(0);
-            mchprs_redstone::tick(self.world.get_block(entry.pos), &mut self.world, entry.pos);
+            let block = self.world.get_block(entry.pos);
+            if entry.is_for(block) {
+                mchprs_redstone::tick(block, &mut self.world, entry.pos);
+            }
         }
     }
 
@@ -1154,7 +1154,18 @@ impl Plot {
             x,
             z,
             chunks,
-            to_be_ticked: plot_data.pending_ticks,
+            to_be_ticked: plot_data
+                .pending_ticks
+                .into_iter()
+                .map(|tick| {
+                    TickEntry::new(
+                        tick.pos,
+                        tick.ticks_left,
+                        tick.priority,
+                        Block::from_id(tick.block_id),
+                    )
+                })
+                .collect(),
             packet_senders: Vec::new(),
             world_send_rate: plot_data.world_send_rate,
             pending_block_entities: FxHashMap::default(),
@@ -1217,7 +1228,16 @@ impl Plot {
             tps: self.tps,
             world_send_rate: world.world_send_rate,
             chunk_data,
-            pending_ticks: world.to_be_ticked.clone(),
+            pending_ticks: world
+                .to_be_ticked
+                .iter()
+                .map(|tick| SavedTick {
+                    ticks_left: tick.ticks_left,
+                    priority: tick.tick_priority,
+                    pos: tick.pos,
+                    block_id: tick.block.get_id(),
+                })
+                .collect(),
         };
         data.save_to_file(format!("./world/plots/p{},{}", world.x, world.z))
             .unwrap();

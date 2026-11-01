@@ -1,0 +1,58 @@
+//! Migration from version 3 to version 4, which saves the block each pending tick is for
+
+use super::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
+use mchprs_blocks::BlockPos;
+use mchprs_world::storage::Chunk;
+use mchprs_world::TickPriority;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct TickEntryV3 {
+    ticks_left: u32,
+    tick_priority: TickPriority,
+    pos: BlockPos,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlotDataV3 {
+    pub tps: Tps,
+    pub world_send_rate: WorldSendRate,
+    pub chunk_data: Vec<ChunkData>,
+    pub pending_ticks: Vec<TickEntryV3>,
+}
+
+impl PlotDataV3 {
+    pub fn upgrade(self) -> PlotData {
+        let plot_width = self.chunk_data.len().isqrt() as i32;
+        let chunks: Vec<Chunk> = self
+            .chunk_data
+            .iter()
+            .map(|chunk| chunk.clone().load(0, 0))
+            .collect();
+        let pending_ticks = self
+            .pending_ticks
+            .into_iter()
+            .filter_map(|tick| {
+                let local_chunk_x = (tick.pos.x >> 4).checked_rem_euclid(plot_width)?;
+                let local_chunk_z = (tick.pos.z >> 4).checked_rem_euclid(plot_width)?;
+                let chunk = &chunks[(local_chunk_x * plot_width + local_chunk_z) as usize];
+                Some(SavedTick {
+                    ticks_left: tick.ticks_left,
+                    priority: tick.tick_priority,
+                    pos: tick.pos,
+                    block_id: chunk.get_block(
+                        (tick.pos.x & 0xF) as u32,
+                        tick.pos.y as u32,
+                        (tick.pos.z & 0xF) as u32,
+                    ),
+                })
+            })
+            .collect();
+        PlotData {
+            tps: self.tps,
+            world_send_rate: self.world_send_rate,
+            chunk_data: self.chunk_data,
+            pending_ticks,
+        }
+    }
+}

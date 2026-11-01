@@ -1,4 +1,4 @@
-use crate::{storage::Chunk, TickEntry, TickPriority, World};
+use crate::{has_tick_entry, schedule_tick_entry, storage::Chunk, TickEntry, TickPriority, World};
 use mchprs_blocks::{block_entities::BlockEntity, BlockPos};
 
 /// A reference world implementation used for testing.
@@ -112,14 +112,11 @@ impl World for TestWorld {
     }
 
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority) {
-        self.to_be_ticked.push(TickEntry {
-            pos,
-            ticks_left: delay,
-            tick_priority: priority,
-        });
+        let block = self.get_block(pos);
+        schedule_tick_entry(&mut self.to_be_ticked, block, pos, delay, priority);
     }
 
     fn pending_tick_at(&mut self, pos: BlockPos) -> bool {
-        self.to_be_ticked.iter().any(|e| e.pos == pos)
+        has_tick_entry(&self.to_be_ticked, self.get_block(pos), pos)
     }
 }

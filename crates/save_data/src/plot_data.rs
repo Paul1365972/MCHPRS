@@ -1,11 +1,13 @@
 mod v2_to_v3;
+mod v3_to_v4;
 
 use self::v2_to_v3::PlotDataV2;
+use self::v3_to_v4::PlotDataV3;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::BlockPos;
 use mchprs_world::storage::{Chunk, ChunkSection};
-use mchprs_world::TickEntry;
+use mchprs_world::TickPriority;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
@@ -19,7 +21,8 @@ use thiserror::Error;
 /// 1: Add world send rate
 /// 2: Update to MC 1.20.4
 /// 3: Change Tps and WorldSendRate to support real values (f32)
-pub const VERSION: u32 = 3;
+/// 4: Save the block each pending tick is for
+pub const VERSION: u32 = 4;
 
 #[derive(Error, Debug)]
 pub enum PlotLoadError {
@@ -146,11 +149,19 @@ impl fmt::Display for Tps {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavedTick {
+    pub ticks_left: u32,
+    pub priority: TickPriority,
+    pub pos: BlockPos,
+    pub block_id: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlotData {
     pub tps: Tps,
     pub world_send_rate: WorldSendRate,
     pub chunk_data: Vec<ChunkData>,
-    pub pending_ticks: Vec<TickEntry>,
+    pub pending_ticks: Vec<SavedTick>,
 }
 
 impl PlotData {
@@ -162,7 +173,10 @@ impl PlotData {
         file.read_to_end(&mut buf)?;
         Ok(match version {
             0..=1 => return Err(PlotLoadError::ConversionUnavailable(version)),
-            2 => bincode::deserialize::<PlotDataV2>(&buf)?.upgrade(),
+            2 => bincode::deserialize::<PlotDataV2>(&buf)?
+                .upgrade()
+                .upgrade(),
+            3 => bincode::deserialize::<PlotDataV3>(&buf)?.upgrade(),
             VERSION => bincode::deserialize(&buf)?,
             _ => return Err(PlotLoadError::TooNew(version)),
         })
