@@ -1,11 +1,16 @@
 pub mod backend;
-pub mod compile_graph;
+pub mod export;
 pub mod extract;
+pub mod graph;
 pub mod passes;
+pub mod ports;
 pub mod ril;
 pub mod string_replacer;
 pub mod task_monitor;
 
+use crate::extract::ExtractError;
+use crate::ports::Observed;
+use crate::ports::Ports;
 use backend::{BackendDispatcher, JITBackend};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
@@ -13,13 +18,33 @@ use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::tick_queue::TickEntry;
 use mchprs_redstone::RedstoneWorld;
+use passes::PassRegistry;
+use ril::DumpGraph;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, trace, warn};
 
 pub use task_monitor::TaskMonitor;
 
-use crate::passes::PassRegistry;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompileOptions {
+    pub ports: Ports,
+    pub observed: Observed,
+    pub optimize: bool,
+    pub reorder: bool,
+}
+
+impl Default for CompileOptions {
+    fn default() -> Self {
+        CompileOptions {
+            ports: Ports::conventional(),
+            observed: Observed::Everything,
+            optimize: false,
+            reorder: false,
+        }
+    }
+}
 
 fn block_powered_mut(block: &mut Block) -> Option<&mut bool> {
     Some(match block {
@@ -73,6 +98,32 @@ pub enum BackendVariant {
 }
 
 impl CompilerOptions {
+    pub fn compile_options(&self) -> CompileOptions {
+        let mut ports = Ports::conventional();
+        if self.wire_dot_out {
+            ports = ports.wire_dots();
+        }
+        if self.wire_cross_out {
+            ports = ports.wire_crosses();
+        }
+        if self.illegal_states_out {
+            ports = ports.illegal_wires();
+        }
+        let observed = if self.io_only {
+            Observed::Ports
+        } else if self.optimize {
+            Observed::Components
+        } else {
+            Observed::Everything
+        };
+        CompileOptions {
+            ports,
+            observed,
+            optimize: self.optimize,
+            reorder: self.reorder,
+        }
+    }
+
     fn parse_option(&mut self, option: &str) {
         if option.starts_with("--") {
             if let Some(passes_str) = option.strip_prefix("--passes=") {
@@ -157,23 +208,42 @@ impl Compiler {
         world: &W,
         region: Region,
         options: CompilerOptions,
-        mut ticks: Vec<TickEntry>,
+        ticks: Vec<TickEntry>,
         monitor: Arc<TaskMonitor>,
-    ) {
+    ) -> Result<(), ExtractError> {
         debug!("Starting compile");
         let start = Instant::now();
-
-        // A tick scheduled by a block that has since been replaced would never run
-        ticks.retain(|entry| entry.is_for(world.block(entry.position)));
+        let compile_options = options.compile_options();
 
         monitor.set_message("Extracting circuit".to_string());
-        let graph = extract::extract(world, region, &ticks, &options);
+        let mut graph = extract::extract(world, region, &ticks, &compile_options)?;
         let registry = PassRegistry::default();
-        let pass_pipeline = passes::build_pass_pipeline(&registry, &options);
-        let graph = pass_pipeline.run_passes(&options, graph, monitor.clone());
-
-        if monitor.cancelled() {
-            return;
+        let pass_pipeline = passes::build_pass_pipeline(&registry, &compile_options);
+        // Add one for the backend compile step
+        monitor.set_max_progress(pass_pipeline.len() + 1);
+        let flow = pass_pipeline.run_passes(&mut graph, &mut |pass, graph| {
+            monitor.inc_progress();
+            monitor.set_message(pass.status_message().to_string());
+            if options.print_after_all {
+                debug!("Printing circuit after pass: {}", pass.debug_name());
+                graph.dump();
+            }
+            match monitor.cancelled() {
+                true => ControlFlow::Break(()),
+                false => ControlFlow::Continue(()),
+            }
+        });
+        if flow.is_break() {
+            return Ok(());
+        }
+        if options.print_before_backend {
+            debug!("Printing circuit before backend compile:");
+            graph.dump();
+        }
+        if options.export
+            && let Err(error) = std::fs::write("redpiler_graph.bc", export::export_graph(&graph))
+        {
+            error!("Failed to export the graph: {error}");
         }
 
         let replace_backend = match self.backend {
@@ -195,7 +265,7 @@ impl Compiler {
             monitor.set_message("Compiling backend".to_string());
             let start = Instant::now();
 
-            backend.compile(graph, ticks, &options, monitor.clone());
+            backend.compile(graph, &options, monitor.clone());
 
             monitor.inc_progress();
             trace!("Backend compiled in {:?}", start.elapsed());
@@ -206,6 +276,7 @@ impl Compiler {
         self.options = options;
         self.is_active = true;
         debug!("Compile completed in {:?}", start.elapsed());
+        Ok(())
     }
 
     pub fn reset<W: RedstoneWorld>(&mut self, world: &mut W, region: Region) {

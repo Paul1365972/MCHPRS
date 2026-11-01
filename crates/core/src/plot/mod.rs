@@ -27,6 +27,7 @@ use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 
 use mchprs_network::PlayerPacketSender;
+use mchprs_redpiler::extract::ExtractError;
 use mchprs_redpiler::{Compiler, CompilerOptions};
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
 use mchprs_redstone::RedstoneWorld;
@@ -691,7 +692,7 @@ impl Plot {
         self.last_world_send_time = Instant::now();
     }
 
-    pub fn start_redpiler(&mut self, options: CompilerOptions) {
+    pub fn start_redpiler(&mut self, options: CompilerOptions) -> Result<(), ExtractError> {
         debug!("Starting redpiler");
         self.scoreboard
             .set_redpiler_state(&self.players, RedpilerState::Compiling);
@@ -704,7 +705,7 @@ impl Plot {
         let ticks = mem::take(&mut self.world.ticks).into_entries();
 
         let mut players_need_updates = HashSet::new();
-        thread::scope(|s| {
+        let result = thread::scope(|s| {
             let handle = s.spawn(|| {
                 self.redpiler
                     .compile(&self.world, region, options, ticks, monitor)
@@ -721,6 +722,7 @@ impl Plot {
                 }
                 thread::sleep(Duration::from_millis(20));
             }
+            handle.join().expect("the compile thread panicked")
         });
 
         // Now that we have ownership of the world again, we can update player view positions
@@ -728,10 +730,16 @@ impl Plot {
             self.update_view_pos_for_player(player_idx, false);
         }
 
+        if result.is_err() {
+            self.scoreboard
+                .set_redpiler_state(&self.players, RedpilerState::Stopped);
+            return result;
+        }
         self.scoreboard
             .set_redpiler_state(&self.players, RedpilerState::Running);
 
         self.reset_timings();
+        Ok(())
     }
 
     /// Redpiler needs to reset implicitly in the case of any block changes done by a player. This
@@ -1156,8 +1164,9 @@ impl Plot {
             if self.auto_redpiler
                 && !self.redpiler.is_active()
                 && (self.tps == Tps::Unlimited || self.timings.is_running_behind())
+                && let Err(error) = self.start_redpiler(Default::default())
             {
-                self.start_redpiler(Default::default());
+                warn!("Automatic redpiler compile failed: {error}");
             }
 
             let now = Instant::now();

@@ -1,6 +1,4 @@
-use crate::compile_graph::{
-    CompileGraph, CompileLink, CompileNode, Direction, LinkType, NodeIdx, NodeState, NodeType,
-};
+use crate::graph::{Direction, Graph, Link, LinkKind, Node, NodeIdx, NodeKind, NodeState};
 use crate::string_replacer::StringReplacer;
 use crate::CompilerOptions;
 use indexmap::IndexMap;
@@ -12,7 +10,7 @@ use std::iter::Peekable;
 use std::str::CharIndices;
 use std::{fmt, vec};
 
-fn dump_node_name(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -> fmt::Result {
+fn dump_node_name(f: &mut impl fmt::Write, graph: &Graph, node_idx: NodeIdx) -> fmt::Result {
     write!(f, "%")?;
     if let Some(name) = &graph[node_idx].name {
         write!(f, "{}", name)
@@ -32,7 +30,7 @@ impl fmt::Display for FarInputFormatter {
     }
 }
 
-fn dump_outputs(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -> fmt::Result {
+fn dump_outputs(f: &mut impl fmt::Write, graph: &Graph, node_idx: NodeIdx) -> fmt::Result {
     let mut outputs = graph.edges(node_idx, Direction::Outgoing).peekable();
     if outputs.peek().is_none() {
         return Ok(());
@@ -42,7 +40,7 @@ fn dump_outputs(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx
         if idx > 0 {
             write!(f, ", ")?;
         }
-        if edge.weight().ty == LinkType::Side {
+        if edge.weight().kind == LinkKind::Side {
             write!(f, "side ")?;
         }
         dump_node_name(f, graph, edge.target())?;
@@ -51,15 +49,15 @@ fn dump_outputs(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx
     write!(f, "]")
 }
 
-fn dump_node(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -> fmt::Result {
+fn dump_node(f: &mut impl fmt::Write, graph: &Graph, node_idx: NodeIdx) -> fmt::Result {
     let node = &graph[node_idx];
 
     write!(f, "  ")?;
     dump_node_name(f, graph, node_idx)?;
     write!(f, " = ")?;
 
-    match node.ty {
-        NodeType::Repeater { delay, prioritized } => write!(
+    match node.kind {
+        NodeKind::Repeater { delay, prioritized } => write!(
             f,
             "repeater {}, {}, {}, {}",
             delay,
@@ -67,8 +65,8 @@ fn dump_node(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -
             node.state.repeater_locked,
             node.state.is_powered(),
         ),
-        NodeType::Torch => write!(f, "torch {}", node.state.is_powered()),
-        NodeType::Comparator {
+        NodeKind::Torch => write!(f, "torch {}", node.state.is_powered()),
+        NodeKind::Comparator {
             mode,
             far_input,
             prioritized,
@@ -80,14 +78,14 @@ fn dump_node(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -
             prioritized,
             node.state.power,
         ),
-        NodeType::Lamp => write!(f, "lamp {}", node.state.is_powered()),
-        NodeType::Button => write!(f, "button {}", node.state.is_powered()),
-        NodeType::Lever => write!(f, "lever {}", node.state.is_powered()),
-        NodeType::PressurePlate => write!(f, "pressure_plate {}", node.state.is_powered()),
-        NodeType::Trapdoor => write!(f, "trapdoor {}", node.state.is_powered()),
-        NodeType::Wire => write!(f, "wire {}", node.state.power),
-        NodeType::Constant => write!(f, "constant {}", node.state.power),
-        NodeType::NoteBlock { instrument, note } => write!(
+        NodeKind::Lamp => write!(f, "lamp {}", node.state.is_powered()),
+        NodeKind::Button => write!(f, "button {}", node.state.is_powered()),
+        NodeKind::Lever => write!(f, "lever {}", node.state.is_powered()),
+        NodeKind::PressurePlate => write!(f, "pressure_plate {}", node.state.is_powered()),
+        NodeKind::Trapdoor => write!(f, "trapdoor {}", node.state.is_powered()),
+        NodeKind::Wire => write!(f, "wire {}", node.state.power),
+        NodeKind::Constant => write!(f, "constant {}", node.state.power),
+        NodeKind::NoteBlock { instrument, note } => write!(
             f,
             "note_block {}, {}, {}",
             instrument,
@@ -110,7 +108,7 @@ fn dump_node(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -
     Ok(())
 }
 
-pub fn dump_graph(f: &mut impl fmt::Write, graph: &CompileGraph, name: &str) -> fmt::Result {
+pub fn dump_graph(f: &mut impl fmt::Write, graph: &Graph, name: &str) -> fmt::Result {
     writeln!(f, "circuit @{} {{", name)?;
     for node_idx in graph.node_indices() {
         dump_node(f, graph, node_idx)?;
@@ -120,7 +118,7 @@ pub fn dump_graph(f: &mut impl fmt::Write, graph: &CompileGraph, name: &str) -> 
 }
 
 struct GraphDumper<'a> {
-    graph: &'a CompileGraph,
+    graph: &'a Graph,
 }
 
 impl<'a> fmt::Display for GraphDumper<'a> {
@@ -133,7 +131,7 @@ pub trait DumpGraph {
     fn dump(&self);
 }
 
-impl DumpGraph for CompileGraph {
+impl DumpGraph for Graph {
     fn dump(&self) {
         eprintln!("{}", GraphDumper { graph: self });
     }
@@ -155,16 +153,16 @@ enum ComponentType {
 }
 
 impl ComponentType {
-    fn simple_node_type(self) -> NodeType {
+    fn simple_node_type(self) -> NodeKind {
         match self {
-            ComponentType::Torch => NodeType::Torch,
-            ComponentType::Lamp => NodeType::Lamp,
-            ComponentType::Button => NodeType::Button,
-            ComponentType::Lever => NodeType::Lever,
-            ComponentType::PressurePlate => NodeType::PressurePlate,
-            ComponentType::Trapdoor => NodeType::Trapdoor,
-            ComponentType::Wire => NodeType::Wire,
-            ComponentType::Constant => NodeType::Constant,
+            ComponentType::Torch => NodeKind::Torch,
+            ComponentType::Lamp => NodeKind::Lamp,
+            ComponentType::Button => NodeKind::Button,
+            ComponentType::Lever => NodeKind::Lever,
+            ComponentType::PressurePlate => NodeKind::PressurePlate,
+            ComponentType::Trapdoor => NodeKind::Trapdoor,
+            ComponentType::Wire => NodeKind::Wire,
+            ComponentType::Constant => NodeKind::Constant,
             _ => panic!("not a simple type"),
         }
     }
@@ -226,7 +224,7 @@ impl TokenType {
 
     fn unwrap_component_ty(self) -> ComponentType {
         match self {
-            TokenType::ComponentType(ty) => ty,
+            TokenType::ComponentType(kind) => kind,
             _ => unreachable!(),
         }
     }
@@ -301,12 +299,12 @@ impl TokenType {
 #[derive(PartialEq, Debug)]
 struct Token {
     pos: usize,
-    ty: TokenType,
+    kind: TokenType,
 }
 
 impl Token {
-    fn new(pos: usize, ty: TokenType) -> Self {
-        Self { pos, ty }
+    fn new(pos: usize, kind: TokenType) -> Self {
+        Self { pos, kind }
     }
 }
 
@@ -348,7 +346,7 @@ impl<'a> Lexer<'a> {
             tokens: Vec::new(),
         };
         while let Some((pos, c)) = lexer.src_iter.peek().cloned() {
-            let ty = match c {
+            let kind = match c {
                 ':' => TokenType::Colon,
                 '[' => TokenType::LeftBracket,
                 ']' => TokenType::RightBracket,
@@ -373,12 +371,12 @@ impl<'a> Lexer<'a> {
                 '%' | '@' => {
                     lexer.src_iter.next();
                     let name = lexer.read_value_ident();
-                    let ty = match c {
+                    let kind = match c {
                         '%' => TokenType::Value(name),
                         '@' => TokenType::GlobalValue(name),
                         _ => unreachable!(),
                     };
-                    lexer.tokens.push(Token::new(pos, ty));
+                    lexer.tokens.push(Token::new(pos, kind));
                     continue;
                 }
                 '"' => {
@@ -405,7 +403,7 @@ impl<'a> Lexer<'a> {
                     ))
                 }
             };
-            let token = Token::new(pos, ty);
+            let token = Token::new(pos, kind);
             lexer.tokens.push(token);
             lexer.src_iter.next();
         }
@@ -464,7 +462,7 @@ impl<'a> Lexer<'a> {
             self.src_iter.next();
         }
 
-        let ty = match word.as_str() {
+        let kind = match word.as_str() {
             "circuit" => TokenType::Circuit,
             "backend_circuit" => TokenType::BackendCircuit,
             "test" => TokenType::Test,
@@ -513,7 +511,7 @@ impl<'a> Lexer<'a> {
                 ))
             }
         };
-        self.tokens.push(Token::new(pos, ty));
+        self.tokens.push(Token::new(pos, kind));
         Ok(())
     }
 
@@ -529,7 +527,7 @@ impl<'a> Lexer<'a> {
 pub struct RILTest {
     pub name: String,
     pub schematic_path: Option<String>,
-    pub graph: CompileGraph,
+    pub graph: Graph,
     pub options: CompilerOptions,
 }
 
@@ -546,17 +544,16 @@ impl RILModule {
         Parser::parse(tokens)
     }
 
-    pub fn get_graph(&self, circuit: &ast::Circuit) -> CompileGraph {
-        let mut graph = CompileGraph::default();
+    pub fn get_graph(&self, circuit: &ast::Circuit) -> Graph {
+        let mut graph = Graph::default();
         let mut name_map = FxHashMap::default();
         for component in &circuit.components {
-            let node_idx = graph.add_node(CompileNode {
-                ty: component.node_ty.clone(),
+            let node_idx = graph.add_node(Node {
+                kind: component.node_kind.clone(),
                 state: component.node_state.clone(),
                 name: Some(component.name.clone()),
                 block: Default::default(),
-                is_input: component.node_ty.is_normally_input(),
-                is_output: component.node_ty.is_normally_output(),
+                port: component.node_kind.conventional_role(),
             });
             name_map.insert(component.name.clone(), node_idx);
         }
@@ -573,7 +570,7 @@ impl RILModule {
         let (graph, schematic_path) = match self.globals.get(&test.input) {
             Some(ast::Global::Circuit(circuit)) => (self.get_graph(circuit), None),
             Some(ast::Global::Schematic(schematic)) => {
-                (CompileGraph::default(), Some(schematic.path.clone()))
+                (Graph::default(), Some(schematic.path.clone()))
             }
             Some(_) => panic!("invalid test input"),
             None => panic!("could not find test input with name: {}", test.input),
@@ -602,7 +599,7 @@ impl RILModule {
             .collect()
     }
 
-    pub fn compare_test_result(&self, name: &str, result: &CompileGraph) -> bool {
+    pub fn compare_test_result(&self, name: &str, result: &Graph) -> bool {
         let Some(ast::Global::Test(test)) = self.globals.get(name) else {
             panic!("could not find test: {}", name);
         };
@@ -628,7 +625,7 @@ impl RILModule {
                 return false;
             };
             let expected = &circuit.components[*expected_idx];
-            if expected.node_ty != node.ty || expected.node_state != node.state {
+            if expected.node_kind != node.kind || expected.node_state != node.state {
                 return false;
             }
             let outputs: Vec<ast::Output> = result
@@ -685,7 +682,7 @@ impl Parser {
                 TokenType::Test,
                 TokenType::TestArgs,
             ])?;
-            match keyword_token.ty {
+            match keyword_token.kind {
                 TokenType::Circuit => {
                     let circuit = parser.parse_circuit(keyword_token.pos)?;
                     parser
@@ -713,10 +710,10 @@ impl Parser {
     fn parse_schematic(&mut self) -> RILParserResult<ast::Schematic> {
         let name = self
             .expect_token_with(
-                |token| matches!(token.ty, TokenType::GlobalValue(_)),
+                |token| matches!(token.kind, TokenType::GlobalValue(_)),
                 &[TokenType::GlobalValue(Default::default())],
             )?
-            .ty
+            .kind
             .unwrap_global_value();
         let (_, path) = self.expect_string()?;
         Ok(ast::Schematic { name, path })
@@ -725,10 +722,10 @@ impl Parser {
     fn parse_circuit(&mut self, src_begin: usize) -> RILParserResult<ast::Circuit> {
         let name = self
             .expect_token_with(
-                |token| matches!(token.ty, TokenType::GlobalValue(_)),
+                |token| matches!(token.kind, TokenType::GlobalValue(_)),
                 &[TokenType::GlobalValue(Default::default())],
             )?
-            .ty
+            .kind
             .unwrap_global_value();
         self.expect_token(&[TokenType::LeftCurlyBrace])?;
 
@@ -736,13 +733,13 @@ impl Parser {
 
         let src_end = loop {
             let value_or_brace = self.expect_token_with(
-                |token| matches!(token.ty, TokenType::Value(_) | TokenType::RightCurlyBrace),
+                |token| matches!(token.kind, TokenType::Value(_) | TokenType::RightCurlyBrace),
                 &[
                     TokenType::Value(Default::default()),
                     TokenType::RightCurlyBrace,
                 ],
             )?;
-            if value_or_brace.ty == TokenType::RightCurlyBrace {
+            if value_or_brace.kind == TokenType::RightCurlyBrace {
                 break value_or_brace.pos + 1;
             } else {
                 components.push(self.parse_component(value_or_brace)?);
@@ -758,16 +755,16 @@ impl Parser {
     }
 
     fn parse_component(&mut self, value: Token) -> RILParserResult<ast::Component> {
-        let name = value.ty.unwrap_value();
+        let name = value.kind.unwrap_value();
         self.expect_token(&[TokenType::Equals])?;
         let component_ty = self
             .expect_token_with(
-                |token| matches!(token.ty, TokenType::ComponentType(_)),
+                |token| matches!(token.kind, TokenType::ComponentType(_)),
                 &[TokenType::ComponentType(ComponentType::Wire)],
             )?
-            .ty
+            .kind
             .unwrap_component_ty();
-        let (node_ty, node_state) = match component_ty {
+        let (node_kind, node_state) = match component_ty {
             ComponentType::Repeater => {
                 let (delay_token, delay) = self.expect_int()?;
                 if !(1..=4).contains(&delay) {
@@ -782,19 +779,19 @@ impl Parser {
                 let (_, locked) = self.expect_bool()?;
                 self.expect_token(&[TokenType::Comma])?;
                 let (_, powered) = self.expect_bool()?;
-                let ty = NodeType::Repeater {
+                let kind = NodeKind::Repeater {
                     delay: delay as u8,
                     prioritized,
                 };
-                (ty, NodeState::repeater(powered, locked))
+                (kind, NodeState::repeater(powered, locked))
             }
             ComponentType::Comparator => {
                 let mode = self
                     .expect_token_with(
-                        |token| matches!(token.ty, TokenType::ComparatorMode(_)),
+                        |token| matches!(token.kind, TokenType::ComparatorMode(_)),
                         &[TokenType::ComparatorMode(ComparatorMode::Subtract)],
                     )?
-                    .ty
+                    .kind
                     .unwrap_comparator_mode();
                 self.expect_token(&[TokenType::Comma])?;
                 let far_input = self.parse_comparator_far_input()?;
@@ -802,12 +799,12 @@ impl Parser {
                 let (_, prioritized) = self.expect_bool()?;
                 self.expect_token(&[TokenType::Comma])?;
                 let power = self.expect_power()?;
-                let ty = NodeType::Comparator {
+                let kind = NodeKind::Comparator {
                     mode,
                     far_input,
                     prioritized,
                 };
-                (ty, NodeState::from_power(power))
+                (kind, NodeState::from_power(power))
             }
             ComponentType::Torch
             | ComponentType::Lamp
@@ -831,10 +828,10 @@ impl Parser {
             ComponentType::NoteBlock => {
                 let instrument = self
                     .expect_token_with(
-                        |token| matches!(token.ty, TokenType::Instrument(_)),
+                        |token| matches!(token.kind, TokenType::Instrument(_)),
                         &[TokenType::Instrument(Instrument::Harp)],
                     )?
-                    .ty
+                    .kind
                     .unwrap_instrument();
                 self.expect_token(&[TokenType::Comma])?;
                 let (token, note) = self.expect_int()?;
@@ -846,16 +843,16 @@ impl Parser {
                 }
                 self.expect_token(&[TokenType::Comma])?;
                 let (_, powered) = self.expect_bool()?;
-                let ty = NodeType::NoteBlock {
+                let kind = NodeKind::NoteBlock {
                     instrument,
                     note: note as u8,
                 };
-                (ty, NodeState::from_powered(powered))
+                (kind, NodeState::from_powered(powered))
             }
         };
         Ok(ast::Component {
             name,
-            node_ty,
+            node_kind,
             node_state,
             outputs: self.parse_outputs()?,
         })
@@ -863,13 +860,13 @@ impl Parser {
 
     fn parse_comparator_far_input(&mut self) -> RILParserResult<Option<SignalStrength>> {
         let token = self.expect_token_with(
-            |token| matches!(token.ty, TokenType::Int(_) | TokenType::None),
+            |token| matches!(token.kind, TokenType::Int(_) | TokenType::None),
             &[TokenType::Int(0), TokenType::None],
         )?;
-        if token.ty == TokenType::None {
+        if token.kind == TokenType::None {
             return Ok(None);
         }
-        SignalStrength::try_from(token.ty.unwrap_int())
+        SignalStrength::try_from(token.kind.unwrap_int())
             .map(Some)
             .map_err(|error| RILParserError::new(token.pos, error.to_string()))
     }
@@ -878,13 +875,13 @@ impl Parser {
         self.expect_token(&[TokenType::LeftParens])?;
         let input = self
             .expect_token_with(
-                |token| matches!(token.ty, TokenType::GlobalValue(_)),
+                |token| matches!(token.kind, TokenType::GlobalValue(_)),
                 &[TokenType::GlobalValue(String::new())],
             )?
-            .ty
+            .kind
             .unwrap_global_value();
         let parens_or_comma = self.expect_token(&[TokenType::RightParens, TokenType::Comma])?;
-        let test_args = match parens_or_comma.ty {
+        let test_args = match parens_or_comma.kind {
             TokenType::RightParens => None,
             TokenType::Comma => {
                 let (_, args) = self.expect_string()?;
@@ -895,7 +892,7 @@ impl Parser {
         };
 
         let result_ty = self.expect_token(&[TokenType::Circuit, TokenType::BackendCircuit])?;
-        let (name, result) = match result_ty.ty {
+        let (name, result) = match result_ty.kind {
             TokenType::Circuit => {
                 let circuit = self.parse_circuit(result_ty.pos)?;
                 (circuit.name.clone(), ast::TestResult::Circuit(circuit))
@@ -926,7 +923,7 @@ impl Parser {
     fn parse_outputs(&mut self) -> RILParserResult<Vec<ast::Output>> {
         if self
             .tokens
-            .next_if(|token| token.ty == TokenType::Arrow)
+            .next_if(|token| token.kind == TokenType::Arrow)
             .is_none()
         {
             return Ok(Vec::new());
@@ -937,23 +934,23 @@ impl Parser {
             outputs.push(self.parse_output()?);
             let comma_or_bracket =
                 self.expect_token(&[TokenType::Comma, TokenType::RightBracket])?;
-            if comma_or_bracket.ty == TokenType::RightBracket {
+            if comma_or_bracket.kind == TokenType::RightBracket {
                 return Ok(outputs);
             }
         }
     }
 
     fn parse_output(&mut self) -> RILParserResult<ast::Output> {
-        let ty = match self.tokens.next_if(|token| token.ty == TokenType::Side) {
-            Some(_) => LinkType::Side,
-            None => LinkType::Default,
+        let kind = match self.tokens.next_if(|token| token.kind == TokenType::Side) {
+            Some(_) => LinkKind::Side,
+            None => LinkKind::Default,
         };
         let target = self
             .expect_token_with(
-                |token| matches!(token.ty, TokenType::Value(_)),
+                |token| matches!(token.kind, TokenType::Value(_)),
                 &[TokenType::Side, TokenType::Value(Default::default())],
             )?
-            .ty
+            .kind
             .unwrap_value();
         self.expect_token(&[TokenType::Colon])?;
         let (token, weight) = self.expect_int()?;
@@ -964,7 +961,7 @@ impl Parser {
             )
         })?;
         Ok(ast::Output {
-            link: CompileLink::new(ty, weight),
+            link: Link::new(kind, weight),
             target,
         })
     }
@@ -977,28 +974,28 @@ impl Parser {
 
     fn expect_int(&mut self) -> RILParserResult<(Token, u32)> {
         let token = self.expect_token_with(
-            |token| matches!(token.ty, TokenType::Int(_)),
+            |token| matches!(token.kind, TokenType::Int(_)),
             &[TokenType::Int(0)],
         )?;
-        let val = token.ty.unwrap_int();
+        let val = token.kind.unwrap_int();
         Ok((token, val))
     }
 
     fn expect_bool(&mut self) -> RILParserResult<(Token, bool)> {
         let token = self.expect_token_with(
-            |token| matches!(token.ty, TokenType::Bool(_)),
+            |token| matches!(token.kind, TokenType::Bool(_)),
             &[TokenType::Bool(false)],
         )?;
-        let val = token.ty.unwrap_bool();
+        let val = token.kind.unwrap_bool();
         Ok((token, val))
     }
 
     fn expect_string(&mut self) -> RILParserResult<(Token, String)> {
         let token = self.expect_token_with(
-            |token| matches!(token.ty, TokenType::String(_)),
+            |token| matches!(token.kind, TokenType::String(_)),
             &[TokenType::String(String::new())],
         )?;
-        let val = token.ty.clone().unwrap_string();
+        let val = token.kind.clone().unwrap_string();
         Ok((token, val))
     }
 
@@ -1018,12 +1015,12 @@ impl Parser {
 
     fn expect_token(&mut self, valid_types: &[TokenType]) -> RILParserResult<Token> {
         let token = self.expect_any_token(valid_types)?;
-        if valid_types.contains(&token.ty) {
+        if valid_types.contains(&token.kind) {
             Ok(token)
         } else {
             Err(RILParserError::new_expected(
                 token.pos,
-                format!("found {}", token.ty.friendy_name()),
+                format!("found {}", token.kind.friendy_name()),
                 valid_types,
             ))
         }
@@ -1040,7 +1037,7 @@ impl Parser {
         } else {
             Err(RILParserError::new_expected(
                 token.pos,
-                format!("found {}", token.ty.friendy_name()),
+                format!("found {}", token.kind.friendy_name()),
                 valid_types,
             ))
         }
@@ -1049,7 +1046,7 @@ impl Parser {
 
 pub mod ast {
     use crate::{
-        compile_graph::{CompileLink, NodeState, NodeType},
+        graph::{Link, NodeKind, NodeState},
         CompilerOptions,
     };
 
@@ -1095,13 +1092,13 @@ pub mod ast {
 
     #[derive(Clone, PartialEq)]
     pub struct Output {
-        pub link: CompileLink,
+        pub link: Link,
         pub target: String,
     }
 
     pub struct Component {
         pub name: String,
-        pub node_ty: NodeType,
+        pub node_kind: NodeKind,
         pub node_state: NodeState,
         pub outputs: Vec<Output>,
     }

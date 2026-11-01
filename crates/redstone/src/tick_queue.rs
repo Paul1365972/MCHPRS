@@ -4,7 +4,7 @@ use mchprs_blocks::BlockPos;
 use serde::{Deserialize, Serialize};
 use std::mem;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TickPriority {
     Highest = 0,
     Higher = 1,

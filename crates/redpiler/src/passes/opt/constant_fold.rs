@@ -1,11 +1,11 @@
-use crate::compile_graph::{CompileGraph, Direction, NodeIdx, NodeState, NodeType};
+use crate::graph::{Direction, Graph, NodeIdx, NodeKind, NodeState};
 use crate::passes::{AnalysisInfos, Pass};
 use tracing::trace;
 
 pub struct ConstantFold;
 
 impl Pass for ConstantFold {
-    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
+    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
         let num_folded = fold(graph);
         trace!("Fold iteration: {} nodes", num_folded);
     }
@@ -21,24 +21,25 @@ impl Pass for ConstantFold {
 
 /// A node whose inputs are all constant is never updated again, so it keeps its current output.
 /// Returns true if the node was turned into a constant
-fn fold_node(graph: &mut CompileGraph, idx: NodeIdx) -> bool {
+fn fold_node(graph: &mut Graph, idx: NodeIdx) -> bool {
     let node = &graph[idx];
-    if node.state.pending_tick
+    if node.is_input()
+        || node.state.pending_tick.is_some()
         || !matches!(
-            node.ty,
-            NodeType::Comparator { .. } | NodeType::Repeater { .. } | NodeType::Torch
+            node.kind,
+            NodeKind::Comparator { .. } | NodeKind::Repeater { .. } | NodeKind::Torch
         )
     {
         return false;
     }
     if graph
         .neighbors(idx, Direction::Incoming)
-        .any(|input| graph[input].ty != NodeType::Constant)
+        .any(|input| graph[input].kind != NodeKind::Constant)
     {
         return false;
     }
 
-    graph[idx].ty = NodeType::Constant;
+    graph[idx].kind = NodeKind::Constant;
     graph[idx].state = NodeState::from_power(graph[idx].state.power);
 
     let mut incoming = graph.neighbors(idx, Direction::Incoming).detach();
@@ -49,7 +50,7 @@ fn fold_node(graph: &mut CompileGraph, idx: NodeIdx) -> bool {
     true
 }
 
-fn fold(graph: &mut CompileGraph) -> usize {
+fn fold(graph: &mut Graph) -> usize {
     let mut num_folded = 0;
 
     let mut worklist = Vec::new();

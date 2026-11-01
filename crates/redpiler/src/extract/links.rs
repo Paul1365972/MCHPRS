@@ -1,4 +1,4 @@
-use crate::compile_graph::{CompileGraph, CompileLink, Direction, LinkType, NodeIdx, NodeType};
+use crate::graph::{Direction, Graph, Link, LinkKind, NodeIdx, NodeKind};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
@@ -6,7 +6,7 @@ use mchprs_redstone::{self, comparator, provides_strong_power, provides_weak_pow
 use rustc_hash::FxHashMap;
 
 pub fn add_links(
-    graph: &mut CompileGraph,
+    graph: &mut Graph,
     world: &impl BlockView,
     nodes_by_position: &FxHashMap<BlockPos, NodeIdx>,
 ) {
@@ -20,25 +20,25 @@ pub fn add_links(
     for node in (0..graph.node_bound()).map(NodeIdx::new) {
         if graph.contains_node(node) {
             graph.sort_edges_by_key(node, Direction::Outgoing, |graph, edge| {
-                (type_order(&graph[edge.target()].ty), edge.target())
+                (type_order(&graph[edge.target()].kind), edge.target())
             });
         }
     }
 }
 
-fn type_order(ty: &NodeType) -> u8 {
-    match ty {
-        NodeType::Repeater { .. } => 0,
-        NodeType::Torch => 1,
-        NodeType::Comparator { .. } => 2,
-        NodeType::Lamp => 3,
-        NodeType::Button => 4,
-        NodeType::Lever => 5,
-        NodeType::PressurePlate => 6,
-        NodeType::Trapdoor => 7,
-        NodeType::Wire => 8,
-        NodeType::Constant => 9,
-        NodeType::NoteBlock { .. } => 10,
+fn type_order(kind: &NodeKind) -> u8 {
+    match kind {
+        NodeKind::Repeater { .. } => 0,
+        NodeKind::Torch => 1,
+        NodeKind::Comparator { .. } => 2,
+        NodeKind::Lamp => 3,
+        NodeKind::Button => 4,
+        NodeKind::Lever => 5,
+        NodeKind::PressurePlate => 6,
+        NodeKind::Trapdoor => 7,
+        NodeKind::Wire => 8,
+        NodeKind::Constant => 9,
+        NodeKind::NoteBlock { .. } => 10,
     }
 }
 
@@ -72,13 +72,13 @@ impl<'world, W: BlockView> BlockCache<'world, W> {
 
 struct LinkSearch<'a, W: BlockView> {
     world: &'a W,
-    graph: &'a mut CompileGraph,
+    graph: &'a mut Graph,
     nodes_by_position: &'a FxHashMap<BlockPos, NodeIdx>,
     block_cache: BlockCache<'a, W>,
 }
 
 impl<W: BlockView> LinkSearch<'_, W> {
-    fn add_link(&mut self, source: BlockPos, target: NodeIdx, link: CompileLink) {
+    fn add_link(&mut self, source: BlockPos, target: NodeIdx, link: Link) {
         if let Some(&source) = self.nodes_by_position.get(&source) {
             self.graph.add_edge(source, target, link);
         }
@@ -90,7 +90,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
         block: Block,
         side: BlockFace,
         pos: BlockPos,
-        link_ty: LinkType,
+        link_kind: LinkKind,
         distance: u8,
         start_node: NodeIdx,
         search_wire: bool,
@@ -100,7 +100,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                 let pos = pos.offset(*side);
                 let block = self.block_cache.block(pos);
                 if provides_strong_power(block, *side) {
-                    self.add_link(pos, start_node, CompileLink::new(link_ty, distance));
+                    self.add_link(pos, start_node, Link::new(link_kind, distance));
                 }
 
                 if let Block::RedstoneWire(wire) = block {
@@ -109,7 +109,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                     }
                     match side {
                         BlockFace::Top => {
-                            self.search_wire(start_node, pos, link_ty, distance);
+                            self.search_wire(start_node, pos, link_kind, distance);
                         }
                         BlockFace::Bottom => {}
                         _ => {
@@ -120,17 +120,17 @@ impl<W: BlockView> LinkSearch<'_, W> {
                             )
                             .is_none()
                             {
-                                self.search_wire(start_node, pos, link_ty, distance);
+                                self.search_wire(start_node, pos, link_kind, distance);
                             }
                         }
                     }
                 }
             }
         } else if provides_weak_power(block, side) {
-            self.add_link(pos, start_node, CompileLink::new(link_ty, distance));
+            self.add_link(pos, start_node, Link::new(link_kind, distance));
         } else if let Block::RedstoneWire(wire) = block {
             match side {
-                BlockFace::Top => self.search_wire(start_node, pos, link_ty, distance),
+                BlockFace::Top => self.search_wire(start_node, pos, link_kind, distance),
                 BlockFace::Bottom => {}
                 _ => {
                     let direction = side.unwrap_direction();
@@ -141,7 +141,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                         )
                         .is_none()
                     {
-                        self.search_wire(start_node, pos, link_ty, distance);
+                        self.search_wire(start_node, pos, link_kind, distance);
                     }
                 }
             }
@@ -152,7 +152,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
         &mut self,
         start_node: NodeIdx,
         root_pos: BlockPos,
-        link_ty: LinkType,
+        link_kind: LinkKind,
         initial_distance: u8,
     ) {
         let mut discovered = vec![(root_pos, initial_distance)];
@@ -182,7 +182,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                     neighbor,
                     *side,
                     neighbor_pos,
-                    link_ty,
+                    link_kind,
                     distance,
                     start_node,
                     false,
@@ -220,7 +220,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
             input_block,
             facing.block_face(),
             input_pos,
-            LinkType::Default,
+            LinkKind::Default,
             0,
             id,
             true,
@@ -233,7 +233,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
         if mchprs_redstone::is_diode(side_block)
             && provides_weak_power(side_block, side.block_face())
         {
-            self.add_link(side_pos, id, CompileLink::side(0));
+            self.add_link(side_pos, id, Link::side(0));
         }
     }
 
@@ -244,9 +244,9 @@ impl<W: BlockView> LinkSearch<'_, W> {
             && provides_weak_power(side_block, side.block_face()))
             || matches!(side_block, Block::RedstoneBlock)
         {
-            self.add_link(side_pos, id, CompileLink::side(0));
+            self.add_link(side_pos, id, Link::side(0));
         } else if matches!(side_block, Block::RedstoneWire { .. }) {
-            self.search_wire(id, side_pos, LinkType::Side, 0)
+            self.search_wire(id, side_pos, LinkKind::Side, 0)
         }
     }
 
@@ -259,7 +259,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                     bottom_block,
                     BlockFace::Top,
                     bottom_pos,
-                    LinkType::Default,
+                    LinkKind::Default,
                     0,
                     id,
                     true,
@@ -272,7 +272,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                     wall_block,
                     facing.opposite().block_face(),
                     wall_pos,
-                    LinkType::Default,
+                    LinkKind::Default,
                     0,
                     id,
                     true,
@@ -287,7 +287,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                 let input_pos = pos.offset(facing.block_face());
                 let input_block = self.block_cache.block(input_pos);
                 if comparator::analog_output(input_block, self.world, input_pos).is_some() {
-                    self.add_link(input_pos, id, CompileLink::default(0));
+                    self.add_link(input_pos, id, Link::default(0));
                 } else {
                     self.search_diode_inputs(id, pos, facing);
                 }
@@ -300,7 +300,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                 self.search_repeater_side(id, pos, facing.rotate_ccw());
             }
             Block::RedstoneWire { .. } => {
-                self.search_wire(id, pos, LinkType::Default, 0);
+                self.search_wire(id, pos, LinkKind::Default, 0);
             }
             Block::RedstoneLamp { .. } | Block::IronTrapdoor { .. } | Block::NoteBlock { .. } => {
                 for face in &BlockFace::values() {
@@ -310,7 +310,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
                         neighbor_block,
                         *face,
                         neighbor_pos,
-                        LinkType::Default,
+                        LinkKind::Default,
                         0,
                         id,
                         true,
@@ -324,7 +324,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
     fn search(&mut self) {
         for i in 0..self.graph.node_bound() {
             let idx = NodeIdx::new(i);
-            if !self.graph.contains_node(idx) {
+            if !self.graph.contains_node(idx) || self.graph[idx].is_input() {
                 continue;
             }
             if let Some(block) = self.graph[idx].block.first().copied() {
