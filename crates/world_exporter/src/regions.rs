@@ -1,7 +1,7 @@
-use super::MC_DATA_VERSION;
 use anyhow::Result;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
+use mchprs_blocks::MC_DATA_VERSION;
 use mchprs_save_data::plot_data::{ChunkData, PlotData};
 use mchprs_world::storage::{ChunkSection, PalettedBitBuffer};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};

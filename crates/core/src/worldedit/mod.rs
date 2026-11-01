@@ -3,14 +3,19 @@ pub mod pattern;
 mod suggestions;
 
 use crate::{player::PlayerPos, plot::PlotWorld};
-use mchprs_blocks::{blocks::Block, BlockPos};
-use mchprs_schematic::WorldEditClipboard;
+use mchprs_blocks::{
+    block_store::{BlockStore, BlockView},
+    block_volume::BlockVolume,
+    blocks::Block,
+    region::Region,
+    BlockPos,
+};
 use mchprs_world::{for_each_block_mut_optimized, World};
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
 pub struct WorldEditUndo {
-    pub clipboards: Vec<WorldEditClipboard>,
+    pub clipboards: Vec<BlockVolume>,
     pub pos: BlockPos,
     pub plot_x: i32,
     pub plot_z: i32,
@@ -140,6 +145,47 @@ pub fn ray_trace_block(
     }
 
     None
+}
+
+pub fn create_clipboard(
+    world: &PlotWorld,
+    origin: BlockPos,
+    first_pos: BlockPos,
+    second_pos: BlockPos,
+) -> BlockVolume {
+    let region = Region::new(first_pos, second_pos);
+    let mut clipboard = BlockVolume::empty(region);
+    for position in region.positions() {
+        let block = world.get_block(position);
+        clipboard.set_block(position, block);
+        if block.has_block_entity()
+            && let Some(block_entity) = world.get_block_entity(position)
+        {
+            clipboard.set_block_entity(position, Some(block_entity.clone()));
+        }
+    }
+    clipboard.translated(BlockPos::zero() - origin)
+}
+
+pub fn paste_clipboard(
+    world: &mut PlotWorld,
+    clipboard: &BlockVolume,
+    at: BlockPos,
+    ignore_air: bool,
+) {
+    for position in clipboard.region().positions() {
+        let block = clipboard.block(position);
+        if !(ignore_air && block == Block::Air) {
+            world.set_block(position + at, block);
+        }
+    }
+
+    // Block entities sent before their blocks are ignored by the client
+    world.flush_block_changes();
+
+    for (position, block_entity) in clipboard.block_entities() {
+        world.set_block_entity(position + at, block_entity.clone());
+    }
 }
 
 pub fn clear_area(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {

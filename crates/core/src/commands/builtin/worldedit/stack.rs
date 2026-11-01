@@ -9,10 +9,11 @@ use crate::{
         value::{Direction, DirectionWithDiagonals},
     },
     plot::{PLOT_BLOCK_HEIGHT, PLOT_BLOCK_WIDTH},
-    worldedit::{calculate_expanded_selection, calculate_selection_volume},
+    worldedit::{
+        calculate_expanded_selection, calculate_selection_volume, create_clipboard, paste_clipboard,
+    },
 };
 use mchprs_blocks::{BlockFacing, BlockPos};
-use mchprs_schematic::{create_clipboard, paste_clipboard};
 use std::time::Instant;
 
 const MAX_STACK_VOLUME: i64 =

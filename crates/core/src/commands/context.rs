@@ -6,14 +6,14 @@ use crate::{
     },
     player::{PacketSender, Player, PlayerPos},
     plot::{Plot, PlotWorld, PLOT_BLOCK_HEIGHT},
-    worldedit::{ray_trace_block, WorldEditUndo},
+    worldedit::{create_clipboard, ray_trace_block, WorldEditUndo},
 };
+use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_commands::flag::{FlagValue, FlagValues};
 use mchprs_commands::parse::ParsedArgument;
 use mchprs_network::text::TextComponent;
-use mchprs_schematic::{create_clipboard, WorldEditClipboard};
 
 pub struct ExecutionContext<'a> {
     plot: &'a mut Plot,
@@ -256,14 +256,14 @@ impl<'a> ExecutionContext<'a> {
         Ok(())
     }
 
-    pub(super) fn get_clipboard(&self) -> CommandResult<&WorldEditClipboard> {
+    pub(super) fn get_clipboard(&self) -> CommandResult<&BlockVolume> {
         self.player()?
             .worldedit_clipboard
             .as_ref()
             .ok_or_else(|| RuntimeError::EmptyClipboard.into())
     }
 
-    pub(super) fn set_clipboard(&mut self, clipboard: WorldEditClipboard) -> CommandResult<()> {
+    pub(super) fn set_clipboard(&mut self, clipboard: BlockVolume) -> CommandResult<()> {
         self.player_mut()?.worldedit_clipboard = Some(clipboard);
         Ok(())
     }
