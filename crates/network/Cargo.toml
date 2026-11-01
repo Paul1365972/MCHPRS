@@ -15,10 +15,11 @@ include.workspace = true
 
 [dependencies]
 mchprs_proc_macros = { path = "../proc_macros" }
-mchprs_text = { path = "../text" }
 hematite-nbt = { workspace = true }
 flate2 = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+regex = { workspace = true }
 byteorder = { workspace = true }
 tracing = { workspace = true }
 bitvec = { workspace = true }

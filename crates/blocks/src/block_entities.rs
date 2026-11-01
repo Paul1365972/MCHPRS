@@ -1,6 +1,5 @@
 use crate::items::Item;
 use mchprs_proc_macros::protocol_id;
-use mchprs_utils::{map, nbt_unwrap_val};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -14,6 +13,15 @@ pub struct InventoryEntry {
     pub slot: i8,
     pub count: i8,
     pub nbt: Option<Vec<u8>>,
+}
+
+macro_rules! nbt_unwrap_val {
+    ($value:expr, $variant:path) => {
+        match $value {
+            $variant(value) => value,
+            _ => return None,
+        }
+    };
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -243,35 +251,50 @@ impl BlockEntity {
                 };
                 let front = sign.front_rows.iter().map(message);
                 let back = sign.back_rows.iter().map(message);
-                nbt::Blob::with_content(map! {
-                    "is_waxed" => Value::Byte(0),
-                    "front_text" => Value::Compound(map! {
-                        "has_glowing_text" => Value::Byte(0),
-                        "color" => Value::String("black".into()),
-                        "messages" => Value::List(front.collect())
-                    }),
-                    "back_text" => Value::Compound(map! {
-                        "has_glowing_text" => Value::Byte(0),
-                        "color" => Value::String("black".into()),
-                        "messages" => Value::List(back.collect())
-                    }),
-                    "id" => Value::String("minecraft:sign".to_owned())
-                })
+                nbt::Blob::with_content(HashMap::from([
+                    ("is_waxed".to_owned(), Value::Byte(0)),
+                    (
+                        "front_text".to_owned(),
+                        Value::Compound(HashMap::from([
+                            ("has_glowing_text".to_owned(), Value::Byte(0)),
+                            ("color".to_owned(), Value::String("black".into())),
+                            ("messages".to_owned(), Value::List(front.collect())),
+                        ])),
+                    ),
+                    (
+                        "back_text".to_owned(),
+                        Value::Compound(HashMap::from([
+                            ("has_glowing_text".to_owned(), Value::Byte(0)),
+                            ("color".to_owned(), Value::String("black".into())),
+                            ("messages".to_owned(), Value::List(back.collect())),
+                        ])),
+                    ),
+                    ("id".to_owned(), Value::String("minecraft:sign".to_owned())),
+                ]))
             }),
             BlockEntity::Comparator { output_strength } => Some({
-                nbt::Blob::with_content(map! {
-                    "OutputSignal" => Value::Int(*output_strength as i32),
-                    "id" => Value::String("minecraft:comparator".to_owned())
-                })
+                nbt::Blob::with_content(HashMap::from([
+                    (
+                        "OutputSignal".to_owned(),
+                        Value::Int(*output_strength as i32),
+                    ),
+                    (
+                        "id".to_owned(),
+                        Value::String("minecraft:comparator".to_owned()),
+                    ),
+                ]))
             }),
             BlockEntity::Container { inventory, ty, .. } => Some({
                 let mut items = Vec::new();
                 for entry in inventory {
-                    let mut nbt = map! {
-                        "Count" => nbt::Value::Byte(entry.count),
-                        "id" => nbt::Value::String(Item::from_id(entry.id).get_name().to_owned()),
-                        "Slot" => nbt::Value::Byte(entry.slot)
-                    };
+                    let mut nbt = HashMap::from([
+                        ("Count".to_owned(), nbt::Value::Byte(entry.count)),
+                        (
+                            "id".to_owned(),
+                            nbt::Value::String(Item::from_id(entry.id).get_name().to_owned()),
+                        ),
+                        ("Slot".to_owned(), nbt::Value::Byte(entry.slot)),
+                    ]);
                     if let Some(tag) = &entry.nbt {
                         let tag = nbt::Blob::from_reader(&mut tag.as_slice())
                             .expect("item tags are stored as NBT");
@@ -279,10 +302,10 @@ impl BlockEntity {
                     }
                     items.push(nbt::Value::Compound(nbt));
                 }
-                nbt::Blob::with_content(map! {
-                    "id" => Value::String(ty.to_string()),
-                    "Items" => Value::List(items)
-                })
+                nbt::Blob::with_content(HashMap::from([
+                    ("id".to_owned(), Value::String(ty.to_string())),
+                    ("Items".to_owned(), Value::List(items)),
+                ]))
             }),
         }
     }

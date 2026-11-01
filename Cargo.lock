@@ -1309,7 +1309,6 @@ version = "0.5.2-dev"
 dependencies = [
  "hematite-nbt",
  "mchprs_proc_macros",
- "mchprs_utils",
  "serde",
 ]
 
@@ -1342,8 +1341,6 @@ dependencies = [
  "mchprs_redstone",
  "mchprs_save_data",
  "mchprs_schematic",
- "mchprs_text",
- "mchprs_utils",
  "mchprs_world",
  "md5",
  "mysql",
@@ -1371,8 +1368,9 @@ dependencies = [
  "flate2",
  "hematite-nbt",
  "mchprs_proc_macros",
- "mchprs_text",
+ "regex",
  "serde",
+ "serde_json",
  "tracing",
 ]
 
@@ -1444,19 +1442,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mchprs_text"
-version = "0.5.2-dev"
-dependencies = [
- "regex",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "mchprs_utils"
-version = "0.5.2-dev"
-
-[[package]]
 name = "mchprs_world"
 version = "0.5.2-dev"
 dependencies = [
@@ -1477,7 +1462,6 @@ dependencies = [
  "hematite-nbt",
  "mchprs_blocks",
  "mchprs_save_data",
- "mchprs_utils",
  "mchprs_world",
  "rayon",
  "serde",

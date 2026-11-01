@@ -1,5 +1,6 @@
 mod nbt_util;
 pub mod packets;
+pub mod text;
 
 use packets::serverbound::ServerBoundPacket;
 use packets::{read_packet, PacketEncoder, PlayerProperty};
