@@ -14,7 +14,6 @@ include.workspace = true
 [dependencies]
 mchprs_blocks = { path = "../blocks", features = ["nbt"] }
 serde = { workspace = true, features = ["derive"] }
-regex = { workspace = true }
 hematite-nbt = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

@@ -13,7 +13,6 @@ use crate::{
     plot::{Plot, PLOT_BLOCK_HEIGHT},
     utils,
 };
-use backtrace::Backtrace;
 use bus::Bus;
 use hmac::{Hmac, Mac};
 use mchprs_blocks::MC_VERSION;
@@ -159,8 +158,8 @@ impl MinecraftServer {
     /// Start the server
     pub fn run() {
         std::panic::set_hook(Box::new(|panic_info| {
-            let backtrace = Backtrace::new();
-            error!("plot {}\n{:?}", panic_info, backtrace);
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            error!("plot {panic_info}\n{backtrace}");
         }));
 
         info!("Starting server...");
