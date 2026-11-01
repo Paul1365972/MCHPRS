@@ -11,7 +11,9 @@ mod worker;
 
 pub use backend::{BackendFailure, Batch, Snapshot};
 pub use block_map::BlockMap;
-pub use engine::{Engine, EngineError, Input, NodeChanges, PendingTick, Reporting};
+pub use engine::{
+    Engine, EngineError, EngineSnapshot, Input, NodeChanges, NodeOutput, PendingTick, Reporting,
+};
 pub use netlist::{Link, Netlist, NodeId};
 pub use progress::{CompileProgress, PassStatus};
 pub use worker::Worker;

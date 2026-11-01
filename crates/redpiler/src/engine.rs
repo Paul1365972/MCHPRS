@@ -1,4 +1,4 @@
-use crate::compile_graph::{NodeState, NodeType};
+use crate::compile_graph::{NodeState, NodeType, SignalStrength};
 use crate::netlist::NodeId;
 use mchprs_world::TickPriority;
 use std::error::Error;
@@ -13,10 +13,37 @@ pub struct PendingTick {
     pub priority: TickPriority,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeOutput {
+    pub power: SignalStrength,
+    pub repeater_locked: bool,
+}
+
+impl NodeOutput {
+    pub fn is_powered(self) -> bool {
+        !self.power.is_zero()
+    }
+}
+
+impl From<NodeState> for NodeOutput {
+    fn from(state: NodeState) -> Self {
+        NodeOutput {
+            power: state.power,
+            repeater_locked: state.repeater_locked,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct NodeChanges {
-    pub states: Vec<(NodeId, NodeState)>,
+    pub outputs: Vec<(NodeId, NodeOutput)>,
     pub notes: Vec<NodeId>,
+}
+
+#[derive(Debug, Default)]
+pub struct EngineSnapshot {
+    pub changes: NodeChanges,
+    pub pending_ticks: Vec<PendingTick>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,5 +71,5 @@ pub trait Engine: Send {
     fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> Result<u64, EngineError>;
     fn input(&mut self, node: NodeId, input: Input) -> Result<(), EngineError>;
     fn take_changes(&mut self) -> Result<NodeChanges, EngineError>;
-    fn snapshot(&mut self) -> Result<(NodeChanges, Vec<PendingTick>), EngineError>;
+    fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError>;
 }

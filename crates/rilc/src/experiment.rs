@@ -122,7 +122,7 @@ impl Loaded {
         };
         let netlist = mchprs_redpiler::compile(&input, &self.options, &CompileProgress::default());
         let block_map = BlockMap::new(&netlist);
-        let pending_ticks = block_map.map_ticks(&self.world.to_be_ticked);
+        let pending_ticks = block_map.pending_ticks(&self.world.to_be_ticked);
         Compiled {
             netlist,
             block_map,

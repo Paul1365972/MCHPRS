@@ -1,6 +1,5 @@
 use crate::experiment::{write_report, Compiled, Loaded, Result, Schedule};
-use mchprs_redpiler::compile_graph::NodeState;
-use mchprs_redpiler::{Engine, NodeId, Reporting};
+use mchprs_redpiler::{Engine, NodeId, NodeOutput, Reporting};
 use mchprs_world::TickPriority;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -11,18 +10,18 @@ const REPORTED_NODES: usize = 50;
 
 struct Mirror {
     backend: String,
-    states: Vec<NodeState>,
+    outputs: Vec<NodeOutput>,
     pending: HashMap<NodeId, Vec<(u32, TickPriority)>>,
 }
 
 impl Mirror {
     fn refresh(&mut self, engine: &mut dyn Engine) -> Result<()> {
-        let (changes, pending_ticks) = engine.snapshot()?;
-        for (node, state) in changes.states {
-            self.states[node.index()] = state;
+        let snapshot = engine.snapshot()?;
+        for (node, output) in snapshot.changes.outputs {
+            self.outputs[node.index()] = output;
         }
         self.pending.clear();
-        for tick in pending_ticks {
+        for tick in snapshot.pending_ticks {
             self.pending
                 .entry(tick.node)
                 .or_default()
@@ -35,11 +34,11 @@ impl Mirror {
     }
 
     fn describe(&self, node: NodeId) -> Value {
-        let state = self.states[node.index()];
+        let output = self.outputs[node.index()];
         json!({
-            "powered": state.is_powered(),
-            "locked": state.repeater_locked,
-            "strength": state.power.get(),
+            "powered": output.is_powered(),
+            "locked": output.repeater_locked,
+            "strength": output.power.get(),
             "pending": self.pending.get(&node).map(Vec::as_slice).unwrap_or_default(),
         })
     }
@@ -57,13 +56,10 @@ pub fn diff(
     }
     let loaded = Loaded::open(path)?;
     let mut compiled = loaded.compile();
-    let initial: Vec<NodeState> = compiled
+    let initial: Vec<NodeOutput> = compiled
         .netlist
         .ids()
-        .map(|id| NodeState {
-            pending_tick: false,
-            ..compiled.netlist.node(id).state
-        })
+        .map(|id| compiled.netlist.node(id).state.into())
         .collect();
     let mut engines = backends
         .iter()
@@ -73,7 +69,7 @@ pub fn diff(
         .iter()
         .map(|backend| Mirror {
             backend: backend.clone(),
-            states: initial.clone(),
+            outputs: initial.clone(),
             pending: HashMap::new(),
         })
         .collect();
@@ -109,11 +105,11 @@ pub fn diff(
 
 fn differing_nodes(mirrors: &[Mirror], ignore_pending: bool) -> Vec<NodeId> {
     let (first, rest) = mirrors.split_first().unwrap();
-    (0..first.states.len())
+    (0..first.outputs.len())
         .map(NodeId::new)
         .filter(|node| {
             rest.iter().any(|other| {
-                other.states[node.index()] != first.states[node.index()]
+                other.outputs[node.index()] != first.outputs[node.index()]
                     || (!ignore_pending && other.pending.get(node) != first.pending.get(node))
             })
         })

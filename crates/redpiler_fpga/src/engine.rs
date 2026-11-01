@@ -1,6 +1,8 @@
 use crate::circuit::{Circuit, Kind, State};
-use mchprs_redpiler::compile_graph::{NodeState, SignalStrength};
-use mchprs_redpiler::{Engine, EngineError, Input, NodeChanges, NodeId, PendingTick};
+use mchprs_redpiler::compile_graph::SignalStrength;
+use mchprs_redpiler::{
+    Engine, EngineError, EngineSnapshot, Input, NodeChanges, NodeId, NodeOutput, PendingTick,
+};
 use std::error::Error;
 use std::mem;
 use std::time::Instant;
@@ -65,12 +67,11 @@ impl<S: Simulator> PhaseEngine<S> {
         if self.kinds[node] == Kind::Constant || appearance(previous) == appearance(state) {
             return;
         }
-        changes.states.push((
+        changes.outputs.push((
             NodeId::new(node),
-            NodeState {
+            NodeOutput {
                 power: state.strength,
                 repeater_locked: state.locked,
-                pending_tick: false,
             },
         ));
     }
@@ -142,7 +143,7 @@ impl<S: Simulator> Engine for PhaseEngine<S> {
         Ok(changes)
     }
 
-    fn snapshot(&mut self) -> Result<(NodeChanges, Vec<PendingTick>), EngineError> {
+    fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError> {
         let states = self.simulator.states()?;
         let mut changes = NodeChanges::default();
         let mut pending_ticks = Vec::new();
@@ -156,6 +157,9 @@ impl<S: Simulator> Engine for PhaseEngine<S> {
             }
             self.report(node, state, &mut changes);
         }
-        Ok((changes, pending_ticks))
+        Ok(EngineSnapshot {
+            changes,
+            pending_ticks,
+        })
     }
 }

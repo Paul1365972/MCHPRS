@@ -52,7 +52,7 @@ fn compile(world: &TestWorld, engine: TestEngine, optimize: bool) -> (BlockMap, 
     };
     let netlist = mchprs_redpiler::compile(&input, &options, &progress);
     let block_map = BlockMap::new(&netlist);
-    let pending_ticks = block_map.map_ticks(&world.to_be_ticked);
+    let pending_ticks = block_map.pending_ticks(&world.to_be_ticked);
     let target = match engine {
         TestEngine::Direct => {
             let engine = DirectEngine::new(&netlist, Reporting::All, &pending_ticks);

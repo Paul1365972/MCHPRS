@@ -116,7 +116,7 @@ pub trait Engine: Send {
     fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> Result<u64, EngineError>;
     fn input(&mut self, node: NodeId, input: Input) -> Result<(), EngineError>;
     fn take_changes(&mut self) -> Result<NodeChanges, EngineError>;
-    fn snapshot(&mut self) -> Result<(NodeChanges, Vec<PendingTick>), EngineError>;
+    fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError>;
 }
 ```
 

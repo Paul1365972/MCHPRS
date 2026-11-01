@@ -289,10 +289,10 @@ impl WorkerThread {
     }
 
     fn snapshot(&mut self) -> Result<Snapshot, EngineError> {
-        let (changes, pending_ticks) = self.engine.snapshot()?;
+        let snapshot = self.engine.snapshot()?;
         Ok(Snapshot {
-            changes: self.take_batch(&changes),
-            pending_ticks: self.block_map.translate_ticks(&pending_ticks),
+            changes: self.take_batch(&snapshot.changes),
+            pending_ticks: self.block_map.tick_entries(&snapshot.pending_ticks),
         })
     }
 

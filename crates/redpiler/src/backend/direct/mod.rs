@@ -8,7 +8,9 @@ mod update;
 use crate::backend::direct::node::ForwardLinks;
 use crate::block_map::BlockMap;
 use crate::compile_graph::SignalStrength;
-use crate::engine::{Engine, EngineError, Input, NodeChanges, PendingTick, Reporting};
+use crate::engine::{
+    Engine, EngineError, EngineSnapshot, Input, NodeChanges, PendingTick, Reporting,
+};
 use crate::netlist::{Netlist, NodeId};
 use crate::worker::Worker;
 use mchprs_blocks::blocks::ComparatorMode;
@@ -19,7 +21,7 @@ use std::time::Instant;
 
 pub fn start(netlist: &Netlist, ticks: &[TickEntry], reporting: Reporting) -> Worker {
     let block_map = BlockMap::new(netlist);
-    let pending_ticks = block_map.map_ticks(ticks);
+    let pending_ticks = block_map.pending_ticks(ticks);
     let engine = DirectEngine::new(netlist, reporting, &pending_ticks);
     Worker::start(block_map, Box::new(engine))
 }
@@ -120,7 +122,7 @@ impl DirectEngine {
     }
 
     fn take_changed_nodes(&mut self, reported: impl Fn(&Node) -> bool) -> NodeChanges {
-        let states = self
+        let outputs = self
             .nodes
             .inner_mut()
             .iter_mut()
@@ -128,11 +130,11 @@ impl DirectEngine {
             .filter(|(_, node)| node.changed && reported(node))
             .map(|(index, node)| {
                 node.changed = false;
-                (NodeId::new(index), node.state())
+                (NodeId::new(index), node.output())
             })
             .collect();
         NodeChanges {
-            states,
+            outputs,
             notes: mem::take(&mut self.notes),
         }
     }
@@ -229,10 +231,12 @@ impl Engine for DirectEngine {
         Ok(self.take_changed_nodes(|node| node.visible))
     }
 
-    fn snapshot(&mut self) -> Result<(NodeChanges, Vec<PendingTick>), EngineError> {
+    fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError> {
         self.changed_since_take = false;
-        let changes = self.take_changed_nodes(|_| true);
-        Ok((changes, self.scheduler.pending_ticks()))
+        Ok(EngineSnapshot {
+            changes: self.take_changed_nodes(|_| true),
+            pending_ticks: self.scheduler.pending_ticks(),
+        })
     }
 }
 

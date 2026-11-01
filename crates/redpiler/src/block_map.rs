@@ -1,6 +1,6 @@
 use crate::backend::Batch;
-use crate::compile_graph::{NodeState, NodeType};
-use crate::engine::{Input, NodeChanges, PendingTick};
+use crate::compile_graph::NodeType;
+use crate::engine::{Input, NodeChanges, NodeOutput, PendingTick};
 use crate::netlist::{Netlist, NodeId};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::Block;
@@ -14,7 +14,7 @@ type NodeBlocks = SmallVec<[(BlockPos, Block); 1]>;
 pub struct BlockMap {
     blocks: Box<[NodeBlocks]>,
     types: Box<[NodeType]>,
-    states: Box<[NodeState]>,
+    outputs: Box<[NodeOutput]>,
     nodes_by_position: FxHashMap<BlockPos, NodeId>,
 }
 
@@ -23,7 +23,7 @@ impl BlockMap {
         let mut nodes_by_position = FxHashMap::default();
         let mut blocks = Vec::with_capacity(netlist.len());
         let mut types = Vec::with_capacity(netlist.len());
-        let mut states = Vec::with_capacity(netlist.len());
+        let mut outputs = Vec::with_capacity(netlist.len());
         for id in netlist.ids() {
             let node = netlist.node(id);
             let node_blocks: NodeBlocks = node
@@ -36,15 +36,12 @@ impl BlockMap {
             }
             blocks.push(node_blocks);
             types.push(node.ty.clone());
-            states.push(NodeState {
-                pending_tick: false,
-                ..node.state
-            });
+            outputs.push(NodeOutput::from(node.state));
         }
         BlockMap {
             blocks: blocks.into_boxed_slice(),
             types: types.into_boxed_slice(),
-            states: states.into_boxed_slice(),
+            outputs: outputs.into_boxed_slice(),
             nodes_by_position,
         }
     }
@@ -58,7 +55,7 @@ impl BlockMap {
             .filter(|node| input.is_accepted_by(&self.types[node.index()]))
     }
 
-    pub fn translate_ticks(&self, ticks: &[PendingTick]) -> Vec<TickEntry> {
+    pub fn tick_entries(&self, ticks: &[PendingTick]) -> Vec<TickEntry> {
         ticks
             .iter()
             .flat_map(|tick| {
@@ -71,7 +68,7 @@ impl BlockMap {
             .collect()
     }
 
-    pub fn map_ticks(&self, entries: &[TickEntry]) -> Vec<PendingTick> {
+    pub fn pending_ticks(&self, entries: &[TickEntry]) -> Vec<PendingTick> {
         entries
             .iter()
             .filter_map(|entry| {
@@ -86,8 +83,8 @@ impl BlockMap {
 
     pub fn translate(&mut self, changes: &NodeChanges) -> Batch {
         let mut out = Batch::default();
-        for &(node, state) in &changes.states {
-            self.record_state(node, state, &mut out);
+        for &(node, output) in &changes.outputs {
+            self.record_output(node, output, &mut out);
         }
         for &node in &changes.notes {
             let NodeType::NoteBlock { instrument, note } = self.types[node.index()] else {
@@ -104,18 +101,18 @@ impl BlockMap {
         self.blocks[node.index()].iter().map(|&(pos, _)| pos)
     }
 
-    fn record_state(&mut self, node: NodeId, state: NodeState, out: &mut Batch) {
-        if self.states[node.index()] == state {
+    fn record_output(&mut self, node: NodeId, output: NodeOutput, out: &mut Batch) {
+        if self.outputs[node.index()] == output {
             return;
         }
-        self.states[node.index()] = state;
+        self.outputs[node.index()] = output;
         let is_comparator = matches!(self.types[node.index()], NodeType::Comparator { .. });
         for (pos, block) in &mut self.blocks[node.index()] {
-            set_block_state(block, state);
+            set_block_output(block, output);
             out.blocks.push((*pos, *block));
             if is_comparator {
                 let block_entity = BlockEntity::Comparator {
-                    output_strength: state.power.get(),
+                    output_strength: output.power.get(),
                 };
                 out.block_entities.push((*pos, block_entity));
             }
@@ -123,14 +120,14 @@ impl BlockMap {
     }
 }
 
-fn set_block_state(block: &mut Block, state: NodeState) {
+fn set_block_output(block: &mut Block, output: NodeOutput) {
     if let Some(powered) = block_powered_mut(block) {
-        *powered = state.is_powered();
+        *powered = output.is_powered();
     }
     match block {
-        Block::IronTrapdoor { open, .. } => *open = state.is_powered(),
-        Block::RedstoneWire(wire) => wire.power = state.power.get(),
-        Block::Repeater(repeater) => repeater.locked = state.repeater_locked,
+        Block::IronTrapdoor { open, .. } => *open = output.is_powered(),
+        Block::RedstoneWire(wire) => wire.power = output.power.get(),
+        Block::Repeater(repeater) => repeater.locked = output.repeater_locked,
         _ => {}
     }
 }

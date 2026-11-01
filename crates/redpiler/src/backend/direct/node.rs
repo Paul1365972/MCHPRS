@@ -1,4 +1,5 @@
-use crate::compile_graph::{NodeState, SignalStrength};
+use crate::compile_graph::SignalStrength;
+use crate::engine::NodeOutput;
 use crate::netlist::NodeId;
 use mchprs_blocks::blocks::ComparatorMode;
 use std::num::NonZeroU128;
@@ -196,11 +197,10 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn state(&self) -> NodeState {
-        NodeState {
+    pub fn output(&self) -> NodeOutput {
+        NodeOutput {
             power: self.power,
             repeater_locked: self.repeater_locked,
-            pending_tick: false,
         }
     }
 

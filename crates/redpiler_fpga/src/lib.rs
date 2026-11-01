@@ -154,7 +154,7 @@ pub fn start(
     progress: &CompileProgress,
 ) -> Result<Worker, EngineError> {
     let block_map = BlockMap::new(netlist);
-    let pending_ticks = block_map.map_ticks(ticks);
+    let pending_ticks = block_map.pending_ticks(ticks);
     let engine = prepare(target, netlist, &pending_ticks, io_only, progress)?;
     Ok(Worker::start(block_map, engine))
 }
