@@ -98,7 +98,7 @@ pub trait Backend: Send {
     fn set_tick_rate(&mut self, rate: TickRate);
     fn set_send_rate(&mut self, rate: SendRate);
     fn input(&mut self, pos: BlockPos, input: Input);
-    fn next_batch(&mut self, timeout: Duration) -> Result<Batch, BackendFailure>;
+    fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>, BackendFailure>;
     fn snapshot(&mut self) -> Result<Snapshot, BackendFailure>;
     fn stop(self: Box<Self>) -> Result<Snapshot, BackendFailure>;
 }
@@ -125,7 +125,7 @@ Rules for every `Backend`:
 - `Paused` runs nothing. `PerSecond` catches up a bounded backlog and never runs ahead. `Unlimited` runs as fast as the engine can. `Ticks(n)` runs `n` ticks as fast as possible and then behaves as `Paused` until the plot sets a rate again.
 - `Input::Interact` flicks a lever or presses a button, `Input::PressurePlate` sets a plate. An input takes effect within one slice.
 - A batch is published at most once per slice and no more often than the send rate. `SendRate::Never` publishes nothing; the plot then learns of changes through snapshots only. `io_only` limits batches to input and output nodes.
-- `next_batch` blocks for at most `timeout` and returns an empty `Batch` when nothing was published.
+- `next_batch` blocks for at most `timeout` and returns `None` when nothing was published.
 - `snapshot` and `stop` are answered at the end of the running slice with every block that differs from the last report, hidden nodes included, plus all pending ticks. Batches published before the answer are folded into it, so applying a snapshot never rewinds a block.
 - `Err(BackendFailure)` means the backend has died. The plot drops it and keeps interpreting.
 

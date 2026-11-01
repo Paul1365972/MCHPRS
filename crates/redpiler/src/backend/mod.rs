@@ -66,7 +66,7 @@ pub trait Backend: Send {
     fn set_tick_rate(&mut self, rate: TickRate);
     fn set_send_rate(&mut self, rate: SendRate);
     fn input(&mut self, pos: BlockPos, input: Input);
-    fn next_batch(&mut self, timeout: Duration) -> Result<Batch, BackendFailure>;
+    fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>, BackendFailure>;
     fn snapshot(&mut self) -> Result<Snapshot, BackendFailure>;
     fn stop(self: Box<Self>) -> Result<Snapshot, BackendFailure>;
 }

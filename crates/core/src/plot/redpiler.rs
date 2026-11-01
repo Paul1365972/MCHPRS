@@ -114,7 +114,8 @@ impl Plot {
             return;
         };
         match redpiler.backend.next_batch(timeout) {
-            Ok(batch) => self.apply_batch(batch),
+            Ok(Some(batch)) => self.apply_batch(batch),
+            Ok(None) => {}
             Err(_) => self.discard_crashed_redpiler(),
         }
     }

@@ -130,13 +130,13 @@ impl Backend for Worker {
         let _ = self.send(Request::Input(pos, input));
     }
 
-    fn next_batch(&mut self, timeout: Duration) -> Result<Batch, BackendFailure> {
+    fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>, BackendFailure> {
         if self.thread.is_none() {
             return Err(BackendFailure);
         }
         match self.batches.recv_timeout(timeout) {
-            Ok(published) => Ok(self.settle(published)),
-            Err(RecvTimeoutError::Timeout) => Ok(Batch::default()),
+            Ok(published) => Ok(Some(self.settle(published))),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
             Err(RecvTimeoutError::Disconnected) => Err(self.fail()),
         }
     }
