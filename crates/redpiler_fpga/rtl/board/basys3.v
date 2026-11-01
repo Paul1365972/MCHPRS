@@ -18,7 +18,7 @@ module basys3 (
 
     wire ticking, waiting, clear_fault, previous_view, next_view;
     wire ticking_shown, receiving, transmitting;
-    wire [2:0] fault_code;
+    wire [3:0] fault_code;
     wire [63:0] tick_count;
     wire [79:0] digits;
     wire [31:0] number;

@@ -4,7 +4,8 @@ module protocol_controller #(
     parameter STATE_BYTES = 1,
     parameter OUTPUT_BYTES = 1,
     parameter [63:0] CIRCUIT_ID = 0,
-    parameter CLOCKS_PER_BIT = 100
+    parameter MAX_INPUTS = 256,
+    parameter CLOCKS_PER_BIT = 25
 ) (
     input wire clock,
     input wire serial_receive,
@@ -13,7 +14,7 @@ module protocol_controller #(
     output wire ticking,
     output wire waiting,
     output wire [63:0] tick_count,
-    output wire [2:0] fault_code
+    output wire [3:0] fault_code
 );
     wire [7:0] receive_data, transmit_data;
     wire receive_ready, receive_error, transmit_start, transmit_busy;
@@ -28,11 +29,12 @@ module protocol_controller #(
     );
     packet_controller #(
         .NODE_COUNT(NODE_COUNT), .OUTPUT_COUNT(OUTPUT_COUNT),
-        .STATE_BYTES(STATE_BYTES), .OUTPUT_BYTES(OUTPUT_BYTES), .CIRCUIT_ID(CIRCUIT_ID)
+        .STATE_BYTES(STATE_BYTES), .OUTPUT_BYTES(OUTPUT_BYTES), .CIRCUIT_ID(CIRCUIT_ID),
+        .MAX_INPUTS(MAX_INPUTS)
     ) controller (
         .clock(clock),
         .receive_data(receive_data), .receive_ready(receive_ready),
-        .receive_error(receive_error), .receive_accept(),
+        .receive_error(receive_error),
         .transmit_data(transmit_data), .transmit_start(transmit_start),
         .transmit_busy(transmit_busy), .clear_fault(clear_fault),
         .ticking(ticking), .waiting(waiting),

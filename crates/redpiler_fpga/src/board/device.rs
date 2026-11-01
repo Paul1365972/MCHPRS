@@ -1,17 +1,21 @@
-use crate::circuit::Circuit;
+use crate::rtl::MAX_INPUTS_PER_REQUEST;
 use std::io;
 use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(2);
-const BAUD: u32 = 1_000_000;
+const BAUD: u32 = 4_000_000;
 const UART_BITS_PER_BYTE: u64 = 10;
-const PROTOCOL_VERSION: u16 = 1;
-const REQUEST_SYNCHRONIZATION: [u8; 2] = [0xa5, 0x5a];
-const RESPONSE_SYNCHRONIZATION: [u8; 2] = [0x5a, 0xa5];
-const REQUEST_LENGTH: usize = 16;
-const RESPONSE_HEADER_LENGTH: usize = 16;
+const MAX_TICKS_PER_SECOND: u64 = 25_000_000;
+const PROTOCOL_VERSION: u8 = 2;
+const FRAME_END: u8 = 0xc0;
+const ESCAPE: u8 = 0xdb;
+const ESCAPED_END: u8 = 0xdc;
+const ESCAPED_ESCAPE: u8 = 0xdd;
+const IDENTIFY: u8 = 1;
+const ADVANCE: u8 = 2;
+const HEADER_LENGTH: usize = 10;
 const CHECKSUM_LENGTH: usize = 2;
-const REJECTED_OPCODE: u8 = 0xff;
+const IDENTITY_LENGTH: usize = 27;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum DeviceError {
@@ -33,61 +37,87 @@ pub(crate) enum DeviceError {
     ResponseEnded,
     #[error("FPGA serial request timed out")]
     TimedOut,
-    #[error("FPGA response synchronization mismatch")]
-    Synchronization,
-    #[error("FPGA response sequence mismatch")]
-    Sequence,
-    #[error("FPGA response opcode rejected or mismatched")]
-    Opcode,
-    #[error("FPGA response node count mismatch")]
-    NodeCount,
+    #[error("FPGA response has an invalid escape")]
+    Escape,
     #[error("FPGA response CRC16 mismatch")]
     Checksum,
+    #[error("FPGA response sequence mismatch")]
+    Sequence,
+    #[error("FPGA rejected the request")]
+    Rejected(#[source] Rejection),
+    #[error("FPGA response has {actual} payload bytes instead of {expected}")]
+    Length { actual: usize, expected: usize },
+    #[error("FPGA speaks protocol version {0} instead of {PROTOCOL_VERSION}")]
+    Version(u8),
+    #[error("FPGA circuit {actual:?} is not the compiled circuit {expected:?}")]
+    Identity {
+        expected: Identity,
+        actual: Identity,
+    },
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(super) enum Command {
-    Snapshot,
-    Input { index: u32, powered: bool },
-    Identity,
-    Status,
-    RunUntil(u64),
-    Outputs,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum Rejection {
+    #[error("unknown command")]
+    Command,
+    #[error("an input node is out of range")]
+    Input,
+    #[error("the target tick has passed")]
+    Target,
+    #[error("the report is not available in this build")]
+    Report,
+    #[error("unknown status {0}")]
+    Unknown(u8),
+}
+
+impl Rejection {
+    fn from_status(status: u8) -> Self {
+        match status {
+            4 => Self::Command,
+            5 => Self::Input,
+            6 => Self::Target,
+            7 => Self::Report,
+            status => Self::Unknown(status),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Payload {
-    None,
-    States,
-    Outputs,
+pub(crate) struct Identity {
+    pub(crate) circuit_id: u64,
+    pub(crate) node_count: u32,
+    pub(crate) output_count: u32,
+    pub(crate) state_bytes: u32,
+    pub(crate) output_bytes: u32,
+    pub(crate) max_inputs: u16,
 }
 
-impl Command {
-    fn opcode(self) -> u8 {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Report {
+    Nothing,
+    Outputs,
+    States,
+}
+
+impl Report {
+    fn code(self) -> u8 {
         match self {
-            Self::Snapshot => 0,
-            Self::Input { .. } => 2,
-            Self::Identity => 4,
-            Self::Status => 7,
-            Self::RunUntil(_) => 8,
-            Self::Outputs => 9,
+            Self::Nothing => 0,
+            Self::Outputs => 1,
+            Self::States => 2,
         }
     }
+}
 
-    fn argument(self) -> u64 {
-        match self {
-            Self::Input { index, powered } => u64::from(index) | u64::from(powered) << 32,
-            Self::RunUntil(tick) => tick,
-            Self::Snapshot | Self::Identity | Self::Status | Self::Outputs => 0,
-        }
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Input {
+    pub(super) node: u32,
+    pub(super) powered: bool,
+}
 
-    fn payload(self) -> Payload {
-        match self {
-            Self::Snapshot | Self::Input { .. } | Self::Identity => Payload::States,
-            Self::Status | Self::RunUntil(_) => Payload::None,
-            Self::Outputs => Payload::Outputs,
-        }
+impl Input {
+    fn word(self) -> u32 {
+        self.node | u32::from(self.powered) << 31
     }
 }
 
@@ -99,20 +129,13 @@ pub(super) struct Response {
 
 pub(super) struct Device {
     port: Option<Box<dyn serialport::SerialPort>>,
-    node_count: usize,
-    output_count: usize,
-    state_bytes: usize,
-    output_bytes: usize,
+    identity: Identity,
     sequence: u8,
+    ticks: u64,
 }
 
 impl Device {
-    pub(super) fn serial(
-        port: &str,
-        circuit: &Circuit,
-        state_bytes: usize,
-        output_bytes: usize,
-    ) -> Result<Self, DeviceError> {
+    pub(super) fn serial(port: &str, identity: Identity) -> Result<Self, DeviceError> {
         let mut serial = serialport::new(port, BAUD)
             .data_bits(serialport::DataBits::Eight)
             .parity(serialport::Parity::None)
@@ -128,28 +151,94 @@ impl Device {
         serial.clear(serialport::ClearBuffer::All)?;
         Ok(Self {
             port: Some(serial),
-            node_count: circuit.nodes().len(),
-            output_count: circuit.io_nodes().len(),
-            state_bytes,
-            output_bytes,
+            identity,
             sequence: 0,
+            ticks: 0,
         })
     }
 
-    pub(super) fn execute(&mut self, command: Command) -> Result<Response, DeviceError> {
-        let port = self.port.as_mut().ok_or(DeviceError::Stopped)?;
-        let (count, payload_bytes) = match command.payload() {
-            Payload::None => (self.node_count, 0),
-            Payload::States => (self.node_count, self.state_bytes),
-            Payload::Outputs => (self.output_count, self.output_bytes),
+    pub(super) fn identify(&mut self) -> Result<(), DeviceError> {
+        let data = self
+            .exchange(&[IDENTIFY], IDENTITY_LENGTH, self.ticks)?
+            .data;
+        if data[0] != PROTOCOL_VERSION {
+            return Err(DeviceError::Version(data[0]));
+        }
+        let word = |offset: usize| {
+            u32::from_le_bytes(data[offset..offset + 4].try_into().expect("four bytes"))
         };
-        let request = request_frame(self.sequence, command);
-        let mut response = vec![0; RESPONSE_HEADER_LENGTH + payload_bytes + CHECKSUM_LENGTH];
-        let result = serial_exchange(port.as_mut(), &request, &mut response)
-            .and_then(|()| decode_response(&response, self.sequence, command, count));
+        let actual = Identity {
+            circuit_id: u64::from_le_bytes(data[1..9].try_into().expect("eight bytes")),
+            node_count: word(9),
+            output_count: word(13),
+            state_bytes: word(17),
+            output_bytes: word(21),
+            max_inputs: u16::from_le_bytes(data[25..27].try_into().expect("two bytes")),
+        };
+        if actual != self.identity {
+            return Err(DeviceError::Identity {
+                expected: self.identity,
+                actual,
+            });
+        }
+        Ok(())
+    }
+
+    pub(super) fn advance(
+        &mut self,
+        inputs: &[Input],
+        target: u64,
+        report: Report,
+    ) -> Result<Response, DeviceError> {
+        let last_chunk = inputs.len().saturating_sub(1) / MAX_INPUTS_PER_REQUEST;
+        let (earlier, last) = inputs.split_at(last_chunk * MAX_INPUTS_PER_REQUEST);
+        for chunk in earlier.chunks(MAX_INPUTS_PER_REQUEST) {
+            self.advance_once(chunk, self.ticks, Report::Nothing)?;
+        }
+        self.advance_once(last, target, report)
+    }
+
+    fn advance_once(
+        &mut self,
+        inputs: &[Input],
+        target: u64,
+        report: Report,
+    ) -> Result<Response, DeviceError> {
+        let mut request = vec![ADVANCE];
+        request.extend(target.to_le_bytes());
+        request.push(report.code());
+        for input in inputs {
+            request.extend(input.word().to_le_bytes());
+        }
+        let payload = match report {
+            Report::Nothing => 0,
+            Report::Outputs => self.identity.output_bytes as usize,
+            Report::States => self.identity.state_bytes as usize,
+        };
+        self.exchange(&request, payload, target)
+    }
+
+    fn exchange(
+        &mut self,
+        command: &[u8],
+        payload: usize,
+        target: u64,
+    ) -> Result<Response, DeviceError> {
+        let port = self.port.as_mut().ok_or(DeviceError::Stopped)?;
+        let mut content = vec![self.sequence];
+        content.extend(command);
+        let request = frame(&content);
+        let run = Duration::from_secs_f64(
+            target.saturating_sub(self.ticks) as f64 / MAX_TICKS_PER_SECOND as f64,
+        );
+        let wire = wire_time(request.len() + 2 * (HEADER_LENGTH + payload + CHECKSUM_LENGTH));
+        let deadline = Instant::now() + TIMEOUT + run + wire;
+        let result = serial_exchange(port.as_mut(), &request, deadline)
+            .and_then(|frame| decode_response(&frame, self.sequence, payload));
         match result {
             Ok(response) => {
                 self.sequence = self.sequence.wrapping_add(1);
+                self.ticks = response.ticks;
                 Ok(response)
             }
             Err(error) => {
@@ -160,13 +249,43 @@ impl Device {
     }
 }
 
+fn frame(content: &[u8]) -> Vec<u8> {
+    let checksum = crc16(content);
+    let mut frame = vec![FRAME_END];
+    for &byte in content.iter().chain(&checksum.to_be_bytes()) {
+        match byte {
+            FRAME_END => frame.extend([ESCAPE, ESCAPED_END]),
+            ESCAPE => frame.extend([ESCAPE, ESCAPED_ESCAPE]),
+            byte => frame.push(byte),
+        }
+    }
+    frame.push(FRAME_END);
+    frame
+}
+
+fn unstuff(stuffed: &[u8]) -> Result<Vec<u8>, DeviceError> {
+    let mut content = Vec::with_capacity(stuffed.len());
+    let mut bytes = stuffed.iter();
+    while let Some(&byte) = bytes.next() {
+        content.push(if byte == ESCAPE {
+            match bytes.next() {
+                Some(&ESCAPED_END) => FRAME_END,
+                Some(&ESCAPED_ESCAPE) => ESCAPE,
+                _ => return Err(DeviceError::Escape),
+            }
+        } else {
+            byte
+        });
+    }
+    Ok(content)
+}
+
 fn serial_exchange(
     port: &mut dyn serialport::SerialPort,
-    request: &[u8; REQUEST_LENGTH],
-    response: &mut [u8],
-) -> Result<(), DeviceError> {
-    let deadline = Instant::now() + exchange_timeout(response.len());
-    let mut remaining = request.as_slice();
+    request: &[u8],
+    deadline: Instant,
+) -> Result<Vec<u8>, DeviceError> {
+    let mut remaining = request;
     while !remaining.is_empty() {
         port.set_timeout(time_remaining(deadline)?)?;
         match port.write(remaining) {
@@ -176,17 +295,24 @@ fn serial_exchange(
             Err(error) => return Err(error.into()),
         }
     }
-    let mut remaining = response;
-    while !remaining.is_empty() {
+    let mut stuffed = Vec::new();
+    let mut buffer = [0; 4096];
+    loop {
         port.set_timeout(time_remaining(deadline)?)?;
-        match port.read(remaining) {
+        let count = match port.read(&mut buffer) {
             Ok(0) => return Err(DeviceError::ResponseEnded),
-            Ok(count) => remaining = &mut remaining[count..],
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Ok(count) => count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(error) => return Err(error.into()),
+        };
+        for &byte in &buffer[..count] {
+            match byte {
+                FRAME_END if stuffed.is_empty() => {}
+                FRAME_END => return Ok(stuffed),
+                byte => stuffed.push(byte),
+            }
         }
     }
-    Ok(())
 }
 
 fn time_remaining(deadline: Instant) -> Result<Duration, DeviceError> {
@@ -195,55 +321,33 @@ fn time_remaining(deadline: Instant) -> Result<Duration, DeviceError> {
         .ok_or(DeviceError::TimedOut)
 }
 
-fn request_frame(sequence: u8, command: Command) -> [u8; REQUEST_LENGTH] {
-    let mut frame = [0; REQUEST_LENGTH];
-    frame[..2].copy_from_slice(&REQUEST_SYNCHRONIZATION);
-    frame[2] = sequence;
-    frame[3] = command.opcode();
-    frame[4..12].copy_from_slice(&command.argument().to_le_bytes());
-    frame[12..14].copy_from_slice(&PROTOCOL_VERSION.to_le_bytes());
-    let checksum = crc16(&frame[2..14]);
-    frame[14..].copy_from_slice(&checksum.to_le_bytes());
-    frame
-}
-
-fn decode_response(
-    response: &[u8],
-    sequence: u8,
-    command: Command,
-    node_count: usize,
-) -> Result<Response, DeviceError> {
-    let (checked, checksum) = response.split_at(response.len() - CHECKSUM_LENGTH);
-    let (header, data) = checked.split_at(RESPONSE_HEADER_LENGTH);
-    if header[..2] != RESPONSE_SYNCHRONIZATION {
-        return Err(DeviceError::Synchronization);
-    }
-    if header[2] != sequence {
-        return Err(DeviceError::Sequence);
-    }
-    if header[3] == REJECTED_OPCODE || header[3] != command.opcode() {
-        return Err(DeviceError::Opcode);
-    }
-    let count = u32::from_le_bytes(header[12..16].try_into().expect("four count bytes"));
-    if count as usize != node_count {
-        return Err(DeviceError::NodeCount);
-    }
-    let checksum = u16::from_le_bytes(checksum.try_into().expect("two checksum bytes"));
-    if crc16(&checked[2..]) != checksum {
+fn decode_response(stuffed: &[u8], sequence: u8, payload: usize) -> Result<Response, DeviceError> {
+    let content = unstuff(stuffed)?;
+    if content.len() < HEADER_LENGTH + CHECKSUM_LENGTH || crc16(&content) != 0 {
         return Err(DeviceError::Checksum);
     }
+    if content[0] != sequence {
+        return Err(DeviceError::Sequence);
+    }
+    if content[1] != 0 {
+        return Err(DeviceError::Rejected(Rejection::from_status(content[1])));
+    }
+    let data = &content[HEADER_LENGTH..content.len() - CHECKSUM_LENGTH];
+    if data.len() != payload {
+        return Err(DeviceError::Length {
+            actual: data.len(),
+            expected: payload,
+        });
+    }
     Ok(Response {
-        ticks: u64::from_le_bytes(header[4..12].try_into().expect("eight tick bytes")),
+        ticks: u64::from_le_bytes(content[2..HEADER_LENGTH].try_into().unwrap()),
         data: data.to_vec(),
     })
 }
 
-fn exchange_timeout(response_length: usize) -> Duration {
-    let wire_bits = (response_length + REQUEST_LENGTH) as u64 * UART_BITS_PER_BYTE;
-    let baud = u64::from(BAUD);
-    TIMEOUT
-        + Duration::from_secs(wire_bits / baud)
-        + Duration::from_nanos(((wire_bits % baud) * 1_000_000_000).div_ceil(baud))
+fn wire_time(bytes: usize) -> Duration {
+    let bits = bytes as u64 * UART_BITS_PER_BYTE;
+    Duration::from_nanos((bits * 1_000_000_000).div_ceil(u64::from(BAUD)))
 }
 
 fn crc16(bytes: &[u8]) -> u16 {
@@ -264,15 +368,12 @@ fn crc16(bytes: &[u8]) -> u16 {
 mod tests {
     use super::*;
 
-    fn response(sequence: u8, opcode: u8, ticks: u64, count: u32, data: &[u8]) -> Vec<u8> {
-        let mut response = RESPONSE_SYNCHRONIZATION.to_vec();
-        response.extend([sequence, opcode]);
-        response.extend(ticks.to_le_bytes());
-        response.extend(count.to_le_bytes());
-        response.extend(data);
-        let checksum = crc16(&response[2..]);
-        response.extend(checksum.to_le_bytes());
-        response
+    fn response(sequence: u8, status: u8, ticks: u64, data: &[u8]) -> Vec<u8> {
+        let mut content = vec![sequence, status];
+        content.extend(ticks.to_le_bytes());
+        content.extend(data);
+        let framed = frame(&content);
+        framed[1..framed.len() - 1].to_vec()
     }
 
     #[test]
@@ -281,80 +382,74 @@ mod tests {
     }
 
     #[test]
-    fn requests_carry_opcode_argument_version_and_checksum() {
-        let frame = request_frame(
-            7,
-            Command::Input {
-                index: 0x0403_0201,
-                powered: true,
-            },
-        );
+    fn frames_end_with_a_checksum_that_leaves_no_remainder() {
+        let content = [7, ADVANCE, 1, 2, 3];
+        let framed = frame(&content);
         assert_eq!(
-            frame[..14],
-            [0xa5, 0x5a, 7, 2, 1, 2, 3, 4, 1, 0, 0, 0, 1, 0]
+            (framed[0], framed[framed.len() - 1]),
+            (FRAME_END, FRAME_END)
         );
-        assert_eq!(frame[14..], crc16(&frame[2..14]).to_le_bytes());
-        let frame = request_frame(0, Command::RunUntil(0x0102));
-        assert_eq!(frame[3..12], [8, 2, 1, 0, 0, 0, 0, 0, 0]);
+        let unstuffed = unstuff(&framed[1..framed.len() - 1]).unwrap();
+        assert_eq!(unstuffed[..content.len()], content);
+        assert_eq!(crc16(&unstuffed), 0);
     }
 
     #[test]
-    fn only_status_and_run_until_responses_omit_the_payload() {
-        let commands = [
-            (Command::Snapshot, Payload::States),
-            (
-                Command::Input {
-                    index: 0,
-                    powered: false,
-                },
-                Payload::States,
-            ),
-            (Command::Identity, Payload::States),
-            (Command::Status, Payload::None),
-            (Command::RunUntil(0), Payload::None),
-            (Command::Outputs, Payload::Outputs),
-        ];
-        for (command, payload) in commands {
-            assert_eq!(command.payload(), payload, "{command:?}");
-        }
+    fn stuffing_hides_frame_ends_and_round_trips() {
+        let content = [FRAME_END, ESCAPE, 0, ESCAPED_END, FRAME_END];
+        let framed = frame(&content);
+        assert!(!framed[1..framed.len() - 1].contains(&FRAME_END));
+        let unstuffed = unstuff(&framed[1..framed.len() - 1]).unwrap();
+        assert_eq!(unstuffed[..content.len()], content);
+    }
+
+    #[test]
+    fn inputs_pack_the_node_and_the_powered_bit() {
+        let input = Input {
+            node: 0x0102_0304,
+            powered: true,
+        };
+        assert_eq!(input.word(), 0x8102_0304);
     }
 
     #[test]
     fn responses_decode_ticks_and_data() {
-        let bytes = response(3, 0, 42, 5, &[0xde, 0xad]);
+        let bytes = response(3, 0, 42, &[FRAME_END, 0xad]);
         assert_eq!(
-            decode_response(&bytes, 3, Command::Snapshot, 5).unwrap(),
+            decode_response(&bytes, 3, 2).unwrap(),
             Response {
                 ticks: 42,
-                data: vec![0xde, 0xad],
+                data: vec![FRAME_END, 0xad],
             }
         );
     }
 
     #[test]
-    fn corrupt_responses_are_rejected() {
-        let valid = response(3, 9, 42, 5, &[0xde, 0xad]);
-        let decode = |bytes: &[u8]| decode_response(bytes, 3, Command::Outputs, 5);
-        let mut unsynchronized = valid.clone();
-        unsynchronized[0] = 0;
+    fn corrupt_and_rejected_responses_are_errors() {
         assert!(matches!(
-            decode(&unsynchronized),
-            Err(DeviceError::Synchronization)
-        ));
-        assert!(matches!(
-            decode(&response(4, 9, 42, 5, &[0xde, 0xad])),
+            decode_response(&response(4, 0, 42, &[1]), 3, 1),
             Err(DeviceError::Sequence)
         ));
         assert!(matches!(
-            decode(&response(3, REJECTED_OPCODE, 42, 5, &[0xde, 0xad])),
-            Err(DeviceError::Opcode)
+            decode_response(&response(3, 6, 42, &[]), 3, 0),
+            Err(DeviceError::Rejected(Rejection::Target))
         ));
         assert!(matches!(
-            decode(&response(3, 9, 42, 6, &[0xde, 0xad])),
-            Err(DeviceError::NodeCount)
+            decode_response(&response(3, 0, 42, &[1]), 3, 2),
+            Err(DeviceError::Length {
+                actual: 1,
+                expected: 2
+            })
         ));
-        let mut corrupted = valid.clone();
-        corrupted[16] ^= 1;
-        assert!(matches!(decode(&corrupted), Err(DeviceError::Checksum)));
+        let mut corrupted = response(3, 0, 42, &[1]);
+        corrupted[2] ^= 1;
+        assert!(matches!(
+            decode_response(&corrupted, 3, 1),
+            Err(DeviceError::Checksum)
+        ));
+        assert!(matches!(
+            decode_response(&[ESCAPE, 0], 3, 0),
+            Err(DeviceError::Escape)
+        ));
     }
 }
