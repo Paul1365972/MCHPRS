@@ -122,8 +122,10 @@ These arguments have a standard type:
 ### constant
 
 ```
-%x = constant <power>
+%x = constant <power>[, <locked>]
 ```
+
+`locked` is a boolean, `false` if omitted. It holds the lock of a repeater that `ConstantFold` turned into a constant.
 
 ### note_block
 

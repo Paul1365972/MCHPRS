@@ -1,12 +1,11 @@
-use mchprs_redpiler::export::export_graph;
 use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
 use mchprs_redpiler::ril::ast::Global;
 use mchprs_redpiler::ril::dump_graph;
-use mchprs_redpiler::CompilerOptions;
+use mchprs_redpiler::ril::RilOptions;
 use std::path::{Path, PathBuf};
 use std::{fs, process};
 
-pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &CompilerOptions) {
+pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &RilOptions) {
     let ril_src = match fs::read_to_string(input_path) {
         Ok(src) => src,
         Err(err) => {
@@ -30,7 +29,9 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
     let mut result = String::new();
     for (name, global) in &module.globals {
         let graph = match global {
-            Global::Circuit(circuit) => module.get_graph(circuit),
+            Global::Circuit(circuit) => {
+                module.get_graph(circuit, options.compile_options().observed)
+            }
             Global::Schematic(schematic) => {
                 match crate::extract_schematic(
                     input_path,
@@ -49,12 +50,6 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
         };
 
         let result_graph = crate::run_pipeline(&pass_pipeline, graph, options.print_after_all);
-        if options.export
-            && let Err(err) = fs::write("redpiler_graph.bc", export_graph(&result_graph))
-        {
-            eprintln!("error: failed to export the graph: {}", err);
-            process::exit(1);
-        }
         result.push('\n');
         dump_graph(&mut result, &result_graph, name).unwrap();
         result.push('\n');

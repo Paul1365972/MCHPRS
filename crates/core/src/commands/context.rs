@@ -133,9 +133,7 @@ impl<'a> ExecutionContext<'a> {
 
     pub(super) fn world(&mut self) -> &PlotWorld {
         if self.world_access == WorldAccess::Unobserved {
-            if self.plot.redpiler.is_active() {
-                self.plot.redpiler.flush_all(&mut self.plot.world);
-            }
+            self.plot.sync_redpiler();
             self.world_access = WorldAccess::Synchronized;
         }
         &self.plot.world

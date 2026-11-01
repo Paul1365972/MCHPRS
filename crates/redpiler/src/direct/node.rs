@@ -7,6 +7,11 @@ use std::ops::{Index, IndexMut};
 pub struct NodeId(u32);
 
 impl NodeId {
+    pub fn new(index: usize, node_count: usize) -> NodeId {
+        assert!(index < node_count, "node index out of bounds: {index}");
+        NodeId(index as u32)
+    }
+
     pub fn index(self) -> usize {
         self.0 as usize
     }
@@ -104,12 +109,6 @@ impl std::fmt::Debug for ForwardLink {
 #[derive(Clone, Debug, Default)]
 pub struct ForwardLinkRange(std::ops::Range<usize>);
 
-impl ForwardLinkRange {
-    pub fn len(&self) -> usize {
-        self.0.end - self.0.start
-    }
-}
-
 #[derive(Default)]
 pub struct ForwardLinks {
     links: Vec<ForwardLink>,
@@ -128,11 +127,6 @@ impl ForwardLinks {
     pub fn get(&self, range: &ForwardLinkRange) -> &[ForwardLink] {
         // Safety: there's only one instance of ForwardLinks in the backend
         unsafe { self.links.get_unchecked(range.0.clone()) }
-    }
-
-    /// After this point, all existing `ForwardLinkRange`s are invalidated.
-    pub fn clear(&mut self) {
-        self.links.clear();
     }
 }
 
@@ -155,9 +149,7 @@ pub enum NodeKind {
     Trapdoor,
     Wire,
     Constant,
-    NoteBlock {
-        noteblock_id: u16,
-    },
+    NoteBlock,
 }
 
 #[repr(align(16))]

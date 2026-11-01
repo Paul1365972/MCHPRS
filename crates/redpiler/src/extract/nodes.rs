@@ -1,6 +1,5 @@
+use crate::compile::CompileOptions;
 use crate::graph::{Graph, Node, NodeIdx, NodeKind, NodeState};
-use crate::ports::Observed;
-use crate::CompileOptions;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
@@ -39,19 +38,18 @@ fn add_node(
     let block = world.block(position);
     let (kind, state) = identify_block(block, position, world)?;
     let port = options.ports.role(position, block, &kind);
-    if kind == NodeKind::Wire
-        && port.is_none()
-        && options.observed != Observed::Everything
-        && options.optimize
-    {
+    let observed = options.observed.includes(&kind, port);
+    if kind == NodeKind::Wire && !observed && options.optimize {
         return None;
     }
     Some(graph.add_node(Node {
         kind,
-        block: smallvec![(position, block.get_id())],
+        blocks: smallvec![(position, block.get_id())],
         name: None,
         state,
+        pending_tick: None,
         port,
+        observed,
     }))
 }
 

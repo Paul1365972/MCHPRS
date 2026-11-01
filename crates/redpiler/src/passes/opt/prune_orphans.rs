@@ -1,6 +1,6 @@
 //! # [`PruneOrphans`]
 //!
-//! Removes every node that neither is a port nor leads to a port or a pending tick.
+//! Removes every node that is not observed and leads to no observed node or pending tick.
 
 use crate::graph::{Direction, Graph};
 use crate::passes::{AnalysisInfos, Pass};
@@ -12,7 +12,7 @@ impl Pass for PruneOrphans {
     fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
         let mut worklist = graph
             .node_indices()
-            .filter(|&idx| graph[idx].port.is_some() || graph[idx].state.pending_tick.is_some())
+            .filter(|&idx| graph[idx].observed || graph[idx].pending_tick.is_some())
             .collect_vec();
 
         let mut visited = vec![false; graph.node_bound()];

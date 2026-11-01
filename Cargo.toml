@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/block_data_gen","crates/proc_macros", "crates/redpiler_graph", "crates/rilc", "crates/schematic", "crates/world_exporter"]
+members = ["crates/block_data_gen","crates/proc_macros", "crates/rilc", "crates/schematic", "crates/world_exporter"]
 
 [package]
 name = "mchprs"
@@ -75,7 +75,6 @@ hmac = "0.12"
 sha2 = "0.10"
 bitvec = "1"
 flate2 = "1"
-enum_dispatch = "0.3"
 thiserror = "2"
 syn = "2"
 quote = "1"

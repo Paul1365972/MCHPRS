@@ -10,7 +10,7 @@
 //! A queued repeater tick can emit a pulse after its input disappears, so pending repeaters
 //! also admit both 0 and 15.
 
-use crate::graph::{Direction, Graph, LinkKind, NodeIdx, NodeKind, NodeState};
+use crate::graph::{Direction, Drive, Graph, LinkKind, NodeIdx, NodeKind, NodeState};
 use crate::passes::{AnalysisInfo, AnalysisInfos, AnalysisUsage, Pass};
 use mchprs_blocks::blocks::ComparatorMode;
 
@@ -24,9 +24,9 @@ impl SSSet {
     const ALL: SSSet = SSSet(u16::MAX);
 
     fn drivable_strengths(kind: &NodeKind) -> SSSet {
-        match kind {
-            NodeKind::Comparator { .. } => SSSet::ALL,
-            _ => SSSet::BINARY,
+        match kind.drive() {
+            Some(Drive::Strength) => SSSet::ALL,
+            Some(Drive::OnOff | Drive::Press) | None => SSSet::BINARY,
         }
     }
 
@@ -125,8 +125,7 @@ impl Pass for SSSetAnalysis {
             let node = &graph[node_idx];
             let initial = if node.is_input() {
                 SSSet::drivable_strengths(&node.kind)
-            } else if node.state.pending_tick.is_some()
-                && matches!(node.kind, NodeKind::Repeater { .. })
+            } else if node.pending_tick.is_some() && matches!(node.kind, NodeKind::Repeater { .. })
             {
                 SSSet::BINARY
             } else {

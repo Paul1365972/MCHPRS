@@ -3,44 +3,61 @@ use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::{Block, LeverFace, Repeater};
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockPos};
-use mchprs_redpiler::{BackendVariant, Compiler, CompilerOptions};
+use mchprs_redpiler::compile::CompileOptions;
+use mchprs_redpiler::direct::DirectEngine;
+use mchprs_redpiler::engine::Input;
+use mchprs_redpiler::ports::Observed;
+use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::interpreter::Interpreter;
 use mchprs_redstone::wire::make_cross;
+use std::ops::ControlFlow;
+use std::sync::Arc;
 
 struct RedpilerInstance {
-    options: CompilerOptions,
-    compiler: Compiler,
+    options: CompileOptions,
+    simulation: Simulation<DirectEngine>,
 }
 
 impl RedpilerInstance {
-    fn new(
-        world: &Interpreter<BlockVolume>,
-        variant: BackendVariant,
-        optimize: bool,
-    ) -> RedpilerInstance {
-        let options = CompilerOptions {
-            backend_variant: variant,
+    fn new(world: &Interpreter<BlockVolume>, optimize: bool) -> RedpilerInstance {
+        let options = CompileOptions {
             optimize,
+            observed: match optimize {
+                true => Observed::Components,
+                false => Observed::Everything,
+            },
             ..Default::default()
         };
-        let mut compiler = Compiler::default();
         let region = world.blocks().region();
-        let monitor = Default::default();
-        let ticks = world.pending_ticks().to_vec();
-        compiler
-            .compile(world, region, options.clone(), ticks, monitor)
-            .expect("the test circuit has no declared ports");
-        RedpilerInstance { options, compiler }
+        let circuit = mchprs_redpiler::compile::compile(
+            world,
+            region,
+            world.pending_ticks(),
+            &options,
+            &mut |_| ControlFlow::Continue(()),
+        )
+        .expect("the test circuit compiles");
+        let engine =
+            DirectEngine::new(Arc::new(circuit)).expect("the direct engine holds the circuit");
+        let simulation = Simulation::new(engine);
+        RedpilerInstance {
+            options,
+            simulation,
+        }
+    }
+
+    fn sync(&mut self, world: &mut Interpreter<BlockVolume>) {
+        self.simulation
+            .sync()
+            .expect("the direct engine does not fail")
+            .apply(world);
     }
 }
 
 #[derive(Copy, Clone)]
 pub enum TestBackend {
     Redstone,
-    Redpiler {
-        variant: BackendVariant,
-        optimize: bool,
-    },
+    Direct { optimize: bool },
 }
 
 pub struct BackendRunner {
@@ -55,8 +72,8 @@ impl BackendRunner {
                 world,
                 redpiler: None,
             },
-            TestBackend::Redpiler { variant, optimize } => BackendRunner {
-                redpiler: Some(RedpilerInstance::new(&world, variant, optimize)),
+            TestBackend::Direct { optimize } => BackendRunner {
+                redpiler: Some(RedpilerInstance::new(&world, optimize)),
                 world,
             },
         }
@@ -64,8 +81,11 @@ impl BackendRunner {
 
     pub fn tick(&mut self) {
         if let Some(redpiler) = &mut self.redpiler {
-            redpiler.compiler.tick();
-            redpiler.compiler.flush(&mut self.world);
+            redpiler
+                .simulation
+                .run(1)
+                .expect("the direct engine does not fail");
+            redpiler.sync(&mut self.world);
             return;
         }
 
@@ -74,8 +94,16 @@ impl BackendRunner {
 
     pub fn use_block(&mut self, pos: BlockPos) {
         if let Some(redpiler) = &mut self.redpiler {
-            redpiler.compiler.on_use_block(pos);
-            redpiler.compiler.flush(&mut self.world);
+            let input = match self.world.block(pos) {
+                Block::Lever { .. } => Input::Toggle,
+                Block::StoneButton { .. } => Input::Press,
+                block => panic!("{block:?} can't be used"),
+            };
+            redpiler
+                .simulation
+                .drive(pos, input)
+                .expect("the used block is an input");
+            redpiler.sync(&mut self.world);
             return;
         }
         self.world.use_block(pos);
@@ -131,17 +159,11 @@ macro_rules! test_all_backends {
             fn [< $name _redstone >]() { $name(TestBackend::Redstone) }
             #[test]
             fn [< $name _rp_direct >]() {
-                $name(TestBackend::Redpiler {
-                    variant: ::mchprs_redpiler::BackendVariant::Direct,
-                    optimize: false,
-                })
+                $name(TestBackend::Direct { optimize: false })
             }
             #[test]
             fn [< $name _rp_direct_optimized >]() {
-                $name(TestBackend::Redpiler {
-                    variant: ::mchprs_redpiler::BackendVariant::Direct,
-                    optimize: true,
-                })
+                $name(TestBackend::Direct { optimize: true })
             }
         }
     };
