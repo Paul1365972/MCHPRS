@@ -14,7 +14,6 @@ include.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mchprs_proc_macros = { path = "../proc_macros" }
 serde = { workspace = true, features = ["derive"] }
 hematite-nbt = { workspace = true, optional = true }
 

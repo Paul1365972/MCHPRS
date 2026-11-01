@@ -1,9 +1,51 @@
-use mchprs_proc_macros::protocol_id;
+use crate::registries::sound_event;
 use serde::{Deserialize, Serialize};
 
 use super::{Block, BlockDirection, BlockProperty, BlockTransform, FlipDirection};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BlockProperty, BlockTransform)]
+macro_rules! impl_block_property {
+    ($name:ident { $($field:ident),* $(,)? }) => {
+        impl BlockProperty for $name {
+            fn encode(
+                self,
+                props: &mut std::collections::BTreeMap<&'static str, String>,
+                _name: &'static str,
+            ) {
+                $(BlockProperty::encode(self.$field, props, stringify!($field));)*
+            }
+
+            fn decode(&mut self, props: &std::collections::HashMap<&str, &str>, _name: &str) {
+                $(BlockProperty::decode(&mut self.$field, props, stringify!($field));)*
+            }
+        }
+    };
+}
+
+impl_block_property!(Repeater {
+    delay,
+    facing,
+    locked,
+    powered
+});
+impl_block_property!(Comparator {
+    facing,
+    mode,
+    powered
+});
+impl_block_property!(Lever {
+    face,
+    facing,
+    powered
+});
+impl_block_property!(RedstoneWire {
+    north,
+    south,
+    east,
+    west,
+    power
+});
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Repeater {
     pub delay: u8,
     pub facing: BlockDirection,
@@ -49,7 +91,7 @@ impl ComparatorMode {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, BlockProperty, BlockTransform)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct Comparator {
     pub facing: BlockDirection,
     pub mode: ComparatorMode,
@@ -74,7 +116,7 @@ pub enum LeverFace {
     Ceiling,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, BlockProperty, BlockTransform)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct Lever {
     pub face: LeverFace,
     pub facing: BlockDirection,
@@ -105,7 +147,7 @@ impl RedstoneWireSide {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, BlockProperty)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct RedstoneWire {
     pub north: RedstoneWireSide,
     pub south: RedstoneWireSide,
@@ -220,36 +262,29 @@ impl Instrument {
     }
 
     pub fn to_sound_id(&self) -> i32 {
-        macro_rules! sound_id {
-            ($name:literal) => {
-                protocol_id!("minecraft:sound_event", $name)
-            };
-        }
         match self {
-            Instrument::Harp => sound_id!("minecraft:block.note_block.harp"),
-            Instrument::Basedrum => sound_id!("minecraft:block.note_block.basedrum"),
-            Instrument::Snare => sound_id!("minecraft:block.note_block.snare"),
-            Instrument::Hat => sound_id!("minecraft:block.note_block.hat"),
-            Instrument::Bass => sound_id!("minecraft:block.note_block.bass"),
-            Instrument::Flute => sound_id!("minecraft:block.note_block.flute"),
-            Instrument::Bell => sound_id!("minecraft:block.note_block.bell"),
-            Instrument::Guitar => sound_id!("minecraft:block.note_block.guitar"),
-            Instrument::Chime => sound_id!("minecraft:block.note_block.chime"),
-            Instrument::Xylophone => sound_id!("minecraft:block.note_block.xylophone"),
-            Instrument::IronXylophone => sound_id!("minecraft:block.note_block.iron_xylophone"),
-            Instrument::CowBell => sound_id!("minecraft:block.note_block.cow_bell"),
-            Instrument::Didgeridoo => sound_id!("minecraft:block.note_block.didgeridoo"),
-            Instrument::Bit => sound_id!("minecraft:block.note_block.bit"),
-            Instrument::Banjo => sound_id!("minecraft:block.note_block.banjo"),
-            Instrument::Pling => sound_id!("minecraft:block.note_block.pling"),
-            Instrument::Zombie => sound_id!("minecraft:block.note_block.imitate.zombie"),
-            Instrument::Skeleton => sound_id!("minecraft:block.note_block.imitate.skeleton"),
-            Instrument::Creeper => sound_id!("minecraft:block.note_block.imitate.creeper"),
-            Instrument::Dragon => sound_id!("minecraft:block.note_block.imitate.ender_dragon"),
-            Instrument::WitherSkeleton => {
-                sound_id!("minecraft:block.note_block.imitate.wither_skeleton")
-            }
-            Instrument::Piglin => sound_id!("minecraft:block.note_block.imitate.piglin"),
+            Instrument::Harp => sound_event::BLOCK_NOTE_BLOCK_HARP,
+            Instrument::Basedrum => sound_event::BLOCK_NOTE_BLOCK_BASEDRUM,
+            Instrument::Snare => sound_event::BLOCK_NOTE_BLOCK_SNARE,
+            Instrument::Hat => sound_event::BLOCK_NOTE_BLOCK_HAT,
+            Instrument::Bass => sound_event::BLOCK_NOTE_BLOCK_BASS,
+            Instrument::Flute => sound_event::BLOCK_NOTE_BLOCK_FLUTE,
+            Instrument::Bell => sound_event::BLOCK_NOTE_BLOCK_BELL,
+            Instrument::Guitar => sound_event::BLOCK_NOTE_BLOCK_GUITAR,
+            Instrument::Chime => sound_event::BLOCK_NOTE_BLOCK_CHIME,
+            Instrument::Xylophone => sound_event::BLOCK_NOTE_BLOCK_XYLOPHONE,
+            Instrument::IronXylophone => sound_event::BLOCK_NOTE_BLOCK_IRON_XYLOPHONE,
+            Instrument::CowBell => sound_event::BLOCK_NOTE_BLOCK_COW_BELL,
+            Instrument::Didgeridoo => sound_event::BLOCK_NOTE_BLOCK_DIDGERIDOO,
+            Instrument::Bit => sound_event::BLOCK_NOTE_BLOCK_BIT,
+            Instrument::Banjo => sound_event::BLOCK_NOTE_BLOCK_BANJO,
+            Instrument::Pling => sound_event::BLOCK_NOTE_BLOCK_PLING,
+            Instrument::Zombie => sound_event::BLOCK_NOTE_BLOCK_IMITATE_ZOMBIE,
+            Instrument::Skeleton => sound_event::BLOCK_NOTE_BLOCK_IMITATE_SKELETON,
+            Instrument::Creeper => sound_event::BLOCK_NOTE_BLOCK_IMITATE_CREEPER,
+            Instrument::Dragon => sound_event::BLOCK_NOTE_BLOCK_IMITATE_ENDER_DRAGON,
+            Instrument::WitherSkeleton => sound_event::BLOCK_NOTE_BLOCK_IMITATE_WITHER_SKELETON,
+            Instrument::Piglin => sound_event::BLOCK_NOTE_BLOCK_IMITATE_PIGLIN,
             _ => 0,
         }
     }

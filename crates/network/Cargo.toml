@@ -15,7 +15,6 @@ include.workspace = true
 
 [dependencies]
 mchprs_blocks = { path = "../blocks", features = ["nbt"] }
-mchprs_proc_macros = { path = "../proc_macros" }
 mchprs_world = { path = "../world" }
 hematite-nbt = { workspace = true }
 flate2 = { workspace = true }

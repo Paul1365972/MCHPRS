@@ -248,3 +248,10 @@ items:
   "minecraft:milk_bucket": "max_stack:1"
   "minecraft:redstone": "block"
   "minecraft:ender_eye": ""
+
+registries:
+  - block_entity_type
+  - command_argument_type
+  - entity_type
+  - menu
+  - sound_event
