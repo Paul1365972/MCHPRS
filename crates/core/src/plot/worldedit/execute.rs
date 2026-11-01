@@ -1,11 +1,12 @@
 use super::*;
 use crate::config::CONFIG;
+use crate::item_stack::ItemStack;
 use crate::player::PacketSender;
 use crate::plot::PLOT_BLOCK_HEIGHT;
 use crate::utils::{self, HyphenatedUUID};
 use mchprs_blocks::block_entities::InventoryEntry;
 use mchprs_blocks::blocks::{Block, FlipDirection, HopperFacing, RotateAmt};
-use mchprs_blocks::items::{Item, ItemStack};
+use mchprs_blocks::items::Item;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::text::{ColorCode, TextComponentBuilder};

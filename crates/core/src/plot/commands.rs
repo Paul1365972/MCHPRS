@@ -1,9 +1,9 @@
 use super::{database, worldedit, Plot, PlotWorld};
+use crate::item_stack::ItemStack;
 use crate::player::{Gamemode, PacketSender, PlayerPos};
 use crate::plot::data::sleep_time_for_tps;
 use crate::profile::PlayerProfile;
 use crate::server::{get_version_string, Message};
-use mchprs_blocks::items::ItemStack;
 use mchprs_network::packets::clientbound::{
     CCommands, CCommandsNode as Node, CDeclareCommandsNodeParser as Parser, ClientBoundPacket,
 };
