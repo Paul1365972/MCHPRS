@@ -221,9 +221,9 @@ impl Worker {
                 self.finish_counted_run();
             }
             Some(Goal::Settled) => {
-                let snapshot = self.engine.read_snapshot()?;
+                let has_pending_ticks = self.engine.has_pending_ticks()?;
                 self.record_changes();
-                if snapshot.pending_ticks.is_empty() {
+                if !has_pending_ticks {
                     self.set_mode(Mode::Paused)?;
                     self.goal = None;
                     self.pending.events.push(Event::RunFinished);

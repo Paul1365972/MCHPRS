@@ -1,6 +1,7 @@
 use crate::board::BASYS3;
 use crate::bring_up;
 use crate::engine::{ClockPace, FpgaEngine};
+use crate::layout::ReadbackScope;
 use crate::link::Controller;
 use crate::progress::Progress;
 use crate::verilator::{self, VerilatorExecutable};
@@ -12,7 +13,7 @@ use mchprs_redpiler::graph_simulation;
 use mchprs_redpiler::nodes::Nodes;
 use mchprs_redpiler::passes::Pass;
 use mchprs_redpiler::ports::WireOutputs;
-use mchprs_redpiler_phase::backend::{PhaseBackend, OPTIMIZE};
+use mchprs_redpiler_phase::backend::{PhaseBackend, IO_ONLY, OPTIMIZE};
 use mchprs_simulation::backend::{Backend, CompileContext, CompileError, Source};
 use mchprs_simulation::layout::Layout;
 use mchprs_simulation::{Blocks, Simulation};
@@ -41,6 +42,7 @@ impl Backend for FpgaBackend {
     fn flags(&self) -> &[Flag] {
         &[
             OPTIMIZE,
+            IO_ONLY,
             WireOutputs::DOTS,
             WireOutputs::ILLEGAL_STATES,
             WireOutputs::CROSSES,
@@ -84,27 +86,33 @@ fn build_engine(
     context: &mut GraphContext<'_>,
 ) -> Result<FpgaEngine, CompileError> {
     let build_nonce = rand::random();
+    let scope = match flags.is_on(&IO_ONLY) {
+        true => ReadbackScope::Observed,
+        false => ReadbackScope::All,
+    };
     match (flags.is_on(&SIMULATE), flags.text(&PORT)) {
-        (true, None) => simulate(circuit, build_nonce, context),
+        (true, None) => simulate(circuit, scope, build_nonce, context),
         (true, Some(_)) => Err(CompileError::Unsupported(format!(
             "a simulation has no --{}",
             PORT.name()
         ))),
         (false, port) => {
             let port = port.map(Path::new);
-            bring_up::run_on_board(circuit, &BASYS3, port, build_nonce, context)
+            let board = &BASYS3;
+            bring_up::run_on_board(circuit, board, port, scope, build_nonce, context)
         }
     }
 }
 
 fn simulate(
     circuit: &Circuit,
+    scope: ReadbackScope,
     build_nonce: u32,
     context: &mut GraphContext<'_>,
 ) -> Result<FpgaEngine, CompileError> {
     let mut progress = Progress::new(context, 3);
     progress.start("Writing circuit")?;
-    let design = Design::new(circuit, build_nonce)?;
+    let design = Design::new(circuit, scope, build_nonce)?;
     progress.start("Building simulation")?;
     let executable = VerilatorExecutable::build(&design.source, &progress)?;
     let link = executable.start();

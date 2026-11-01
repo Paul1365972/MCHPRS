@@ -43,6 +43,7 @@ The same as [`phase`](Phase.md#passes).
 | Flag | Short | Description |
 | --- | --- | --- |
 | `--optimize` | `-o` | Run the passes. Redstone wire is removed unless it is an output or a probe reads it, which makes the circuit smaller. |
+| `--io-only` | `-i` | Only inputs, outputs and the components probes read show their state, and the board reads back only these. A reset then returns the plot to its state before compiling, and `/radvance settle` is unavailable. |
 | `--wire-dot-out` | `-d` | Treat redstone wire without connections (dots) as outputs. |
 | `--wire-cross-out` | `-c` | Treat redstone wire connected on all four sides (crosses) as outputs. |
 | `--illegal-states-out` | `-l` | Treat redstone wire connected on exactly one side as outputs. |
@@ -64,6 +65,7 @@ The circuits in [`crates/redpiler_fpga/tests/circuits`](../../crates/redpiler_fp
 ```sh
 rilc fuzz agreement -b phase -b "fpga --simulate" --cases 100
 rilc fuzz agreement crates/redpiler_fpga/tests/circuits/*.ril -b phase -b "fpga --simulate" --cases 100
+rilc fuzz agreement crates/redpiler_fpga/tests/circuits/*.ril -b "phase -o -i" -b "fpga --simulate -o -i" --cases 100
 ```
 
 On a board, leave out `--simulate` and add `--jobs 1`.

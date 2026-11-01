@@ -1,6 +1,7 @@
 use crate::board::Board;
 use crate::build_directory;
 use crate::engine::{ClockPace, FpgaEngine};
+use crate::layout::ReadbackScope;
 use crate::link::{Controller, SerialLink};
 use crate::openxc7;
 use crate::pll::PllSetting;
@@ -19,6 +20,7 @@ pub fn run_on_board(
     circuit: &Circuit,
     board: &Board,
     port: Option<&Path>,
+    scope: ReadbackScope,
     build_nonce: u32,
     context: &mut GraphContext<'_>,
 ) -> Result<FpgaEngine, CompileError> {
@@ -27,6 +29,7 @@ pub fn run_on_board(
         circuit,
         board,
         port,
+        scope,
         build_nonce,
     };
     let engine = build.run(directory.path(), context);
@@ -37,6 +40,7 @@ struct BoardBuild<'a> {
     circuit: &'a Circuit,
     board: &'a Board,
     port: Option<&'a Path>,
+    scope: ReadbackScope,
     build_nonce: u32,
 }
 
@@ -50,7 +54,7 @@ impl BoardBuild<'_> {
         let mut progress = Progress::new(context, STAGES);
 
         progress.start("Lowering")?;
-        let design = Design::new(self.circuit, self.build_nonce)?;
+        let design = Design::new(self.circuit, self.scope, self.build_nonce)?;
         progress.start("Writing design")?;
         let sources = board.write(directory, &design.source).map_err(failed)?;
 

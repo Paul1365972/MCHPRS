@@ -9,12 +9,20 @@ use mchprs_redstone::tick_queue::PendingTick;
 
 const NARROWEST_PORT_BITS: usize = 1;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadbackScope {
+    All,
+    Observed,
+}
+
 /// The shown registers come first in the state vector, so a read of the shown state is a prefix
 /// of the whole.
 #[derive(Debug, Clone)]
 pub struct StateLayout {
+    scope: ReadbackScope,
     registers: Vec<Vec<(Register, usize)>>,
     initial_states: Vec<NodeState>,
+    shown_nodes: Vec<NodeId>,
     shown_bits: usize,
     state_bits: usize,
 }
@@ -40,13 +48,27 @@ struct TimerValues {
 }
 
 impl StateLayout {
-    pub fn new(circuit: &Circuit, instances: &[Option<Instance>]) -> StateLayout {
+    pub fn new(
+        circuit: &Circuit,
+        instances: &[Option<Instance>],
+        scope: ReadbackScope,
+    ) -> StateLayout {
+        let is_shown_node = |node: NodeId| match scope {
+            ReadbackScope::All => true,
+            ReadbackScope::Observed => circuit.node(node).observed,
+        };
+        let is_read = |node: NodeId, register: &Register| match scope {
+            ReadbackScope::All => true,
+            ReadbackScope::Observed => is_shown_node(node) && register.is_shown(),
+        };
         let mut registers = vec![Vec::new(); instances.len()];
         let mut state_bits = 0;
         let mut place = |shown: bool| {
-            for (placed, instance) in registers.iter_mut().zip(instances) {
+            let nodes = registers.iter_mut().zip(instances).zip(circuit.ids());
+            for ((placed, instance), node) in nodes {
                 let all = instance.iter().flat_map(Instance::all_registers);
-                for register in all.filter(|register| register.is_shown() == shown) {
+                let read = all.filter(|register| register.is_shown() == shown);
+                for register in read.filter(|register| is_read(node, register)) {
                     placed.push((register, state_bits));
                     state_bits += register.width();
                 }
@@ -56,11 +78,17 @@ impl StateLayout {
         let shown_bits = place(true);
         let state_bits = place(false);
         StateLayout {
+            scope,
             registers,
             initial_states: circuit.initial().states,
+            shown_nodes: circuit.ids().filter(|&node| is_shown_node(node)).collect(),
             shown_bits: shown_bits.max(NARROWEST_PORT_BITS),
             state_bits: state_bits.max(NARROWEST_PORT_BITS),
         }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.scope == ReadbackScope::All
     }
 
     pub fn holds_no_register(&self) -> bool {
@@ -81,7 +109,7 @@ impl StateLayout {
     pub fn decode_shown(&self, state: &[u8]) -> anyhow::Result<ShownState> {
         self.check_length(Contents::Shown, state)?;
         let mut shown = ShownState::default();
-        for node in (0..self.registers.len()).map(NodeId::new) {
+        for &node in &self.shown_nodes {
             let registers = self.register_values(node, state, Contents::Shown);
             shown.states.push((node, registers.state.shown()));
             if registers.played {
@@ -138,6 +166,10 @@ impl StateLayout {
     }
 
     pub fn decode_snapshot(&self, state: &[u8]) -> anyhow::Result<Snapshot> {
+        ensure!(
+            self.is_complete(),
+            "the board does not read back every register"
+        );
         self.check_length(Contents::All, state)?;
         let mut snapshot = Snapshot::default();
         for node in (0..self.registers.len()).map(NodeId::new) {

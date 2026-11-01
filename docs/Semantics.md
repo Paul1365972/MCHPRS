@@ -83,12 +83,12 @@ A plot is not compiled into a graph in the following cases:
 ### Shown Blocks
 
 A backend does not have to show the state of every block. This changes what the blocks show, not what the build computes.
-`direct` and `phase` each have two flags for it:
+`direct`, `phase` and `fpga` each have two flags for it:
 
 - `--optimize`: redstone wire keeps the power it had at compile time, unless it is an output or read by a probe.
 - `--io-only`: only inputs, outputs and components read by probes show their state.
 
-A reset shows every block again.
+A reset shows every block again, with `fpga --io-only` as the plot was before compiling.
 
 ## Backends
 

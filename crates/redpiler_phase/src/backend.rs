@@ -16,7 +16,7 @@ use mchprs_syntax::flag::{Flag, FlagValues};
 
 pub const OPTIMIZE: Flag = Flag::switch("optimize", Some('o'), "Optimize the circuit");
 
-const IO_ONLY: Flag = Flag::switch(
+pub const IO_ONLY: Flag = Flag::switch(
     "io-only",
     Some('i'),
     "Only update the blocks of inputs, outputs and probed components",

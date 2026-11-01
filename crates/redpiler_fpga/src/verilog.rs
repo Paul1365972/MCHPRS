@@ -1,5 +1,5 @@
 use crate::expr::{output_wire, Expressions};
-use crate::layout::StateLayout;
+use crate::layout::{ReadbackScope, StateLayout};
 use crate::lower::{lower, CircuitSignal, Instance};
 use crate::protocol::Contents;
 use crate::rtl::CircuitSource;
@@ -19,9 +19,13 @@ pub struct Design {
 }
 
 impl Design {
-    pub fn new(circuit: &Circuit, build_nonce: u32) -> Result<Design, CompileError> {
+    pub fn new(
+        circuit: &Circuit,
+        scope: ReadbackScope,
+        build_nonce: u32,
+    ) -> Result<Design, CompileError> {
         let instances = lower(circuit)?;
-        let layout = StateLayout::new(circuit, &instances);
+        let layout = StateLayout::new(circuit, &instances, scope);
         let shown_bits = layout.bits(Contents::Shown);
         let state_bits = layout.bits(Contents::All);
         let package = format!(
@@ -48,6 +52,7 @@ fn module(
 ) -> String {
     let mut nodes = String::new();
     let mut outputs = Vec::new();
+    let mut unread_registers = Vec::new();
     let mut used = BTreeSet::new();
     for (index, instance) in instances.iter().enumerate() {
         let Some(instance) = instance else { continue };
@@ -56,7 +61,12 @@ fn module(
         let mut ports = vec![("clock".to_owned(), "clock".to_owned())];
         ports.extend(strobes);
         ports.extend(input_ports(instance, NodeId::new(index), &mut expressions));
-        ports.extend(register_ports(index, layout));
+        ports.extend(register_ports(
+            instance,
+            index,
+            layout,
+            &mut unread_registers,
+        ));
         let power = instance.power;
         if instance.has_output {
             ports.push((format!("{}_next", power.port()), output_wire(index)));
@@ -74,14 +84,15 @@ fn module(
     let output_wires = outputs
         .iter()
         .map(|&(node, width)| (output_wire(node), width));
-    let declarations = declarations(output_wires);
+    let declarations = declarations(output_wires.chain(unread_registers.iter().cloned()));
     let driven = CircuitSignal::VARIANTS.iter().map(CircuitSignal::to_string);
     let driven = driven.chain((0..firing_bits).map(firing));
     let output_is_read = expressions.into_read_outputs();
     let unread_outputs = outputs.iter().filter(|&&(node, _)| !output_is_read[node]);
     let unused = driven
         .filter(|signal| !used.contains(signal))
-        .chain(unread_outputs.map(|&(node, _)| output_wire(node)));
+        .chain(unread_outputs.map(|&(node, _)| output_wire(node)))
+        .chain(unread_registers.into_iter().map(|(register, _)| register));
     let unused = unused_sink(unused.collect());
     let state_tie_off = match layout.holds_no_register() {
         true => "    assign state = 1'b0;\n",
@@ -141,12 +152,23 @@ fn input_ports(
     ports.collect()
 }
 
-fn register_ports(index: usize, layout: &StateLayout) -> Vec<(String, String)> {
-    let registers = layout.registers(NodeId::new(index)).iter();
-    let ports = registers.map(|&(register, offset)| {
-        let signal = match register.width() {
-            1 => format!("state[{offset}]"),
-            width => format!("state[{offset} +: {width}]"),
+fn register_ports(
+    instance: &Instance,
+    index: usize,
+    layout: &StateLayout,
+    unread_registers: &mut Vec<(String, usize)>,
+) -> Vec<(String, String)> {
+    let ports = instance.all_registers().map(|register| {
+        let mut placed = layout.registers(NodeId::new(index)).iter();
+        let offset = placed.find(|(placed, _)| *placed == register);
+        let signal = match (offset, register.width()) {
+            (Some((_, offset)), 1) => format!("state[{offset}]"),
+            (Some((_, offset)), width) => format!("state[{offset} +: {width}]"),
+            (None, width) => {
+                let register = format!("{}_{index}", register.port());
+                unread_registers.push((register.clone(), width));
+                register
+            }
         };
         (register.port().to_owned(), signal)
     });
