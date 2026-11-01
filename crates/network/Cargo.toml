@@ -14,10 +14,10 @@ include.workspace = true
 
 [dependencies]
 mchprs_blocks = { path = "../blocks", features = ["nbt"] }
+mchprs_world = { path = "../world" }
 fastnbt = { workspace = true }
 flate2 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 byteorder = { workspace = true }
 tracing = { workspace = true }
-bitvec = { workspace = true }

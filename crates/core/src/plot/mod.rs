@@ -1,3 +1,4 @@
+use mchprs_network::chunk::{encode_block_changes, encode_chunk, encode_empty_chunk};
 mod data;
 pub mod database;
 mod monitor;
@@ -257,14 +258,10 @@ impl World for PlotWorld {
     }
 
     fn flush_block_changes(&mut self) {
-        for packet in self.chunks.iter_mut().flat_map(|c| c.multi_blocks()) {
-            let encoded = packet.encode();
+        for packet in self.chunks.iter_mut().flat_map(encode_block_changes) {
             for packet_sender in self.packet_senders.values() {
-                packet_sender.send_packet(&encoded);
+                packet_sender.send_packet(&packet);
             }
-        }
-        for chunk in &mut self.chunks {
-            chunk.reset_multi_blocks();
         }
         for (_, block_entity) in self.pending_block_entities.drain() {
             let encoded = block_entity.encode();
@@ -450,10 +447,10 @@ impl Plot {
             if !Plot::chunk_in_plot_bounds(self.world.x, self.world.z, chunk_x, chunk_z) {
                 self.players[player_idx]
                     .client
-                    .send_packet(&Chunk::encode_empty_packet(chunk_x, chunk_z, PLOT_SECTIONS));
+                    .send_packet(&encode_empty_chunk(chunk_x, chunk_z, PLOT_SECTIONS));
             } else {
                 let chunk_idx = self.world.get_chunk_index_for_chunk(chunk_x, chunk_z);
-                let chunk_data = self.world.chunks[chunk_idx].encode_packet();
+                let chunk_data = encode_chunk(&self.world.chunks[chunk_idx]);
                 self.players[player_idx].client.send_packet(&chunk_data);
             }
         }
