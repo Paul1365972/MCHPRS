@@ -14,6 +14,7 @@ MCHPRS has made it possible to run programs such as [a limited form of Minecraft
 
 - [Table of Contents](#table-of-contents)
 - [Building](#building)
+- [Running](#running)
 - [Configuration](#configuration)
     - [LuckPerms](#luckperms)
 - [Usage](#usage)
@@ -36,6 +37,12 @@ cargo build --release
 ```
 
 Once complete, the optimized executable will be located at `./target/release/mchprs` or `./target/release/mchprs.exe` depending on your operating system.
+
+## Running
+
+| Path | Content |
+| --- | --- |
+| `world/plots` | The plots. If `world/plots/pTEMPLATE` exists at startup, new plots start as a copy of it. Before a plot file of an older version is replaced, it is kept as `p<x>,<z>.v<version>`. |
 
 ## Configuration
 
