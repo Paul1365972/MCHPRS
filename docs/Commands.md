@@ -35,6 +35,8 @@ Flags go after all other arguments. Short flags can be combined, and `=false` tu
 | `/plot auto` | `/p a` | Claim a plot without an owner and teleport to it. |
 | `/plot visit <username> [<index>]` | `/p v` | Teleport to a plot of a player. `<index>` selects among the player's plots and defaults to 1. |
 
+`/plot info`, `/plot claim`, `/plot auto` and `/plot visit` require the [`claims` feature](../README.md#features).
+
 ## WorldEdit
 
 MCHPRS implements a subset of [WorldEdit](https://worldedit.enginehub.org/en/latest/commands/).

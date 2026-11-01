@@ -37,16 +37,18 @@ Once complete, the optimized executable will be located at `./target/release/mch
 
 | Feature | Adds |
 | --- | --- |
+| `claims` | `/plot claim`, `/plot auto`, `/plot info` and `/plot visit` |
 | `whitelist` | `/whitelist`, and `whitelist = true` in `Config.toml` |
 
-`cargo build --release --features whitelist` enables whitelist support.
-Prebuilt releases have it enabled, and so does the image the `Dockerfile` builds.
+`cargo build --release --features claims,whitelist` enables both.
+Prebuilt releases have both enabled, and so does the image the `Dockerfile` builds.
 
 ## Running
 
 | Path | Content |
 | --- | --- |
 | `world/plots` | The plots. If `world/plots/pTEMPLATE` exists at startup, new plots start as a copy of it. Before a plot file of an older version is replaced, it is kept as `p<x>,<z>.v<version>`. |
+| `world/plots.db` | The plot claims. Requires the [`claims` feature](#features). |
 
 MCHPRS has no permissions: every player can use every command and edit every plot.
 
