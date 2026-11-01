@@ -29,17 +29,13 @@ impl Plot {
 
     pub(super) fn set_tick_rate(&mut self, rate: TickRate) {
         self.tick_schedule.set_rate(rate, Instant::now());
-        if let Some(redpiler) = &mut self.redpiler {
-            redpiler.backend.set_tick_rate(rate);
-        }
+        self.with_worker(|worker| worker.set_tick_rate(rate));
     }
 
     pub(super) fn update_send_rate(&mut self) {
         let rate = send_rate(self.world.world_send_rate);
         self.send_schedule.set_rate(rate);
-        if let Some(redpiler) = &mut self.redpiler {
-            redpiler.backend.set_send_rate(rate);
-        }
+        self.with_worker(|worker| worker.set_send_rate(rate));
     }
 
     pub(super) fn tick_interpreted(&mut self) {

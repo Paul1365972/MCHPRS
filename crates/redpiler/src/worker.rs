@@ -1,4 +1,4 @@
-use crate::backend::{Backend, BackendFailure, Batch, Snapshot};
+use crate::backend::{BackendFailure, Batch, Snapshot};
 use crate::block_map::BlockMap;
 use crate::engine::{Engine, EngineError, Input, NodeChanges};
 use mchprs_blocks::BlockPos;
@@ -15,8 +15,8 @@ enum Request {
     SetTickRate(TickRate),
     SetSendRate(SendRate),
     Input(BlockPos, Input),
-    Snapshot,
-    Stop,
+    Snapshot(Sender<Snapshot>),
+    Stop(Sender<Snapshot>),
 }
 
 struct Published {
@@ -27,8 +27,7 @@ struct Published {
 pub struct Worker {
     requests: Sender<Request>,
     batches: Receiver<Published>,
-    snapshots: Receiver<Snapshot>,
-    thread: Option<JoinHandle<()>>,
+    thread: JoinHandle<()>,
     tick_rate: TickRate,
     tick_rate_version: u64,
 }
@@ -37,7 +36,6 @@ impl Worker {
     pub fn start(block_map: BlockMap, engine: Box<dyn Engine>) -> Worker {
         let (requests, worker_requests) = mpsc::channel();
         let (worker_batches, batches) = mpsc::channel();
-        let (worker_snapshots, snapshots) = mpsc::channel();
         let name = match thread::current().name() {
             Some(plot) => format!("{plot} redpiler"),
             None => "redpiler".to_owned(),
@@ -45,41 +43,64 @@ impl Worker {
         let thread = thread::Builder::new()
             .name(name)
             .spawn(move || {
-                WorkerThread::new(
-                    engine,
-                    block_map,
-                    worker_requests,
-                    worker_batches,
-                    worker_snapshots,
-                )
-                .run()
+                WorkerThread::new(engine, block_map, worker_requests, worker_batches).run()
             })
             .expect("failed to spawn the redpiler thread");
         Worker {
             requests,
             batches,
-            snapshots,
-            thread: Some(thread),
+            thread,
             tick_rate: TickRate::Paused,
             tick_rate_version: 0,
         }
     }
 
-    fn send(&mut self, request: Request) -> Result<(), BackendFailure> {
-        if self.thread.is_none() {
-            return Err(BackendFailure);
+    pub fn set_tick_rate(&mut self, rate: TickRate) -> Result<(), BackendFailure> {
+        if !rate.replaces(self.tick_rate) {
+            return Ok(());
         }
-        if self.requests.send(request).is_err() {
-            return Err(self.fail());
-        }
-        Ok(())
+        self.tick_rate = rate;
+        self.tick_rate_version += 1;
+        self.send(Request::SetTickRate(rate))
     }
 
-    fn request_snapshot(&mut self, request: Request) -> Result<Snapshot, BackendFailure> {
-        self.send(request)?;
-        let Ok(snapshot) = self.snapshots.recv() else {
-            return Err(self.fail());
-        };
+    pub fn set_send_rate(&mut self, rate: SendRate) -> Result<(), BackendFailure> {
+        self.send(Request::SetSendRate(rate))
+    }
+
+    pub fn input(&mut self, pos: BlockPos, input: Input) -> Result<(), BackendFailure> {
+        self.send(Request::Input(pos, input))
+    }
+
+    pub fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>, BackendFailure> {
+        match self.batches.recv_timeout(timeout) {
+            Ok(published) => Ok(Some(self.settle(published))),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err(BackendFailure),
+        }
+    }
+
+    pub fn snapshot(&mut self) -> Result<Snapshot, BackendFailure> {
+        self.request_snapshot(Request::Snapshot)
+    }
+
+    pub fn stop(self) -> Result<Snapshot, BackendFailure> {
+        let snapshot = self.request_snapshot(Request::Stop)?;
+        self.thread.join().map_err(|_| BackendFailure)?;
+        Ok(snapshot)
+    }
+
+    fn send(&self, request: Request) -> Result<(), BackendFailure> {
+        self.requests.send(request).map_err(|_| BackendFailure)
+    }
+
+    fn request_snapshot(
+        &self,
+        request: fn(Sender<Snapshot>) -> Request,
+    ) -> Result<Snapshot, BackendFailure> {
+        let (reply, answer) = mpsc::channel();
+        self.send(request(reply))?;
+        let snapshot = answer.recv().map_err(|_| BackendFailure)?;
         let mut changes = Batch::default();
         while let Ok(published) = self.batches.try_recv() {
             changes.append(self.settle(published));
@@ -98,64 +119,19 @@ impl Worker {
         }
         batch
     }
-
-    fn fail(&mut self) -> BackendFailure {
-        if let Some(thread) = self.thread.take() {
-            match thread.join() {
-                Ok(()) => error!("the redpiler thread stopped on its own"),
-                Err(_) => error!("the redpiler thread panicked"),
-            }
-        }
-        BackendFailure
-    }
-}
-
-impl Backend for Worker {
-    fn set_tick_rate(&mut self, rate: TickRate) {
-        if !rate.replaces(self.tick_rate) {
-            return;
-        }
-        self.tick_rate = rate;
-        self.tick_rate_version += 1;
-        let _ = self.send(Request::SetTickRate(rate));
-    }
-
-    fn set_send_rate(&mut self, rate: SendRate) {
-        let _ = self.send(Request::SetSendRate(rate));
-    }
-
-    fn input(&mut self, pos: BlockPos, input: Input) {
-        let _ = self.send(Request::Input(pos, input));
-    }
-
-    fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>, BackendFailure> {
-        if self.thread.is_none() {
-            return Err(BackendFailure);
-        }
-        match self.batches.recv_timeout(timeout) {
-            Ok(published) => Ok(Some(self.settle(published))),
-            Err(RecvTimeoutError::Timeout) => Ok(None),
-            Err(RecvTimeoutError::Disconnected) => Err(self.fail()),
-        }
-    }
-
-    fn snapshot(&mut self) -> Result<Snapshot, BackendFailure> {
-        self.request_snapshot(Request::Snapshot)
-    }
-
-    fn stop(mut self: Box<Self>) -> Result<Snapshot, BackendFailure> {
-        let snapshot = self.request_snapshot(Request::Stop)?;
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-        Ok(snapshot)
-    }
 }
 
 enum Exit {
     Stopped,
     Abandoned,
     Failed(EngineError),
+}
+
+fn proceed<T>(result: Result<T, EngineError>) -> ControlFlow<Exit, T> {
+    match result {
+        Ok(value) => ControlFlow::Continue(value),
+        Err(error) => ControlFlow::Break(Exit::Failed(error)),
+    }
 }
 
 struct WorkerThread {
@@ -168,7 +144,6 @@ struct WorkerThread {
     publish_pending: bool,
     requests: Receiver<Request>,
     batches: Sender<Published>,
-    snapshots: Sender<Snapshot>,
 }
 
 impl WorkerThread {
@@ -177,7 +152,6 @@ impl WorkerThread {
         block_map: BlockMap,
         requests: Receiver<Request>,
         batches: Sender<Published>,
-        snapshots: Sender<Snapshot>,
     ) -> WorkerThread {
         let now = Instant::now();
         WorkerThread {
@@ -190,93 +164,77 @@ impl WorkerThread {
             publish_pending: false,
             requests,
             batches,
-            snapshots,
         }
     }
 
     fn run(mut self) {
-        let failure = match self.serve() {
-            Exit::Stopped => match self.snapshot() {
-                Ok(snapshot) => {
-                    let _ = self.snapshots.send(snapshot);
-                    return;
-                }
-                Err(error) => error,
-            },
-            Exit::Abandoned => return,
-            Exit::Failed(error) => error,
+        let exit = loop {
+            if let ControlFlow::Break(exit) = self.serve_slice() {
+                break exit;
+            }
         };
-        error!("the redpiler engine failed: {failure}");
-    }
-
-    fn serve(&mut self) -> Exit {
-        loop {
-            loop {
-                match self.requests.try_recv() {
-                    Ok(request) => match self.handle(request) {
-                        Ok(ControlFlow::Continue(())) => {}
-                        Ok(ControlFlow::Break(())) => return Exit::Stopped,
-                        Err(error) => return Exit::Failed(error),
-                    },
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => return Exit::Abandoned,
-                }
-            }
-
-            let now = Instant::now();
-            let received = match self.tick_schedule.next(now) {
-                Step::Run(due) => {
-                    if let Err(error) = self.run_slice(due, now) {
-                        return Exit::Failed(error);
-                    }
-                    Err(RecvTimeoutError::Timeout)
-                }
-                Step::WaitFor(wait) => self.wait_for_request(Some(wait), now),
-                Step::Idle => self.wait_for_request(None, now),
-            };
-            match received {
-                Ok(request) => match self.handle(request) {
-                    Ok(ControlFlow::Continue(())) => {}
-                    Ok(ControlFlow::Break(())) => return Exit::Stopped,
-                    Err(error) => return Exit::Failed(error),
-                },
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => return Exit::Abandoned,
-            }
-
-            if let Err(error) = self.publish_if_due(Instant::now()) {
-                return Exit::Failed(error);
-            }
+        match exit {
+            Exit::Stopped | Exit::Abandoned => {}
+            Exit::Failed(error) => error!("the redpiler engine failed: {error}"),
         }
     }
 
-    fn run_slice(&mut self, due: u64, now: Instant) -> Result<(), EngineError> {
-        let completed = self.engine.run_ticks(due, now + RUN_SLICE)?;
-        self.tick_schedule.complete(completed);
-        self.ticks_completed += completed;
-        self.publish_pending |= completed != 0;
-        Ok(())
+    fn serve_slice(&mut self) -> ControlFlow<Exit> {
+        while let Some(request) = self.try_receive()? {
+            self.handle(request)?;
+        }
+        let now = Instant::now();
+        let request = match self.tick_schedule.next(now) {
+            Step::Run(due) => {
+                self.run_slice(due, now)?;
+                None
+            }
+            Step::WaitFor(wait) => self.wait_for_request(Some(wait), now)?,
+            Step::Idle => self.wait_for_request(None, now)?,
+        };
+        if let Some(request) = request {
+            self.handle(request)?;
+        }
+        self.publish_if_due(Instant::now())
+    }
+
+    fn try_receive(&self) -> ControlFlow<Exit, Option<Request>> {
+        match self.requests.try_recv() {
+            Ok(request) => ControlFlow::Continue(Some(request)),
+            Err(TryRecvError::Empty) => ControlFlow::Continue(None),
+            Err(TryRecvError::Disconnected) => ControlFlow::Break(Exit::Abandoned),
+        }
     }
 
     fn wait_for_request(
-        &mut self,
+        &self,
         until_tick: Option<Duration>,
         now: Instant,
-    ) -> Result<Request, RecvTimeoutError> {
+    ) -> ControlFlow<Exit, Option<Request>> {
         let until_send = self
             .publish_pending
             .then(|| self.send_schedule.until_send(now))
             .flatten();
-        match [until_tick, until_send].into_iter().flatten().min() {
+        let received = match [until_tick, until_send].into_iter().flatten().min() {
             Some(wait) => self.requests.recv_timeout(wait),
-            None => self
-                .requests
-                .recv()
-                .map_err(|_| RecvTimeoutError::Disconnected),
+            None => self.requests.recv().map_err(RecvTimeoutError::from),
+        };
+        match received {
+            Ok(request) => ControlFlow::Continue(Some(request)),
+            Err(RecvTimeoutError::Timeout) => ControlFlow::Continue(None),
+            Err(RecvTimeoutError::Disconnected) => ControlFlow::Break(Exit::Abandoned),
         }
     }
 
-    fn handle(&mut self, request: Request) -> Result<ControlFlow<()>, EngineError> {
+    fn run_slice(&mut self, due: u64, now: Instant) -> ControlFlow<Exit> {
+        let completed = proceed(self.engine.run_ticks(due, now + RUN_SLICE))?;
+        self.tick_schedule.complete(completed);
+        self.ticks_completed += completed;
+        self.publish_pending |= completed != 0;
+        ControlFlow::Continue(())
+    }
+
+    fn handle(&mut self, request: Request) -> ControlFlow<Exit> {
         match request {
             Request::SetTickRate(rate) => {
                 self.tick_schedule.set_rate(rate, Instant::now());
@@ -286,43 +244,54 @@ impl WorkerThread {
             Request::SetSendRate(rate) => self.send_schedule.set_rate(rate),
             Request::Input(pos, input) => match self.block_map.node_accepting(pos, input) {
                 Some(node) => {
-                    self.engine.input(node, input)?;
+                    proceed(self.engine.input(node, input))?;
                     self.publish_pending = true;
                 }
                 None => warn!("no node accepting {input:?} at {pos}"),
             },
-            Request::Snapshot => {
-                let snapshot = self.snapshot()?;
-                let _ = self.snapshots.send(snapshot);
+            Request::Snapshot(reply) => self.reply_snapshot(reply)?,
+            Request::Stop(reply) => {
+                self.reply_snapshot(reply)?;
+                return ControlFlow::Break(Exit::Stopped);
             }
-            Request::Stop => return Ok(ControlFlow::Break(())),
         }
-        Ok(ControlFlow::Continue(()))
+        ControlFlow::Continue(())
     }
 
-    fn publish_if_due(&mut self, now: Instant) -> Result<(), EngineError> {
-        if !self.publish_pending || !self.send_schedule.is_due(now) {
-            return Ok(());
+    fn reply_snapshot(&mut self, reply: Sender<Snapshot>) -> ControlFlow<Exit> {
+        let snapshot = proceed(self.snapshot())?;
+        match reply.send(snapshot) {
+            Ok(()) => ControlFlow::Continue(()),
+            Err(_) => ControlFlow::Break(Exit::Abandoned),
         }
-        let changes = self.engine.take_changes()?;
-        let batch = self.batch(&changes);
+    }
+
+    fn publish_if_due(&mut self, now: Instant) -> ControlFlow<Exit> {
+        if !self.publish_pending || !self.send_schedule.is_due(now) {
+            return ControlFlow::Continue(());
+        }
+        let changes = proceed(self.engine.take_changes())?;
+        let batch = self.take_batch(&changes);
         self.send_schedule.record_send(now);
-        let _ = self.batches.send(Published {
+        let published = Published {
             batch,
             tick_rate_version: self.tick_rate_version,
-        });
-        Ok(())
+        };
+        match self.batches.send(published) {
+            Ok(()) => ControlFlow::Continue(()),
+            Err(_) => ControlFlow::Break(Exit::Abandoned),
+        }
     }
 
     fn snapshot(&mut self) -> Result<Snapshot, EngineError> {
         let (changes, pending_ticks) = self.engine.snapshot()?;
         Ok(Snapshot {
-            changes: self.batch(&changes),
+            changes: self.take_batch(&changes),
             pending_ticks: self.block_map.translate_ticks(&pending_ticks),
         })
     }
 
-    fn batch(&mut self, changes: &NodeChanges) -> Batch {
+    fn take_batch(&mut self, changes: &NodeChanges) -> Batch {
         let mut batch = self.block_map.translate(changes);
         batch.ticks_completed = std::mem::take(&mut self.ticks_completed);
         batch.ticks_owed = self.tick_schedule.ticks_owed();

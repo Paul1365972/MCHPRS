@@ -2,7 +2,7 @@ use super::scoreboard::RedpilerState;
 use super::Plot;
 use crate::player::PacketSender;
 use mchprs_redpiler::backend::direct;
-use mchprs_redpiler::{Backend, Batch, CompileProgress, CompilerOptions, Netlist};
+use mchprs_redpiler::{BackendFailure, Batch, CompileProgress, CompilerOptions, Netlist, Worker};
 use mchprs_world::{TickEntry, TickRate, World};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -11,7 +11,7 @@ use tracing::{debug, error};
 const KEEP_ALIVE_POLL: Duration = Duration::from_millis(20);
 
 pub(super) struct Redpiler {
-    pub(super) backend: Box<dyn Backend>,
+    pub(super) worker: Worker,
     pub(super) options: CompilerOptions,
 }
 
@@ -56,8 +56,8 @@ impl Plot {
             handle.join()
         });
 
-        let backend = match started {
-            Ok(Ok(backend)) => backend,
+        let worker = match started {
+            Ok(Ok(worker)) => worker,
             Ok(Err(message)) => {
                 error!("Redpiler compile failed: {message}");
                 self.broadcast_plot_chat_message(&format!("Redpiler compile failed: {message}"));
@@ -72,15 +72,15 @@ impl Plot {
         };
 
         self.world.to_be_ticked.clear();
-        self.redpiler = Some(Redpiler { backend, options });
+        self.scoreboard
+            .set_redpiler_state(&self.players, RedpilerState::Running);
+        self.redpiler = Some(Redpiler { worker, options });
         self.update_send_rate();
         if self.advance_requests.is_empty() {
             self.update_tick_rate();
         } else {
             self.set_tick_rate(TickRate::Ticks(self.advance_ticks_owed));
         }
-        self.scoreboard
-            .set_redpiler_state(&self.players, RedpilerState::Running);
 
         self.restart_ticking();
     }
@@ -90,7 +90,7 @@ impl Plot {
             return;
         };
         debug!("Stopping redpiler");
-        match redpiler.backend.stop() {
+        match redpiler.worker.stop() {
             Ok(snapshot) => {
                 self.apply_batch(snapshot.changes);
                 self.world.to_be_ticked.extend(snapshot.pending_ticks);
@@ -108,29 +108,30 @@ impl Plot {
         self.restart_ticking();
     }
 
-    pub(super) fn receive_batch(&mut self, timeout: Duration) {
-        let Some(redpiler) = &mut self.redpiler else {
-            return;
-        };
-        match redpiler.backend.next_batch(timeout) {
-            Ok(Some(batch)) => self.apply_batch(batch),
-            Ok(None) => {}
-            Err(_) => self.discard_crashed_redpiler(),
-        }
-    }
-
-    pub(super) fn pull_snapshot(&mut self) -> Option<Vec<TickEntry>> {
+    pub(super) fn with_worker<T>(
+        &mut self,
+        operation: impl FnOnce(&mut Worker) -> Result<T, BackendFailure>,
+    ) -> Option<T> {
         let redpiler = self.redpiler.as_mut()?;
-        match redpiler.backend.snapshot() {
-            Ok(snapshot) => {
-                self.apply_batch(snapshot.changes);
-                Some(snapshot.pending_ticks)
-            }
-            Err(_) => {
+        match operation(&mut redpiler.worker) {
+            Ok(value) => Some(value),
+            Err(BackendFailure) => {
                 self.discard_crashed_redpiler();
                 None
             }
         }
+    }
+
+    pub(super) fn receive_batch(&mut self, timeout: Duration) {
+        if let Some(Some(batch)) = self.with_worker(|worker| worker.next_batch(timeout)) {
+            self.apply_batch(batch);
+        }
+    }
+
+    pub(super) fn pull_snapshot(&mut self) -> Option<Vec<TickEntry>> {
+        let snapshot = self.with_worker(Worker::snapshot)?;
+        self.apply_batch(snapshot.changes);
+        Some(snapshot.pending_ticks)
     }
 
     pub(super) fn publish_world(&mut self) {
@@ -221,10 +222,10 @@ fn start_backend(
     ticks: &[TickEntry],
     options: &CompilerOptions,
     progress: &CompileProgress,
-) -> Result<Box<dyn Backend>, String> {
+) -> Result<Worker, String> {
     let name = options.backend.as_deref().unwrap_or("direct");
     if name == "direct" {
-        return Ok(Box::new(direct::start(netlist, ticks, options.io_only)));
+        return Ok(direct::start(netlist, ticks, options.io_only));
     }
     #[cfg(feature = "fpga")]
     {
@@ -232,7 +233,6 @@ fn start_backend(
             .parse::<mchprs_redpiler_fpga::Target>()
             .map_err(|_| format!("unknown backend {name}; use direct, phase, verilator or fpga"))?;
         mchprs_redpiler_fpga::start(target, netlist, ticks, options.io_only, progress)
-            .map(|worker| Box::new(worker) as Box<dyn Backend>)
             .map_err(|error| error.to_string())
     }
     #[cfg(not(feature = "fpga"))]

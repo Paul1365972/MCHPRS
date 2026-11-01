@@ -1,14 +1,12 @@
 pub mod direct;
 
-use crate::engine::Input;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::noteblock;
-use mchprs_world::{SendRate, TickEntry, TickRate, World};
+use mchprs_world::{TickEntry, World};
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
-use std::time::Duration;
 
 #[derive(Default, Debug)]
 pub struct Batch {
@@ -61,12 +59,3 @@ impl Display for BackendFailure {
 }
 
 impl Error for BackendFailure {}
-
-pub trait Backend: Send {
-    fn set_tick_rate(&mut self, rate: TickRate);
-    fn set_send_rate(&mut self, rate: SendRate);
-    fn input(&mut self, pos: BlockPos, input: Input);
-    fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>, BackendFailure>;
-    fn snapshot(&mut self) -> Result<Snapshot, BackendFailure>;
-    fn stop(self: Box<Self>) -> Result<Snapshot, BackendFailure>;
-}

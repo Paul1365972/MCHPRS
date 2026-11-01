@@ -9,7 +9,7 @@ pub mod ril;
 pub mod string_replacer;
 mod worker;
 
-pub use backend::{Backend, BackendFailure, Batch, Snapshot};
+pub use backend::{BackendFailure, Batch, Snapshot};
 pub use block_map::BlockMap;
 pub use engine::{Engine, EngineError, Input, NodeChanges, PendingTick};
 pub use netlist::{Link, Netlist, NodeId};

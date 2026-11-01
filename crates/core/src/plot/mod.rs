@@ -354,11 +354,11 @@ impl Plot {
         };
         let should_be_powered = self.are_players_on_block(pos);
 
-        if let Some(redpiler) = &mut self.redpiler {
+        if self.redpiler.is_some() {
             let input = Input::PressurePlate {
                 powered: should_be_powered,
             };
-            redpiler.backend.input(pos, input);
+            self.with_worker(|worker| worker.input(pos, input));
             return;
         }
         if *powered == should_be_powered {
@@ -540,11 +540,11 @@ impl Plot {
             return;
         }
 
-        if let Some(redpiler) = &mut self.redpiler {
+        if let Some(redpiler) = &self.redpiler {
             let block = self.world.get_block(block_pos);
             let lever_or_button = matches!(block, Block::Lever { .. } | Block::StoneButton { .. });
             if lever_or_button && !self.players[player].crouching {
-                redpiler.backend.input(block_pos, Input::Interact);
+                self.with_worker(|worker| worker.input(block_pos, Input::Interact));
                 return;
             } else if redpiler.options.io_only {
                 self.players[player].send_error_message(ERROR_IO_ONLY);

@@ -93,22 +93,23 @@ Before compiling, the server, `rilc` and the tests update every block in the bou
 
 `compile(world, bounds, ticks, options, progress)` runs the passes on a frozen world and returns a `Netlist`, an immutable node array indexed by `NodeId` with each node's input and output `Link`s. `CompileProgress` names the pass or backend stage currently running, and the plot's keep alive loop shows it on the scoreboard. `--backend=NAME` selects the backend; the server resolves the name and starts it on the compile thread, so a slow or failing start, such as building an FPGA bitstream, keeps players connected and reaches them as a chat message.
 
-The plot holds a `Backend`:
+The plot holds a `Worker`, which runs a backend on its own thread:
 
 ```rust
-pub trait Backend: Send {
-    fn set_tick_rate(&mut self, rate: TickRate);
-    fn set_send_rate(&mut self, rate: SendRate);
-    fn input(&mut self, pos: BlockPos, input: Input);
-    fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>, BackendFailure>;
-    fn snapshot(&mut self) -> Result<Snapshot, BackendFailure>;
-    fn stop(self: Box<Self>) -> Result<Snapshot, BackendFailure>;
+impl Worker {
+    pub fn start(block_map: BlockMap, engine: Box<dyn Engine>) -> Worker;
+    pub fn set_tick_rate(&mut self, rate: TickRate) -> Result<(), BackendFailure>;
+    pub fn set_send_rate(&mut self, rate: SendRate) -> Result<(), BackendFailure>;
+    pub fn input(&mut self, pos: BlockPos, input: Input) -> Result<(), BackendFailure>;
+    pub fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>, BackendFailure>;
+    pub fn snapshot(&mut self) -> Result<Snapshot, BackendFailure>;
+    pub fn stop(self) -> Result<Snapshot, BackendFailure>;
 }
 ```
 
-It speaks block positions and receives `Batch`es: blocks, block entities, note sounds, the ticks completed since the last batch and the ticks still owed from a `Ticks(n)` rate. A `Snapshot` is a complete `Batch` plus the pending ticks as `TickEntry`s. Each backend is started by one function, for the direct backend `backend::direct::start(netlist, ticks, io_only)`. Threads or hardware behind it are invisible to the plot.
+It speaks block positions and receives `Batch`es: blocks, block entities, note sounds, the ticks completed since the last batch and the ticks still owed from a `Ticks(n)` rate. A `Snapshot` is a complete `Batch` plus the pending ticks as `TickEntry`s. Each backend is started by one function that returns a `Worker`, for the direct backend `backend::direct::start(netlist, ticks, io_only)`. Threads or hardware behind it are invisible to the plot.
 
-Most backends implement `Engine` instead, the synchronous node level trait, and let `Worker::start(block_map, engine)` run it on its own thread in five millisecond slices, paced by a `TickSchedule` and published by a `SendSchedule`. `BlockMap` translates between positions and node ids and remembers the last state it reported for every node. Tests, benchmarks and `rilc` call `Engine` directly. Engines may live outside this crate; `mchprs_redpiler_fpga` provides the phase reference, Verilator and FPGA board engines.
+A backend implements `Engine`, the synchronous node level trait, and `Worker::start(block_map, engine)` runs it in five millisecond slices, paced by a `TickSchedule` and published by a `SendSchedule`. `BlockMap` translates between positions and node ids and remembers the last state it reported for every node. Tests, benchmarks and `rilc` call `Engine` directly. Engines may live outside this crate; `mchprs_redpiler_fpga` provides the phase reference, Verilator and FPGA board engines.
 
 ```rust
 pub trait Engine: Send {
@@ -121,15 +122,15 @@ pub trait Engine: Send {
 
 An engine error stops the worker thread, which the plot then sees as `BackendFailure`.
 
-Rules for every `Backend`:
+Rules for every backend:
 
-- The plot waits on a backend only in `next_batch`, `snapshot` and `stop`. A backend never waits on the plot.
+- The plot waits on the worker only in `next_batch`, `snapshot` and `stop`. The worker never waits on the plot.
 - `Paused` runs nothing. `PerSecond` catches up a bounded backlog and never runs ahead. `Unlimited` runs as fast as the engine can. `Ticks(n)` runs `n` ticks as fast as possible and then behaves as `Paused` until the plot sets a rate again.
 - `Input::Interact` flicks a lever or presses a button, `Input::PressurePlate` sets a plate. An input takes effect within one slice.
 - A batch is published at most once per slice and no more often than the send rate. `SendRate::Never` publishes nothing; the plot then learns of changes through snapshots only. `io_only` limits batches to input and output nodes.
 - `next_batch` blocks for at most `timeout` and returns `None` when nothing was published.
 - `snapshot` and `stop` are answered at the end of the running slice with every block that differs from the last report, hidden nodes included, plus all pending ticks. Batches published before the answer are folded into it, so applying a snapshot never rewinds a block.
-- `Err(BackendFailure)` means the backend has died. The plot drops it and keeps interpreting.
+- `Err(BackendFailure)` means the worker has died. The plot drops it and keeps interpreting.
 
 ## How Redstone Works
 
