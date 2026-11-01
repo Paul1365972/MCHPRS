@@ -43,6 +43,7 @@ tracing = { workspace = true }
 [dev-dependencies]
 mchprs_blocks = { path = "./crates/blocks" }
 mchprs_redpiler = { path = "./crates/redpiler" }
+mchprs_redpiler_direct = { path = "./crates/redpiler_direct" }
 mchprs_redstone = { path = "./crates/redstone" }
 paste = { workspace = true }
 

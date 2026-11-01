@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 use line_index::{LineIndex, TextSize};
 use mchprs_blocks::BlockPos;
+use mchprs_redpiler::compile::CompileOptions;
 use mchprs_redpiler::{
-    compile::CompileOptions,
     extract::extract,
     graph::Graph,
     passes::{PassPipeline, PassPipelineBuilder, PassRegistry},
-    ril::{DumpGraph, RILModule, RILOptions},
 };
+use mchprs_ril::{DumpGraph, RILModule, RILOptions};
 use std::fs;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};

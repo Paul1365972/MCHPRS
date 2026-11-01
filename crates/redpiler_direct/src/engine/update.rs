@@ -1,6 +1,3 @@
-use mchprs_redstone::tick_queue::TickPriority;
-
-use super::node::{NodeId, NodeKind};
 use super::*;
 
 #[inline(always)]

@@ -1,8 +1,8 @@
 use crate::{extract_schematic, run_pipeline};
 use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
-use mchprs_redpiler::ril::ast::Global;
-use mchprs_redpiler::ril::dump_graph;
-use mchprs_redpiler::ril::RILOptions;
+use mchprs_ril::ast::Global;
+use mchprs_ril::dump_graph;
+use mchprs_ril::RILOptions;
 use std::path::{Path, PathBuf};
 use std::{fs, process};
 

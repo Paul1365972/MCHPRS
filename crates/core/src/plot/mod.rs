@@ -29,9 +29,9 @@ use mchprs_network::chunk::{encode_block_changes, encode_chunk, encode_empty_chu
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
-use mchprs_redpiler::direct::DirectEngine;
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
+use mchprs_redpiler_direct::DirectEngine;
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};

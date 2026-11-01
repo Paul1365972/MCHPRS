@@ -19,5 +19,4 @@ serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 itertools = { workspace = true }
 rustc-hash = { workspace = true }
-indexmap = { workspace = true }
 smallvec = { workspace = true }

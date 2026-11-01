@@ -1,11 +1,15 @@
-use crate::compile::CompileOptions;
-use crate::graph::{Direction, Graph, Link, LinkKind, Node, NodeIdx, NodeKind, NodeState};
-use crate::ports::{Observed, Ports};
+pub mod string_replacer;
+
 use crate::string_replacer::StringReplacer;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use mchprs_blocks::blocks::{ComparatorMode, Instrument};
 use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_redpiler::compile::CompileOptions;
+use mchprs_redpiler::graph::{
+    Direction, Graph, Link, LinkKind, Node, NodeIdx, NodeKind, NodeState,
+};
+use mchprs_redpiler::ports::{Observed, Ports};
 use rustc_hash::FxHashMap;
 use std::iter::Peekable;
 use std::str::CharIndices;
@@ -1142,7 +1146,7 @@ impl Parser {
 
 pub mod ast {
     use super::RILOptions;
-    use crate::graph::{Link, NodeKind, NodeState};
+    use mchprs_redpiler::graph::{Link, NodeKind, NodeState};
 
     pub enum Global {
         Circuit(Circuit),

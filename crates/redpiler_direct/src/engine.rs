@@ -1,30 +1,16 @@
-mod node;
 mod tick;
 mod update;
 
-use crate::circuit::{self, Circuit};
-use crate::engine::{Changes, Engine, EngineError, Input, Snapshot};
-use crate::graph::{self, LinkKind, PendingTick};
+use crate::compile;
+use crate::node::{ForwardLinks, Node, NodeId, NodeInput, NodeKind, Nodes};
+use crate::scheduler::{check_delays, TickScheduler};
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_redpiler::circuit::{self, Circuit};
+use mchprs_redpiler::engine::{Changes, Engine, EngineError, Input, Snapshot};
+use mchprs_redpiler::graph::PendingTick;
 use mchprs_redstone::tick_queue::TickPriority;
-use node::{ForwardLink, ForwardLinks, Node, NodeId, NodeInput, NodeKind, Nodes};
 use std::mem;
-
-#[derive(Default, Clone)]
-struct Queues([Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
-
-impl Queues {
-    #[inline(always)]
-    fn drain_each<F: FnMut(NodeId)>(&mut self, mut f: F) {
-        for q in self.0.iter_mut() {
-            for n in q.iter() {
-                f(*n);
-            }
-            q.clear();
-        }
-    }
-}
 
 struct NoteActivations {
     counts: Box<[u32]>,
@@ -59,69 +45,6 @@ impl NoteActivations {
     }
 }
 
-#[derive(Default)]
-struct TickScheduler {
-    queues_deque: [Queues; Self::NUM_QUEUES],
-    pos: usize,
-}
-
-impl TickScheduler {
-    const NUM_PRIORITIES: usize = 4;
-    const NUM_QUEUES: usize = 16;
-
-    fn schedule_tick(&mut self, node: NodeId, delay: usize, priority: TickPriority) {
-        self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES].0[priority as usize].push(node);
-    }
-
-    fn queues_this_tick(&mut self) -> Queues {
-        self.pos = (self.pos + 1) % Self::NUM_QUEUES;
-        mem::take(&mut self.queues_deque[self.pos])
-    }
-
-    fn end_tick(&mut self, queues: Queues) {
-        self.queues_deque[self.pos % Self::NUM_QUEUES] = queues;
-    }
-
-    fn priorities() -> [TickPriority; Self::NUM_PRIORITIES] {
-        [
-            TickPriority::Highest,
-            TickPriority::Higher,
-            TickPriority::High,
-            TickPriority::Normal,
-        ]
-    }
-
-    fn has_pending_ticks(&self) -> bool {
-        self.queues_deque
-            .iter()
-            .any(|queues| queues.0.iter().any(|queue| !queue.is_empty()))
-    }
-
-    fn pending_ticks(&self) -> impl Iterator<Item = (NodeId, PendingTick)> + '_ {
-        (1..=Self::NUM_QUEUES).flat_map(move |delay| {
-            let queues = &self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES];
-            queues
-                .0
-                .iter()
-                .zip(Self::priorities())
-                .flat_map(move |(queue, priority)| {
-                    queue.iter().map(move |&node| {
-                        let delay = delay as u32;
-                        (node, PendingTick { delay, priority })
-                    })
-                })
-        })
-    }
-
-    fn clear(&mut self) {
-        for queues in &mut self.queues_deque {
-            for queue in &mut queues.0 {
-                queue.clear();
-            }
-        }
-    }
-}
-
 pub struct DirectEngine {
     nodes: Nodes,
     forward_links: ForwardLinks,
@@ -131,33 +54,10 @@ pub struct DirectEngine {
 }
 
 impl DirectEngine {
-    const MAX_LINKS_PER_KIND: usize = u8::MAX as usize;
-
     pub fn new(circuit: &Circuit) -> Result<DirectEngine, EngineError> {
-        for id in circuit.ids() {
-            for kind in [LinkKind::Default, LinkKind::Side] {
-                let count = circuit
-                    .inputs(id)
-                    .iter()
-                    .filter(|link| link.kind == kind)
-                    .count();
-                if count > Self::MAX_LINKS_PER_KIND {
-                    return Err(format!(
-                        "node {} has {count} {kind:?} inputs (at most {} supported)",
-                        id.index(),
-                        Self::MAX_LINKS_PER_KIND
-                    )
-                    .into());
-                }
-            }
-        }
+        let (nodes, forward_links) = compile::lower(circuit)?;
         let initial = circuit.initial();
         check_delays(&initial.pending_ticks)?;
-        let mut forward_links = ForwardLinks::default();
-        let nodes = circuit
-            .ids()
-            .map(|id| build_node(circuit, id, &mut forward_links))
-            .collect();
         let mut engine = DirectEngine {
             nodes: Nodes::new(nodes),
             forward_links,
@@ -357,71 +257,6 @@ impl Engine for DirectEngine {
         let reset = self.restore(&initial);
         self.initial = initial;
         reset
-    }
-}
-
-fn check_delays(pending_ticks: &[(circuit::NodeId, PendingTick)]) -> Result<(), EngineError> {
-    for &(node, tick) in pending_ticks {
-        if tick.delay as usize > TickScheduler::NUM_QUEUES {
-            return Err(format!(
-                "pending tick of node {} is {} ticks away (at most {} supported)",
-                node.index(),
-                tick.delay,
-                TickScheduler::NUM_QUEUES
-            )
-            .into());
-        }
-    }
-    Ok(())
-}
-
-fn build_node(circuit: &Circuit, id: circuit::NodeId, forward_links: &mut ForwardLinks) -> Node {
-    let node = circuit.node(id);
-    let fwd_link_range = forward_links.extend(
-        circuit
-            .outputs(id)
-            .iter()
-            .filter(|link| link.weight < 15)
-            .map(|link| {
-                let target = NodeId::new(link.target.index(), circuit.len());
-                ForwardLink::new(target, link.kind == LinkKind::Side, link.weight)
-            }),
-    );
-
-    let kind = match node.kind {
-        graph::NodeKind::Repeater { delay, prioritized } => {
-            NodeKind::Repeater { delay, prioritized }
-        }
-        graph::NodeKind::Torch => NodeKind::Torch,
-        graph::NodeKind::Comparator {
-            mode,
-            far_input,
-            prioritized,
-        } => NodeKind::Comparator {
-            mode,
-            far_input,
-            prioritized,
-        },
-        graph::NodeKind::Lamp => NodeKind::Lamp,
-        graph::NodeKind::Button => NodeKind::Button,
-        graph::NodeKind::Lever => NodeKind::Lever,
-        graph::NodeKind::PressurePlate => NodeKind::PressurePlate,
-        graph::NodeKind::Trapdoor => NodeKind::Trapdoor,
-        graph::NodeKind::Wire => NodeKind::Wire,
-        graph::NodeKind::Constant => NodeKind::Constant,
-        graph::NodeKind::NoteBlock { .. } => NodeKind::NoteBlock,
-    };
-
-    Node {
-        kind,
-        default_inputs: NodeInput::new(),
-        side_inputs: NodeInput::new(),
-        fwd_link_range,
-        power: node.state.power,
-        repeater_locked: node.state.repeater_locked,
-        changed: false,
-        pending_tick: false,
-        visible: node.observed,
     }
 }
 

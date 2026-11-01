@@ -1,6 +1,6 @@
-use crate::graph::NodeState;
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_redpiler::graph::NodeState;
 use std::num::NonZeroU128;
 use std::ops::{Index, IndexMut};
 
