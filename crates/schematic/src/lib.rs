@@ -1,6 +1,8 @@
 //! <https://github.com/SpongePowered/Schematic-Specification/tree/master/versions>
 
 use anyhow::{bail, ensure, Context, Result};
+use fastnbt::{ByteArray, IntArray, SerOpts};
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
@@ -9,7 +11,9 @@ use mchprs_world::{World, MC_DATA_VERSION};
 use regex::Regex;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs::{self, File};
+use std::io::Write;
 use std::path::Path;
 use std::sync::LazyLock;
 use tracing::warn;
@@ -129,7 +133,7 @@ macro_rules! nbt_as {
 macro_rules! nbt_field {
     ($compound:expr, $name:expr, $variant:ident) => {
         match $compound.get($name) {
-            Some(nbt::Value::$variant(value)) => value,
+            Some(fastnbt::Value::$variant(value)) => value,
             Some(_) => bail!("field {} must be {}", $name, stringify!($variant)),
             None => bail!("missing field {}", $name),
         }
@@ -177,12 +181,12 @@ fn parse_block(str: &str) -> Option<Block> {
 
 pub fn load_schematic(path: &Path) -> Result<WorldEditClipboard> {
     let mut file = File::open(path)?;
-    let nbt = nbt::Blob::from_gzip_reader(&mut file)?;
+    let nbt: HashMap<String, fastnbt::Value> = fastnbt::from_reader(GzDecoder::new(&mut file))?;
 
-    load_schematic_nbt(&nbt.content)
+    load_schematic_nbt(&nbt)
 }
 
-fn load_schematic_nbt(nbt: &nbt::Map<String, nbt::Value>) -> Result<WorldEditClipboard> {
+fn load_schematic_nbt(nbt: &HashMap<String, fastnbt::Value>) -> Result<WorldEditClipboard> {
     let root = if nbt.contains_key("Schematic") {
         nbt_field!(nbt, "Schematic", Compound)
     } else {
@@ -197,13 +201,13 @@ fn load_schematic_nbt(nbt: &nbt::Map<String, nbt::Value>) -> Result<WorldEditCli
 }
 
 fn read_block_container(
-    nbt: &nbt::Map<String, nbt::Value>,
+    nbt: &HashMap<String, fastnbt::Value>,
     version: i32,
     size_x: u32,
     size_y: u32,
     size_z: u32,
 ) -> Result<(PalettedBitBuffer, FxHashMap<BlockPos, BlockEntity>)> {
-    use nbt::Value;
+    use fastnbt::Value;
 
     let nbt_palette = nbt_field!(nbt, "Palette", Compound);
     let mut palette: FxHashMap<u32, u32> = FxHashMap::default();
@@ -222,7 +226,7 @@ fn read_block_container(
         3 => "Data",
         _ => unreachable!(),
     };
-    let mut blocks = nbt_field!(nbt, data_name, ByteArray).as_slice();
+    let mut blocks: &[i8] = nbt_field!(nbt, data_name, ByteArray);
     let volume = (size_x as usize)
         .checked_mul(size_y as usize)
         .and_then(|area| area.checked_mul(size_z as usize))
@@ -287,11 +291,11 @@ fn read_position(values: &[i32], name: &str) -> Result<BlockPos> {
 }
 
 fn read_block_entity(
-    value: &nbt::Value,
+    value: &fastnbt::Value,
     version: i32,
     dimensions: [u32; 3],
 ) -> Result<Option<(BlockPos, BlockEntity)>> {
-    let entity = nbt_as!(value, nbt::Value::Compound);
+    let entity = nbt_as!(value, fastnbt::Value::Compound);
     let pos = read_position(nbt_field!(entity, "Pos", IntArray), "Pos")?;
     ensure!(
         [pos.x, pos.y, pos.z]
@@ -305,7 +309,7 @@ fn read_block_entity(
     } else {
         nbt_field!(entity, "id", String)
     };
-    let empty = nbt::Map::new();
+    let empty = HashMap::new();
     let data = match version {
         2 => entity,
         // Data is optional in version 3
@@ -321,7 +325,7 @@ fn read_block_entity(
 }
 
 fn load_schematic_sponge(
-    nbt: &nbt::Map<String, nbt::Value>,
+    nbt: &HashMap<String, fastnbt::Value>,
     version: i32,
 ) -> Result<WorldEditClipboard> {
     let size_x = u32::from(*nbt_field!(nbt, "Width", Short) as u16);
@@ -402,19 +406,16 @@ struct Metadata {
     offset_z: i32,
 }
 
-/// Used to serialize schematics in NBT. This cannot be used for deserialization because of
-/// [a bug](https://github.com/PistonDevelopers/hematite_nbt/issues/45) in `hematite-nbt`.
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct Schematic {
     width: i16,
     length: i16,
     height: i16,
-    palette: nbt::Blob,
+    palette: HashMap<String, i32>,
     metadata: Metadata,
-    #[serde(serialize_with = "nbt::i8_array")]
-    block_data: Vec<i8>,
-    block_entities: Vec<nbt::Blob>,
+    block_data: ByteArray,
+    block_entities: Vec<HashMap<String, fastnbt::Value>>,
     version: i32,
     data_version: i32,
 }
@@ -473,20 +474,20 @@ pub fn save_schematic(path: &Path, clipboard: &WorldEditClipboard) -> Result<()>
         }
     }
 
-    let mut encoded_pallete = nbt::Blob::new();
+    let mut encoded_pallete = HashMap::new();
     for (i, entry) in pallette.iter().enumerate() {
-        encoded_pallete.insert(entry, i as i32)?;
+        encoded_pallete.insert(entry.clone(), i as i32);
     }
 
     let mut block_entities = Vec::new();
     for (pos, block_entity) in &clipboard.block_entities {
         if let Some(mut blob) = block_entity.to_nbt(false) {
-            let id = blob
-                .content
-                .remove("id")
-                .expect("block entity NBT has an id");
-            blob.insert("Id", id)?;
-            blob.insert("Pos", nbt::Value::IntArray(vec![pos.x, pos.y, pos.z]))?;
+            let id = blob.remove("id").expect("block entity NBT has an id");
+            blob.insert("Id".to_owned(), id);
+            blob.insert(
+                "Pos".to_owned(),
+                fastnbt::Value::IntArray(IntArray::new(vec![pos.x, pos.y, pos.z])),
+            );
             block_entities.push(blob);
         }
     }
@@ -500,14 +501,20 @@ pub fn save_schematic(path: &Path, clipboard: &WorldEditClipboard) -> Result<()>
         width: size_x as i16,
         length: size_z as i16,
         height: size_y as i16,
-        block_data: data,
+        block_data: ByteArray::new(data),
         block_entities,
         palette: encoded_pallete,
         metadata,
         version: 2,
         data_version: MC_DATA_VERSION,
     };
-    nbt::to_gzip_writer(&mut file, &schematic, Some("Schematic"))?;
+    let mut encoder = GzEncoder::new(&mut file, Compression::default());
+    fastnbt::to_writer_with_opts(
+        &mut encoder,
+        &schematic,
+        SerOpts::new().root_name("Schematic"),
+    )?;
+    encoder.finish()?.flush()?;
 
     Ok(())
 }

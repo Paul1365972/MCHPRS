@@ -430,7 +430,7 @@ impl Chunk {
         for section in &self.sections {
             chunk_sections.push(section.encode_packet());
         }
-        let mut heightmaps = nbt::Map::new();
+        let mut heightmaps = std::collections::HashMap::new();
         let heightmap_longs: Vec<i64> = heightmap_buffer
             .longs
             .into_iter()
@@ -438,7 +438,7 @@ impl Chunk {
             .collect();
         heightmaps.insert(
             "MOTION_BLOCKING".to_string(),
-            nbt::Value::LongArray(heightmap_longs),
+            fastnbt::Value::LongArray(fastnbt::LongArray::new(heightmap_longs)),
         );
         let mut block_entities = Vec::new();
         for (pos, block_entity) in &self.block_entities {
@@ -447,7 +447,7 @@ impl Chunk {
                     x: pos.x as i8,
                     z: pos.z as i8,
                     y: pos.y as i16,
-                    data: nbt.content,
+                    data: nbt,
                     ty: block_entity.ty(),
                 })
             }
@@ -482,7 +482,7 @@ impl Chunk {
                 .collect(),
             chunk_x: x,
             chunk_z: z,
-            heightmaps: nbt::Map::new(),
+            heightmaps: std::collections::HashMap::new(),
             block_entities: vec![],
         }
         .encode()
