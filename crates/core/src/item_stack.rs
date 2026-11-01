@@ -13,12 +13,6 @@ pub struct ItemStack {
 
 impl ItemStack {
     pub fn container_with_ss(container_ty: ContainerType, ss: u8) -> ItemStack {
-        let item = match container_ty {
-            ContainerType::Barrel => Item::Barrel {},
-            ContainerType::Hopper => Item::Hopper {},
-            ContainerType::Furnace => Item::Furnace {},
-        };
-
         let items_needed = container_ty.items_needed_for_signal_strength(ss);
 
         let list = Value::List({
@@ -41,12 +35,15 @@ impl ItemStack {
             "BlockEntityTag".to_owned(),
             Value::Compound(HashMap::from([
                 ("Items".to_owned(), list),
-                ("Id".to_owned(), Value::String(container_ty.to_string())),
+                (
+                    "Id".to_owned(),
+                    Value::String(format!("minecraft:{container_ty}")),
+                ),
             ])),
         )]);
 
         ItemStack {
-            item_type: item,
+            item_type: container_ty.item(),
             count: 1,
             nbt: Some(nbt),
         }

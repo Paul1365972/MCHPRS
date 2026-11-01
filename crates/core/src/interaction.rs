@@ -88,13 +88,17 @@ pub fn get_state_for_placement(
         ($standard_block:ident, $wall_block:ident) => {
             get_sign_placement(
                 context,
-                |rotation| Block::$standard_block {
-                    waterlogged: false,
-                    rotation,
+                |rotation| {
+                    Block::$standard_block(StandingSign {
+                        rotation,
+                        waterlogged: false,
+                    })
                 },
-                |facing| Block::$wall_block {
-                    waterlogged: false,
-                    facing,
+                |facing| {
+                    Block::$wall_block(WallSign {
+                        facing,
+                        waterlogged: false,
+                    })
                 },
             )
         };
@@ -376,7 +380,7 @@ pub fn is_valid_position(block: Block, world: &impl World, pos: BlockPos) -> boo
         }
     );
 
-    let check_parent = block.get_wall_sign_facing().or(match block {
+    let check_parent = block.wall_sign().map(|sign| sign.facing).or(match block {
         Block::TripwireHook { facing, .. } => Some(facing),
         Block::StoneButton {
             face: LeverFace::Wall,
@@ -488,7 +492,7 @@ pub fn use_item_on_block(
     if can_place && (0..PLOT_BLOCK_HEIGHT).contains(&block_pos.y) {
         let block = get_state_for_placement(world, block_pos, item.item_type, &ctx);
 
-        if (block.is_sign() || block.is_wall_sign())
+        if block.is_any_sign()
             && !item
                 .nbt
                 .as_ref()

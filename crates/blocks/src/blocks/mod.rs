@@ -1,8 +1,7 @@
 mod props;
 
 pub use crate::generated::Block;
-use crate::{BlockDirection, BlockFacing, BlockProperty};
-use mchprs_proc_macros::BlockTransform;
+use crate::{BlockDirection, BlockFacing};
 pub use props::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -110,49 +109,17 @@ impl BlockTransform for BlockFacing {
 
 impl Block {
     pub fn is_sign(self) -> bool {
-        matches!(
-            self,
-            Block::OakSign { .. }
-                | Block::SpruceSign { .. }
-                | Block::BirchSign { .. }
-                | Block::AcaciaSign { .. }
-                | Block::JungleSign { .. }
-                | Block::DarkOakSign { .. }
-                | Block::CrimsonSign { .. }
-                | Block::WarpedSign { .. }
-                | Block::BambooSign { .. }
-                | Block::CherrySign { .. }
-                | Block::MangroveSign { .. }
-        )
+        self.standing_sign().is_some()
     }
 
-    pub fn is_wall_sign(self) -> bool {
-        matches!(
-            self,
-            Block::OakWallSign { .. }
-                | Block::SpruceWallSign { .. }
-                | Block::BirchWallSign { .. }
-                | Block::AcaciaWallSign { .. }
-                | Block::JungleWallSign { .. }
-                | Block::DarkOakWallSign { .. }
-                | Block::CrimsonWallSign { .. }
-                | Block::WarpedWallSign { .. }
-                | Block::BambooWallSign { .. }
-                | Block::CherryWallSign { .. }
-                | Block::MangroveWallSign { .. }
-        )
+    pub fn is_any_sign(self) -> bool {
+        self.is_sign() || self.wall_sign().is_some()
     }
 
     pub fn has_block_entity(self) -> bool {
-        self.is_sign()
-            || self.is_wall_sign()
-            || matches!(
-                self,
-                Block::Comparator { .. }
-                    | Block::Barrel { .. }
-                    | Block::Furnace { .. }
-                    | Block::Hopper { .. }
-            )
+        self.is_any_sign()
+            || self.container_type().is_some()
+            || matches!(self, Block::Comparator { .. })
     }
 
     pub fn can_place_block_in(self) -> bool {
@@ -169,71 +136,6 @@ impl Block {
             | 10755..=10756 // Tall Grass
             | 10757..=10758 // Large Fern
         )
-    }
-
-    pub(crate) fn complex_rotate(&mut self, amt: RotateAmt) {
-        if let Block::RedstoneWire(wire) = self {
-            return wire.rotate(amt);
-        }
-        let rotation = self.sign_rotation_mut().expect("standing sign");
-        let mut sign = StandingSign {
-            rotation: *rotation,
-            waterlogged: false,
-        };
-        sign.rotate(amt);
-        *rotation = sign.rotation;
-    }
-
-    pub(crate) fn complex_flip(&mut self, dir: FlipDirection) {
-        if let Block::RedstoneWire(wire) = self {
-            return wire.flip(dir);
-        }
-        let rotation = self.sign_rotation_mut().expect("standing sign");
-        let mut sign = StandingSign {
-            rotation: *rotation,
-            waterlogged: false,
-        };
-        sign.flip(dir);
-        *rotation = sign.rotation;
-    }
-
-    /// Sixteenths of a turn clockwise from south
-    pub fn get_sign_rotation(mut self) -> Option<u8> {
-        self.sign_rotation_mut().copied()
-    }
-
-    fn sign_rotation_mut(&mut self) -> Option<&mut u8> {
-        Some(match self {
-            Block::OakSign { rotation, .. }
-            | Block::SpruceSign { rotation, .. }
-            | Block::BirchSign { rotation, .. }
-            | Block::AcaciaSign { rotation, .. }
-            | Block::JungleSign { rotation, .. }
-            | Block::DarkOakSign { rotation, .. }
-            | Block::CrimsonSign { rotation, .. }
-            | Block::WarpedSign { rotation, .. }
-            | Block::BambooSign { rotation, .. }
-            | Block::CherrySign { rotation, .. }
-            | Block::MangroveSign { rotation, .. } => rotation,
-            _ => return None,
-        })
-    }
-
-    pub fn get_wall_sign_facing(self) -> Option<BlockDirection> {
-        Some(match self {
-            Block::OakWallSign { facing, .. }
-            | Block::SpruceWallSign { facing, .. }
-            | Block::BirchWallSign { facing, .. }
-            | Block::AcaciaWallSign { facing, .. }
-            | Block::JungleWallSign { facing, .. }
-            | Block::DarkOakWallSign { facing, .. }
-            | Block::CrimsonWallSign { facing, .. }
-            | Block::WarpedWallSign { facing, .. }
-            | Block::BambooWallSign { facing, .. }
-            | Block::CherryWallSign { facing, .. }
-            | Block::MangroveWallSign { facing, .. } => facing,
-            _ => return None,
-        })
     }
 
     pub(crate) fn is_solid_dynamic(self) -> bool {

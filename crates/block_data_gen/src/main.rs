@@ -6,9 +6,11 @@ use serde::Deserialize;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
 };
+
+type RegistriesJson = HashMap<String, Registry>;
 
 #[derive(Deserialize)]
 struct BlockState {
@@ -24,19 +26,13 @@ struct BlockJson {
 }
 
 #[derive(Deserialize)]
-struct ItemRegistry {
-    entries: HashMap<String, ItemRegistryEntry>,
+struct Registry {
+    entries: HashMap<String, RegistryEntry>,
 }
 
 #[derive(Deserialize)]
-struct ItemRegistryEntry {
+struct RegistryEntry {
     protocol_id: u32,
-}
-
-#[derive(Deserialize)]
-struct RegistriesJson {
-    #[serde(rename = "minecraft:item")]
-    items: ItemRegistry,
 }
 
 #[derive(Deserialize)]
@@ -44,6 +40,7 @@ struct InfoYaml {
     blocks: IndexMap<String, String>,
     items: IndexMap<String, String>,
     prop_types: IndexMap<String, Vec<String>>,
+    registries: Vec<String>,
 }
 
 #[derive(Default, Debug)]
@@ -54,7 +51,7 @@ struct BlockAttrs {
     maybe_solid: bool,
     maybe_cube: bool,
     maybe_transparent: bool,
-    prop_struct: bool,
+    prop_struct: Option<String>,
     item: bool,
     simple_item: bool,
     complex_transform: bool,
@@ -113,7 +110,7 @@ impl ProcessedItem {
 impl ProcessedBlock {
     fn match_ignore(&self) -> TokenStream {
         let ident = &ident(&self.pascal_name);
-        let props = if self.attrs.prop_struct {
+        let props = if self.attrs.prop_struct.is_some() {
             Some(quote! { (_) })
         } else if !self.props.is_empty() {
             Some(quote! { { .. } })
@@ -129,8 +126,9 @@ impl ProcessedBlock {
             quote! { #name }
         });
         let name_ident = &ident(&self.pascal_name);
-        let props = if self.attrs.prop_struct {
-            Some(quote! { (#name_ident { #( #props ),* }) })
+        let props = if let Some(prop_struct) = &self.attrs.prop_struct {
+            let prop_struct = ident(prop_struct);
+            Some(quote! { (#prop_struct { #( #props ),* }) })
         } else if !self.props.is_empty() {
             Some(quote! { { #( #props ),* } })
         } else {
@@ -192,6 +190,8 @@ fn process_block(
         usize::MAX - interval
     });
 
+    let (_, unnamespaced) = &name.split_once(':').unwrap();
+    let pascal_name = unnamespaced.to_case(Case::Pascal);
     let mut attrs = BlockAttrs::default();
     for attr in attrs_str.split(',').filter(|s| !s.is_empty()) {
         match attr {
@@ -201,7 +201,7 @@ fn process_block(
             "maybe_solid" => attrs.maybe_solid = true,
             "maybe_cube" => attrs.maybe_cube = true,
             "maybe_transparent" => attrs.maybe_transparent = true,
-            "prop_struct" => attrs.prop_struct = true,
+            "prop_struct" => attrs.prop_struct = Some(pascal_name.clone()),
             "simple_item" => attrs.simple_item = true,
             "item" => attrs.item = true,
             "complex_transform" => attrs.complex_transform = true,
@@ -209,13 +209,15 @@ fn process_block(
             "wood" => attrs.wood = true,
             "stone" => attrs.stone = true,
             "glass" => attrs.glass = true,
+            _ if let Some(prop_struct) = attr.strip_prefix("prop_struct:") => {
+                attrs.prop_struct = Some(prop_struct.to_owned())
+            }
             _ => panic!("unknown block attribute: {}", attr),
         }
     }
 
-    let (_, unnamespaced) = &name.split_once(':').unwrap();
     ProcessedBlock {
-        pascal_name: unnamespaced.to_case(Case::Pascal),
+        pascal_name,
         name,
         props,
         attrs,
@@ -256,8 +258,9 @@ fn generate_block_enum(blocks: &[ProcessedBlock]) -> TokenStream {
     let block_variants = blocks.iter().map(|block| {
         let name = &block.pascal_name;
         let name = Ident::new(name, Span::call_site());
-        let props = if block.attrs.prop_struct {
-            Some(quote! { (#name) })
+        let props = if let Some(prop_struct) = &block.attrs.prop_struct {
+            let prop_struct = ident(prop_struct);
+            Some(quote! { (#prop_struct) })
         } else if !block.props.is_empty() {
             let props = block.props.iter().map(|prop| {
                 let name = ident(&prop.name);
@@ -343,6 +346,38 @@ fn generate_is_attr(
     }
 }
 
+fn generate_shared_property_accessors(blocks: &[ProcessedBlock]) -> TokenStream {
+    let mut sharing_blocks = IndexMap::<&str, Vec<Ident>>::new();
+    for block in blocks {
+        if let Some(prop_struct) = &block.attrs.prop_struct
+            && *prop_struct != block.pascal_name
+        {
+            sharing_blocks
+                .entry(prop_struct)
+                .or_default()
+                .push(ident(&block.pascal_name));
+        }
+    }
+    let accessors = sharing_blocks.iter().map(|(prop_struct, variants)| {
+        let ty = ident(prop_struct);
+        let getter = ident(&prop_struct.to_case(Case::Snake));
+        let getter_mut = ident(&format!("{getter}_mut"));
+        quote! {
+            pub fn #getter(mut self) -> Option<#ty> {
+                self.#getter_mut().copied()
+            }
+
+            pub fn #getter_mut(&mut self) -> Option<&mut #ty> {
+                match self {
+                    #( Block::#variants(props) )|* => Some(props),
+                    _ => None,
+                }
+            }
+        }
+    });
+    quote! { #( #accessors )* }
+}
+
 fn generate_from_name(blocks: &[ProcessedBlock]) -> TokenStream {
     let match_arms = blocks.iter().map(|block| {
         let name = &block.name;
@@ -355,9 +390,10 @@ fn generate_from_name(blocks: &[ProcessedBlock]) -> TokenStream {
             }
         });
 
-        let props = if block.attrs.prop_struct {
+        let props = if let Some(prop_struct) = &block.attrs.prop_struct {
+            let prop_struct = ident(prop_struct);
             Some(quote! {
-                (#pascal_name { #( #init )* })
+                (#prop_struct { #( #init )* })
             })
         } else if !block.props.is_empty() {
             Some(quote! {
@@ -484,8 +520,9 @@ fn generate_rotate(blocks: &[ProcessedBlock]) -> TokenStream {
             }
         });
         if block.attrs.complex_transform {
+            let variant = ident(&block.pascal_name);
             quote! {
-                #pat => self.complex_rotate(amt),
+                Block::#variant(props) => props.rotate(amt),
             }
         } else {
             quote! {
@@ -513,8 +550,9 @@ fn generate_flip(blocks: &[ProcessedBlock]) -> TokenStream {
             }
         });
         if block.attrs.complex_transform {
+            let variant = ident(&block.pascal_name);
             quote! {
-                #pat => self.complex_flip(dir),
+                Block::#variant(props) => props.flip(dir),
             }
         } else {
             quote! {
@@ -607,8 +645,9 @@ fn generate_from_id(blocks: &[ProcessedBlock]) -> TokenStream {
             );
             quote! { #prop_name_ident: #val, }
         });
-        let props = if block.attrs.prop_struct {
-            Some(quote! { (#name_ident { #( #props )* })})
+        let props = if let Some(prop_struct) = &block.attrs.prop_struct {
+            let prop_struct = ident(prop_struct);
+            Some(quote! { (#prop_struct { #( #props )* })})
         } else if !block.props.is_empty() {
             Some(quote! { { #( #props )* } })
         } else {
@@ -865,6 +904,7 @@ fn generate_module(
     let names = generate_names(blocks);
     let get_name = generate_get_name(blocks);
     let from_name = generate_from_name(blocks);
+    let shared_property_accessors = generate_shared_property_accessors(blocks);
     let is_solid = generate_is_attr(
         blocks,
         "is_solid",
@@ -924,6 +964,7 @@ fn generate_module(
             #names
             #get_name
             #from_name
+            #shared_property_accessors
             #is_solid
             #is_cube
             #is_transparent
@@ -957,6 +998,57 @@ fn generate_module(
             #item_max_stack_size
         }
     }
+}
+
+fn generate_registries(registries_json: &RegistriesJson, names: &[String]) -> TokenStream {
+    let modules = names.iter().map(|name| {
+        let registry = registries_json
+            .get(&format!("minecraft:{name}"))
+            .unwrap_or_else(|| panic!("no registry minecraft:{name}"));
+        let mut entries: Vec<_> = registry.entries.iter().collect();
+        entries.sort_by_key(|(_, entry)| entry.protocol_id);
+        let mut constant_names = BTreeSet::new();
+        let constants = entries.into_iter().map(|(entry_name, entry)| {
+            let path = entry_name.strip_prefix("minecraft:").unwrap_or(entry_name);
+            let constant_name: String = path
+                .chars()
+                .map(|character| match character {
+                    'a'..='z' | 'A'..='Z' | '0'..='9' => character.to_ascii_uppercase(),
+                    _ => '_',
+                })
+                .collect();
+            let constant_ident = Ident::new(&constant_name, Span::call_site());
+            assert!(
+                constant_names.insert(constant_name),
+                "two entries of {name} are named {constant_ident}"
+            );
+            let id = Literal::i32_unsuffixed(entry.protocol_id as i32);
+            quote! {
+                pub const #constant_ident: i32 = #id;
+            }
+        });
+        let module_name = Ident::new(name, Span::call_site());
+        quote! {
+            pub mod #module_name {
+                #(#constants)*
+            }
+        }
+    });
+    quote! {
+        //! Protocol ids from `mc_data/registries.json`, generated by `mchprs_block_data_gen`.
+        //! DO NOT EDIT THIS FILE BY HAND.
+        #(#modules)*
+    }
+}
+
+fn write_formatted(path: &Path, source: &str) {
+    fs::write(path, source).unwrap();
+    let status = Command::new("rustfmt")
+        .args(["--config", "newline_style=Unix"])
+        .arg(path)
+        .status()
+        .expect("failed to run rustfmt");
+    assert!(status.success(), "rustfmt failed");
 }
 
 fn main() {
@@ -1000,8 +1092,7 @@ fn main() {
                 max_stack: 64,
                 simple_placement: block.attrs.simple_item,
             };
-            let id = registries_json
-                .items
+            let id = registries_json["minecraft:item"]
                 .entries
                 .get(&block.name)
                 .expect(&block.name)
@@ -1028,17 +1119,14 @@ fn main() {
             });
         items.push(ProcessedItem::new(
             name,
-            registries_json.items.entries[name].protocol_id,
+            registries_json["minecraft:item"].entries[name].protocol_id,
             attrs,
         ));
     }
 
     let gen_src = generate_module(&processed_blocks, &prop_types, &items).to_string();
-    fs::write(&output_path, gen_src).unwrap();
-    Command::new("rustfmt")
-        .arg(&output_path)
-        .spawn()
-        .expect("failed to run rustfmt")
-        .wait()
-        .expect("rustfmt failed");
+    write_formatted(&output_path, &gen_src);
+
+    let registries_src = generate_registries(&registries_json, &yaml.registries).to_string();
+    write_formatted(Path::new("../blocks/src/registries.rs"), &registries_src);
 }

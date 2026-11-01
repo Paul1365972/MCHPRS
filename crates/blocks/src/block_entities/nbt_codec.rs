@@ -177,7 +177,7 @@ impl BlockEntity {
                     items.push(Value::Compound(nbt));
                 }
                 HashMap::from([
-                    ("id".to_owned(), Value::String(ty.to_string())),
+                    ("id".to_owned(), Value::String(format!("minecraft:{ty}"))),
                     ("Items".to_owned(), Value::List(items)),
                 ])
             }),
