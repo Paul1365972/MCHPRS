@@ -32,8 +32,8 @@ Flags such as `-a` go after all other arguments.
 | `/gamemode (creative \| spectator)` | `1` (creative), `3` (spectator), `/gmc`, `/gmsp` | Change your game mode. |
 | `/worldsendrate [<hertz>]` | `/wsr` | Show or set how often the plot sends block updates to players (0–1000, fractional; `0` disables periodic sends; default 60 Hz). |
 | `/container <type> <power>` | None | Give yourself a barrel, furnace, or hopper filled to produce the specified comparator signal strength (0–15). |
-| `/whitelist add <username>` | None | Add a player to the whitelist. |
-| `/whitelist remove <username>` | None | Remove a player from the whitelist. |
+| `/whitelist add <username>` | None | Add a player to the whitelist. Needs the [`whitelist` feature](../README.md#features). |
+| `/whitelist remove <username>` | None | Remove a player from the whitelist. Needs the [`whitelist` feature](../README.md#features). |
 | `/version` | None | Show the server version. |
 
 ## Plot Commands

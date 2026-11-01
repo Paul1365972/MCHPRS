@@ -10,6 +10,7 @@ use crate::server::{get_version_string, Message};
 use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::signal_strength::SignalStrength;
+#[cfg(feature = "whitelist")]
 use mchprs_network::PlayerPacketSender;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use std::time::Instant;
@@ -115,6 +116,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
             }),
     );
 
+    #[cfg(feature = "whitelist")]
     registry.register(
         Command::new("whitelist")
             .subcommand(

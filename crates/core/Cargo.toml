@@ -36,11 +36,13 @@ rand = { workspace = true }
 rusqlite = { workspace = true, features=["bundled"] }
 anyhow = { workspace = true }
 toml_edit = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
-reqwest = { workspace = true, features = ["json"] }
+ureq = { workspace = true, features = ["json"], optional = true }
 itertools = { workspace = true }
 bincode = { workspace = true }
 rustc-hash = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+
+[features]
+whitelist = ["dep:ureq"]
