@@ -3,15 +3,6 @@ use mchprs_blocks::BlockPos;
 use rustc_hash::FxHashMap;
 use std::mem;
 
-#[cfg(feature = "networking")]
-use mchprs_network::packets::{
-    clientbound::{
-        CChunkData, CChunkDataBlockEntity, CChunkDataSection, CUpdateSectionBlocks,
-        CUpdateSectionBlocksRecord, ClientBoundPacket,
-    },
-    PacketEncoder, PalettedContainer,
-};
-
 #[derive(Clone)]
 pub struct BitBuffer {
     bits_per_entry: u64,
@@ -78,6 +69,10 @@ impl BitBuffer {
             mask: (1 << bits_per_entry) - 1,
             fast_arr_idx: BitBuffer::find_fast_arr_idx_fn(entries_per_long as usize),
         }
+    }
+
+    pub fn longs(&self) -> &[u64] {
+        &self.longs
     }
 
     pub fn get_entry(&self, word_idx: usize) -> u32 {
@@ -230,23 +225,8 @@ impl PalettedBitBuffer {
         self.data.bits_per_entry as u8
     }
 
-    #[cfg(feature = "networking")]
-    fn encode_packet(&self) -> PalettedContainer {
-        if self.use_palette && self.palette.len() == 1 {
-            PalettedContainer {
-                bits_per_entry: 0,
-                data_array: vec![0],
-                palette: Some(vec![self.palette[0] as i32]),
-            }
-        } else {
-            PalettedContainer {
-                bits_per_entry: self.data.bits_per_entry as u8,
-                data_array: self.data.longs.clone(),
-                palette: self
-                    .use_palette
-                    .then(|| self.palette.clone().into_iter().map(|x| x as i32).collect()),
-            }
-        }
+    pub fn uses_palette(&self) -> bool {
+        self.use_palette
     }
 }
 
@@ -254,9 +234,15 @@ impl PalettedBitBuffer {
 pub struct ChunkSection {
     buffer: PalettedBitBuffer,
     block_count: u32,
-    #[cfg(feature = "networking")]
-    multi_block: CUpdateSectionBlocks,
     changed_blocks: Option<Box<[i16; 16 * 16 * 16]>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SectionBlockChange {
+    pub x: u8,
+    pub y: u8,
+    pub z: u8,
+    pub block_state: u32,
 }
 
 impl ChunkSection {
@@ -271,13 +257,6 @@ impl ChunkSection {
         ChunkSection {
             buffer,
             block_count,
-            #[cfg(feature = "networking")]
-            multi_block: CUpdateSectionBlocks {
-                chunk_x: 0,
-                chunk_y: 0,
-                chunk_z: 0,
-                records: Vec::new(),
-            },
             changed_blocks: None,
         }
     }
@@ -337,19 +316,6 @@ impl ChunkSection {
         self.buffer = new_buffer;
     }
 
-    #[cfg(feature = "networking")]
-    fn encode_packet(&self) -> CChunkDataSection {
-        CChunkDataSection {
-            block_count: self.block_count as i16,
-            block_states: self.buffer.encode_packet(),
-            biomes: PalettedContainer {
-                bits_per_entry: 0,
-                data_array: vec![],
-                palette: Some(vec![0]),
-            },
-        }
-    }
-
     fn flush(&mut self) {
         if let Some(changed_blocks) = &self.changed_blocks {
             for (i, block) in changed_blocks.iter().copied().enumerate() {
@@ -360,30 +326,27 @@ impl ChunkSection {
         }
     }
 
-    fn changed(&self) -> bool {
-        self.changed_blocks.is_some()
-    }
-
-    #[cfg(feature = "networking")]
-    fn multi_block(&mut self, chunk_x: i32, chunk_y: u32, chunk_z: i32) -> &CUpdateSectionBlocks {
-        self.multi_block.chunk_x = chunk_x;
-        self.multi_block.chunk_y = chunk_y;
-        self.multi_block.chunk_z = chunk_z;
-        if let Some(changed_blocks) = &self.changed_blocks {
-            for (i, block) in changed_blocks.iter().copied().enumerate() {
-                if block >= 0 {
-                    self.buffer.set_entry(i, block as u32);
-                    self.multi_block.records.push(CUpdateSectionBlocksRecord {
-                        block_id: block as u32,
-                        x: (i & 0xF) as u8,
-                        y: (i >> 8) as u8,
-                        z: ((i & 0xF0) >> 4) as u8,
-                    });
-                }
+    pub fn drain_changes(&mut self) -> Vec<SectionBlockChange> {
+        let Some(changed_blocks) = self.changed_blocks.take() else {
+            return Vec::new();
+        };
+        let mut changes = Vec::new();
+        for (i, block) in changed_blocks.iter().copied().enumerate() {
+            if block >= 0 {
+                self.buffer.set_entry(i, block as u32);
+                changes.push(SectionBlockChange {
+                    x: (i & 0xF) as u8,
+                    y: (i >> 8) as u8,
+                    z: ((i & 0xF0) >> 4) as u8,
+                    block_state: block as u32,
+                });
             }
         }
-        self.changed_blocks = None;
-        &self.multi_block
+        changes
+    }
+
+    pub fn uses_palette(&self) -> bool {
+        self.buffer.uses_palette()
     }
 }
 
@@ -392,13 +355,6 @@ impl Default for ChunkSection {
         ChunkSection {
             buffer: PalettedBitBuffer::new(4096, 9),
             block_count: 0,
-            #[cfg(feature = "networking")]
-            multi_block: CUpdateSectionBlocks {
-                chunk_x: 0,
-                chunk_y: 0,
-                chunk_z: 0,
-                records: Vec::new(),
-            },
             changed_blocks: None,
         }
     }
@@ -413,94 +369,6 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    #[cfg(feature = "networking")]
-    pub fn encode_packet(&self) -> PacketEncoder {
-        let block_height = self.sections.len() * 16;
-        // Integer arithmetic trick: ceil(log2(x)) can be calculated with 32 - (x -
-        // 1).leading_zeros(). See also: https://wiki.vg/Protocol#Chunk_Data_and_Update_Light
-        let heightmap_bits = (32 - ((block_height as u32 + 1) - 1).leading_zeros()) as u8;
-        let mut heightmap_buffer = BitBuffer::create(heightmap_bits, 16 * 16);
-        for z in 0..16 {
-            for x in 0..16 {
-                heightmap_buffer.set_entry(z * 16 + x, self.column_height(x as u32, z as u32));
-            }
-        }
-
-        let mut chunk_sections = Vec::new();
-        for section in &self.sections {
-            chunk_sections.push(section.encode_packet());
-        }
-        let mut heightmaps = nbt::Map::new();
-        let heightmap_longs: Vec<i64> = heightmap_buffer
-            .longs
-            .into_iter()
-            .map(|x| x as i64)
-            .collect();
-        heightmaps.insert(
-            "MOTION_BLOCKING".to_string(),
-            nbt::Value::LongArray(heightmap_longs),
-        );
-        let mut block_entities = Vec::new();
-        for (pos, block_entity) in &self.block_entities {
-            if let Some(nbt) = block_entity.to_nbt(true) {
-                block_entities.push(CChunkDataBlockEntity {
-                    x: pos.x as i8,
-                    z: pos.z as i8,
-                    y: pos.y as i16,
-                    data: nbt.content,
-                    ty: block_entity.ty(),
-                })
-            }
-        }
-        CChunkData {
-            chunk_sections,
-            chunk_x: self.x,
-            chunk_z: self.z,
-            heightmaps,
-            block_entities,
-        }
-        .encode()
-    }
-
-    #[cfg(feature = "networking")]
-    pub fn encode_empty_packet(x: i32, z: i32, num_sections: usize) -> PacketEncoder {
-        CChunkData {
-            chunk_sections: (0..num_sections)
-                .map(|_| CChunkDataSection {
-                    block_count: 0,
-                    block_states: PalettedContainer {
-                        bits_per_entry: 0,
-                        data_array: vec![0],
-                        palette: Some(vec![0]),
-                    },
-                    biomes: PalettedContainer {
-                        bits_per_entry: 0,
-                        data_array: vec![0],
-                        palette: Some(vec![0]),
-                    },
-                })
-                .collect(),
-            chunk_x: x,
-            chunk_z: z,
-            heightmaps: nbt::Map::new(),
-            block_entities: vec![],
-        }
-        .encode()
-    }
-
-    #[cfg(feature = "networking")]
-    fn column_height(&self, x: u32, z: u32) -> u32 {
-        for (section_y, section) in self.sections.iter().enumerate().rev() {
-            if section.block_count() == 0 {
-                continue;
-            }
-            if let Some(y) = (0..16).rev().find(|&y| section.get_block(x, y, z) != 0) {
-                return section_y as u32 * 16 + y + 1;
-            }
-        }
-        0
-    }
-
     /// Sets a block in the chunk. Returns true if a block was changed.
     pub fn set_block(&mut self, x: u32, y: u32, z: u32, block_id: u32) -> bool {
         let section_y = (y >> 4) as usize;
@@ -540,27 +408,6 @@ impl Chunk {
             x,
             z,
             block_entities: FxHashMap::default(),
-        }
-    }
-
-    #[cfg(feature = "networking")]
-    pub fn multi_blocks(&mut self) -> impl Iterator<Item = &CUpdateSectionBlocks> {
-        let x = self.x;
-        let z = self.z;
-        self.sections
-            .iter_mut()
-            .enumerate()
-            .filter_map(move |(y, section)| {
-                section
-                    .changed()
-                    .then(move || section.multi_block(x, y as u32, z))
-            })
-    }
-
-    #[cfg(feature = "networking")]
-    pub fn reset_multi_blocks(&mut self) {
-        for section in &mut self.sections {
-            section.multi_block.records.clear();
         }
     }
 
