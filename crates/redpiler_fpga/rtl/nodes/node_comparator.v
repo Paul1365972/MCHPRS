@@ -10,28 +10,23 @@ module node_comparator #(
     parameter [3:0] HIGH = 0,
     parameter [3:0] STRENGTH = 0,
     parameter [3:0] PREVIOUS_DESIRED = 0,
-    parameter PENDING = 0,
-    parameter STALE = 0
+    parameter PENDING = 0
 ) (
     input wire clock,
     input wire begin_tick,
     input wire [3:0] firing,
     input wire [3:0] input_strength,
     input wire [3:0] side_strength,
-    input wire changed,
     output wire high,
     output wire [3:0] strength,
     output wire countdown,
-    output wire [3:0] signal,
     output wire [3:0] next_signal
 );
     reg due = 1'b0;
-    wire update;
     wire fire = due && (FACING_DIODE ? firing[2] : firing[3]);
     wire pending = countdown || due && !fire;
     wire [3:0] rear = HAS_FAR_INPUT && input_strength < 4'd15 ? FAR_INPUT : input_strength;
     wire [3:0] desired = rear < side_strength ? 4'd0 : SUBTRACT ? rear - side_strength : rear;
-    assign signal = strength;
 
     generate
         if (TWO_LEVEL) begin : two_level
@@ -62,9 +57,8 @@ module node_comparator #(
         if (fire) due <= 1'b0;
         else if (begin_tick) due <= countdown;
 
-    node_settling #(.STALE(STALE)) settling (.clock(clock), .changed(changed), .update(update));
     node_countdown #(.DELAY(1), .PENDING(PENDING)) tick (
         .clock(clock), .begin_tick(begin_tick),
-        .schedule(update && !pending && desired != next_signal), .countdown(countdown)
+        .schedule(!pending && desired != next_signal), .countdown(countdown)
     );
 endmodule

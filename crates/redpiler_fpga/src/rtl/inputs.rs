@@ -1,4 +1,4 @@
-use super::expression::{Expression, Moment};
+use super::expression::Expression;
 use crate::circuit::Link;
 use crate::registers::Registers;
 
@@ -20,14 +20,14 @@ impl<'a> Inputs<'a> {
             })
     }
 
-    fn signal(&self, source: usize, moment: Moment) -> Expression {
+    fn signal(&self, source: usize) -> Expression {
         match self.registers.literal(source) {
             Some(strength) => Expression::Strength(strength),
-            None => Expression::Signal(source, moment),
+            None => Expression::Signal(source),
         }
     }
 
-    fn powers(&self, link: &Link, moment: Moment) -> Option<Expression> {
+    fn powers(&self, link: &Link) -> Option<Expression> {
         let reachable = self.reachable(link);
         if reachable == 1 {
             return None;
@@ -36,7 +36,7 @@ impl<'a> Inputs<'a> {
             return Some(Expression::Bit(true));
         }
         let strengths = self.registers.strengths(link.source);
-        let signal = self.signal(link.source, moment);
+        let signal = self.signal(link.source);
         let weak = (1..=link.attenuation).any(|strength| strengths & (1 << strength) != 0);
         Some(if weak {
             signal.above(link.attenuation)
@@ -46,11 +46,7 @@ impl<'a> Inputs<'a> {
     }
 
     pub(super) fn power(&self, links: &[Link]) -> Expression {
-        Expression::any(
-            links
-                .iter()
-                .filter_map(|link| self.powers(link, Moment::AfterFiring)),
-        )
+        Expression::any(links.iter().filter_map(|link| self.powers(link)))
     }
 
     pub(super) fn strength(&self, links: &[Link]) -> Expression {
@@ -73,40 +69,12 @@ impl<'a> Inputs<'a> {
                 Some(strength) => {
                     constant = constant.max(strength.saturating_sub(link.attenuation));
                 }
-                None => terms.push(
-                    self.signal(link.source, Moment::AfterFiring)
-                        .attenuated(link.attenuation),
-                ),
+                None => terms.push(self.signal(link.source).attenuated(link.attenuation)),
             }
         }
         if constant != 0 {
             terms.push(Expression::Strength(constant));
         }
         Expression::maximum(&terms)
-    }
-
-    fn link_changed(&self, link: &Link) -> Option<Expression> {
-        if self.reachable(link).count_ones() < 2 {
-            return None;
-        }
-        let strengths = self.registers.strengths(link.source);
-        let read = |moment| {
-            let signal = self.signal(link.source, moment);
-            if strengths.count_ones() == 2 && strengths & 1 != 0 {
-                signal.nonzero()
-            } else {
-                signal.attenuated(link.attenuation)
-            }
-        };
-        Some(read(Moment::AfterFiring).differs(read(Moment::BeforeFiring)))
-    }
-
-    pub(super) fn changed(&self, inputs: &[Link], sides: &[Link]) -> Expression {
-        Expression::any(
-            inputs
-                .iter()
-                .chain(sides)
-                .filter_map(|link| self.link_changed(link)),
-        )
     }
 }

@@ -1,4 +1,4 @@
-use crate::circuit::{Circuit, ComparatorMode, Kind, Link, State};
+use crate::circuit::{ComparatorMode, Kind, Link, Node, State};
 
 pub(super) fn comparator(mode: ComparatorMode, far_input: Option<u8>, input: u8, side: u8) -> u8 {
     let rear = if input < 15 {
@@ -72,11 +72,7 @@ pub(super) fn settle_node(
     (state, schedule)
 }
 
-/// Settling a node whose inputs did not change leaves a settled node unchanged, and firing leaves
-/// every node settled, so a node that starts settled can be settled on every clock instead of only
-/// when an input changes.
-pub(crate) fn is_initially_settled(circuit: &Circuit, index: usize) -> bool {
-    let nodes = circuit.nodes();
+pub(crate) fn settled_initial_state(nodes: &[Node], index: usize) -> State {
     let node = &nodes[index];
     let strongest = |links: &[Link]| {
         links
@@ -91,12 +87,16 @@ pub(crate) fn is_initially_settled(circuit: &Circuit, index: usize) -> bool {
             .unwrap_or(0)
     };
     let pending = node.kind.is_timed() && node.initial.delay != 0;
-    let settled = settle_node(
+    let (mut state, schedule) = settle_node(
         node.kind,
         node.initial,
         strongest(&node.inputs),
         strongest(&node.sides),
         pending,
     );
-    settled == (node.initial, None)
+    if let Some(Schedule { delay, priority }) = schedule {
+        state.delay = delay;
+        state.priority = priority;
+    }
+    state
 }

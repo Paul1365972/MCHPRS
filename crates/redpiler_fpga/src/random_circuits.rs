@@ -1,6 +1,6 @@
 use crate::circuit::{Circuit, ComparatorMode, Kind, Link, Node, State, PULSE_PRIORITY};
 use crate::engine::Simulator;
-use crate::reference::Reference;
+use crate::reference::{settled_initial_state, Reference};
 use crate::verilator::VerilatorEngine;
 
 const LINK_WINDOW: usize = 24;
@@ -107,7 +107,7 @@ fn random_links(random: &mut Random, kinds: &[Kind], target: usize, count: usize
 fn random_circuit(seed: u64, count: usize) -> Circuit {
     let mut random = Random(seed.wrapping_mul(0x9e3779b97f4a7c15) | 1);
     let kinds: Vec<_> = (0..count).map(|_| random_kind(&mut random)).collect();
-    let nodes = kinds
+    let mut nodes: Vec<_> = kinds
         .iter()
         .enumerate()
         .map(|(index, &kind)| {
@@ -131,6 +131,12 @@ fn random_circuit(seed: u64, count: usize) -> Circuit {
             }
         })
         .collect();
+    let settled: Vec<_> = (0..nodes.len())
+        .map(|index| settled_initial_state(&nodes, index))
+        .collect();
+    for (node, state) in nodes.iter_mut().zip(settled) {
+        node.initial = state;
+    }
     Circuit::new(nodes).expect("random circuits are valid")
 }
 

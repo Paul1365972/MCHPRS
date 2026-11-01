@@ -1,4 +1,4 @@
-use super::expression::{signal_name, Expression, Moment};
+use super::expression::{signal_name, Expression};
 use crate::registers::Field;
 use std::fmt;
 
@@ -67,7 +67,7 @@ impl Instance {
         self.index
     }
 
-    pub(super) fn visit_signals(&self, visit: &mut impl FnMut(usize, Moment)) {
+    pub(super) fn visit_signals(&self, visit: &mut impl FnMut(usize)) {
         for (_, connection) in &self.ports {
             if let Connection::Expression(expression) = connection {
                 expression.visit_signals(visit);
@@ -75,12 +75,8 @@ impl Instance {
         }
     }
 
-    pub(super) fn signal(&mut self, moment: Moment) {
-        let port = match moment {
-            Moment::BeforeFiring => "signal",
-            Moment::AfterFiring => "next_signal",
-        };
-        self.port(port, signal_name(self.index, moment));
+    pub(super) fn signal(&mut self) {
+        self.port("next_signal", signal_name(self.index));
     }
 
     pub(super) fn readback(&mut self, fields: &[Field], offset: usize) {

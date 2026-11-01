@@ -3,7 +3,7 @@ mod inputs;
 mod instance;
 mod node_modules;
 
-use self::expression::{signal_name, Moment};
+use self::expression::signal_name;
 use self::instance::Instance;
 use self::node_modules::NodeModules;
 use crate::circuit::Circuit;
@@ -140,39 +140,31 @@ impl<'a> Writer<'a> {
         .unwrap();
     }
 
-    fn instances(&self, layout: &ReadbackLayout) -> (Vec<Instance>, BTreeSet<(Moment, usize)>) {
+    fn instances(&self, layout: &ReadbackLayout) -> (Vec<Instance>, BTreeSet<usize>) {
         let builder = NodeModules::new(&self.registers);
         let mut instances: Vec<_> = (0..self.circuit.nodes().len())
             .filter_map(|index| builder.instance(index))
             .collect();
         let mut read = BTreeSet::new();
         for instance in &instances {
-            instance.visit_signals(&mut |node, moment| {
-                read.insert((moment, node));
+            instance.visit_signals(&mut |node| {
+                read.insert(node);
             });
         }
         for instance in &mut instances {
             let index = instance.index();
-            for moment in [Moment::BeforeFiring, Moment::AfterFiring] {
-                if read.contains(&(moment, index)) {
-                    instance.signal(moment);
-                }
+            if read.contains(&index) {
+                instance.signal();
             }
             instance.readback(&self.registers.fields(index), layout.offsets[index]);
         }
         (instances, read)
     }
 
-    fn signal_declarations(&mut self, read: &BTreeSet<(Moment, usize)>) {
-        for moment in [Moment::BeforeFiring, Moment::AfterFiring] {
-            let names: Vec<_> = read
-                .iter()
-                .filter(|(reader_moment, _)| *reader_moment == moment)
-                .map(|&(moment, node)| signal_name(node, moment))
-                .collect();
-            for row in names.chunks(ITEMS_PER_LINE) {
-                self.line(format!("wire [3:0] {};", row.join(", ")));
-            }
+    fn signal_declarations(&mut self, read: &BTreeSet<usize>) {
+        let names: Vec<_> = read.iter().map(|&node| signal_name(node)).collect();
+        for row in names.chunks(ITEMS_PER_LINE) {
+            self.line(format!("wire [3:0] {};", row.join(", ")));
         }
     }
 

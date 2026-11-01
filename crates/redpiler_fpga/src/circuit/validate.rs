@@ -1,4 +1,5 @@
 use super::{invalid, Circuit, Kind, Node, PULSE_PRIORITY};
+use crate::reference::settled_initial_state;
 use std::io;
 
 impl Circuit {
@@ -7,9 +8,20 @@ impl Circuit {
             self.validate_links(node)
                 .and_then(|()| validate_kind(node.kind))
                 .and_then(|()| validate_reachable_state(node))
+                .and_then(|()| self.validate_settled(index))
                 .map_err(|problem| invalid(format!("node {index}: {problem}")))?;
         }
         Ok(())
+    }
+
+    // The circuit settles every node on every clock instead of only when an input changes, which
+    // is equivalent only for nodes that start settled.
+    fn validate_settled(&self, index: usize) -> Result<(), String> {
+        if settled_initial_state(&self.nodes, index) == self.nodes[index].initial {
+            Ok(())
+        } else {
+            Err("is not settled; update the world before compiling".to_owned())
+        }
     }
 
     fn validate_links(&self, node: &Node) -> Result<(), String> {

@@ -16,7 +16,7 @@ struct Consumer {
     side: bool,
 }
 
-pub(crate) use self::settle::is_initially_settled;
+pub(crate) use self::settle::settled_initial_state;
 
 pub(crate) struct Reference {
     kinds: Vec<Kind>,

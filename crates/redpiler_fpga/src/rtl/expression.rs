@@ -1,22 +1,15 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Moment {
-    BeforeFiring,
-    AfterFiring,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Expression {
     Bit(bool),
     Strength(u8),
-    Signal(usize, Moment),
+    Signal(usize),
     Nonzero(Box<Expression>),
     Above(Box<Expression>, u8),
     Attenuated(Box<Expression>, u8),
     Maximum(Box<Expression>, Box<Expression>),
     Select(Box<Expression>, Box<Expression>, Box<Expression>),
-    Differs(Box<Expression>, Box<Expression>),
     Any(Vec<Expression>),
 }
 
@@ -34,10 +27,6 @@ impl Expression {
             0 => self,
             attenuation => Self::Attenuated(Box::new(self), attenuation),
         }
-    }
-
-    pub(super) fn differs(self, other: Self) -> Self {
-        Self::Differs(Box::new(self), Box::new(other))
     }
 
     pub(super) fn select(self, then: Self, otherwise: Self) -> Self {
@@ -83,14 +72,14 @@ impl Expression {
         }
     }
 
-    pub(super) fn visit_signals(&self, visit: &mut impl FnMut(usize, Moment)) {
+    pub(super) fn visit_signals(&self, visit: &mut impl FnMut(usize)) {
         match self {
             Self::Bit(_) | Self::Strength(_) => {}
-            Self::Signal(node, moment) => visit(*node, *moment),
+            Self::Signal(node) => visit(*node),
             Self::Nonzero(term) | Self::Above(term, _) | Self::Attenuated(term, _) => {
                 term.visit_signals(visit)
             }
-            Self::Maximum(left, right) | Self::Differs(left, right) => {
+            Self::Maximum(left, right) => {
                 left.visit_signals(visit);
                 right.visit_signals(visit);
             }
@@ -104,10 +93,7 @@ impl Expression {
     }
 
     fn is_operation(&self) -> bool {
-        matches!(
-            self,
-            Self::Above(..) | Self::Select(..) | Self::Differs(..) | Self::Any(_)
-        )
+        matches!(self, Self::Above(..) | Self::Select(..) | Self::Any(_))
     }
 
     fn operand(&self) -> Operand<'_> {
@@ -115,11 +101,8 @@ impl Expression {
     }
 }
 
-pub(super) fn signal_name(node: usize, moment: Moment) -> String {
-    match moment {
-        Moment::BeforeFiring => format!("signal_{node}"),
-        Moment::AfterFiring => format!("next_signal_{node}"),
-    }
+pub(super) fn signal_name(node: usize) -> String {
+    format!("next_signal_{node}")
 }
 
 struct Operand<'a>(&'a Expression);
@@ -139,7 +122,7 @@ impl fmt::Display for Expression {
         match self {
             Self::Bit(value) => write!(formatter, "1'b{}", u8::from(*value)),
             Self::Strength(strength) => write!(formatter, "4'd{strength}"),
-            Self::Signal(node, moment) => formatter.write_str(&signal_name(*node, *moment)),
+            Self::Signal(node) => formatter.write_str(&signal_name(*node)),
             Self::Nonzero(term) => write!(formatter, "|{}", term.operand()),
             Self::Above(term, strength) => write!(formatter, "{} > 4'd{strength}", term.operand()),
             Self::Attenuated(term, attenuation) => {
@@ -153,9 +136,6 @@ impl fmt::Display for Expression {
                 then.operand(),
                 otherwise.operand()
             ),
-            Self::Differs(left, right) => {
-                write!(formatter, "{} != {}", left.operand(), right.operand())
-            }
             Self::Any(terms) => {
                 for (position, term) in terms.iter().enumerate() {
                     if position != 0 {
