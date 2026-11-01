@@ -7,6 +7,7 @@ pub mod task_monitor;
 
 use backend::{BackendDispatcher, JITBackend};
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_world::{for_each_block_mut_optimized, TickEntry, World};
 use std::sync::Arc;
@@ -151,7 +152,7 @@ impl Compiler {
     pub fn compile<W: World>(
         &mut self,
         world: &W,
-        bounds: (BlockPos, BlockPos),
+        region: Region,
         options: CompilerOptions,
         mut ticks: Vec<TickEntry>,
         monitor: Arc<TaskMonitor>,
@@ -164,7 +165,7 @@ impl Compiler {
 
         let input = CompilerInput {
             world,
-            bounds,
+            region,
             ticks: &ticks,
         };
         let registry = PassRegistry::default();
@@ -208,7 +209,7 @@ impl Compiler {
         debug!("Compile completed in {:?}", start.elapsed());
     }
 
-    pub fn reset<W: World>(&mut self, world: &mut W, bounds: (BlockPos, BlockPos)) {
+    pub fn reset<W: World>(&mut self, world: &mut W, region: Region) {
         if self.is_active {
             self.is_active = false;
             if let Some(backend) = &mut self.backend {
@@ -217,8 +218,7 @@ impl Compiler {
         }
 
         if self.options.update {
-            let (first_pos, second_pos) = bounds;
-            for_each_block_mut_optimized(world, first_pos, second_pos, |world, pos| {
+            for_each_block_mut_optimized(world, region.min(), region.max(), |world, pos| {
                 let block = world.get_block(pos);
                 mchprs_redstone::update(block, world, pos);
             });
@@ -277,7 +277,7 @@ impl Compiler {
 
 pub struct CompilerInput<'w, W: World> {
     pub world: &'w W,
-    pub bounds: (BlockPos, BlockPos),
+    pub region: Region,
     pub ticks: &'w [TickEntry],
 }
 

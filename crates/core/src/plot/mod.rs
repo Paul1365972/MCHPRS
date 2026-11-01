@@ -19,6 +19,7 @@ use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::items::Item;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
@@ -122,15 +123,16 @@ impl PlotWorld {
         Some(((chunk_x << PLOT_SCALE) + chunk_z).unsigned_abs() as usize)
     }
 
-    pub fn get_corners(&self) -> (BlockPos, BlockPos) {
+    pub fn region(&self) -> Region {
         const W: i32 = PLOT_BLOCK_WIDTH;
-        let first_pos = BlockPos::new(self.x * W, 0, self.z * W);
-        let second_pos = BlockPos::new(
-            (self.x + 1) * W - 1,
-            PLOT_BLOCK_HEIGHT - 1,
-            (self.z + 1) * W - 1,
-        );
-        (first_pos, second_pos)
+        Region::new(
+            BlockPos::new(self.x * W, 0, self.z * W),
+            BlockPos::new(
+                (self.x + 1) * W - 1,
+                PLOT_BLOCK_HEIGHT - 1,
+                (self.z + 1) * W - 1,
+            ),
+        )
     }
 }
 
@@ -695,7 +697,7 @@ impl Plot {
         self.scoreboard
             .set_redpiler_options(&self.players, &options);
 
-        let bounds = self.world.get_corners();
+        let region = self.world.region();
         // TODO: use monitor
         let monitor = Default::default();
         let ticks = mem::take(&mut self.world.to_be_ticked);
@@ -704,7 +706,7 @@ impl Plot {
         thread::scope(|s| {
             let handle = s.spawn(|| {
                 self.redpiler
-                    .compile(&self.world, bounds, options, ticks, monitor)
+                    .compile(&self.world, region, options, ticks, monitor)
             });
             while !handle.is_finished() {
                 // We'll update the players so that they don't time out.
@@ -736,8 +738,8 @@ impl Plot {
     pub fn reset_redpiler(&mut self) {
         if self.redpiler.is_active() {
             debug!("Discarding redpiler");
-            let bounds = self.world.get_corners();
-            self.redpiler.reset(&mut self.world, bounds);
+            let region = self.world.region();
+            self.redpiler.reset(&mut self.world, region);
             self.scoreboard
                 .set_redpiler_state(&self.players, RedpilerState::Stopped);
             self.scoreboard

@@ -361,10 +361,10 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                     .alias("sel")
                     .permission("plots.select")
                     .executes(|ctx| {
-                        let corners = ctx.world().get_corners();
+                        let region = ctx.world().region();
                         let player = ctx.player_mut()?;
-                        player.worldedit_set_first_pos(corners.0);
-                        player.worldedit_set_second_pos(corners.1);
+                        player.worldedit_set_first_pos(region.min());
+                        player.worldedit_set_second_pos(region.max());
                         Ok(())
                     }),
             ),

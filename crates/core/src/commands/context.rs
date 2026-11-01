@@ -8,6 +8,7 @@ use crate::{
     plot::{Plot, PlotWorld, PLOT_BLOCK_HEIGHT},
     worldedit::{ray_trace_block, WorldEditUndo},
 };
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_commands::flag::{FlagValue, FlagValues};
 use mchprs_commands::parse::ParsedArgument;
@@ -209,10 +210,8 @@ impl<'a> ExecutionContext<'a> {
         first: BlockPos,
         second: BlockPos,
     ) -> Option<(BlockPos, BlockPos)> {
-        let (plot_min, plot_max) = self.plot.world.get_corners();
-        let min = first.min(second).max(plot_min);
-        let max = first.max(second).min(plot_max);
-        (min.x <= max.x && min.y <= max.y && min.z <= max.z).then_some((min, max))
+        let region = Region::new(first, second).intersection(self.plot.world.region())?;
+        Some((region.min(), region.max()))
     }
 
     pub(super) fn capture_undo_regions(

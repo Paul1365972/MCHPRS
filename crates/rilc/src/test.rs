@@ -51,13 +51,13 @@ fn run_test(
     update: bool,
     test_src: &mut StringReplacer,
 ) -> TestOutcome {
-    let Some((world, bounds)) = crate::load_world(test_path, &test.schematic_path) else {
+    let Some((world, region)) = crate::load_world(test_path, &test.schematic_path) else {
         return TestOutcome::Failed;
     };
 
     let input = CompilerInput {
         world: &world,
-        bounds,
+        region,
         ticks: &[],
     };
 
