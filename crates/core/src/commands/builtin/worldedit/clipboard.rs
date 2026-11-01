@@ -19,55 +19,41 @@ use mchprs_blocks::{
 use std::time::Instant;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
-    registry.register(
-        Command::new("/copy")
-            .alias("/c")
-            .permission("worldedit.clipboard.copy")
-            .require_plot_ownership()
-            .executes(|ctx| {
-                let (first_pos, second_pos) = ctx.get_selection()?;
+    registry.register(Command::new("/copy").alias("/c").executes(|ctx| {
+        let (first_pos, second_pos) = ctx.get_selection()?;
 
-                let start_time = Instant::now();
-                let origin = ctx.player()?.pos.block_pos();
-                let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
-                ctx.set_clipboard(clipboard)?;
+        let start_time = Instant::now();
+        let origin = ctx.player()?.pos.block_pos();
+        let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
+        ctx.set_clipboard(clipboard)?;
 
-                ctx.worldedit_message(&format!(
-                    "Your selection was copied. ({:?})",
-                    start_time.elapsed()
-                ))
-            }),
-    );
+        ctx.worldedit_message(&format!(
+            "Your selection was copied. ({:?})",
+            start_time.elapsed()
+        ))
+    }));
 
-    registry.register(
-        Command::new("/cut")
-            .alias("/x")
-            .permission("worldedit.clipboard.cut")
-            .require_plot_ownership()
-            .executes(|ctx| {
-                let (first_pos, second_pos) = ctx.get_selection()?;
+    registry.register(Command::new("/cut").alias("/x").executes(|ctx| {
+        let (first_pos, second_pos) = ctx.get_selection()?;
 
-                let origin = first_pos.min(second_pos);
-                ctx.capture_undo_regions([(first_pos, second_pos)], origin)?;
+        let origin = first_pos.min(second_pos);
+        ctx.capture_undo_regions([(first_pos, second_pos)], origin)?;
 
-                let start_time = Instant::now();
-                let origin = ctx.player()?.pos.block_pos();
-                let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
-                ctx.set_clipboard(clipboard)?;
-                clear_area(ctx.world_mut()?, first_pos, second_pos);
+        let start_time = Instant::now();
+        let origin = ctx.player()?.pos.block_pos();
+        let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
+        ctx.set_clipboard(clipboard)?;
+        clear_area(ctx.world_mut()?, first_pos, second_pos);
 
-                ctx.worldedit_message(&format!(
-                    "Your selection was cut. ({:?})",
-                    start_time.elapsed()
-                ))
-            }),
-    );
+        ctx.worldedit_message(&format!(
+            "Your selection was cut. ({:?})",
+            start_time.elapsed()
+        ))
+    }));
 
     registry.register(
         Command::new("/paste")
             .alias("/v")
-            .permission("worldedit.clipboard.paste")
-            .require_plot_ownership()
             .flag('a', "ignore-air", "Paste without air blocks")
             .flag('u', "update", "Update blocks after pasting")
             .flag('s', "select-region", "Select the pasted region")
@@ -79,7 +65,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/flip")
             .alias("/f")
-            .require_plot_ownership()
             .optional("direction", ArgumentType::Direction)
             .executes(|ctx| {
                 let direction = ctx.arg_or("direction", Direction::Me)?;
@@ -115,7 +100,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/rotate")
             .alias("/r")
-            .require_plot_ownership()
             .arg("angle", ArgumentType::integer(-360, 360))
             .executes(|ctx| {
                 let angle: i32 = ctx.arg("angle")?;

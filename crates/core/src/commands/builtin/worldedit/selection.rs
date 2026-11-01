@@ -15,8 +15,6 @@ use mchprs_blocks::BlockPos;
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/pos")
-            .permission("worldedit.selection.pos")
-            .require_plot_ownership()
             .syntax(opt([
                 arg("pos1", ArgumentType::BlockPos),
                 opt([arg("pos2", ArgumentType::BlockPos)]),
@@ -56,8 +54,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/pos1")
             .alias("/1")
-            .permission("worldedit.selection.pos")
-            .require_plot_ownership()
             .optional("coordinates", ArgumentType::BlockPos)
             .executes(|ctx| exec_pos(ctx, true)),
     );
@@ -65,40 +61,25 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/pos2")
             .alias("/2")
-            .permission("worldedit.selection.pos")
-            .require_plot_ownership()
             .optional("coordinates", ArgumentType::BlockPos)
             .executes(|ctx| exec_pos(ctx, false)),
     );
 
-    registry.register(
-        Command::new("/hpos1")
-            .alias("/h1")
-            .permission("worldedit.selection.hpos")
-            .require_plot_ownership()
-            .executes(|ctx| {
-                let pos = ctx.target_block(300.0)?;
-                set_pos(ctx, true, pos)
-            }),
-    );
+    registry.register(Command::new("/hpos1").alias("/h1").executes(|ctx| {
+        let pos = ctx.target_block(300.0)?;
+        set_pos(ctx, true, pos)
+    }));
 
-    registry.register(
-        Command::new("/hpos2")
-            .alias("/h2")
-            .permission("worldedit.selection.hpos")
-            .require_plot_ownership()
-            .executes(|ctx| {
-                let pos = ctx.target_block(300.0)?;
-                set_pos(ctx, false, pos)
-            }),
-    );
+    registry.register(Command::new("/hpos2").alias("/h2").executes(|ctx| {
+        let pos = ctx.target_block(300.0)?;
+        set_pos(ctx, false, pos)
+    }));
 
     registry.register(
         Command::new("/sel")
             .alias(";")
             .alias("/desel")
             .alias("/deselect")
-            .require_plot_ownership()
             .executes(|ctx| {
                 ctx.player_mut()?.worldedit_clear_pos();
                 Ok(())
@@ -143,8 +124,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/expand")
             .alias("/e")
-            .permission("worldedit.selection.expand")
-            .require_plot_ownership()
             .subcommand(Command::new("vert").executes(|ctx| {
                 let (first, second) = ctx.get_selection()?;
                 let (mut new_first, mut new_second) = (first, second);
@@ -169,8 +148,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/contract")
-            .permission("worldedit.selection.contract")
-            .require_plot_ownership()
             .optional("amount", ArgumentType::integer(1, 1000))
             .optional("reverseAmount", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::Direction)
@@ -179,8 +156,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/shift")
-            .permission("worldedit.selection.shift")
-            .require_plot_ownership()
             .optional("amount", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::Direction)
             .executes(|ctx| {

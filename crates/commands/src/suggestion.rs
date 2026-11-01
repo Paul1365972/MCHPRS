@@ -8,12 +8,8 @@ pub struct SuggestionTarget {
     pub path: Vec<NodeId>,
 }
 
-impl<A: Argument, E, M> Graph<A, E, M> {
-    pub fn suggestion_targets(
-        &self,
-        input: &str,
-        allowed: impl Fn(&M) -> bool,
-    ) -> Vec<SuggestionTarget> {
+impl<A: Argument, E> Graph<A, E> {
+    pub fn suggestion_targets(&self, input: &str) -> Vec<SuggestionTarget> {
         let mut targets = Vec::new();
         let mut pending = vec![(self.root(), Reader::new(input), Vec::new())];
         while let Some((parent, reader, path)) = pending.pop() {
@@ -27,9 +23,6 @@ impl<A: Argument, E, M> Graph<A, E, M> {
                     continue;
                 }
                 let node = self.node(id);
-                if !allowed(&node.metadata) {
-                    continue;
-                }
                 let mut next = reader;
                 let parsed = node.kind.parse(&mut next).is_ok();
                 if !parsed || next.peek() != Some(' ') {

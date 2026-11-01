@@ -1,4 +1,4 @@
-use crate::commands::{node::Policy, registry::CommandRegistry};
+use crate::commands::registry::CommandRegistry;
 use itertools::Itertools;
 use mchprs_commands::flag::Flag;
 use mchprs_commands::graph::{NodeId, NodeKind};
@@ -14,23 +14,15 @@ pub struct Help<'a> {
     pub flags: Vec<&'a Flag>,
 }
 
-pub fn generate_help<'a>(
-    registry: &'a CommandRegistry,
-    path: &[NodeId],
-    allowed: &impl Fn(&Policy) -> bool,
-) -> Help<'a> {
+pub fn generate_help<'a>(registry: &'a CommandRegistry, path: &[NodeId]) -> Help<'a> {
     fn collect<'a>(
         registry: &'a CommandRegistry,
         id: NodeId,
         prefix: String,
-        allowed: &impl Fn(&Policy) -> bool,
         output: &mut Help<'a>,
     ) {
         let id = registry.graph.node(id).redirect().unwrap_or(id);
         let node = registry.graph.node(id);
-        if !allowed(&node.metadata) {
-            return;
-        }
         if let Some(help) = registry.help.get(&id) {
             output
                 .usages
@@ -40,13 +32,7 @@ pub fn generate_help<'a>(
         for &child in node.children() {
             let node = registry.graph.node(child);
             if matches!(node.kind, NodeKind::Literal(_)) && node.redirect().is_none() {
-                collect(
-                    registry,
-                    child,
-                    format!("{prefix} {}", node.name()),
-                    allowed,
-                    output,
-                );
+                collect(registry, child, format!("{prefix} {}", node.name()), output);
             }
         }
     }
@@ -59,7 +45,7 @@ pub fn generate_help<'a>(
                 .map(|&id| registry.graph.node(id).name())
                 .join(" ")
         );
-        collect(registry, last, prefix, allowed, &mut help);
+        collect(registry, last, prefix, &mut help);
     }
     help.flags = help.flags.into_iter().unique().collect();
     help

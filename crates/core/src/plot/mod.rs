@@ -16,7 +16,6 @@ use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
 #[cfg(feature = "whitelist")]
 use crate::profile::PlayerProfile;
 use crate::server::{BroadcastMessage, Message, PrivMessage};
-use crate::utils::HyphenatedUUID;
 use anyhow::Error;
 use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
@@ -99,7 +98,6 @@ pub struct Plot {
     always_running: bool,
     pub auto_redpiler: bool,
 
-    owner: Option<u128>,
     scoreboard: Scoreboard,
 }
 
@@ -540,20 +538,6 @@ impl Plot {
         self.players[player_idx].last_chunk_z = chunk_z;
     }
 
-    fn can_interact_with_plot(&mut self, player: usize) -> bool {
-        let player = &mut self.players[player];
-        let allowed = match self.owner {
-            Some(owner) => {
-                owner == player.uuid || player.has_permission("plots.admin.interact.other")
-            }
-            None => player.has_permission("plots.admin.interact.unowned"),
-        };
-        if !allowed {
-            player.send_no_permission_message();
-        }
-        allowed
-    }
-
     fn handle_use_item_impl(&mut self, use_item_on: &SUseItemOn, player: usize) {
         let block_pos = BlockPos::new(use_item_on.x, use_item_on.y, use_item_on.z);
         let block_face = BlockFace::from_id(use_item_on.face as u32);
@@ -577,22 +561,16 @@ impl Plot {
             return;
         }
 
-        if let Some(item) = &item_in_hand {
-            let has_permission = self.players[player].has_permission("worldedit.selection.pos");
-            if item.item_type == (Item::WoodenAxe) && has_permission {
-                let same = self.players[player].worldedit_second_pos() == Some(block_pos);
-                if !same {
-                    self.players[player].worldedit_set_second_pos(block_pos);
-                }
-                cancel(self);
-                // FIXME: Because the client sends another packet after this for the left hand for
-                // most blocks, redpiler will get reset anyways.
-                return;
+        if let Some(item) = &item_in_hand
+            && item.item_type == Item::WoodenAxe
+        {
+            let same = self.players[player].worldedit_second_pos() == Some(block_pos);
+            if !same {
+                self.players[player].worldedit_set_second_pos(block_pos);
             }
-        }
-
-        if !self.can_interact_with_plot(player) {
             cancel(self);
+            // FIXME: Because the client sends another packet after this for the left hand for
+            // most blocks, redpiler will get reset anyways.
             return;
         }
 
@@ -673,22 +651,16 @@ impl Plot {
         let item_in_hand = self.players[player].inventory
             [self.players[player].selected_slot as usize + 36]
             .clone();
-        if let Some(item) = item_in_hand {
-            let has_permission = self.players[player].has_permission("worldedit.selection.pos");
-            if item.item_type == (Item::WoodenAxe) && has_permission {
-                self.send_block_corrections(&[block_pos]);
-                if let Some(pos) = self.players[player].worldedit_first_pos()
-                    && pos == block_pos
-                {
-                    return;
-                }
-                self.players[player].worldedit_set_first_pos(block_pos);
+        if let Some(item) = item_in_hand
+            && item.item_type == Item::WoodenAxe
+        {
+            self.send_block_corrections(&[block_pos]);
+            if let Some(pos) = self.players[player].worldedit_first_pos()
+                && pos == block_pos
+            {
                 return;
             }
-        }
-
-        if !self.can_interact_with_plot(player) {
-            self.send_block_corrections(&[block_pos]);
+            self.players[player].worldedit_set_first_pos(block_pos);
             return;
         }
 
@@ -768,10 +740,6 @@ impl Plot {
     fn world_send_interval(&self) -> Duration {
         Duration::try_from_secs_f64(1.0 / f64::from(self.world.world_send_rate.0))
             .unwrap_or(Duration::MAX)
-    }
-
-    pub fn owner(&self) -> Option<u128> {
-        self.owner
     }
 
     pub fn send_message(&self, message: Message) {
@@ -1297,7 +1265,6 @@ impl Plot {
             always_running,
             redpiler: None,
             timings: TimingsMonitor::new(tps),
-            owner: database::get_plot_owner(x, z).map(|s| s.parse::<HyphenatedUUID>().unwrap().0),
             scoreboard: Default::default(),
             world,
         }

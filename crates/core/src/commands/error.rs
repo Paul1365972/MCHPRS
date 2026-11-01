@@ -10,8 +10,6 @@ pub enum RuntimeError {
     DestinationOutsidePlot,
     #[error("No block in sight")]
     NoBlockInSight,
-    #[error("Plot ownership required")]
-    PlotOwnershipRequired,
     #[error("Make a region selection first.")]
     NoSelection,
     #[error("{position} position is outside plot bounds")]

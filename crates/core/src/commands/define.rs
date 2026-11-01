@@ -3,7 +3,7 @@ use crate::commands::{
     context::ExecutionContext,
     error::CommandResult,
     help::CommandHelp,
-    node::{Executor, Policy, RegisteredNode},
+    node::{Executor, RegisteredNode},
     registry::CommandRegistry,
 };
 use mchprs_commands::flag::Flag;
@@ -17,7 +17,6 @@ pub const FLAGS_ARGUMENT: &str = "flags";
 pub struct Command {
     name: String,
     aliases: Vec<String>,
-    policy: Policy,
     subcommands: Vec<Command>,
     syntax: Vec<Syntax>,
     flags: Vec<Flag>,
@@ -46,7 +45,6 @@ impl Command {
         Self {
             name: name.to_owned(),
             aliases: Vec::new(),
-            policy: Policy::default(),
             subcommands: Vec::new(),
             syntax: Vec::new(),
             flags: Vec::new(),
@@ -56,16 +54,6 @@ impl Command {
 
     pub fn alias(mut self, alias: &str) -> Self {
         self.aliases.push(alias.to_owned());
-        self
-    }
-
-    pub fn permission(mut self, permission: &str) -> Self {
-        self.policy.permissions.push(permission.to_owned());
-        self
-    }
-
-    pub fn require_plot_ownership(mut self) -> Self {
-        self.policy.requires_plot_ownership = true;
         self
     }
 
@@ -118,7 +106,7 @@ impl Command {
         }
         let id = registry.graph.insert(
             parent,
-            RegisteredNode::new(NodeKind::Literal(self.name), None, self.policy.clone()),
+            RegisteredNode::new(NodeKind::Literal(self.name), None),
         )?;
         for command in self.subcommands {
             command.register(registry, id)?;
@@ -160,7 +148,7 @@ impl Command {
             let executor = registry.graph.node(id).executor.clone();
             let alias_id = registry.graph.insert(
                 parent,
-                RegisteredNode::new(NodeKind::Literal(alias), executor, self.policy.clone()),
+                RegisteredNode::new(NodeKind::Literal(alias), executor),
             )?;
             registry.graph.redirect(alias_id, id)?;
         }

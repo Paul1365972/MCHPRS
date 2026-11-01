@@ -9,9 +9,9 @@ pub enum Syntax<A> {
 }
 
 impl<A: Argument> Syntax<A> {
-    pub fn register<E, M: Default + PartialEq>(
+    pub fn register<E>(
         self,
-        graph: &mut Graph<A, E, M>,
+        graph: &mut Graph<A, E>,
         parent: NodeId,
     ) -> Result<Vec<NodeId>, RegistrationError> {
         let mut registered = Vec::new();
@@ -29,7 +29,6 @@ impl<A: Argument> Syntax<A> {
                             parser: parser.clone(),
                         },
                         None,
-                        M::default(),
                     ),
                 )?;
             }

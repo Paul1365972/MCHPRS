@@ -1,9 +1,4 @@
-use crate::commands::{
-    argument::ClientArgument,
-    node::{CommandGraph, Policy},
-    registry::CommandRegistry,
-};
-use crate::player::Player;
+use crate::commands::{argument::ClientArgument, node::CommandGraph, registry::CommandRegistry};
 use mchprs_commands::graph::{NodeId, NodeKind};
 use mchprs_network::packets::{
     clientbound::{
@@ -17,21 +12,17 @@ const EXECUTABLE: i8 = 4;
 const REDIRECT: i8 = 8;
 const SUGGESTIONS: i8 = 16;
 
-struct Projection<'a, F> {
+struct Projection<'a> {
     graph: &'a CommandGraph,
-    allowed: F,
     nodes: Vec<CCommandsNode>,
     ids: FxHashMap<NodeId, i32>,
 }
 
-impl<F: Fn(&Policy) -> bool> Projection<'_, F> {
-    fn visit(&mut self, id: NodeId) -> Option<i32> {
+impl Projection<'_> {
+    fn visit(&mut self, id: NodeId) -> i32 {
         let node = self.graph.node(id);
-        if !(self.allowed)(&node.metadata) {
-            return None;
-        }
         if let Some(&index) = self.ids.get(&id) {
-            return Some(index);
+            return index;
         }
         let index = self.nodes.len() as i32;
         self.ids.insert(id, index);
@@ -82,7 +73,7 @@ impl<F: Fn(&Policy) -> bool> Projection<'_, F> {
         } else {
             node.children()
                 .iter()
-                .filter_map(|&child| self.visit(child))
+                .map(|&child| self.visit(child))
                 .collect()
         };
         // The vanilla client cancels its pending suggestion request when another sibling asks the server.
@@ -97,7 +88,7 @@ impl<F: Fn(&Policy) -> bool> Projection<'_, F> {
                 has_suggestions = true;
             }
         }
-        let redirect_node = node.redirect().and_then(|target| self.visit(target));
+        let redirect_node = node.redirect().map(|target| self.visit(target));
         if redirect_node.is_some() {
             flags |= REDIRECT;
         }
@@ -109,23 +100,20 @@ impl<F: Fn(&Policy) -> bool> Projection<'_, F> {
             parser,
             suggestions_type,
         };
-        Some(index)
+        index
     }
 }
 
 impl CommandRegistry {
-    pub(super) fn declare_commands(&self, allowed: impl Fn(&Policy) -> bool) -> CCommands {
+    pub(super) fn declare_commands(&self) -> CCommands {
         let mut projection = Projection {
             graph: &self.graph,
-            allowed: &allowed,
             nodes: Vec::new(),
             ids: FxHashMap::default(),
         };
-        let root = projection
-            .visit(self.graph.root())
-            .expect("The root must be accessible");
+        let root = projection.visit(self.graph.root());
         let mut children = Vec::new();
-        for (name, node) in self.visible_commands(&allowed) {
+        for (name, node) in self.visible_commands() {
             if let Some(id) = node {
                 children.push(projection.ids[&id]);
                 continue;
@@ -140,7 +128,7 @@ impl CommandRegistry {
                 suggestions_type: Some("minecraft:ask_server".to_owned()),
             });
             let index = projection.nodes.len() as i32;
-            let executable = self.dispatch(name, &allowed).is_ok();
+            let executable = self.dispatch(name).is_ok();
             projection.nodes.push(CCommandsNode {
                 flags: 1 | if executable { EXECUTABLE } else { 0 },
                 children: vec![tail],
@@ -158,8 +146,7 @@ impl CommandRegistry {
         }
     }
 
-    pub fn declare_commands_packet(&self, player: &Player) -> PacketEncoder {
-        self.declare_commands(|policy| policy.allows(player))
-            .encode()
+    pub fn declare_commands_packet(&self) -> PacketEncoder {
+        self.declare_commands().encode()
     }
 }

@@ -40,7 +40,6 @@ backtrace = { workspace = true }
 rusqlite = { workspace = true, features=["bundled"] }
 anyhow = { workspace = true }
 toml_edit = { workspace = true }
-mysql = { workspace = true }
 ureq = { workspace = true, features = ["json"], optional = true }
 itertools = { workspace = true }
 bincode = { workspace = true }

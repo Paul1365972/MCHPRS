@@ -1,8 +1,4 @@
-use crate::commands::{
-    define::Command,
-    help::CommandHelp,
-    node::{CommandGraph, Policy},
-};
+use crate::commands::{define::Command, help::CommandHelp, node::CommandGraph};
 use mchprs_commands::graph::NodeId;
 use mchprs_commands::reader::Span;
 use std::collections::BTreeMap;
@@ -64,10 +60,7 @@ impl Expansion {
 }
 
 impl CommandRegistry {
-    pub(super) fn visible_commands<'a>(
-        &'a self,
-        allowed: &'a impl Fn(&Policy) -> bool,
-    ) -> impl Iterator<Item = (&'a str, Option<NodeId>)> + 'a {
+    pub(super) fn visible_commands(&self) -> impl Iterator<Item = (&str, Option<NodeId>)> {
         let commands = self
             .graph
             .node(self.graph.root())
@@ -75,20 +68,15 @@ impl CommandRegistry {
             .iter()
             .filter_map(|&id| {
                 let node = self.graph.node(id);
-                (allowed(&node.metadata) && !self.aliases.contains_key(node.name()))
-                    .then_some((node.name(), Some(id)))
+                (!self.aliases.contains_key(node.name())).then_some((node.name(), Some(id)))
             });
-        let aliases = self.aliases.iter().filter_map(move |(name, template)| {
-            let target = template.split(' ').next().unwrap_or_default();
-            let id = self.graph.child(self.graph.root(), target)?;
-            allowed(&self.graph.node(id).metadata).then_some((name.as_str(), None))
-        });
+        let aliases = self.aliases.keys().map(|name| (name.as_str(), None));
         commands.chain(aliases)
     }
 
     pub(super) fn new() -> Self {
         Self {
-            graph: CommandGraph::new(Policy::default()),
+            graph: CommandGraph::default(),
             aliases: BTreeMap::new(),
             help: BTreeMap::new(),
         }

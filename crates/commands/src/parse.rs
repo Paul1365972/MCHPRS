@@ -86,13 +86,12 @@ impl<V, E> Parse<V, E> {
     }
 }
 
-impl<A: Argument, E: Clone, M> Graph<A, E, M> {
-    pub fn parse(&self, input: &str, allowed: impl Fn(&M) -> bool) -> Parse<A::Value, E> {
+impl<A: Argument, E: Clone> Graph<A, E> {
+    pub fn parse(&self, input: &str) -> Parse<A::Value, E> {
         self.parse_nodes(
             self.root(),
             Reader::new(input),
             Context::new(self.root(), 0),
-            &allowed,
             0,
         )
     }
@@ -102,7 +101,6 @@ impl<A: Argument, E: Clone, M> Graph<A, E, M> {
         parent: NodeId,
         reader: Reader<'_>,
         context: Context<A::Value, E>,
-        allowed: &impl Fn(&M) -> bool,
         depth: usize,
     ) -> Parse<A::Value, E> {
         let start = reader.cursor();
@@ -130,10 +128,6 @@ impl<A: Argument, E: Clone, M> Graph<A, E, M> {
         let mut potentials = Vec::new();
         for id in candidates {
             let node = self.node(id);
-            if !allowed(&node.metadata) {
-                continue;
-            }
-
             let mut reader = reader;
             let mut next = context.clone();
             match node.kind.parse(&mut reader) {
@@ -165,7 +159,6 @@ impl<A: Argument, E: Clone, M> Graph<A, E, M> {
                         target,
                         reader,
                         Context::new(target, reader.cursor()),
-                        allowed,
                         depth + 1,
                     );
                     next.child = Some(Box::new(child.context));
@@ -175,7 +168,7 @@ impl<A: Argument, E: Clone, M> Graph<A, E, M> {
                         errors: child.errors,
                     };
                 }
-                potentials.push(self.parse_nodes(id, reader, next, allowed, depth + 1));
+                potentials.push(self.parse_nodes(id, reader, next, depth + 1));
             } else {
                 potentials.push(Parse {
                     context: next,

@@ -1,6 +1,4 @@
-use crate::config::CONFIG;
 use crate::item_stack::ItemStack;
-use crate::permissions::{self, PlayerPermissionsCache};
 use crate::plot::PLOT_SCALE;
 use crate::utils::{self, HyphenatedUUID};
 use crate::worldedit::WorldEditUndo;
@@ -172,7 +170,6 @@ pub struct Player {
     /// Commands are stored so they can be handled after packets
     pub command_queue: Vec<String>,
     pub pending_command_suggestions: Vec<Receiver<CCommandSuggestionsResponse>>,
-    permissions_cache: Option<PlayerPermissionsCache>,
 }
 
 impl fmt::Debug for Player {
@@ -213,10 +210,6 @@ impl Player {
                 nbt,
             });
         }
-        let permissions_cache = CONFIG
-            .luckperms
-            .is_some()
-            .then(|| permissions::load_player_cache(uuid).unwrap());
         Player {
             uuid,
             username,
@@ -251,7 +244,6 @@ impl Player {
             worldedit_redo: Vec::new(),
             command_queue: Vec::new(),
             pending_command_suggestions: Vec::new(),
-            permissions_cache,
         }
     }
 
@@ -438,10 +430,6 @@ impl Player {
         });
     }
 
-    pub fn send_no_permission_message(&self) {
-        self.send_error_message("You do not have permission to perform this action.");
-    }
-
     /// Sends the player a light purple system message (`message` is not in json format)
     pub fn send_worldedit_message(&self, message: &str) {
         self.send_raw_system_message(
@@ -518,20 +506,6 @@ impl Player {
         }
         .encode();
         self.client.send_packet(&change_game_state);
-    }
-
-    pub fn has_permission(&self, node: &str) -> bool {
-        if let Some(cache) = &self.permissions_cache {
-            if let Some(val) = cache.get_node_val(node) {
-                val > 0
-            } else {
-                // Node is not in database
-                false
-            }
-        } else {
-            // Permissions is not enabled
-            true
-        }
     }
 
     pub fn open_container(&self, inventory: &[InventoryEntry], container_type: ContainerType) {

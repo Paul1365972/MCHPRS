@@ -41,8 +41,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             )
             .subcommand(
                 Command::new("load")
-                    .permission("worldedit.clipboard.load")
-                    .require_plot_ownership()
                     .arg("filename", ArgumentType::SchematicFile)
                     .executes(|ctx| {
                         let filename: String = ctx.arg("filename")?;
@@ -93,8 +91,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             )
             .subcommand(
                 Command::new("save")
-                    .permission("worldedit.clipboard.save")
-                    .require_plot_ownership()
                     .arg("filename", ArgumentType::Word)
                     .flag('f', "force-overwrite", "Overwrite existing file")
                     .executes(|ctx| {

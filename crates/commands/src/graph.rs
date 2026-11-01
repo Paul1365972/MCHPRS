@@ -49,20 +49,18 @@ impl<A: Argument> NodeKind<A> {
     }
 }
 
-pub struct Node<A, E, M> {
+pub struct Node<A, E> {
     pub kind: NodeKind<A>,
     pub executor: Option<E>,
-    pub metadata: M,
     pub(crate) children: Vec<NodeId>,
     pub(crate) redirect: Option<NodeId>,
 }
 
-impl<A, E, M> Node<A, E, M> {
-    pub fn new(kind: NodeKind<A>, executor: Option<E>, metadata: M) -> Self {
+impl<A, E> Node<A, E> {
+    pub fn new(kind: NodeKind<A>, executor: Option<E>) -> Self {
         Self {
             kind,
             executor,
-            metadata,
             children: Vec::new(),
             redirect: None,
         }
@@ -97,22 +95,24 @@ pub enum RegistrationError {
     RootRedirect,
 }
 
-pub struct Graph<A, E, M> {
-    pub(crate) nodes: Vec<Node<A, E, M>>,
+pub struct Graph<A, E> {
+    pub(crate) nodes: Vec<Node<A, E>>,
 }
 
-impl<A, E, M> Graph<A, E, M> {
-    pub fn new(metadata: M) -> Self {
+impl<A, E> Default for Graph<A, E> {
+    fn default() -> Self {
         Self {
-            nodes: vec![Node::new(NodeKind::Root, None, metadata)],
+            nodes: vec![Node::new(NodeKind::Root, None)],
         }
     }
+}
 
+impl<A, E> Graph<A, E> {
     pub fn root(&self) -> NodeId {
         NodeId(0)
     }
 
-    pub fn node(&self, id: NodeId) -> &Node<A, E, M> {
+    pub fn node(&self, id: NodeId) -> &Node<A, E> {
         &self.nodes[id.0]
     }
 
@@ -138,11 +138,11 @@ impl<A, E, M> Graph<A, E, M> {
     }
 }
 
-impl<A: Argument, E, M: PartialEq> Graph<A, E, M> {
+impl<A: Argument, E> Graph<A, E> {
     pub fn insert(
         &mut self,
         parent: NodeId,
-        node: Node<A, E, M>,
+        node: Node<A, E>,
     ) -> Result<NodeId, RegistrationError> {
         let parent_node = &self.nodes[parent.0];
         if matches!(&parent_node.kind, NodeKind::Argument { parser, .. } if parser.consumes_remaining())
@@ -161,10 +161,7 @@ impl<A: Argument, E, M: PartialEq> Graph<A, E, M> {
 
         if let Some(id) = self.child(parent, node.name()) {
             let existing = &mut self.nodes[id.0];
-            if existing.kind != node.kind
-                || existing.metadata != node.metadata
-                || existing.redirect.is_some()
-            {
+            if existing.kind != node.kind || existing.redirect.is_some() {
                 return Err(RegistrationError::Conflict(node.name().to_owned()));
             }
             if node.executor.is_some() {
