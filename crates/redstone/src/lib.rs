@@ -64,7 +64,7 @@ fn get_output_power(block: Block, world: &impl World, pos: BlockPos) -> u8 {
         | Block::StoneButton { powered, .. }
         | Block::Repeater(Repeater { powered, .. }) => bool_to_ss(powered),
         Block::Comparator(_) => match world.get_block_entity(pos) {
-            Some(BlockEntity::Comparator { output_strength }) => *output_strength,
+            Some(BlockEntity::Comparator { output_strength }) => output_strength.get(),
             _ => 0,
         },
         _ => 0,

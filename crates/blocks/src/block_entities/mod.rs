@@ -1,6 +1,7 @@
 #[cfg(feature = "nbt")]
 mod nbt_codec;
 
+use crate::signal_strength::SignalStrength;
 use mchprs_proc_macros::protocol_id;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -59,12 +60,12 @@ impl ContainerType {
         }
     }
 
-    pub fn items_needed_for_signal_strength(self, signal_strength: u8) -> usize {
+    pub fn items_needed_for_signal_strength(self, signal_strength: SignalStrength) -> usize {
         let slots = self.num_slots() as usize;
         match signal_strength {
-            0 => 0,
-            15 => slots * 64,
-            _ => ((32 * slots * signal_strength as usize) as f32 / 7.0 - 1.0).ceil() as usize,
+            SignalStrength::Zero => 0,
+            SignalStrength::Fifteen => slots * 64,
+            _ => ((32 * slots * signal_strength.get() as usize) as f32 / 7.0 - 1.0).ceil() as usize,
         }
     }
 
@@ -81,10 +82,12 @@ impl ContainerType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlockEntity {
     Comparator {
-        output_strength: u8,
+        #[serde(deserialize_with = "SignalStrength::deserialize_saturating")]
+        output_strength: SignalStrength,
     },
     Container {
-        comparator_override: u8,
+        #[serde(deserialize_with = "SignalStrength::deserialize_saturating")]
+        comparator_override: SignalStrength,
         inventory: Vec<InventoryEntry>,
         ty: ContainerType,
     },

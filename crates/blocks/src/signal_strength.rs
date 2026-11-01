@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 
 #[repr(u8)]
@@ -40,6 +40,17 @@ impl SignalStrength {
     #[inline]
     pub fn saturating_sub(self, amount: u8) -> Self {
         Self::try_from(self.get().saturating_sub(amount)).unwrap()
+    }
+
+    #[inline]
+    pub fn saturating_from(value: i32) -> Self {
+        Self::try_from(value.clamp(0, 15) as u32).unwrap()
+    }
+
+    pub fn deserialize_saturating<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
+        u8::deserialize(deserializer).map(|value| Self::saturating_from(value.into()))
     }
 }
 
