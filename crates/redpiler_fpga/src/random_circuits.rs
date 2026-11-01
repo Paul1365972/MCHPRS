@@ -1,4 +1,4 @@
-use crate::circuit::{Circuit, ComparatorMode, Kind, Link, Node, State};
+use crate::circuit::{Circuit, ComparatorMode, Kind, Link, Node, State, PULSE_PRIORITY};
 use crate::engine::Simulator;
 use crate::reference::Reference;
 use crate::verilator::VerilatorEngine;
@@ -58,57 +58,29 @@ fn is_input(kind: Kind) -> bool {
     matches!(kind, Kind::Lever | Kind::Button | Kind::PressurePlate)
 }
 
-fn maximum_delay(kind: Kind) -> u8 {
-    match kind {
-        Kind::Button => 10,
-        Kind::Repeater { delay, .. } => delay,
-        Kind::Lamp => 2,
-        _ => 1,
-    }
-}
-
-fn random_state(random: &mut Random, kind: Kind) -> State {
+fn random_state(random: &mut Random, kind: Kind, has_sides: bool) -> State {
     let mut state = State::default();
     match kind {
-        Kind::Constant => {
-            state.strength = random.strength();
-            state.powered = state.strength != 0;
-        }
+        Kind::Constant | Kind::Wire => state.strength = random.strength(),
         Kind::Comparator { .. } => {
             if random.chance(1, 2) {
                 state.strength = random.strength();
             }
-            state.powered = (state.strength != 0) != random.chance(1, 10);
-        }
-        Kind::Lamp => {
-            state.powered = random.chance(1, 2);
-            if random.chance(1, 10) {
-                state.strength = random.strength();
-            }
-        }
-        Kind::Trapdoor => {
-            state.powered = random.chance(1, 2);
-            state.open = state.powered != random.chance(1, 5);
-        }
-        Kind::Wire => {
-            state.strength = random.strength();
-            state.powered = state.strength != 0;
         }
         _ => {
-            state.powered = random.chance(1, 2);
-            state.strength = if random.chance(1, 10) {
-                random.strength()
-            } else if state.powered {
-                15
-            } else {
-                0
-            };
-            state.locked = matches!(kind, Kind::Repeater { .. }) && random.chance(1, 4);
+            state.set_powered(random.chance(1, 2));
+            state.locked =
+                matches!(kind, Kind::Repeater { .. }) && has_sides && random.chance(1, 4);
         }
     }
-    if kind.is_timed() && random.chance(1, 4) {
-        state.delay = 1 + random.below(usize::from(maximum_delay(kind)) + 1) as u8;
-        state.priority = random.below(4) as u8;
+    if let Some(delay) = kind.delay().filter(|_| random.chance(1, 4)) {
+        state.delay = 1 + random.below(usize::from(delay)) as u8;
+        state.priority = if kind.has_pulse_countdown() && random.chance(1, 2) {
+            PULSE_PRIORITY
+        } else {
+            kind.priority(state.is_powered())
+                .expect("timed nodes have a priority")
+        };
     }
     state
 }
@@ -124,7 +96,7 @@ fn random_links(random: &mut Random, kinds: &[Kind], target: usize, count: usize
                 5..=7 => 1 + random.below(3) as u8,
                 _ => random.strength(),
             };
-            (kinds[source] != Kind::Wire).then_some(Link {
+            (kinds[source].drives_links() && kinds[source] != Kind::Wire).then_some(Link {
                 source,
                 attenuation,
             })
@@ -147,11 +119,13 @@ fn random_circuit(seed: u64, count: usize) -> Circuit {
                 Kind::Wire => (1 + random.below(5), 0),
                 _ => (1 + random.below(3), 0),
             };
+            let inputs = random_links(&mut random, &kinds, index, inputs);
+            let sides = random_links(&mut random, &kinds, index, sides);
             Node {
                 kind,
-                initial: random_state(&mut random, kind),
-                inputs: random_links(&mut random, &kinds, index, inputs),
-                sides: random_links(&mut random, &kinds, index, sides),
+                initial: random_state(&mut random, kind, !sides.is_empty()),
+                inputs,
+                sides,
                 is_input: is_input(kind),
                 is_output: matches!(kind, Kind::Lamp | Kind::Trapdoor),
             }

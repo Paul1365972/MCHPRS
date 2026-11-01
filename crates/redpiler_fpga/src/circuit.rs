@@ -1,5 +1,6 @@
 mod lower;
 mod strengths;
+mod validate;
 
 pub(crate) use lower::priority;
 use std::io;
@@ -32,22 +33,60 @@ pub enum Kind {
 }
 
 impl Kind {
+    pub(crate) fn delay(self) -> Option<u8> {
+        match self {
+            Kind::Button => Some(10),
+            Kind::Torch | Kind::Comparator { .. } => Some(1),
+            Kind::Repeater { delay, .. } => Some(delay),
+            Kind::Lamp => Some(2),
+            _ => None,
+        }
+    }
+
     pub(crate) fn is_timed(self) -> bool {
+        self.delay().is_some()
+    }
+
+    /// A repeater that does not face a diode schedules High when it will turn on and Higher when
+    /// it will turn off, and its output only changes when it fires, so its pending priority
+    /// follows its output.
+    pub(crate) fn priority(self, powered: bool) -> Option<u8> {
+        match self {
+            Kind::Button | Kind::Torch | Kind::Lamp => Some(3),
+            Kind::Comparator { facing_diode, .. } => Some(if facing_diode { 2 } else { 3 }),
+            Kind::Repeater {
+                facing_diode: true, ..
+            } => Some(0),
+            Kind::Repeater { .. } => Some(if powered { 1 } else { 2 }),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn has_pulse_countdown(self) -> bool {
         matches!(
             self,
-            Kind::Button
-                | Kind::Torch
-                | Kind::Repeater { .. }
-                | Kind::Comparator { .. }
-                | Kind::Lamp
+            Kind::Repeater {
+                facing_diode: true,
+                ..
+            }
         )
     }
 
-    pub(crate) fn has_boolean_output(self) -> bool {
+    pub(crate) fn has_boolean_power(self) -> bool {
         matches!(
             self,
-            Kind::Lever | Kind::Button | Kind::PressurePlate | Kind::Torch | Kind::Repeater { .. }
+            Kind::Lever
+                | Kind::Button
+                | Kind::PressurePlate
+                | Kind::Torch
+                | Kind::Repeater { .. }
+                | Kind::Lamp
+                | Kind::Trapdoor
         )
+    }
+
+    pub(crate) fn drives_links(self) -> bool {
+        !matches!(self, Kind::Lamp | Kind::Trapdoor)
     }
 
     pub(crate) fn observes_inputs(self) -> bool {
@@ -71,24 +110,22 @@ pub(crate) struct Snapshot {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct State {
     pub strength: u8,
-    pub powered: bool,
-    pub open: bool,
     pub locked: bool,
     pub delay: u8,
     pub priority: u8,
 }
 
 impl State {
-    pub fn encode(self) -> u16 {
-        assert!(self.strength <= 15 && self.delay <= 15 && self.priority <= 3);
-        u16::from(self.strength)
-            | (u16::from(self.powered) << 4)
-            | (u16::from(self.locked) << 5)
-            | (u16::from(self.delay) << 6)
-            | (u16::from(self.priority) << 10)
-            | (u16::from(self.open) << 12)
+    pub fn is_powered(self) -> bool {
+        self.strength != 0
+    }
+
+    pub(crate) fn set_powered(&mut self, powered: bool) {
+        self.strength = if powered { 15 } else { 0 };
     }
 }
+
+pub(crate) const PULSE_PRIORITY: u8 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Link {
@@ -125,26 +162,6 @@ impl Circuit {
         self.identity
     }
 
-    pub(crate) fn priorities(&self, index: usize) -> Vec<u8> {
-        let node = &self.nodes[index];
-        let mut used = [false; 4];
-        match node.kind {
-            Kind::Button | Kind::Torch | Kind::Lamp => used[3] = true,
-            Kind::Comparator { facing_diode, .. } => used[if facing_diode { 2 } else { 3 }] = true,
-            Kind::Repeater { facing_diode, .. } => {
-                used[1] = true;
-                used[if facing_diode { 0 } else { 2 }] = true;
-            }
-            _ => return Vec::new(),
-        }
-        if node.initial.delay != 0 {
-            used[usize::from(node.initial.priority)] = true;
-        }
-        (0..4)
-            .filter(|&priority| used[usize::from(priority)])
-            .collect()
-    }
-
     pub(crate) fn io_nodes(&self) -> Vec<usize> {
         self.nodes
             .iter()
@@ -162,56 +179,6 @@ impl Circuit {
         circuit.validate()?;
         circuit.identity = circuit.fingerprint();
         Ok(circuit)
-    }
-
-    fn validate(&self) -> io::Result<()> {
-        for (index, node) in self.nodes.iter().enumerate() {
-            if node.initial.strength > 15 || node.initial.delay > 15 || node.initial.priority > 3 {
-                return Err(invalid(format!("node {index}: invalid state")));
-            }
-            if node.initial.open && node.kind != Kind::Trapdoor {
-                return Err(invalid(format!(
-                    "node {index}: only trapdoors can have an open state"
-                )));
-            }
-            match node.kind {
-                Kind::Repeater { delay, .. } if !(1..=15).contains(&delay) => {
-                    return Err(invalid(format!(
-                        "node {index}: repeater delay must be 1..15"
-                    )))
-                }
-                Kind::Comparator {
-                    far_input: Some(strength),
-                    ..
-                } if strength > 15 => {
-                    return Err(invalid(format!(
-                        "node {index}: comparator far input exceeds 15"
-                    )))
-                }
-                _ => {}
-            }
-            for link in node.inputs.iter().chain(&node.sides) {
-                let source = self
-                    .nodes
-                    .get(link.source)
-                    .ok_or_else(|| invalid(format!("node {index}: link source is absent")))?;
-                if link.attenuation > 15 {
-                    return Err(invalid(format!("node {index}: attenuation exceeds 15")));
-                }
-                if source.kind == Kind::Wire {
-                    return Err(invalid(format!(
-                        "node {index}: wire source {} violates the frontend leaf-wire invariant",
-                        link.source
-                    )));
-                }
-            }
-            if node.kind == Kind::Wire && !node.sides.is_empty() {
-                return Err(invalid(format!(
-                    "node {index}: wire cannot have side inputs"
-                )));
-            }
-        }
-        Ok(())
     }
 
     fn fingerprint(&self) -> u64 {
@@ -249,7 +216,13 @@ impl Circuit {
                 Kind::Constant => [9, 0, 0, 0],
             };
             feed(&tag);
-            feed(&node.initial.encode().to_le_bytes());
+            let initial = node.initial;
+            feed(&[
+                initial.strength,
+                u8::from(initial.locked),
+                initial.delay,
+                initial.priority,
+            ]);
             feed(&[u8::from(node.is_input), u8::from(node.is_output)]);
             for links in [&node.inputs, &node.sides] {
                 feed(&(links.len() as u64).to_le_bytes());

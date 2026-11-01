@@ -87,14 +87,14 @@ impl Circuit {
         let pending = node.kind.is_timed() && node.initial.delay != 0;
         let binary = |on: bool, off: bool| (if off { OFF } else { 0 }) | (if on { ON } else { 0 });
         match node.kind {
-            Kind::Constant | Kind::Trapdoor => 0,
+            Kind::Constant => 0,
             Kind::Lever | Kind::Button | Kind::PressurePlate => OFF | ON,
             Kind::Torch => binary(can_be_off, can_be_on),
+            Kind::Lamp | Kind::Trapdoor => binary(can_be_on, can_be_off),
             Kind::Repeater { .. } => binary(can_be_on || pending, can_be_off || pending),
             Kind::Comparator {
                 mode, far_input, ..
             } => comparator(mode, far_input, input, strongest(&node.sides, strengths)),
-            Kind::Lamp => OFF,
             Kind::Wire => input,
         }
     }

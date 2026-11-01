@@ -3,6 +3,7 @@ mod circuit;
 mod engine;
 #[cfg(test)]
 mod random_circuits;
+mod readback;
 mod reference;
 mod registers;
 mod rtl;

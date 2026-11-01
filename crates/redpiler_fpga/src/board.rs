@@ -4,7 +4,7 @@ mod toolchain;
 use self::device::{Command, Device};
 use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
-use crate::registers::Readback;
+use crate::readback::Readback;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

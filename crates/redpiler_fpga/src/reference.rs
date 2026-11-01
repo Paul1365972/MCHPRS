@@ -1,9 +1,11 @@
 mod aggregate;
+mod settle;
 mod timers;
 
 use self::aggregate::Aggregate;
+use self::settle::{comparator, settle_node, Schedule};
 use self::timers::Timers;
-use crate::circuit::{Circuit, ComparatorMode, Kind, Link, Snapshot, State};
+use crate::circuit::{Circuit, Kind, Snapshot, State};
 use crate::engine::Simulator;
 use std::io;
 
@@ -13,6 +15,8 @@ struct Consumer {
     attenuation: u8,
     side: bool,
 }
+
+pub(crate) use self::settle::is_initially_settled;
 
 pub(crate) struct Reference {
     kinds: Vec<Kind>,
@@ -25,113 +29,6 @@ pub(crate) struct Reference {
     affected: Vec<usize>,
     affected_flags: Vec<bool>,
     ticks: u64,
-}
-
-fn comparator(mode: ComparatorMode, far_input: Option<u8>, input: u8, side: u8) -> u8 {
-    let rear = if input < 15 {
-        far_input.unwrap_or(input)
-    } else {
-        input
-    };
-    match mode {
-        ComparatorMode::Compare if rear >= side => rear,
-        ComparatorMode::Compare => 0,
-        ComparatorMode::Subtract => rear.saturating_sub(side),
-    }
-}
-
-fn powered(state: &mut State, value: bool) {
-    state.powered = value;
-    state.strength = if value { 15 } else { 0 };
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Schedule {
-    delay: u8,
-    priority: u8,
-}
-
-fn settle_node(
-    kind: Kind,
-    mut state: State,
-    input: u8,
-    side: u8,
-    pending: bool,
-) -> (State, Option<Schedule>) {
-    let schedule = |delay, priority| Some(Schedule { delay, priority });
-    let schedule = match kind {
-        Kind::Wire => {
-            state.strength = input;
-            None
-        }
-        Kind::Repeater {
-            delay,
-            facing_diode,
-        } => {
-            state.locked = side != 0;
-            if !state.locked && !pending && state.powered != (input != 0) {
-                let priority = if facing_diode {
-                    0
-                } else if input == 0 {
-                    1
-                } else {
-                    2
-                };
-                schedule(delay, priority)
-            } else {
-                None
-            }
-        }
-        Kind::Torch if !pending && state.powered != (input == 0) => schedule(1, 3),
-        Kind::Comparator {
-            mode,
-            far_input,
-            facing_diode,
-        } if !pending && comparator(mode, far_input, input, side) != state.strength => {
-            schedule(1, if facing_diode { 2 } else { 3 })
-        }
-        Kind::Lamp if state.powered && input == 0 && !pending => schedule(2, 3),
-        Kind::Lamp if !state.powered && input != 0 => {
-            state.powered = true;
-            None
-        }
-        Kind::Trapdoor if state.powered != (input != 0) => {
-            state.powered = input != 0;
-            state.open = state.powered;
-            None
-        }
-        _ => None,
-    };
-    (state, schedule)
-}
-
-/// Settling a node whose inputs did not change leaves a settled node unchanged, and firing leaves
-/// every node settled, so a node that starts settled can be settled on every clock instead of only
-/// when an input changes.
-pub(crate) fn is_initially_settled(circuit: &Circuit, index: usize) -> bool {
-    let nodes = circuit.nodes();
-    let node = &nodes[index];
-    let strongest = |links: &[Link]| {
-        links
-            .iter()
-            .map(|link| {
-                nodes[link.source]
-                    .initial
-                    .strength
-                    .saturating_sub(link.attenuation)
-            })
-            .max()
-            .unwrap_or(0)
-    };
-    let pending = node.kind.is_timed() && node.initial.delay != 0;
-    let settled = settle_node(
-        node.kind,
-        node.initial,
-        strongest(&node.inputs),
-        strongest(&node.sides),
-        pending,
-    );
-    settled == (node.initial, None)
 }
 
 impl Reference {
@@ -191,10 +88,10 @@ impl Reference {
         })?;
         let mut state = self.states[index];
         match kind {
-            Kind::Lever | Kind::PressurePlate => powered(&mut state, value),
+            Kind::Lever | Kind::PressurePlate => state.set_powered(value),
             Kind::Button => {
-                if value && !state.powered {
-                    powered(&mut state, true);
+                if value && !state.is_powered() {
+                    state.set_powered(true);
                     self.schedule(index, 10, 3);
                 }
             }
@@ -272,27 +169,21 @@ impl Reference {
         let mut state = self.states[index];
         match self.kinds[index] {
             Kind::Repeater { delay, .. } if !state.locked => {
-                if state.powered && input == 0 {
-                    powered(&mut state, false);
-                } else if !state.powered {
-                    powered(&mut state, true);
+                if state.is_powered() && input == 0 {
+                    state.set_powered(false);
+                } else if !state.is_powered() {
+                    state.set_powered(true);
                     if input == 0 {
                         self.schedule(index, delay, 1);
                     }
                 }
             }
-            Kind::Torch if state.powered != (input == 0) => powered(&mut state, input == 0),
+            Kind::Torch if state.is_powered() != (input == 0) => state.set_powered(input == 0),
             Kind::Comparator {
                 mode, far_input, ..
-            } => {
-                let strength = comparator(mode, far_input, input, side);
-                if strength != state.strength {
-                    state.strength = strength;
-                    state.powered = strength != 0;
-                }
-            }
-            Kind::Lamp if state.powered && input == 0 => powered(&mut state, false),
-            Kind::Button if state.powered => powered(&mut state, false),
+            } => state.strength = comparator(mode, far_input, input, side),
+            Kind::Lamp if state.is_powered() && input == 0 => state.set_powered(false),
+            Kind::Button if state.is_powered() => state.set_powered(false),
             _ => {}
         }
         self.commit(index, state);

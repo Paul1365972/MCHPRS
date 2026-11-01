@@ -34,9 +34,7 @@ impl Circuit {
                     kind,
                     initial: State {
                         strength: node.state.power.get(),
-                        powered: node.state.is_powered(),
                         locked: node.state.repeater_locked,
-                        open: kind == Kind::Trapdoor && node.state.is_powered(),
                         ..State::default()
                     },
                     inputs,

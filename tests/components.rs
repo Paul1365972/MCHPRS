@@ -208,7 +208,7 @@ fn pending_repeater_pulses_without_input(backend: TestBackend) {
     let mut world = TestWorld::new(1, 1, 1);
     make_repeater(&mut world, repeater_pos, 1, BlockDirection::West);
     world.set_block(trapdoor_pos, trapdoor());
-    world.schedule_tick(repeater_pos, 1, TickPriority::Higher);
+    world.schedule_tick(repeater_pos, 1, TickPriority::High);
 
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(trapdoor_pos, false);

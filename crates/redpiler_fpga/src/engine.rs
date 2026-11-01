@@ -35,7 +35,7 @@ impl<S: Simulator> PhaseEngine<S> {
             levers: circuit
                 .nodes()
                 .iter()
-                .map(|node| node.initial.powered)
+                .map(|node| node.initial.is_powered())
                 .collect(),
             reported: circuit.nodes().iter().map(|node| node.initial).collect(),
             ticks_per_second: 0.0,
@@ -51,12 +51,7 @@ impl<S: Simulator> PhaseEngine<S> {
         changes.states.push((
             NodeId::new(node),
             NodeState {
-                power: match self.kinds[node] {
-                    Kind::Comparator { .. } | Kind::Wire => {
-                        SignalStrength::try_from(state.strength).expect("strengths are 0..=15")
-                    }
-                    _ => state.powered.into(),
-                },
+                power: SignalStrength::try_from(state.strength).expect("strengths are 0..=15"),
                 repeater_locked: state.locked,
                 pending_tick: false,
             },
@@ -64,8 +59,8 @@ impl<S: Simulator> PhaseEngine<S> {
     }
 }
 
-fn shown(state: State) -> (bool, bool, u8) {
-    (state.powered, state.locked, state.strength)
+fn shown(state: State) -> (bool, u8) {
+    (state.locked, state.strength)
 }
 
 impl<S: Simulator> Engine for PhaseEngine<S> {
