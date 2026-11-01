@@ -1,3 +1,4 @@
+use crate::OVERWORLD_MIN_Y;
 use anyhow::Result;
 use fastnbt::SerOpts;
 use flate2::write::GzEncoder;
@@ -223,7 +224,7 @@ pub fn write_level_dat(level_name: &str, output_path: &Path) -> Result<()> {
         was_modded: false,
         border_warning_time: 15.0,
         wandering_trader_spawn_chance: 25,
-        spawn_y: 100,
+        spawn_y: 100 + OVERWORLD_MIN_Y,
         spawn_z: 0,
         border_size_lerp_time: 0,
         raining: false,
@@ -252,7 +253,7 @@ pub fn write_level_dat(level_name: &str, output_path: &Path) -> Result<()> {
             data_version: MC_DATA_VERSION,
             sleep_timer: 0,
             xp_p: 0.0,
-            pos: vec![100.0, 100.0, 100.0],
+            pos: vec![100.0, f64::from(100 + OVERWORLD_MIN_Y), 100.0],
             health: 20.0,
             hurt_time: 0,
             fall_flying: false,

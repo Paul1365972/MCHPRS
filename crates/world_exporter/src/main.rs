@@ -7,6 +7,8 @@ use clap::Parser;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+const OVERWORLD_MIN_Y: i32 = -64;
+
 /// MCHPRS world export tool
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -22,7 +24,10 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let now_utc: DateTime<Utc> = Utc::now();
-    let level_name = format!("MCHPRS World Export {}", now_utc);
+    let level_name = format!(
+        "MCHPRS World Export {}",
+        now_utc.format("%Y-%m-%d_%H-%M-%S%.f")
+    );
     let output_path = Path::new(&args.output_path).join(&level_name);
     fs::create_dir(&output_path)?;
 
