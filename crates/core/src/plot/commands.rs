@@ -8,10 +8,10 @@ use mchprs_network::packets::clientbound::{
     CCommands, CCommandsNode as Node, CDeclareCommandsNodeParser as Parser, ClientBoundPacket,
 };
 use mchprs_network::packets::PacketEncoder;
+use mchprs_network::text::TextComponent;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::CompilerOptions;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use mchprs_text::TextComponent;
 use std::ops::Add;
 use std::str::FromStr;
 use std::sync::LazyLock;

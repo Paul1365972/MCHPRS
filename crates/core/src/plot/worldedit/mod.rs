@@ -11,7 +11,18 @@ use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::{CCommandsNode, CDeclareCommandsNodeParser};
 use mchprs_schematic::{create_clipboard, WorldEditClipboard};
-use mchprs_utils::map;
+macro_rules! map(
+    { $($key:expr => $value:expr),+ } => {
+        {
+            let mut m = ::std::collections::HashMap::new();
+            $(
+                m.insert($key.into(), $value);
+            )+
+            m
+        }
+     };
+);
+
 use mchprs_world::storage::PalettedBitBuffer;
 use mchprs_world::{for_each_block_mut_optimized, World};
 use rand::RngExt;

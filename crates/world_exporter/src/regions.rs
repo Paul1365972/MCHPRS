@@ -3,7 +3,6 @@ use anyhow::Result;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use mchprs_save_data::plot_data::{ChunkData, PlotData};
-use mchprs_utils::map;
 use mchprs_world::storage::{ChunkSection, PalettedBitBuffer};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use std::collections::HashMap;
@@ -36,17 +35,20 @@ fn encode_section(section: &ChunkSection) -> HashMap<String, nbt::Value> {
             .iter()
             .map(|(name, val)| (name.to_string(), nbt::Value::String(val.to_string())))
             .collect();
-        let entry = nbt::Value::Compound(map! {
-            "Name" => nbt::Value::String(name.to_string()),
-            "Properties" => nbt::Value::Compound(props)
-        });
+        let entry = nbt::Value::Compound(HashMap::from([
+            ("Name".to_owned(), nbt::Value::String(name.to_string())),
+            ("Properties".to_owned(), nbt::Value::Compound(props)),
+        ]));
         palette.push(entry);
     }
 
-    map! {
-        "palette" => nbt::Value::List(palette),
-        "data" => nbt::Value::LongArray(buffer.data().iter().map(|val| *val as i64).collect())
-    }
+    HashMap::from([
+        ("palette".to_owned(), nbt::Value::List(palette)),
+        (
+            "data".to_owned(),
+            nbt::Value::LongArray(buffer.data().iter().map(|val| *val as i64).collect()),
+        ),
+    ])
 }
 
 fn serialize_chunk(chunk_x: i32, chunk_z: i32, chunk: ChunkData) -> Result<Vec<u8>> {
@@ -81,12 +83,11 @@ fn serialize_chunk(chunk_x: i32, chunk_z: i32, chunk: ChunkData) -> Result<Vec<u
         let block_states = if section.block_count() != 0 {
             encode_section(section)
         } else {
-            let air = nbt::Value::Compound(map! {
-                "Name" => nbt::Value::String("minecraft:air".to_string())
-            });
-            map! {
-                "palette" => nbt::Value::List(vec![air])
-            }
+            let air = nbt::Value::Compound(HashMap::from([(
+                "Name".to_owned(),
+                nbt::Value::String("minecraft:air".to_string()),
+            )]));
+            HashMap::from([("palette".to_owned(), nbt::Value::List(vec![air]))])
         };
         section_nbt.insert(
             "block_states".to_string(),
