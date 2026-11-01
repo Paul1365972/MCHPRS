@@ -33,6 +33,15 @@ cargo build --release
 
 Once complete, the optimized executable will be located at `./target/release/mchprs` or `./target/release/mchprs.exe` depending on your operating system.
 
+### Features
+
+| Feature | Adds |
+| --- | --- |
+| `whitelist` | `/whitelist`, and `whitelist = true` in `Config.toml` |
+
+`cargo build --release --features whitelist` enables whitelist support.
+Prebuilt releases have it enabled, and so does the image the `Dockerfile` builds.
+
 ## Running
 
 | Path | Content |
@@ -55,7 +64,7 @@ The following options are available at the toplevel (under no header):
 | `chat_format` | How to format chat message interpolating `username` and `message` with curly braces | `<{username}> {message}` |
 | `max_players` | Maximum number of simultaneous players | `99999` |
 | `view_distance` | Maximal distance (in chunks) between players and loaded chunks | `8` |
-| `whitelist` | Whether or not the whitelist (in `whitelist.json`) should be enabled | `false` |
+| `whitelist` | Whether or not the whitelist (in `whitelist.json`) should be enabled. Requires the [`whitelist` feature](#features). | `false` |
 | `schemati` | Mimic the verification and directory layout used by the Open Redstone Engineers [Schemati plugin](https://github.com/OpenRedstoneEngineers/Schemati) | `false` |
 | `block_in_hitbox` | Allow placing blocks inside of players (hitbox logic is simplified) | `true` |
 | `autosave_interval_seconds` | Time between plot autosaves (in seconds) | `0` (disabled) |

@@ -1,3 +1,4 @@
+#[cfg(feature = "whitelist")]
 use crate::commands::argument_parser::WordParser;
 use crate::commands::argument_parser::{
     ContainerParser, FloatParser, IntegerParser, PlayerParser, PositionParser,
@@ -12,6 +13,7 @@ use crate::player::{Gamemode, PlayerPos};
 use crate::server::{get_version_string, Message};
 use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::ContainerType;
+#[cfg(feature = "whitelist")]
 use mchprs_network::PlayerPacketSender;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use std::time::Instant;
@@ -102,6 +104,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
         exec_container(ctx, container_type, power)
     }));
 
+    #[cfg(feature = "whitelist")]
     {
         let mut add = Command::new("add");
         let added = add.required("username", WordParser);
