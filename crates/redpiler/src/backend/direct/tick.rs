@@ -6,7 +6,10 @@ impl DirectBackend {
     #[inline(never)]
     pub fn tick_node(&mut self, node_id: NodeId) {
         let node = &mut self.nodes[node_id];
-        node.pending_tick = false;
+        // Lamps clear their pending tick when it is collected, see `DirectBackend::tick`
+        if !matches!(node.ty, NodeType::Lamp) {
+            node.pending_tick = false;
+        }
 
         match node.ty {
             NodeType::Repeater { delay, .. } => {

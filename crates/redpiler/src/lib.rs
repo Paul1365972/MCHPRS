@@ -153,11 +153,14 @@ impl Compiler {
         world: &W,
         bounds: (BlockPos, BlockPos),
         options: CompilerOptions,
-        ticks: Vec<TickEntry>,
+        mut ticks: Vec<TickEntry>,
         monitor: Arc<TaskMonitor>,
     ) {
         debug!("Starting compile");
         let start = Instant::now();
+
+        // A tick scheduled by a block that has since been replaced would never run
+        ticks.retain(|entry| entry.is_for(world.get_block(entry.pos)));
 
         let input = CompilerInput {
             world,

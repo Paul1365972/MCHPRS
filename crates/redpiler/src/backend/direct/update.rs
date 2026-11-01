@@ -64,7 +64,7 @@ pub(super) fn update_node(
         NodeType::Lamp => {
             let should_be_lit = node.default_inputs.is_powered();
             let lit = node.is_powered();
-            if lit && !should_be_lit {
+            if lit && !should_be_lit && !node.pending_tick {
                 schedule_tick(scheduler, node_id, node, 2, TickPriority::Normal);
             } else if !lit && should_be_lit {
                 node.set_powered(true);

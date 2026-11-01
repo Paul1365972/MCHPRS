@@ -1,12 +1,13 @@
 mod fixer;
 mod v2_to_v3;
+mod v3_to_v4;
 
 use self::fixer::FixInfo;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::BlockPos;
 use mchprs_world::storage::{Chunk, ChunkSection};
-use mchprs_world::TickEntry;
+use mchprs_world::TickPriority;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -20,7 +21,8 @@ use thiserror::Error;
 /// 1: Add world send rate
 /// 2: Update to MC 1.20.4
 /// 3: Change Tps and WorldSendRate to support real values (f32)
-pub const VERSION: u32 = 3;
+/// 4: Save the block each pending tick is for
+pub const VERSION: u32 = 4;
 
 #[derive(Error, Debug)]
 pub enum PlotLoadError {
@@ -163,7 +165,15 @@ pub struct PlotData {
     pub tps: Tps,
     pub world_send_rate: WorldSendRate,
     pub chunk_data: Vec<ChunkData>,
-    pub pending_ticks: Vec<TickEntry>,
+    pub pending_ticks: Vec<SavedTick>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavedTick {
+    pub ticks_left: u32,
+    pub priority: TickPriority,
+    pub position: BlockPos,
+    pub block_id: u32,
 }
 
 impl PlotData {

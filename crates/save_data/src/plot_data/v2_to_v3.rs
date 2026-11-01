@@ -1,8 +1,8 @@
 //! Migration from version 2 to version 3, which turned Tps and WorldSendRate from u32 into f32
 
-use super::{ChunkData, PlotData, PlotLoadError, Tps, WorldSendRate, PLOT_MAGIC};
+use super::v3_to_v4::{PlotDataV3, TickEntryV3};
+use super::{ChunkData, PlotLoadError, Tps, WorldSendRate, PLOT_MAGIC};
 use byteorder::{LittleEndian, ReadBytesExt};
-use mchprs_world::TickEntry;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::Read;
@@ -23,10 +23,10 @@ struct PlotDataV2 {
     tps: TpsV2,
     world_send_rate: WorldSendRateV2,
     chunk_data: Vec<ChunkData>,
-    pending_ticks: Vec<TickEntry>,
+    pending_ticks: Vec<TickEntryV3>,
 }
 
-pub fn convert_v2_to_v3(path: impl AsRef<Path>) -> Result<Option<PlotData>, PlotLoadError> {
+pub fn convert_v2_to_v3(path: impl AsRef<Path>) -> Result<Option<PlotDataV3>, PlotLoadError> {
     let mut file = File::open(&path)?;
 
     let mut magic = [0; 8];
@@ -51,7 +51,7 @@ pub fn convert_v2_to_v3(path: impl AsRef<Path>) -> Result<Option<PlotData>, Plot
 
     let new_world_send_rate = WorldSendRate(old_data.world_send_rate.0 as f32);
 
-    let new_data = PlotData {
+    let new_data = PlotDataV3 {
         tps: new_tps,
         world_send_rate: new_world_send_rate,
         chunk_data: old_data.chunk_data,

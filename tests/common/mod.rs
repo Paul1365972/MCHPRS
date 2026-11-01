@@ -72,7 +72,10 @@ impl BackendRunner {
         }
         while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
             let entry = self.world.to_be_ticked.remove(0);
-            mchprs_redstone::tick(self.world.get_block(entry.pos), &mut self.world, entry.pos);
+            let block = self.world.get_block(entry.pos);
+            if entry.is_for(block) {
+                mchprs_redstone::tick(block, &mut self.world, entry.pos);
+            }
         }
     }
 
