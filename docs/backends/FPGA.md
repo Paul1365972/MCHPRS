@@ -36,6 +36,7 @@ The same as [`phase`](Phase.md#passes).
 | Flag | Short | Description |
 | --- | --- | --- |
 | `--optimize` | `-o` | Run the passes. Removing components can reduce the circuit size. |
+| `--io-only` | `-i` | Only inputs, outputs and probed components show their state. The board cannot report the state of the others. |
 | `--wire-dot-out` | `-d` | Treat redstone wire without connections (dots) as outputs. |
 | `--wire-cross-out` | `-c` | Treat redstone wire connected on all four sides (crosses) as outputs. |
 | `--illegal-states-out` | `-l` | Treat redstone wire connected on exactly one side as outputs. |
@@ -50,6 +51,8 @@ The same as [`phase`](Phase.md#passes).
 - A mode change, an input and a read of the observed state each take an exchange over the serial port.
 - A settle runs at full speed until a read finds no pending tick. It can run past the tick at which the circuit settles.
 - The board is read at intervals, so it does not report a component that changes and is back as it was by the next read. A player does not hear an iron trapdoor that opens and closes between two reads.
+- With `--io-only`, `/redpiler reset` restores the plot to its state before compiling.
+- With `--io-only`, the board does not report pending ticks, so `/radvance settle` is unavailable.
 
 ## Setup
 

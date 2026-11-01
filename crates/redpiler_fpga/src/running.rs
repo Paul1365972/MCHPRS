@@ -1,10 +1,12 @@
 use crate::engine::FpgaEngine;
 use crate::protocol::{Mode, MAX_COUNT};
+use anyhow::bail;
 use mchprs_redpiler::circuit::NodeId;
 use mchprs_redpiler::nodes::Nodes;
 use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_simulation::handle::{self, Request, Updates};
 use mchprs_simulation::input::DriveError;
+use mchprs_simulation::readback::Readback;
 use mchprs_simulation::ticks::SimulationError;
 use mchprs_simulation::{Command, End, Event, Run, Running, Simulation, Update, View};
 use std::mem;
@@ -147,6 +149,9 @@ impl Worker {
             Run::UntilSettled => {
                 self.set_mode(Mode::Paused)?;
                 self.replace_goal();
+                if !self.engine.capabilities().settling {
+                    bail!("this FPGA circuit cannot report pending ticks");
+                }
                 self.goal = Some(Goal::Settled);
                 self.check_goal()?;
                 if self.goal.is_some() {
@@ -220,7 +225,9 @@ impl Worker {
                 self.finish_counted_run();
             }
             Some(Goal::Settled) => {
-                let snapshot = self.engine.read_snapshot()?;
+                let Readback::Complete(snapshot) = self.engine.read_snapshot()? else {
+                    bail!("this FPGA circuit cannot report pending ticks");
+                };
                 self.record_changes();
                 if snapshot.pending_ticks.is_empty() {
                     self.set_mode(Mode::Paused)?;

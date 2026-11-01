@@ -1,6 +1,7 @@
 use crate::board::BASYS3;
 use crate::bring_up;
 use crate::engine::FpgaEngine;
+use crate::layout::ReadbackScope;
 use crate::link::Controller;
 use crate::progress::Progress;
 use crate::verilator::{Timing, VerilatorExecutable};
@@ -19,6 +20,11 @@ use mchprs_simulation::{Blocks, Simulation};
 use mchprs_syntax::flag::{Flag, FlagValues};
 use std::path::Path;
 
+const IO_ONLY: Flag = Flag::switch(
+    "io-only",
+    Some('i'),
+    "Only update inputs, outputs and probed components, and only read their state from the board",
+);
 const SIMULATE: Flag = Flag::switch(
     "simulate",
     None,
@@ -52,6 +58,7 @@ impl Backend for FpgaBackend {
     fn flags(&self) -> &[Flag] {
         &[
             OPTIMIZE,
+            IO_ONLY,
             WireOutputs::DOTS,
             WireOutputs::ILLEGAL_STATES,
             WireOutputs::CROSSES,
@@ -96,9 +103,13 @@ fn build_engine(
     context: &mut GraphContext<'_>,
 ) -> Result<FpgaEngine, CompileError> {
     let build_nonce = rand::random();
+    let scope = match flags.is_on(&IO_ONLY) {
+        true => ReadbackScope::Observed,
+        false => ReadbackScope::All,
+    };
     let board_flag = [PORT, CLOCK].into_iter().find(|flag| flags.contains(flag));
     match (flags.is_on(&SIMULATE), board_flag) {
-        (true, None) => simulate(circuit, build_nonce, context),
+        (true, None) => simulate(circuit, scope, build_nonce, context),
         (true, Some(flag)) => Err(CompileError::Unsupported(format!(
             "a simulation has no --{}",
             flag.name()
@@ -106,7 +117,16 @@ fn build_engine(
         (false, _) => {
             let port = flags.text(&PORT).map(Path::new);
             let clock_hertz = given_clock_hertz(flags)?;
-            bring_up::run_on_board(circuit, &BASYS3, port, clock_hertz, build_nonce, context)
+            let board = &BASYS3;
+            bring_up::run_on_board(
+                circuit,
+                board,
+                port,
+                clock_hertz,
+                scope,
+                build_nonce,
+                context,
+            )
         }
     }
 }
@@ -126,12 +146,13 @@ fn given_clock_hertz(flags: &FlagValues) -> Result<Option<f64>, CompileError> {
 
 fn simulate(
     circuit: &Circuit,
+    scope: ReadbackScope,
     build_nonce: u32,
     context: &mut GraphContext<'_>,
 ) -> Result<FpgaEngine, CompileError> {
     let mut progress = Progress::new(context, 3);
     progress.start("Writing circuit")?;
-    let design = Design::new(circuit, build_nonce)?;
+    let design = Design::new(circuit, scope, build_nonce)?;
     progress.start("Building simulation")?;
     let executable = VerilatorExecutable::build(&design.source, &progress)?;
     let link = executable.start(SIMULATED_TIMING);

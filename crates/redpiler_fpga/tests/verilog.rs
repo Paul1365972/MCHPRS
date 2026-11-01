@@ -1,4 +1,6 @@
 use mchprs_redpiler::circuit::Circuit;
+use mchprs_redpiler::extract::ExtractOptions;
+use mchprs_redpiler_fpga::layout::ReadbackScope;
 use mchprs_redpiler_fpga::verilog::Design;
 use mchprs_ril::Module;
 
@@ -16,9 +18,14 @@ fn a_large_circuit_has_no_line_too_long_for_verilator() {
         "circuit @long {{ %lever = lever -> [%repeater_0:0] {} %repeater_{REPEATERS} = lamp }}",
         repeaters.join(" ")
     ));
-    let graph = module.expect("the circuit parses").circuits()[0].graph();
+    let mut graph = module.expect("the circuit parses").circuits()[0].graph();
+    let ports_only = ExtractOptions {
+        ports_only: true,
+        ..ExtractOptions::default()
+    };
+    ports_only.observe(&mut graph);
     let circuit = Circuit::new(graph).expect("the circuit is valid");
-    let design = Design::new(&circuit, 0);
+    let design = Design::new(&circuit, ReadbackScope::Observed, 0);
     let design = design.expect("the circuit is supported");
     let tokens = |line: &str| line.split([' ', ',']).count();
     let most_tokens = design.source.module.lines().map(tokens).max();

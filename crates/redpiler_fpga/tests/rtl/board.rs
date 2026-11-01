@@ -9,7 +9,7 @@ fn the_board() -> MutexGuard<'static, ()> {
 }
 
 macro_rules! board_tests {
-    ($($name:ident($path:literal, $scenario:expr) simulation[$($simulation:ident),*] board[$($board:ident),*];)*) => {
+    ($($name:ident($path:literal, $probe:literal, $scenario:expr) simulation[$($simulation:ident),*] board[$($board:ident),*];)*) => {
         $(mod $name {
             $(#[test]
             #[ignore = "needs the board"]

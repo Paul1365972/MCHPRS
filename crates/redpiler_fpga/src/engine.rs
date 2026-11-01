@@ -67,12 +67,15 @@ impl FpgaEngine {
             .states
             .iter()
             .all(|&(node, state)| state == engine.reported_states[node.index()]);
-        let mut snapshot = engine.read_snapshot()?;
-        let mut expected_ticks = initial.pending_ticks;
-        snapshot.pending_ticks.sort();
-        expected_ticks.sort();
-        let holds_initial_state =
-            (snapshot.states, snapshot.pending_ticks) == (initial.states, expected_ticks);
+        let holds_initial_state = match engine.read_snapshot()? {
+            Readback::Complete(mut snapshot) => {
+                let mut expected_ticks = initial.pending_ticks;
+                snapshot.pending_ticks.sort();
+                expected_ticks.sort();
+                (snapshot.states, snapshot.pending_ticks) == (initial.states, expected_ticks)
+            }
+            Readback::Incomplete => true,
+        };
         ensure!(
             shows_initial_states && holds_initial_state,
             "the board does not start in the state of the circuit"
@@ -125,10 +128,14 @@ impl FpgaEngine {
         changes
     }
 
-    pub fn read_snapshot(&mut self) -> Result<Snapshot, SimulationError> {
+    pub fn read_snapshot(&mut self) -> Result<Readback<Snapshot>, SimulationError> {
+        if !self.layout.is_complete() {
+            return Ok(Readback::Incomplete);
+        }
         let readout = self.controller.read(Contents::All)?;
+        let snapshot = self.layout.decode_snapshot(&readout.state)?;
         self.record_shown(&readout)?;
-        self.layout.decode_snapshot(&readout.state)
+        Ok(Readback::Complete(snapshot))
     }
 }
 
@@ -146,8 +153,8 @@ impl Simulation<Nodes> for FpgaEngine {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             breakpoints: false,
-            settling: true,
-            write_back: true,
+            settling: self.layout.is_complete(),
+            write_back: self.layout.is_complete(),
         }
     }
 
@@ -171,7 +178,9 @@ impl Simulation<Nodes> for FpgaEngine {
         let mut ticks = 0;
         let mut chunk = 1;
         loop {
-            let snapshot = self.read_snapshot()?;
+            let Readback::Complete(snapshot) = self.read_snapshot()? else {
+                return self.run(limit);
+            };
             if snapshot.pending_ticks.is_empty() {
                 return Ok(Ran {
                     ticks,
@@ -199,8 +208,9 @@ impl Simulation<Nodes> for FpgaEngine {
     }
 
     fn show(&mut self, view: View, changes: &mut Changes) -> Result<(), SimulationError> {
-        if view == View::All {
-            let snapshot = self.read_snapshot()?;
+        if view == View::All
+            && let Readback::Complete(snapshot) = self.read_snapshot()?
+        {
             for (index, state) in snapshot.states.into_iter().enumerate() {
                 let reported = &mut self.reported_states[index];
                 if state.shown() != *reported {
@@ -217,11 +227,11 @@ impl Simulation<Nodes> for FpgaEngine {
     }
 
     fn read(&mut self) -> Result<Readback<Snapshot>, SimulationError> {
-        self.read_snapshot().map(Readback::Complete)
+        self.read_snapshot()
     }
 
     fn stop(mut self: Box<Self>) -> Result<End<Nodes>, SimulationError> {
-        let state = Readback::Complete(self.read_snapshot()?);
+        let state = self.read_snapshot()?;
         let mut changes = Changes::default();
         self.show(View::Observed, &mut changes)?;
         Ok(End { changes, state })

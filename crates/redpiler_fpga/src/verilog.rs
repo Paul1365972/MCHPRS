@@ -1,5 +1,5 @@
 use crate::expr::{output_wire, Expressions};
-use crate::layout::StateLayout;
+use crate::layout::{ReadbackScope, StateLayout};
 use crate::lower::{lower, CircuitSignal, Instance};
 use crate::protocol::Contents;
 use crate::protocol::{DRIVE_INPUT_BITS, DRIVE_NODE_BITS};
@@ -21,9 +21,13 @@ pub struct Design {
 }
 
 impl Design {
-    pub fn new(circuit: &Circuit, build_nonce: u32) -> Result<Design, CompileError> {
+    pub fn new(
+        circuit: &Circuit,
+        scope: ReadbackScope,
+        build_nonce: u32,
+    ) -> Result<Design, CompileError> {
         let instances = lower(circuit)?;
-        let layout = StateLayout::new(circuit, &instances);
+        let layout = StateLayout::new(circuit, &instances, scope);
         let shown_bits = layout.bits(Contents::Shown);
         let state_bits = layout.bits(Contents::All);
         let package = format!(
@@ -50,6 +54,7 @@ fn module(
 ) -> String {
     let mut nodes = String::new();
     let mut wires = Vec::new();
+    let mut unread_registers = Vec::new();
     let mut used = BTreeSet::new();
     let mut ticking = 0;
     for (index, instance) in instances.iter().enumerate() {
@@ -81,10 +86,17 @@ fn module(
                 }
             });
         }
-        for &(register, offset) in layout.registers(node) {
-            let signal = match register.width() {
-                1 => format!("state[{offset}]"),
-                width => format!("state[{offset} +: {width}]"),
+        for register in instance.all_registers() {
+            let mut placed = layout.registers(node).iter();
+            let offset = placed.find(|(placed, _)| *placed == register);
+            let signal = match (offset, register.width()) {
+                (Some((_, offset)), 1) => format!("state[{offset}]"),
+                (Some((_, offset)), width) => format!("state[{offset} +: {width}]"),
+                (None, width) => {
+                    let register = format!("{}_{index}", register.port());
+                    unread_registers.push((register.clone(), width));
+                    register
+                }
             };
             ports.push((register.port().to_owned(), signal));
         }
@@ -111,7 +123,8 @@ fn module(
     let outputs = wires
         .iter()
         .map(|&(node, width)| (output_wire(node), width));
-    let declarations = outputs.map(|(signal, width)| match width {
+    let declared = outputs.chain(unread_registers.iter().cloned());
+    let declarations = declared.map(|(signal, width)| match width {
         1 => format!("    logic {signal};\n"),
         width => format!("    logic [{}:0] {signal};\n", width - 1),
     });
@@ -125,6 +138,7 @@ fn module(
     let unused: Vec<_> = driven
         .filter(|signal| !used.contains(signal))
         .chain(unread.map(|&(node, _)| output_wire(node)))
+        .chain(unread_registers.into_iter().map(|(register, _)| register))
         .collect();
     let unused = match unused.is_empty() {
         true => String::new(),
@@ -132,6 +146,10 @@ fn module(
             "    wire unused = &{{\n        1'b0,\n        {}\n    }};\n",
             unused.join(",\n        ")
         ),
+    };
+    let padding = match layout.holds_no_register() {
+        true => "    assign state = 1'b0;\n",
+        false => "",
     };
     let taken_valid = CircuitSignal::TakenValid.name();
     let taken_node = CircuitSignal::TakenNode.name();
@@ -147,7 +165,7 @@ fn module(
          logic {taken_valid};\n    \
          logic [{node_end}:0] {taken_node};\n    \
          logic [{input_end}:0] {taken_input};\n\
-         {declarations}{unused}    \
+         {declarations}{unused}{padding}    \
          sequencer #(.COPIES({copies})) sequencer (.clock(clock), .hold(hold), \
          .run_start(run_start), .run_mode(run_mode), .run_count(run_count), \
          .drive_valid(drive_valid), .drive_node(drive_node), .drive_input(drive_input), \

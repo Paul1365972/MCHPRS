@@ -4,7 +4,7 @@ mod bring_up;
 mod build_directory;
 mod engine;
 mod expr;
-mod layout;
+pub mod layout;
 mod link;
 mod lower;
 mod openxc7;
