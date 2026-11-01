@@ -18,7 +18,7 @@ use anyhow::Error;
 use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::{BlockStore, BlockView};
-use mchprs_blocks::blocks::Block;
+use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::items::Item;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFace, BlockPos};
@@ -27,11 +27,11 @@ use mchprs_network::packets::serverbound::SUseItemOn;
 
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::{Compiler, CompilerOptions};
+use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
+use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
+use mchprs_world::occupied_regions;
 use mchprs_world::storage::Chunk;
-use mchprs_world::{
-    has_tick_entry, occupied_regions, schedule_tick_entry, TickEntry, TickPriority, World,
-};
 use monitor::TimingsMonitor;
 use rustc_hash::FxHashMap;
 use scoreboard::RedpilerState;
@@ -103,7 +103,7 @@ pub struct PlotWorld {
     pub x: i32,
     pub z: i32,
     pub chunks: Vec<Chunk>,
-    pub to_be_ticked: Vec<TickEntry>,
+    pub ticks: TickQueue,
     pub packet_senders: HashMap<EntityId, PlayerPacketSender>,
     world_send_rate: WorldSendRate,
     pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
@@ -223,16 +223,34 @@ impl BlockStore for PlotWorld {
     }
 }
 
-impl World for PlotWorld {
+impl RedstoneWorld for PlotWorld {
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority) {
         let block = self.block(pos);
-        schedule_tick_entry(&mut self.to_be_ticked, block, pos, delay, priority);
+        self.ticks.schedule(pos, delay, priority, block);
     }
 
-    fn pending_tick_at(&mut self, pos: BlockPos) -> bool {
-        has_tick_entry(&self.to_be_ticked, self.block(pos), pos)
+    fn pending_tick_at(&self, pos: BlockPos) -> bool {
+        self.ticks.is_pending(pos, self.block(pos))
     }
 
+    fn play_note(&mut self, pos: BlockPos, instrument: Instrument, note: u8) {
+        const RECORDS_SOUND_CATEGORY: i32 = 2;
+        const NOTE_VOLUME: f32 = 3.0;
+        // The note is mapped to [0, 31] to avoid ultra high pitches in case of invalid values.
+        // The range [0, 31] is used even though it is different from the noteblock's note range
+        // of [0, 24] because mapping to [0, 31] can be done efficiently using bitwise AND.
+        let pitch = f32::exp2(((note % 32) as f32 - 12.0) / 12.0);
+        self.play_sound(
+            pos,
+            instrument.to_sound_id(),
+            RECORDS_SOUND_CATEGORY,
+            NOTE_VOLUME,
+            pitch,
+        );
+    }
+}
+
+impl PlotWorld {
     fn play_sound(
         &mut self,
         pos: BlockPos,
@@ -264,7 +282,7 @@ impl World for PlotWorld {
         self.pending_sounds.insert(pos, sound_effect_data);
     }
 
-    fn flush_block_changes(&mut self) {
+    pub fn flush_block_changes(&mut self) {
         for packet in self.chunks.iter_mut().flat_map(|c| c.multi_blocks()) {
             let encoded = packet.encode();
             for packet_sender in self.packet_senders.values() {
@@ -309,19 +327,7 @@ impl Plot {
             return;
         }
 
-        self.world
-            .to_be_ticked
-            .sort_by_key(|e| (e.ticks_left, e.tick_priority));
-        for pending in &mut self.world.to_be_ticked {
-            pending.ticks_left = pending.ticks_left.saturating_sub(1);
-        }
-        while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
-            let entry = self.world.to_be_ticked.remove(0);
-            let block = self.world.block(entry.pos);
-            if entry.is_for(block) {
-                mchprs_redstone::tick(block, &mut self.world, entry.pos);
-            }
-        }
+        mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world, |world| &mut world.ticks);
     }
 
     pub fn send_block_corrections(&mut self, positions: &[BlockPos]) {
@@ -373,16 +379,7 @@ impl Plot {
             return;
         }
 
-        let mut block = self.world.block(pos);
-        if let Some(powered) = block.get_pressure_plate_powered() {
-            *powered = new_powered;
-            self.world.set_block(pos, block);
-            mchprs_redstone::update_surrounding_blocks(&mut self.world, pos);
-            mchprs_redstone::update_surrounding_blocks(
-                &mut self.world,
-                pos.offset(BlockFace::Bottom),
-            );
-        } else {
+        if !mchprs_redstone::set_pressure_plate(&mut self.world, pos, new_powered) {
             warn!("Block at {} is not a pressure plate", pos);
         }
         self.publish_world();
@@ -707,7 +704,7 @@ impl Plot {
         let region = self.world.region();
         // TODO: use monitor
         let monitor = Default::default();
-        let ticks = mem::take(&mut self.world.to_be_ticked);
+        let ticks = mem::take(&mut self.world.ticks).into_entries();
 
         let mut players_need_updates = HashSet::new();
         thread::scope(|s| {
@@ -1250,18 +1247,20 @@ impl Plot {
             x,
             z,
             chunks,
-            to_be_ticked: plot_data
-                .pending_ticks
-                .into_iter()
-                .map(|tick| {
-                    TickEntry::new(
-                        tick.position,
-                        tick.ticks_left,
-                        tick.priority,
-                        Block::from_id(tick.block_id),
-                    )
-                })
-                .collect(),
+            ticks: TickQueue::new(
+                plot_data
+                    .pending_ticks
+                    .into_iter()
+                    .map(|tick| {
+                        TickEntry::new(
+                            tick.position,
+                            tick.ticks_left,
+                            tick.priority,
+                            Block::from_id(tick.block_id),
+                        )
+                    })
+                    .collect(),
+            ),
             packet_senders: HashMap::new(),
             world_send_rate: plot_data.world_send_rate,
             pending_block_entities: FxHashMap::default(),
@@ -1325,12 +1324,13 @@ impl Plot {
             world_send_rate: world.world_send_rate,
             chunk_data,
             pending_ticks: world
-                .to_be_ticked
+                .ticks
+                .entries()
                 .iter()
                 .map(|tick| SavedTick {
                     ticks_left: tick.ticks_left,
-                    priority: tick.tick_priority,
-                    position: tick.pos,
+                    priority: tick.priority,
+                    position: tick.position,
                     block_id: tick.block.get_id(),
                 })
                 .collect(),

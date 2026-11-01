@@ -2,7 +2,7 @@ use crate::backend::direct::node::ForwardLinks;
 use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx};
 use crate::{CompilerOptions, TaskMonitor};
 use mchprs_blocks::blocks::Block;
-use mchprs_world::TickEntry;
+use mchprs_redstone::tick_queue::TickEntry;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tracing::trace;
@@ -165,10 +165,10 @@ pub fn compile(
 
     // Schedule backend ticks
     for entry in ticks {
-        if let Some(node) = backend.pos_map.get(&entry.pos) {
+        if let Some(node) = backend.pos_map.get(&entry.position) {
             backend
                 .scheduler
-                .schedule_tick(*node, entry.ticks_left as usize, entry.tick_priority);
+                .schedule_tick(*node, entry.ticks_left as usize, entry.priority);
             backend.nodes[*node].pending_tick = true;
         }
     }

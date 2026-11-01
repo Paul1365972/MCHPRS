@@ -1,10 +1,11 @@
 use mchprs_blocks::block_store::{BlockStore, BlockView};
+use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::{Block, LeverFace, Repeater};
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::{BackendVariant, Compiler, CompilerOptions};
+use mchprs_redstone::interpreter::Interpreter;
 use mchprs_redstone::wire::make_cross;
-use mchprs_world::testing::TestWorld;
 
 struct RedpilerInstance {
     options: CompilerOptions,
@@ -12,19 +13,20 @@ struct RedpilerInstance {
 }
 
 impl RedpilerInstance {
-    fn new(world: &TestWorld, variant: BackendVariant, optimize: bool) -> RedpilerInstance {
+    fn new(
+        world: &Interpreter<BlockVolume>,
+        variant: BackendVariant,
+        optimize: bool,
+    ) -> RedpilerInstance {
         let options = CompilerOptions {
             backend_variant: variant,
             optimize,
             ..Default::default()
         };
         let mut compiler = Compiler::default();
-        let max_x = world.x_size * 16 - 1;
-        let max_y = world.y_size * 16 - 1;
-        let max_z = world.z_size * 16 - 1;
-        let region = Region::new(BlockPos::new(0, 0, 0), BlockPos::new(max_x, max_y, max_z));
+        let region = world.blocks().region();
         let monitor = Default::default();
-        let ticks = world.to_be_ticked.clone();
+        let ticks = world.pending_ticks().to_vec();
         compiler.compile(world, region, options.clone(), ticks, monitor);
         RedpilerInstance { options, compiler }
     }
@@ -40,12 +42,12 @@ pub enum TestBackend {
 }
 
 pub struct BackendRunner {
-    world: TestWorld,
+    world: Interpreter<BlockVolume>,
     redpiler: Option<RedpilerInstance>,
 }
 
 impl BackendRunner {
-    pub fn new(world: TestWorld, backend: TestBackend) -> BackendRunner {
+    pub fn new(world: Interpreter<BlockVolume>, backend: TestBackend) -> BackendRunner {
         match backend {
             TestBackend::Redstone => BackendRunner {
                 world,
@@ -65,19 +67,7 @@ impl BackendRunner {
             return;
         }
 
-        self.world
-            .to_be_ticked
-            .sort_by_key(|e| (e.ticks_left, e.tick_priority));
-        for pending in &mut self.world.to_be_ticked {
-            pending.ticks_left = pending.ticks_left.saturating_sub(1);
-        }
-        while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
-            let entry = self.world.to_be_ticked.remove(0);
-            let block = self.world.block(entry.pos);
-            if entry.is_for(block) {
-                mchprs_redstone::tick(block, &mut self.world, entry.pos);
-            }
-        }
+        self.world.tick();
     }
 
     pub fn use_block(&mut self, pos: BlockPos) {
@@ -86,7 +76,7 @@ impl BackendRunner {
             redpiler.compiler.flush(&mut self.world);
             return;
         }
-        mchprs_redstone::on_use(self.world.block(pos), &mut self.world, pos);
+        self.world.use_block(pos);
     }
 
     pub fn check_block_powered(&self, pos: BlockPos, powered: bool) {
@@ -156,13 +146,21 @@ macro_rules! test_all_backends {
 }
 pub(crate) use test_all_backends;
 
+pub fn test_world(size_x: i32, size_y: i32, size_z: i32) -> Interpreter<BlockVolume> {
+    let region = Region::new(
+        BlockPos::new(0, 0, 0),
+        BlockPos::new(size_x - 1, size_y - 1, size_z - 1),
+    );
+    Interpreter::new(BlockVolume::empty(region), Vec::new())
+}
+
 /// Helper function to create a BlockPos
 pub fn pos(x: i32, y: i32, z: i32) -> BlockPos {
     BlockPos::new(x, y, z)
 }
 
 /// Place a block with a block of sandstone below it
-pub fn place_on_block(world: &mut TestWorld, block_pos: BlockPos, block: Block) {
+pub fn place_on_block(world: &mut impl BlockStore, block_pos: BlockPos, block: Block) {
     world.set_block(block_pos - pos(0, 1, 0), Block::Sandstone {});
     world.set_block(block_pos, block);
 }
@@ -178,7 +176,7 @@ pub fn trapdoor() -> Block {
 }
 
 /// Creates a lever at `lever_pos` with a block of sandstone below it
-pub fn make_lever(world: &mut TestWorld, lever_pos: BlockPos) {
+pub fn make_lever(world: &mut impl BlockStore, lever_pos: BlockPos) {
     place_on_block(
         world,
         lever_pos,
@@ -192,7 +190,7 @@ pub fn make_lever(world: &mut TestWorld, lever_pos: BlockPos) {
 
 /// Creates a repeater at `repeater_pos` with a block of sandstone below it
 pub fn make_repeater(
-    world: &mut TestWorld,
+    world: &mut impl BlockStore,
     repeater_pos: BlockPos,
     delay: u8,
     direction: BlockDirection,
@@ -209,6 +207,6 @@ pub fn make_repeater(
 }
 
 /// Creates a wire at `wire_pos` with a block of sandstone below it
-pub fn make_wire(world: &mut TestWorld, wire_pos: BlockPos) {
+pub fn make_wire(world: &mut impl BlockStore, wire_pos: BlockPos) {
     place_on_block(world, wire_pos, Block::RedstoneWire(make_cross(0)));
 }

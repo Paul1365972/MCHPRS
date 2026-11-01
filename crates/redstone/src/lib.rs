@@ -3,15 +3,26 @@
 //! scenerio (i.e. regular buiding)
 
 pub mod comparator;
+pub mod interpreter;
 pub mod noteblock;
 pub mod repeater;
+pub mod tick_queue;
 pub mod wire;
 
 use mchprs_blocks::block_entities::BlockEntity;
-use mchprs_blocks::block_store::BlockView;
-use mchprs_blocks::blocks::{Block, LeverFace, RedstoneWire, Repeater};
+use mchprs_blocks::block_store::{BlockStore, BlockView};
+use mchprs_blocks::blocks::{Block, Instrument, LeverFace, RedstoneWire, Repeater};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
-use mchprs_world::{TickPriority, World};
+use tick_queue::TickPriority;
+
+pub trait RedstoneWorld: BlockStore {
+    fn schedule_tick(&mut self, position: BlockPos, delay: u32, priority: TickPriority);
+
+    /// Includes a tick that is due in this tick but has not run yet
+    fn pending_tick_at(&self, position: BlockPos) -> bool;
+
+    fn play_note(&mut self, _position: BlockPos, _instrument: Instrument, _note: u8) {}
+}
 
 pub fn bool_to_ss(b: bool) -> u8 {
     match b {
@@ -213,7 +224,7 @@ pub fn diode_should_be_prioritized(
     }
 }
 
-pub fn update(block: Block, world: &mut impl World, pos: BlockPos) {
+pub fn update(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) {
     match block {
         Block::RedstoneWire(wire) => {
             wire::on_neighbor_updated(wire, world, pos);
@@ -282,7 +293,7 @@ pub fn update(block: Block, world: &mut impl World, pos: BlockPos) {
                 };
 
                 if should_be_powered && noteblock::is_noteblock_unblocked(world, pos) {
-                    noteblock::play_note(world, pos, instrument, note);
+                    world.play_note(pos, instrument, note);
                 }
                 world.set_block(pos, new_block);
             }
@@ -291,7 +302,7 @@ pub fn update(block: Block, world: &mut impl World, pos: BlockPos) {
     }
 }
 
-pub fn tick(block: Block, world: &mut impl World, pos: BlockPos) {
+pub fn tick(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) {
     match block {
         Block::Repeater(repeater) => {
             repeater::tick(repeater, world, pos);
@@ -355,7 +366,7 @@ pub fn tick(block: Block, world: &mut impl World, pos: BlockPos) {
     }
 }
 
-pub fn update_wire_neighbors(world: &mut impl World, pos: BlockPos) {
+pub fn update_wire_neighbors(world: &mut impl RedstoneWorld, pos: BlockPos) {
     for direction in &BlockFace::values() {
         let neighbor_pos = pos.offset(*direction);
         let block = world.block(neighbor_pos);
@@ -368,7 +379,7 @@ pub fn update_wire_neighbors(world: &mut impl World, pos: BlockPos) {
     }
 }
 
-pub fn update_surrounding_blocks(world: &mut impl World, pos: BlockPos) {
+pub fn update_surrounding_blocks(world: &mut impl RedstoneWorld, pos: BlockPos) {
     for direction in &BlockFace::values() {
         let neighbor_pos = pos.offset(*direction);
         let block = world.block(neighbor_pos);
@@ -386,12 +397,25 @@ pub fn update_surrounding_blocks(world: &mut impl World, pos: BlockPos) {
     }
 }
 
+/// Returns false if the block at `pos` is not a pressure plate
+pub fn set_pressure_plate(world: &mut impl RedstoneWorld, pos: BlockPos, powered: bool) -> bool {
+    let mut block = world.block(pos);
+    let Some(block_powered) = block.get_pressure_plate_powered() else {
+        return false;
+    };
+    *block_powered = powered;
+    world.set_block(pos, block);
+    update_surrounding_blocks(world, pos);
+    update_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
+    true
+}
+
 pub fn is_diode(block: Block) -> bool {
     matches!(block, Block::Repeater(_) | Block::Comparator(_))
 }
 
 /// Returns true if the action was handled
-pub fn on_use(block: Block, world: &mut impl World, pos: BlockPos) -> bool {
+pub fn on_use(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) -> bool {
     match block {
         Block::Repeater(mut repeater) => {
             repeater.delay += 1;
@@ -495,7 +519,7 @@ pub fn on_use(block: Block, world: &mut impl World, pos: BlockPos) -> bool {
             );
 
             if noteblock::is_noteblock_unblocked(world, pos) {
-                noteblock::play_note(world, pos, instrument, note);
+                world.play_note(pos, instrument, note);
             }
 
             true

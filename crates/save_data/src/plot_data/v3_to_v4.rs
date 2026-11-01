@@ -3,8 +3,8 @@
 use super::{ChunkData, PlotData, PlotLoadError, SavedTick, Tps, WorldSendRate, PLOT_MAGIC};
 use byteorder::{LittleEndian, ReadBytesExt};
 use mchprs_blocks::BlockPos;
+use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_world::storage::Chunk;
-use mchprs_world::TickPriority;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::Read;

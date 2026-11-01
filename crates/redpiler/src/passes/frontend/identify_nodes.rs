@@ -47,7 +47,7 @@ impl<W: BlockView> Pass<W> for IdentifyNodes {
         }
 
         for tick in input.ticks {
-            if let Some(&idx) = first_pass.get(&tick.pos) {
+            if let Some(&idx) = first_pass.get(&tick.position) {
                 graph[idx].state.pending_tick = true;
             }
         }

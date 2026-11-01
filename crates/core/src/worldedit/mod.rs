@@ -10,7 +10,6 @@ use mchprs_blocks::{
     region::Region,
     BlockPos,
 };
-use mchprs_world::World;
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
@@ -110,7 +109,7 @@ fn validate_states(block: Option<Block>, states: &FxHashMap<String, String>) -> 
 }
 
 pub fn ray_trace_block(
-    world: &impl World,
+    world: &impl BlockView,
     mut pos: PlayerPos,
     start_pitch: f64,
     start_yaw: f64,

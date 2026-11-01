@@ -16,6 +16,7 @@ include.workspace = true
 [dependencies]
 mchprs_world = { path = "../world" }
 mchprs_blocks = { path = "../blocks" }
+mchprs_redstone = { path = "../redstone" }
 byteorder = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
