@@ -1,7 +1,6 @@
 use super::Plot;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use mchprs_world::tick_schedule::Step;
-use mchprs_world::{SendRate, TickRate, World};
+use mchprs_world::{SendRate, Step, TickRate, World};
 use std::time::{Duration, Instant};
 
 const TICK_SLICE: Duration = Duration::from_millis(10);
@@ -87,7 +86,7 @@ impl Plot {
         match self.tick_schedule.next(now) {
             Step::Run(_) => Duration::ZERO,
             Step::WaitFor(until_tick) => wait.min(until_tick),
-            Step::WaitForRequest => wait,
+            Step::Idle => wait,
         }
     }
 }

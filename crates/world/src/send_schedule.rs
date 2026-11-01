@@ -45,7 +45,7 @@ impl SendSchedule {
         self.until_send(now).is_some_and(|wait| wait.is_zero())
     }
 
-    pub fn sent(&mut self, now: Instant) {
+    pub fn record_send(&mut self, now: Instant) {
         self.last_send = now;
     }
 }

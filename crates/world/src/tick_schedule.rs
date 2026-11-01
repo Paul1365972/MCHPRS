@@ -34,7 +34,7 @@ impl TickRate {
 pub enum Step {
     Run(u64),
     WaitFor(Duration),
-    WaitForRequest,
+    Idle,
 }
 
 pub struct TickSchedule {
@@ -78,7 +78,7 @@ impl TickSchedule {
 
     pub fn next(&mut self, now: Instant) -> Step {
         match self.rate {
-            TickRate::Paused | TickRate::Ticks(0) => Step::WaitForRequest,
+            TickRate::Paused | TickRate::Ticks(0) => Step::Idle,
             TickRate::Ticks(owed) => Step::Run(owed),
             TickRate::Unlimited => Step::Run(u64::MAX),
             TickRate::PerSecond(per_second) => {

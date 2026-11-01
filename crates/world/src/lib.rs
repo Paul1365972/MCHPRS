@@ -1,11 +1,11 @@
-pub mod send_schedule;
+mod send_schedule;
 pub mod storage;
 #[cfg(feature = "testing")]
 pub mod testing;
-pub mod tick_schedule;
+mod tick_schedule;
 
 pub use send_schedule::{SendRate, SendSchedule};
-pub use tick_schedule::{TickRate, TickSchedule};
+pub use tick_schedule::{Step, TickRate, TickSchedule};
 
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::Block;

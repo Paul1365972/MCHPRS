@@ -929,7 +929,7 @@ impl Plot {
 
             let now = Instant::now();
             if self.send_schedule.is_due(now) {
-                self.send_schedule.sent(now);
+                self.send_schedule.record_send(now);
                 self.world.flush_block_changes();
             }
         } else {

@@ -3,8 +3,7 @@ use crate::block_map::BlockMap;
 use crate::compile_graph::NodeType;
 use crate::engine::{Engine, EngineError, Input, NodeChanges};
 use mchprs_blocks::BlockPos;
-use mchprs_world::tick_schedule::Step;
-use mchprs_world::{SendRate, SendSchedule, TickRate, TickSchedule};
+use mchprs_world::{SendRate, SendSchedule, Step, TickRate, TickSchedule};
 use std::ops::ControlFlow;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
@@ -234,7 +233,7 @@ impl WorkerThread {
                     Err(RecvTimeoutError::Timeout)
                 }
                 Step::WaitFor(wait) => self.wait_for_request(Some(wait), now),
-                Step::WaitForRequest => self.wait_for_request(None, now),
+                Step::Idle => self.wait_for_request(None, now),
             };
             match received {
                 Ok(request) => match self.handle(request) {
@@ -308,7 +307,7 @@ impl WorkerThread {
         }
         let changes = self.engine.take_changes()?;
         let batch = self.batch(&changes);
-        self.send_schedule.sent(now);
+        self.send_schedule.record_send(now);
         let _ = self.batches.send(Published {
             batch,
             tick_rate_version: self.tick_rate_version,
