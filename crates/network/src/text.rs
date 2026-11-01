@@ -1,11 +1,56 @@
-use regex::Regex;
 use serde::Serialize;
-use std::sync::LazyLock;
+use std::ops::Range;
 
-static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new("([a-zA-Z0-9§\\-:/]+\\.[a-zA-Z/0-9§\\-:_#]+(\\.[a-zA-Z/0-9.§\\-:#\\?\\+=_]+)?)")
-        .unwrap()
-});
+fn find_urls(text: &str) -> Vec<Range<usize>> {
+    fn is_url_character(character: char, extra: &str) -> bool {
+        character.is_ascii_alphanumeric() || "§-:/".contains(character) || extra.contains(character)
+    }
+    let first = |character| is_url_character(character, "");
+    let second = |character| is_url_character(character, "_#");
+    let rest = |character| is_url_character(character, ".#?+=_");
+    let characters: Vec<(usize, char)> = text.char_indices().collect();
+    let byte_at = |index: usize| characters.get(index).map_or(text.len(), |&(byte, _)| byte);
+    let run_end = |start: usize, belongs: &dyn Fn(char) -> bool| {
+        characters[start..]
+            .iter()
+            .position(|&(_, character)| !belongs(character))
+            .map_or(characters.len(), |length| start + length)
+    };
+    let dot_at = |index: usize| {
+        characters
+            .get(index)
+            .is_some_and(|&(_, character)| character == '.')
+    };
+
+    let mut urls = Vec::new();
+    let mut start = 0;
+    while start < characters.len() {
+        let first_end = run_end(start, &first);
+        if first_end == start {
+            start += 1;
+            continue;
+        }
+        let second_end = if dot_at(first_end) {
+            run_end(first_end + 1, &second)
+        } else {
+            first_end
+        };
+        if second_end <= first_end + 1 {
+            start = first_end;
+            continue;
+        }
+        let mut end = second_end;
+        if dot_at(second_end) {
+            let rest_end = run_end(second_end + 1, &rest);
+            if rest_end > second_end + 1 {
+                end = rest_end;
+            }
+        }
+        urls.push(byte_at(start)..byte_at(end));
+        start = end;
+    }
+    urls
+}
 
 fn is_valid_hex(ch: char) -> bool {
     ch.is_numeric() || ('a'..='f').contains(&ch) || ('A'..='F').contains(&ch)
@@ -234,9 +279,9 @@ impl TextComponent {
             let mut last = 0;
             let text = &component.text;
 
-            for match_ in URL_REGEX.find_iter(text) {
-                let index = match_.start();
-                let matched = match_.as_str();
+            for url in find_urls(text) {
+                let index = url.start;
+                let matched = &text[url];
                 if last != index {
                     let mut new = component.clone();
                     new.text = String::from(&text[last..index]);

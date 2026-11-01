@@ -1,8 +1,6 @@
 use super::{PacketEncoder, PacketEncoderExt, PalettedContainer, PlayerProperty, SlotData};
 use crate::nbt_util::{NBTCompound, NBTMap};
 use crate::text::TextComponent;
-use bitvec::bits;
-use bitvec::prelude::Lsb0;
 use mchprs_proc_macros::protocol_id;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -680,8 +678,13 @@ impl ClientBoundPacket for CChunkData {
         // Block Light Mask
         buf.write_varint(0);
 
-        let bits = bits![u64, Lsb0; 1].repeat(self.chunk_sections.len() + 2);
-        let longs = bits.as_raw_slice();
+        let light_section_count = self.chunk_sections.len() + 2;
+        let longs: Vec<u64> = (0..light_section_count.div_ceil(64))
+            .map(|long| match light_section_count - long * 64 {
+                64.. => u64::MAX,
+                bits => (1 << bits) - 1,
+            })
+            .collect();
         // Empty Sky Light Mask
         buf.write_varint(longs.len() as i32);
         longs.iter().for_each(|&x| buf.write_long(x as i64));

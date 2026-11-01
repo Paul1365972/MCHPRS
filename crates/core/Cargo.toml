@@ -34,7 +34,6 @@ bus = { workspace = true }
 ctrlc = { workspace = true, features = ["termination"] }
 tracing = { workspace = true }
 rand = { workspace = true }
-backtrace = { workspace = true }
 rusqlite = { workspace = true, features=["bundled"] }
 anyhow = { workspace = true }
 toml_edit = { workspace = true }
