@@ -54,7 +54,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                 let origin = ctx.player()?.pos.block_pos();
                 let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
                 ctx.set_clipboard(clipboard)?;
-                clear_area(ctx.world_mut(), first_pos, second_pos);
+                clear_area(ctx.world_mut()?, first_pos, second_pos);
 
                 ctx.worldedit_message(&format!(
                     "Your selection was cut. ({:?})",
@@ -201,9 +201,9 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
 
     let clipboard = ctx.get_clipboard()?.clone();
     let clipped = ctx.capture_undo_regions([(paste_min, paste_max)], paste_min)?;
-    paste_clipboard(ctx.world_mut(), &clipboard, pos, ignore_air);
+    paste_clipboard(ctx.world_mut()?, &clipboard, pos, ignore_air);
     if should_update && let Some((region_min, region_max)) = ctx.clip_region(paste_min, paste_max) {
-        update(ctx.world_mut(), region_min, region_max);
+        update(ctx.world_mut()?, region_min, region_max);
     }
     if select_region {
         select(ctx)?;

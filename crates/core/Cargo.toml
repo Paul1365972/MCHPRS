@@ -22,6 +22,7 @@ mchprs_world = { path = "../world" }
 mchprs_network = { path = "../network" }
 mchprs_redpiler = { path = "../redpiler" }
 mchprs_redpiler_direct = { path = "../redpiler_direct" }
+mchprs_worker = { path = "../worker" }
 mchprs_redstone = { path = "../redstone" }
 mchprs_schematic = { path = "../schematic" }
 toml = { workspace = true }

@@ -143,13 +143,16 @@ impl<'a> ExecutionContext<'a> {
         self.world_access == WorldAccess::Mutable
     }
 
-    pub(super) fn world_mut(&mut self) -> &mut PlotWorld {
+    pub(super) fn world_mut(&mut self) -> Result<&mut PlotWorld, RuntimeError> {
         if self.world_access != WorldAccess::Mutable {
+            if self.plot.is_compiling_redpiler() {
+                return Err(RuntimeError::RedpilerCompiling);
+            }
             self.world();
             self.plot.reset_redpiler();
             self.world_access = WorldAccess::Mutable;
         }
-        &mut self.plot.world
+        Ok(&mut self.plot.world)
     }
 
     pub(super) fn player(&self) -> Result<&Player, InternalError> {
@@ -230,7 +233,7 @@ impl<'a> ExecutionContext<'a> {
         if regions.is_empty() {
             return Err(RuntimeError::DestinationOutsidePlot.into());
         }
-        let world = self.world_mut();
+        let world = self.world_mut()?;
         let clipboards = regions
             .into_iter()
             .map(|(first_pos, second_pos)| create_clipboard(world, origin, first_pos, second_pos))

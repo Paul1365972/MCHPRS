@@ -149,14 +149,8 @@ impl Scoreboard {
         if options.reorder {
             flags.push(("r", "- reorder"));
         }
-        if options.export {
-            flags.push(("e", "- export"));
-        }
         if options.io_only {
             flags.push(("i", "- io only"));
-        }
-        if options.update {
-            flags.push(("u", "- update"));
         }
         if options.wire_dot_out {
             flags.push(("d", "- wire dot out"));

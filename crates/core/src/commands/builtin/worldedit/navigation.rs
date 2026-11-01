@@ -65,7 +65,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     let block_pos = new_pos.block_pos();
                     let platform_pos = BlockPos::new(block_pos.x, block_pos.y - 1, block_pos.z);
                     if matches!(ctx.world().block(platform_pos), Block::Air) {
-                        ctx.world_mut().set_block(platform_pos, Block::Glass);
+                        ctx.world_mut()?.set_block(platform_pos, Block::Glass);
                     }
                 }
 

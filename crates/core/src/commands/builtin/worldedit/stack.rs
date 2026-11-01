@@ -120,7 +120,7 @@ fn exec_stack(
         if ctx.clip_region(destination.0, destination.1).is_none() {
             continue;
         }
-        paste_clipboard(ctx.world_mut(), &clipboard, destination.0, ignore_air);
+        paste_clipboard(ctx.world_mut()?, &clipboard, destination.0, ignore_air);
     }
 
     let offset = offset * count;
