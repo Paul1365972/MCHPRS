@@ -41,7 +41,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         let start_time = Instant::now();
         let mut blocks_updated = 0;
 
-        let world = ctx.world_mut();
+        let world = ctx.world_mut()?;
         for pos in region_positions(first_pos, second_pos) {
             if mask.is_none_or(|mask| mask.matches(world, pos))
                 && world.set_block(pos, pattern.pick(world, pos))
@@ -191,9 +191,9 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
                 let origin = BlockPos::zero();
                 let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
-                clear_area(ctx.world_mut(), first_pos, second_pos);
+                clear_area(ctx.world_mut()?, first_pos, second_pos);
                 paste_clipboard(
-                    ctx.world_mut(),
+                    ctx.world_mut()?,
                     &clipboard,
                     origin + offset_amount,
                     ignore_air,
@@ -222,11 +222,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .executes(|ctx| {
                 if ctx.flag("plot") {
                     let region = ctx.world().region();
-                    update(ctx.world_mut(), region.min(), region.max());
+                    update(ctx.world_mut()?, region.min(), region.max());
                     ctx.worldedit_message("Updated entire plot.")
                 } else {
                     let (first_pos, second_pos) = ctx.get_selection()?;
-                    update(ctx.world_mut(), first_pos, second_pos);
+                    update(ctx.world_mut()?, first_pos, second_pos);
                     ctx.worldedit_message("Updated selection.")
                 }
             }),
@@ -302,7 +302,7 @@ fn exec_replacecontainer(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
         },
     };
 
-    let world = ctx.world_mut();
+    let world = ctx.world_mut()?;
     for pos in region_positions(first_pos, second_pos) {
         let block_ty = match world.block(pos) {
             Block::Furnace { .. } => ContainerType::Furnace,

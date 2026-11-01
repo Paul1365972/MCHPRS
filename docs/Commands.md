@@ -27,7 +27,7 @@ Flags such as `-a` go after all other arguments.
 | `/speed <speed>` | None | Set your flying speed. |
 | `/teleport (<position> \| <player>)` | `/tp` | Teleport to coordinates or another player. |
 | `/rtps [unlimited \| <tps>]` | `/rtps u` (for unlimited) | Show plot timings or set the redstone tick rate (default 10 ticks per second). Fractional rates are allowed; `0` pauses simulation; `unlimited` runs as fast as possible. One redstone tick equals two game ticks. |
-| `/radvance <ticks>` | `/radv` | Immediately advance the plot by the given number of redstone ticks. |
+| `/radvance <ticks>` | `/radv` | Advance the plot by the given number of redstone ticks as fast as possible. While Redpiler runs, inputs wait for the advance, and stopping Redpiler cancels it. |
 | `/stop` | None | Stop the server. |
 | `/gamemode (creative \| spectator)` | `1` (creative), `3` (spectator), `/gmc`, `/gmsp` | Change your game mode. |
 | `/toggleautorp` | None | Toggle automatic Redpiler compilation for the current plot. |
@@ -135,13 +135,15 @@ File names can use letters, digits, `_`, `-`, `.` and `+`, and end in `.schem` o
 ## Redpiler Commands
 
 Redpiler compiles the plot's redstone circuits for faster simulation.
+It compiles and runs on its own thread, so the plot stays responsive; the plot can't be changed while it compiles.
 Placing or breaking blocks stops Redpiler and returns the plot to normal redstone ticking.
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `/redpiler compile` | `/rp c` | Compile the current plot for accelerated redstone simulation. |
+| `/redpiler compile [direct]` | `/rp c` | Compile the current plot for accelerated redstone simulation, on the Direct engine. |
 | `/redpiler inspect` | `/rp i` | Show the compiled node for the block you are looking at in the server's debug log. |
-| `/redpiler reset` | `/rp r` | Stop compiled simulation and return to normal redstone ticking. |
+| `/redpiler export` | `/rp e` | Write the compiled circuit to `redpiler-p<x>,<z>.circuit` in the server directory, for use by `rilc` and other tools. |
+| `/redpiler reset` | `/rp r` | Stop Redpiler, or cancel a compile, and return to normal redstone ticking. Flags: `-r`/`--restore` (return every component to its state at compile time), `-u`/`--update` (update every block in the plot afterwards). |
 
 ### Compiler Flags
 
@@ -155,8 +157,6 @@ The `/redpiler compile` command supports these optional flags:
 | `--wire-dot-out` | `-d` | Treat redstone dots as outputs with `--io-only`, useful for color displays. |
 | `--illegal-states-out` | `-l` | Treat redstone wires in illegal states (one connected side) as outputs with `--io-only`, useful for sprite displays. |
 | `--wire-cross-out` | `-c` | Treat redstone crosses as outputs with `--io-only`, useful for sprite displays without illegal wire states. |
-| `--update` | `-u` | Update all blocks after Redpiler resets. |
-| `--export` | `-e` | Write the compiled circuit to `redpiler-p<x>,<z>.circuit` in the server directory, for use by external tools. |
 
 ## Command Aliases
 

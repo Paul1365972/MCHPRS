@@ -6,6 +6,7 @@ use crate::{
         error::{CommandResult, RuntimeError},
         registry::CommandRegistry,
     },
+    player::Player,
     plot::PlotWorld,
     worldedit::{create_clipboard, paste_clipboard, WorldEditUndo},
 };
@@ -39,13 +40,7 @@ fn exec_history(ctx: &mut ExecutionContext<'_>, undo: bool) -> CommandResult<()>
         if done == times {
             break Ok(());
         }
-        let player = ctx.player_mut()?;
-        let stack = if undo {
-            &mut player.worldedit_undo
-        } else {
-            &mut player.worldedit_redo
-        };
-        let Some(entry) = stack.last() else {
+        let Some(entry) = history(ctx.player_mut()?, undo).last() else {
             break Ok(());
         };
         if entry.plot_x != plot_x || entry.plot_z != plot_z {
@@ -55,15 +50,10 @@ fn exec_history(ctx: &mut ExecutionContext<'_>, undo: bool) -> CommandResult<()>
                 RuntimeError::RedoFromDifferentPlot
             });
         }
-        let entry = stack.pop().unwrap();
-
-        let inverse = apply_history(ctx.world_mut(), &entry);
-        let player = ctx.player_mut()?;
-        if undo {
-            player.worldedit_redo.push(inverse);
-        } else {
-            player.worldedit_undo.push(inverse);
-        }
+        ctx.world_mut()?;
+        let entry = history(ctx.player_mut()?, undo).pop().unwrap();
+        let inverse = apply_history(ctx.world_mut()?, &entry);
+        history(ctx.player_mut()?, !undo).push(inverse);
         done += 1;
     };
 
@@ -78,6 +68,14 @@ fn exec_history(ctx: &mut ExecutionContext<'_>, undo: bool) -> CommandResult<()>
         n => ctx.worldedit_message(&format!("{} {} operations.", past, n))?,
     }
     result.map_err(Into::into)
+}
+
+fn history(player: &mut Player, undo: bool) -> &mut Vec<WorldEditUndo> {
+    if undo {
+        &mut player.worldedit_undo
+    } else {
+        &mut player.worldedit_redo
+    }
 }
 
 fn apply_history(world: &mut PlotWorld, entry: &WorldEditUndo) -> WorldEditUndo {

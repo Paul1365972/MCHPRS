@@ -9,7 +9,11 @@ use crate::{
     },
     item_stack::ItemStack,
     player::{Gamemode, PlayerPos},
-    plot::{database, redpiler::RedpilerOptions, Plot},
+    plot::{
+        database,
+        redpiler::{EngineKind, RedpilerOptions},
+        Plot,
+    },
     server::{get_version_string, Message},
     utils::HyphenatedUUID,
 };
@@ -131,8 +135,16 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
             .executes(|ctx| {
                 let ticks: i32 = ctx.arg("ticks")?;
 
-                let start_time = Instant::now();
+                let requester = PlayerPacketSender::new(&ctx.player()?.client);
                 let plot = ctx.plot_mut();
+                let compiling = plot.is_compiling_redpiler();
+                if plot.advance_redpiler(ticks as u64, requester) {
+                    if compiling {
+                        return ctx.reply("The plot will advance once redpiler has compiled.");
+                    }
+                    return Ok(());
+                }
+                let start_time = Instant::now();
                 plot.tickn(ticks as u64);
                 plot.publish_world();
 
@@ -373,44 +385,27 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
         Command::new("redpiler")
             .alias("rp")
             .subcommand(
-                Command::new("compile")
-                    .alias("c")
-                    .flag('o', "optimize", "Enable redpiler optimizations")
-                    .flag(
-                        'r',
-                        "reorder",
-                        "Let optimizations reorder updates within a tick",
-                    )
-                    .flag('e', "export", "Export the compile graph")
-                    .flag(
-                        'i',
-                        "io-only",
-                        "Only send block updates of relevant input/output blocks",
-                    )
-                    .flag('u', "update", "Update all blocks after redpiler resets")
-                    .flag(
-                        'd',
-                        "wire-dot-out",
-                        "Consider wires in dot shape as output block",
-                    )
-                    .flag(
-                        'l',
-                        "illegal-states-out",
-                        "Consider wires in so-called \"illegal\" states as output block",
-                    )
-                    .flag(
-                        'c',
-                        "wire-cross-out",
-                        "Consider a redstone cross to be an output block",
-                    )
-                    .executes(exec_redpiler_compile),
+                compile_flags(EngineKind::ALL.into_iter().fold(
+                    Command::new("compile").alias("c"),
+                    |compile, engine| {
+                        compile.subcommand(
+                            compile_flags(Command::new(&engine.to_string()))
+                                .executes(move |ctx| exec_redpiler_compile(ctx, engine)),
+                        )
+                    },
+                ))
+                .executes(|ctx| exec_redpiler_compile(ctx, EngineKind::default())),
             )
             .subcommand(Command::new("inspect").alias("i").executes(|ctx| {
                 let pos = ctx.target_block(10.0)?;
-                let Some(redpiler) = &ctx.plot_mut().redpiler else {
+                let circuit = ctx
+                    .plot_mut()
+                    .redpiler
+                    .as_ref()
+                    .and_then(|redpiler| redpiler.circuit.clone());
+                let Some(circuit) = circuit else {
                     return ctx.reply("Redpiler is not running.");
                 };
-                let circuit = redpiler.simulation.circuit();
                 match circuit.node_at(pos) {
                     Some(node) => debug!(
                         "Node {}: {:#?}\ninputs: {:?}\noutputs: {:?}",
@@ -423,22 +418,76 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                 }
                 Ok(())
             }))
-            .subcommand(Command::new("reset").alias("r").executes(|ctx| {
-                let plot = ctx.plot_mut();
-                plot.reset_redpiler();
-                plot.publish_world();
-                ctx.reply("Redpiler has been reset.")
-            })),
+            .subcommand(Command::new("export").alias("e").executes(|ctx| {
+                let circuit = ctx
+                    .plot_mut()
+                    .redpiler
+                    .as_ref()
+                    .and_then(|redpiler| redpiler.circuit.clone());
+                let Some(circuit) = circuit else {
+                    return ctx.reply("Redpiler is not running.");
+                };
+                let world = &ctx.plot_mut().world;
+                let path = format!("redpiler-p{},{}.circuit", world.x, world.z);
+                std::fs::write(&path, circuit.to_bytes()).map_err(|error| {
+                    CommandError::runtime(format!("Failed to export the circuit: {error}"))
+                })?;
+                ctx.reply(&format!("The circuit was exported to {path}."))
+            }))
+            .subcommand(
+                Command::new("reset")
+                    .alias("r")
+                    .flag(
+                        'r',
+                        "restore",
+                        "Return every component to the state it was compiled in",
+                    )
+                    .flag('u', "update", "Update every block in the plot afterwards")
+                    .executes(|ctx| {
+                        let restore = ctx.flag("restore");
+                        let update = ctx.flag("update");
+                        ctx.plot_mut().stop_redpiler(restore, update);
+                        ctx.reply("Redpiler has been reset.")
+                    }),
+            ),
     );
 }
 
-fn exec_redpiler_compile(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
+fn compile_flags(command: Command) -> Command {
+    command
+        .flag('o', "optimize", "Enable redpiler optimizations")
+        .flag(
+            'r',
+            "reorder",
+            "Let optimizations reorder updates within a tick",
+        )
+        .flag(
+            'i',
+            "io-only",
+            "Only send block updates of relevant input/output blocks",
+        )
+        .flag(
+            'd',
+            "wire-dot-out",
+            "Consider wires in dot shape as output block",
+        )
+        .flag(
+            'l',
+            "illegal-states-out",
+            "Consider wires in so-called \"illegal\" states as output block",
+        )
+        .flag(
+            'c',
+            "wire-cross-out",
+            "Consider a redstone cross to be an output block",
+        )
+}
+
+fn exec_redpiler_compile(ctx: &mut ExecutionContext<'_>, engine: EngineKind) -> CommandResult<()> {
     let options = RedpilerOptions {
         optimize: ctx.flag("optimize"),
         reorder: ctx.flag("reorder"),
-        export: ctx.flag("export"),
         io_only: ctx.flag("io-only"),
-        update: ctx.flag("update"),
         wire_dot_out: ctx.flag("wire-dot-out"),
         illegal_states_out: ctx.flag("illegal-states-out"),
         wire_cross_out: ctx.flag("wire-cross-out"),
@@ -451,14 +500,7 @@ fn exec_redpiler_compile(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
         ctx.reply(msg)?;
     }
 
-    let plot = ctx.plot_mut();
-    plot.reset_redpiler();
-    let start_time = Instant::now();
-    plot.start_redpiler(options)
-        .map_err(|error| CommandError::runtime(error.to_string()))?;
-    let duration = start_time.elapsed();
-    plot.publish_world();
-    let msg = format!("Compilation completed in {:?}", duration);
-    debug!(msg);
-    ctx.reply(&msg)
+    ctx.plot_mut().reset_redpiler();
+    ctx.plot_mut().start_redpiler(options, engine);
+    ctx.reply(&format!("Compiling for the {engine} engine..."))
 }
