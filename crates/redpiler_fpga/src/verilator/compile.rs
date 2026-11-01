@@ -1,10 +1,10 @@
+use super::VerilatorError;
 use crate::cache;
 use crate::registers::Registers;
 use crate::rtl;
 use crate::subprocess;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
-use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -73,19 +73,16 @@ fn compile_jobs(node_count: usize) -> usize {
     }
 }
 
-fn verilator_version() -> io::Result<Vec<u8>> {
+fn verilator_version() -> Result<Vec<u8>, VerilatorError> {
     let output = Command::new("verilator").arg("--version").output()?;
     if output.status.success() {
         Ok(output.stdout)
     } else {
-        Err(io::Error::other(format!(
-            "verilator --version failed with {}",
-            output.status
-        )))
+        Err(VerilatorError::Version(output.status))
     }
 }
 
-fn build_key(directory: &Path, sources: &[PathBuf]) -> io::Result<String> {
+fn build_key(directory: &Path, sources: &[PathBuf]) -> Result<String, VerilatorError> {
     let mut hasher = Sha256::new();
     hasher.update(verilator_version()?);
     for argument in VERILATOR_ARGUMENTS {
@@ -105,22 +102,29 @@ fn build_key(directory: &Path, sources: &[PathBuf]) -> io::Result<String> {
         .collect())
 }
 
-fn run_build_step(command: &mut Command, log: &Path, deadline: Instant) -> io::Result<()> {
+fn run_build_step(
+    command: &mut Command,
+    log: &Path,
+    deadline: Instant,
+) -> Result<(), VerilatorError> {
     let output = File::options().create(true).append(true).open(log)?;
     command
         .stdin(Stdio::null())
         .stdout(output.try_clone()?)
         .stderr(output);
-    subprocess::run(command, deadline).map_err(io::Error::other)
+    subprocess::run(command, deadline).map_err(|source| VerilatorError::Build {
+        log: log.to_owned(),
+        source,
+    })
 }
 
-fn generate_and_compile(
+fn build(
     directory: &Path,
     sources: &[PathBuf],
     node_count: usize,
     state_bytes: usize,
     progress: &dyn Fn(&'static str),
-) -> io::Result<()> {
+) -> Result<(), VerilatorError> {
     let log = directory.join(BUILD_LOG);
     let deadline = Instant::now() + BUILD_TIMEOUT;
     progress("Generating Verilator model");
@@ -150,26 +154,11 @@ fn generate_and_compile(
     )
 }
 
-fn build(
-    directory: &Path,
-    sources: &[PathBuf],
-    node_count: usize,
-    state_bytes: usize,
-    progress: &dyn Fn(&'static str),
-) -> io::Result<()> {
-    generate_and_compile(directory, sources, node_count, state_bytes, progress).map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!("{error}; see {}", directory.join(BUILD_LOG).display()),
-        )
-    })
-}
-
 pub(super) fn cached_simulator(
     registers: &Registers,
     state_bytes: usize,
     progress: &dyn Fn(&'static str),
-) -> io::Result<PathBuf> {
+) -> Result<PathBuf, VerilatorError> {
     let circuit = registers.circuit;
     let root = cache::verilator_root();
     let staging = cache::build_directory(&root, STAGING_PREFIX, circuit.identity());
@@ -192,10 +181,10 @@ pub(super) fn cached_simulator(
         )?;
         if let Err(error) = fs::rename(&staging, &directory) {
             if !simulator.exists() {
-                return Err(error);
+                return Err(error.into());
             }
             fs::remove_dir_all(&staging)?;
         }
     }
-    directory.canonicalize()
+    Ok(directory.canonicalize()?)
 }

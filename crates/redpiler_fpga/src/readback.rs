@@ -1,7 +1,6 @@
 use crate::circuit::{Kind, PendingTick, State, PULSE_PRIORITY};
 use crate::registers::{Field, ReadbackLayout, Registers};
 use mchprs_redpiler::compile_graph::SignalStrength;
-use std::io;
 use std::num::NonZeroU8;
 
 struct NodeReadback {
@@ -32,8 +31,14 @@ impl Bits<'_> {
     }
 }
 
-fn invalid(message: String) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ReadbackError {
+    #[error("readback has {actual} bytes instead of {expected}")]
+    Length { actual: usize, expected: usize },
+    #[error("node {node}: countdown {value:#b} is not one-hot")]
+    Countdown { node: usize, value: u32 },
+    #[error("node {node}: more than one countdown is running")]
+    Countdowns { node: usize },
 }
 
 impl Readback {
@@ -62,13 +67,13 @@ impl Readback {
         &self,
         nodes: impl IntoIterator<Item = usize> + Clone,
         bytes: &[u8],
-    ) -> io::Result<Vec<State>> {
+    ) -> Result<Vec<State>, ReadbackError> {
         let expected = self.bytes(nodes.clone());
         if bytes.len() != expected {
-            return Err(invalid(format!(
-                "readback has {} bytes instead of {expected}",
-                bytes.len()
-            )));
+            return Err(ReadbackError::Length {
+                actual: bytes.len(),
+                expected,
+            });
         }
         let mut bits = Bits { bytes, position: 0 };
         nodes
@@ -77,7 +82,7 @@ impl Readback {
             .collect()
     }
 
-    fn decode_node(&self, index: usize, bits: &mut Bits) -> io::Result<State> {
+    fn decode_node(&self, index: usize, bits: &mut Bits) -> Result<State, ReadbackError> {
         let node = &self.nodes[index];
         let mut state = State {
             pending: None,
@@ -97,14 +102,10 @@ impl Readback {
                 Field::Countdown(_) | Field::PulseCountdown(_) if value == 0 => {}
                 Field::Countdown(_) | Field::PulseCountdown(_) => {
                     if value.count_ones() != 1 {
-                        return Err(invalid(format!(
-                            "node {index}: countdown {value:#b} is not one-hot"
-                        )));
+                        return Err(ReadbackError::Countdown { node: index, value });
                     }
                     if countdown.is_some() {
-                        return Err(invalid(format!(
-                            "node {index}: more than one countdown is running"
-                        )));
+                        return Err(ReadbackError::Countdowns { node: index });
                     }
                     countdown = Some((value, matches!(field, Field::PulseCountdown(_))));
                 }

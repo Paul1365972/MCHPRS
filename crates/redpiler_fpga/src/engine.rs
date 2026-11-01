@@ -1,20 +1,34 @@
 use crate::circuit::{Circuit, Kind, State};
 use mchprs_redpiler::compile_graph::{NodeState, SignalStrength};
 use mchprs_redpiler::{Engine, EngineError, Input, NodeChanges, NodeId, PendingTick};
-use std::io;
+use std::error::Error;
 use std::mem;
 use std::time::Instant;
 
 /// The phase engine only forwards inputs to input nodes and never advances past `u64::MAX` ticks.
 pub(crate) trait Simulator: Send {
-    fn input(&mut self, node: usize, powered: bool) -> io::Result<()>;
-    fn advance(&mut self, ticks: u64) -> io::Result<()>;
-    fn states(&mut self) -> io::Result<Vec<State>>;
+    type Error: Error + Send + Sync + 'static;
 
-    fn io_states(&mut self, io_nodes: &[usize]) -> io::Result<Vec<State>> {
+    fn input(&mut self, node: usize, powered: bool) -> Result<(), Self::Error>;
+    fn advance(&mut self, ticks: u64) -> Result<(), Self::Error>;
+    fn states(&mut self) -> Result<Vec<State>, Self::Error>;
+
+    fn io_states(&mut self, io_nodes: &[usize]) -> Result<Vec<State>, Self::Error> {
         let states = self.states()?;
         Ok(io_nodes.iter().map(|&node| states[node]).collect())
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum PhaseError {
+    #[error("node {node}: {kind:?} does not accept {input:?}")]
+    Input {
+        node: usize,
+        kind: Kind,
+        input: Input,
+    },
+    #[error("phase tick counter overflow")]
+    TickOverflow,
 }
 
 pub(crate) struct PhaseEngine<S> {
@@ -76,7 +90,7 @@ impl<S: Simulator> Engine for PhaseEngine<S> {
             let ticks = self
                 .ticks
                 .checked_add(chunk)
-                .ok_or("phase tick counter overflow")?;
+                .ok_or(PhaseError::TickOverflow)?;
             self.simulator.advance(chunk)?;
             self.ticks = ticks;
             completed += chunk;
@@ -100,7 +114,12 @@ impl<S: Simulator> Engine for PhaseEngine<S> {
             (Input::Interact, Kind::Button) => true,
             (Input::PressurePlate { powered }, Kind::PressurePlate) => powered,
             (input, kind) => {
-                return Err(format!("node {index}: {kind:?} does not accept {input:?}").into());
+                return Err(PhaseError::Input {
+                    node: index,
+                    kind,
+                    input,
+                }
+                .into());
             }
         };
         self.simulator.input(index, powered)?;

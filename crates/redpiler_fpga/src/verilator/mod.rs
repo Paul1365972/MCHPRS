@@ -2,14 +2,14 @@ mod compile;
 
 use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
-use crate::readback::Readback;
+use crate::readback::{Readback, ReadbackError};
 use crate::registers::Registers;
-use crate::subprocess::Process;
+use crate::subprocess::{Process, SubprocessError};
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -21,12 +21,52 @@ const INPUT_REQUEST: u8 = b'I';
 const STEP_REQUEST: u8 = b'S';
 const TICKS_BYTES: usize = size_of::<u64>();
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum VerilatorError {
+    #[error("could not prepare the Verilator circuit")]
+    Io(#[from] io::Error),
+    #[error("verilator --version failed with {0}")]
+    Version(std::process::ExitStatus),
+    #[error("Verilator build failed; see {}", .log.display())]
+    Build {
+        log: PathBuf,
+        #[source]
+        source: SubprocessError,
+    },
+    #[error("could not start the Verilator circuit")]
+    Start(#[source] SubprocessError),
+    #[error("Verilator circuit failed; see {}", .log.display())]
+    Failed {
+        log: PathBuf,
+        #[source]
+        source: RuntimeError,
+    },
+    #[error("Verilator circuit stopped after a previous failure; see {}", .log.display())]
+    Stopped { log: PathBuf },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum RuntimeError {
+    #[error("Verilator circuit pipe failed")]
+    Pipe(#[from] io::Error),
+    #[error("Verilator circuit sent the invalid marker {0:?}")]
+    Marker([u8; 4]),
+    #[error("Verilator circuit made no progress for {} seconds", .0.as_secs())]
+    Stalled(Duration),
+    #[error("Verilator circuit disconnected")]
+    Disconnected,
+    #[error("Verilator snapshot is at tick {actual} instead of {expected}")]
+    Ticks { actual: u64, expected: u64 },
+    #[error(transparent)]
+    Readback(#[from] ReadbackError),
+}
+
 enum Reply {
     Progress,
     Snapshot(Vec<u8>),
 }
 
-fn read_reply(output: &mut impl Read, packet_size: usize) -> io::Result<Reply> {
+fn read_reply(output: &mut impl Read, packet_size: usize) -> Result<Reply, RuntimeError> {
     let mut marker = [0; 4];
     output.read_exact(&mut marker)?;
     match &marker {
@@ -36,22 +76,19 @@ fn read_reply(output: &mut impl Read, packet_size: usize) -> io::Result<Reply> {
             output.read_exact(&mut packet)?;
             Ok(Reply::Snapshot(packet))
         }
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid Verilator message marker",
-        )),
+        _ => Err(RuntimeError::Marker(marker)),
     }
 }
 
 struct Running {
     process: Process,
     input: ChildStdin,
-    replies: Receiver<io::Result<Reply>>,
+    replies: Receiver<Result<Reply, RuntimeError>>,
     reader: JoinHandle<()>,
 }
 
 impl Running {
-    fn start(directory: &Path, packet_size: usize) -> io::Result<Self> {
+    fn start(directory: &Path, packet_size: usize) -> Result<Self, VerilatorError> {
         let mut process = Process::spawn(
             Command::new(compile::simulator(directory))
                 .current_dir(directory)
@@ -59,13 +96,9 @@ impl Running {
                 .stdout(Stdio::piped())
                 .stderr(File::create(directory.join(RUNTIME_LOG))?),
         )
-        .map_err(io::Error::other)?;
-        let input = process
-            .take_stdin()
-            .ok_or_else(|| io::Error::other("missing simulator stdin"))?;
-        let output = process
-            .take_stdout()
-            .ok_or_else(|| io::Error::other("missing simulator stdout"))?;
+        .map_err(VerilatorError::Start)?;
+        let input = process.take_stdin().expect("stdin is piped");
+        let output = process.take_stdout().expect("stdout is piped");
         let (sender, replies) = mpsc::sync_channel(1);
         let reader = thread::Builder::new()
             .name("verilator-snapshot".into())
@@ -87,7 +120,7 @@ impl Running {
         })
     }
 
-    fn exchange(&mut self, request: Option<&[u8]>) -> io::Result<Vec<u8>> {
+    fn exchange(&mut self, request: Option<&[u8]>) -> Result<Vec<u8>, RuntimeError> {
         if let Some(request) = request {
             self.input.write_all(request)?;
             self.input.flush()?;
@@ -95,23 +128,14 @@ impl Running {
         self.next_snapshot()
     }
 
-    fn next_snapshot(&self) -> io::Result<Vec<u8>> {
+    fn next_snapshot(&self) -> Result<Vec<u8>, RuntimeError> {
         loop {
             let reply =
                 self.replies
                     .recv_timeout(STALL_TIMEOUT)
                     .map_err(|error| match error {
-                        mpsc::RecvTimeoutError::Timeout => io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            format!(
-                                "Verilator circuit made no progress for {} seconds",
-                                STALL_TIMEOUT.as_secs()
-                            ),
-                        ),
-                        mpsc::RecvTimeoutError::Disconnected => io::Error::new(
-                            io::ErrorKind::BrokenPipe,
-                            "Verilator circuit disconnected",
-                        ),
+                        RecvTimeoutError::Timeout => RuntimeError::Stalled(STALL_TIMEOUT),
+                        RecvTimeoutError::Disconnected => RuntimeError::Disconnected,
                     })??;
             if let Reply::Snapshot(packet) = reply {
                 return Ok(packet);
@@ -143,7 +167,10 @@ pub(crate) struct Verilator {
 }
 
 impl Verilator {
-    pub(crate) fn compile(circuit: &Circuit, progress: &dyn Fn(&'static str)) -> io::Result<Self> {
+    pub(crate) fn compile(
+        circuit: &Circuit,
+        progress: &dyn Fn(&'static str),
+    ) -> Result<Self, VerilatorError> {
         let registers = Registers::new(circuit);
         let readback = Readback::new(&registers);
         let node_count = circuit.nodes().len();
@@ -162,11 +189,12 @@ impl Verilator {
         Ok(verilator)
     }
 
-    fn exchange(&mut self, request: Option<&[u8]>, expected: u64) -> io::Result<()> {
-        let running = self
-            .running
-            .as_mut()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Verilator engine failed"))?;
+    fn exchange(&mut self, request: Option<&[u8]>, expected: u64) -> Result<(), VerilatorError> {
+        let Some(running) = self.running.as_mut() else {
+            return Err(VerilatorError::Stopped {
+                log: self.log.clone(),
+            });
+        };
         let result = match running.exchange(request) {
             Ok(packet) => self.decode(&packet, expected),
             Err(error) => Err(error),
@@ -177,32 +205,25 @@ impl Verilator {
                 self.states = states;
                 Ok(())
             }
-            Err(error) => Err(self.fail(error)),
+            Err(source) => {
+                if let Some(running) = self.running.take() {
+                    running.stop();
+                }
+                Err(VerilatorError::Failed {
+                    log: self.log.clone(),
+                    source,
+                })
+            }
         }
     }
 
-    fn decode(&self, packet: &[u8], expected: u64) -> io::Result<Vec<State>> {
+    fn decode(&self, packet: &[u8], expected: u64) -> Result<Vec<State>, RuntimeError> {
         let (ticks, states) = packet.split_at(TICKS_BYTES);
-        if ticks != expected.to_le_bytes() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid Verilator snapshot tick count",
-            ));
+        let actual = u64::from_le_bytes(ticks.try_into().expect("eight tick bytes"));
+        if actual != expected {
+            return Err(RuntimeError::Ticks { actual, expected });
         }
-        self.readback.decode(0..self.node_count, states)
-    }
-
-    fn fail(&mut self, error: io::Error) -> io::Error {
-        if let Some(running) = self.running.take() {
-            running.stop();
-        }
-        io::Error::new(
-            error.kind(),
-            format!(
-                "{error}; Verilator engine is unusable; see {}",
-                self.log.display()
-            ),
-        )
+        Ok(self.readback.decode(0..self.node_count, states)?)
     }
 }
 
@@ -215,19 +236,21 @@ impl Drop for Verilator {
 }
 
 impl Simulator for Verilator {
-    fn input(&mut self, node: usize, powered: bool) -> io::Result<()> {
+    type Error = VerilatorError;
+
+    fn input(&mut self, node: usize, powered: bool) -> Result<(), VerilatorError> {
         let mut request = [INPUT_REQUEST, 0, 0, 0, 0, u8::from(powered)];
         request[1..5].copy_from_slice(&(node as u32).to_le_bytes());
         self.exchange(Some(&request), self.ticks)
     }
 
-    fn advance(&mut self, ticks: u64) -> io::Result<()> {
+    fn advance(&mut self, ticks: u64) -> Result<(), VerilatorError> {
         let mut request = [STEP_REQUEST; 9];
         request[1..].copy_from_slice(&ticks.to_le_bytes());
         self.exchange(Some(&request), self.ticks + ticks)
     }
 
-    fn states(&mut self) -> io::Result<Vec<State>> {
+    fn states(&mut self) -> Result<Vec<State>, VerilatorError> {
         Ok(self.states.clone())
     }
 }

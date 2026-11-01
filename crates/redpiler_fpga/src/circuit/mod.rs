@@ -1,13 +1,14 @@
+mod error;
 mod lower;
 mod strength_set;
 mod strengths;
 mod validate;
 
+pub(crate) use error::{CircuitError, NodeError};
 pub(crate) use strength_set::StrengthSet;
 
 use mchprs_redpiler::compile_graph::SignalStrength;
 use mchprs_world::TickPriority;
-use std::io;
 use std::num::NonZeroU8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -213,10 +214,6 @@ pub struct Circuit {
     identity: u64,
 }
 
-fn invalid(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message.into())
-}
-
 impl Circuit {
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
@@ -230,9 +227,12 @@ impl Circuit {
         self.identity
     }
 
-    pub fn new(nodes: Vec<Node>) -> io::Result<Self> {
-        if nodes.is_empty() || u32::try_from(nodes.len()).is_err() {
-            return Err(invalid("node count must fit the 32-bit protocol"));
+    pub fn new(nodes: Vec<Node>) -> Result<Self, CircuitError> {
+        if nodes.is_empty() {
+            return Err(CircuitError::Empty);
+        }
+        if u32::try_from(nodes.len()).is_err() {
+            return Err(CircuitError::TooManyNodes(nodes.len()));
         }
         let io_nodes = nodes
             .iter()

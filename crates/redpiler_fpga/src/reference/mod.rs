@@ -9,7 +9,7 @@ use crate::engine::Simulator;
 use aggregate::Aggregate;
 use mchprs_redpiler::compile_graph::SignalStrength;
 use settle::settle_node;
-use std::io;
+use std::convert::Infallible;
 use timers::Timers;
 
 #[derive(Clone, Copy)]
@@ -206,7 +206,9 @@ impl Reference {
 }
 
 impl Simulator for Reference {
-    fn input(&mut self, node: usize, powered: bool) -> io::Result<()> {
+    type Error = Infallible;
+
+    fn input(&mut self, node: usize, powered: bool) -> Result<(), Infallible> {
         let kind = self.kinds[node];
         let mut state = self.states[node];
         if kind == Kind::Button {
@@ -225,7 +227,7 @@ impl Simulator for Reference {
         Ok(())
     }
 
-    fn advance(&mut self, ticks: u64) -> io::Result<()> {
+    fn advance(&mut self, ticks: u64) -> Result<(), Infallible> {
         let target = self.ticks + ticks;
         while let Some(deadline) = self.timers.next_deadline() {
             if deadline > u128::from(target) {
@@ -247,7 +249,7 @@ impl Simulator for Reference {
         Ok(())
     }
 
-    fn states(&mut self) -> io::Result<Vec<State>> {
+    fn states(&mut self) -> Result<Vec<State>, Infallible> {
         Ok((0..self.states.len())
             .map(|index| self.state(index))
             .collect())

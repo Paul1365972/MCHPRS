@@ -149,19 +149,36 @@ fn random_circuit(seed: u64, count: usize) -> Circuit {
 fn assert_same_states(
     circuit: &Circuit,
     reference: &mut Reference,
-    simulator: &mut dyn Simulator,
+    simulator: &mut impl Simulator,
     seed: u64,
-    moment: &str,
+    moment: impl Fn() -> String,
 ) {
     let expected = reference.states().unwrap();
     let actual = simulator.states().unwrap();
-    if let Some(index) = (0..expected.len()).find(|&index| expected[index] != actual[index]) {
-        let node = &circuit.nodes()[index];
-        panic!(
-            "seed {seed}, {moment}: node {index} ({:?}, inputs {:?}, sides {:?}, initial {:?}) is {:?} in the reference and {:?} in the circuit",
-            node.kind, node.inputs, node.sides, node.initial, expected[index], actual[index]
-        );
-    }
+    assert_eq!(
+        expected.len(),
+        actual.len(),
+        "seed {seed}, {}: state counts differ",
+        moment()
+    );
+    let Some(index) = expected
+        .iter()
+        .zip(&actual)
+        .position(|(expected, actual)| expected != actual)
+    else {
+        return;
+    };
+    let node = &circuit.nodes()[index];
+    panic!(
+        "seed {seed}, {}: node {index} ({:?}, inputs {:?}, sides {:?}, initial {:?}) is {:?} in the reference and {:?} in the circuit",
+        moment(),
+        node.kind,
+        node.inputs,
+        node.sides,
+        node.initial,
+        expected[index],
+        actual[index]
+    );
 }
 
 fn input_nodes(circuit: &Circuit) -> Vec<usize> {
@@ -198,32 +215,29 @@ fn compare_with_reference(
     seed: u64,
     circuit: &Circuit,
     ticks: u64,
-    simulator: impl FnOnce(&Circuit) -> Box<dyn Simulator>,
+    simulator: &mut impl Simulator,
 ) {
     let mut reference = Reference::new(circuit);
-    let mut simulator = simulator(circuit);
     let inputs = input_nodes(circuit);
     let mut random = Random(seed ^ 0x5851f42d4c957f2d);
-    assert_same_states(
-        circuit,
-        &mut reference,
-        simulator.as_mut(),
-        seed,
-        "initially",
-    );
+    assert_same_states(circuit, &mut reference, simulator, seed, || {
+        "initially".to_owned()
+    });
     for tick in 0..ticks {
         if !inputs.is_empty() && random.chance(1, 3) {
             let node = inputs[random.below(inputs.len())];
             let powered = random.chance(1, 2);
             reference.input(node, powered).unwrap();
             simulator.input(node, powered).unwrap();
-            let moment = format!("after input {powered} to node {node} at tick {tick}");
-            assert_same_states(circuit, &mut reference, simulator.as_mut(), seed, &moment);
+            assert_same_states(circuit, &mut reference, simulator, seed, || {
+                format!("after input {powered} to node {node} at tick {tick}")
+            });
         }
         reference.advance(1).unwrap();
         simulator.advance(1).unwrap();
-        let moment = format!("at tick {}", tick + 1);
-        assert_same_states(circuit, &mut reference, simulator.as_mut(), seed, &moment);
+        assert_same_states(circuit, &mut reference, simulator, seed, || {
+            format!("at tick {}", tick + 1)
+        });
     }
 }
 
@@ -237,13 +251,11 @@ fn random_circuits_are_valid() {
 #[test]
 #[ignore = "needs Verilator"]
 fn random_circuits_match_the_reference_in_verilator() {
-    let verilator = |circuit: &Circuit| -> Box<dyn Simulator> {
-        Box::new(Verilator::compile(circuit, &|_| {}).unwrap())
-    };
-    for seed in 0..8 {
-        compare_with_reference(seed, &random_circuit(seed, 1500), 2000, verilator);
-    }
-    for seed in 8..12 {
-        compare_with_reference(seed, &simulated_circuit(seed, 1500, 200), 2000, verilator);
+    let circuits = (0..8)
+        .map(|seed| (seed, random_circuit(seed, 1500)))
+        .chain((8..12).map(|seed| (seed, simulated_circuit(seed, 1500, 200))));
+    for (seed, circuit) in circuits {
+        let mut verilator = Verilator::compile(&circuit, &|_| {}).unwrap();
+        compare_with_reference(seed, &circuit, 2000, &mut verilator);
     }
 }

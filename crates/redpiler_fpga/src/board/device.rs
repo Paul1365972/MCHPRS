@@ -13,6 +13,38 @@ const RESPONSE_HEADER_LENGTH: usize = 16;
 const CHECKSUM_LENGTH: usize = 2;
 const REJECTED_OPCODE: u8 = 0xff;
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum DeviceError {
+    #[error("could not open the FPGA serial port {port}")]
+    Open {
+        port: String,
+        #[source]
+        source: serialport::Error,
+    },
+    #[error("FPGA serial port failed")]
+    Port(#[from] serialport::Error),
+    #[error("FPGA serial exchange failed")]
+    Io(#[from] io::Error),
+    #[error("FPGA device stopped after a previous failure")]
+    Stopped,
+    #[error("FPGA serial write stopped")]
+    WriteStopped,
+    #[error("FPGA serial response ended")]
+    ResponseEnded,
+    #[error("FPGA serial request timed out")]
+    TimedOut,
+    #[error("FPGA response synchronization mismatch")]
+    Synchronization,
+    #[error("FPGA response sequence mismatch")]
+    Sequence,
+    #[error("FPGA response opcode rejected or mismatched")]
+    Opcode,
+    #[error("FPGA response node count mismatch")]
+    NodeCount,
+    #[error("FPGA response CRC16 mismatch")]
+    Checksum,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Command {
     Snapshot,
@@ -80,20 +112,22 @@ impl Device {
         circuit: &Circuit,
         state_bytes: usize,
         output_bytes: usize,
-    ) -> io::Result<Self> {
-        let mut port = serialport::new(port, BAUD)
+    ) -> Result<Self, DeviceError> {
+        let mut serial = serialport::new(port, BAUD)
             .data_bits(serialport::DataBits::Eight)
             .parity(serialport::Parity::None)
             .stop_bits(serialport::StopBits::One)
             .flow_control(serialport::FlowControl::None)
             .timeout(TIMEOUT)
             .open()
-            .map_err(io::Error::other)?;
-        port.flush()?;
-        port.clear(serialport::ClearBuffer::All)
-            .map_err(io::Error::other)?;
+            .map_err(|source| DeviceError::Open {
+                port: port.to_owned(),
+                source,
+            })?;
+        serial.flush()?;
+        serial.clear(serialport::ClearBuffer::All)?;
         Ok(Self {
-            port: Some(port),
+            port: Some(serial),
             node_count: circuit.nodes().len(),
             output_count: circuit.io_nodes().len(),
             state_bytes,
@@ -102,13 +136,8 @@ impl Device {
         })
     }
 
-    pub(super) fn execute(&mut self, command: Command) -> io::Result<Response> {
-        let port = self.port.as_mut().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "FPGA device stopped after a previous failure",
-            )
-        })?;
+    pub(super) fn execute(&mut self, command: Command) -> Result<Response, DeviceError> {
+        let port = self.port.as_mut().ok_or(DeviceError::Stopped)?;
         let (count, payload_bytes) = match command.payload() {
             Payload::None => (self.node_count, 0),
             Payload::States => (self.node_count, self.state_bytes),
@@ -135,47 +164,35 @@ fn serial_exchange(
     port: &mut dyn serialport::SerialPort,
     request: &[u8; REQUEST_LENGTH],
     response: &mut [u8],
-) -> io::Result<()> {
+) -> Result<(), DeviceError> {
     let deadline = Instant::now() + exchange_timeout(response.len());
     let mut remaining = request.as_slice();
     while !remaining.is_empty() {
-        port.set_timeout(time_remaining(deadline)?)
-            .map_err(io::Error::other)?;
+        port.set_timeout(time_remaining(deadline)?)?;
         match port.write(remaining) {
-            Ok(0) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "FPGA serial write stopped",
-                ));
-            }
+            Ok(0) => return Err(DeviceError::WriteStopped),
             Ok(count) => remaining = &remaining[count..],
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     let mut remaining = response;
     while !remaining.is_empty() {
-        port.set_timeout(time_remaining(deadline)?)
-            .map_err(io::Error::other)?;
+        port.set_timeout(time_remaining(deadline)?)?;
         match port.read(remaining) {
-            Ok(0) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "FPGA serial response ended",
-                ));
-            }
+            Ok(0) => return Err(DeviceError::ResponseEnded),
             Ok(count) => remaining = &mut remaining[count..],
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     Ok(())
 }
 
-fn time_remaining(deadline: Instant) -> io::Result<Duration> {
+fn time_remaining(deadline: Instant) -> Result<Duration, DeviceError> {
     deadline
         .checked_duration_since(Instant::now())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "FPGA serial request timed out"))
+        .ok_or(DeviceError::TimedOut)
 }
 
 fn request_frame(sequence: u8, command: Command) -> [u8; REQUEST_LENGTH] {
@@ -195,26 +212,25 @@ fn decode_response(
     sequence: u8,
     command: Command,
     node_count: usize,
-) -> io::Result<Response> {
-    let invalid = |message| io::Error::new(io::ErrorKind::InvalidData, message);
+) -> Result<Response, DeviceError> {
     let (checked, checksum) = response.split_at(response.len() - CHECKSUM_LENGTH);
     let (header, data) = checked.split_at(RESPONSE_HEADER_LENGTH);
     if header[..2] != RESPONSE_SYNCHRONIZATION {
-        return Err(invalid("FPGA response synchronization mismatch"));
+        return Err(DeviceError::Synchronization);
     }
     if header[2] != sequence {
-        return Err(invalid("FPGA response sequence mismatch"));
+        return Err(DeviceError::Sequence);
     }
     if header[3] == REJECTED_OPCODE || header[3] != command.opcode() {
-        return Err(invalid("FPGA response opcode rejected or mismatched"));
+        return Err(DeviceError::Opcode);
     }
     let count = u32::from_le_bytes(header[12..16].try_into().expect("four count bytes"));
     if count as usize != node_count {
-        return Err(invalid("FPGA response node count mismatch"));
+        return Err(DeviceError::NodeCount);
     }
     let checksum = u16::from_le_bytes(checksum.try_into().expect("two checksum bytes"));
     if crc16(&checked[2..]) != checksum {
-        return Err(invalid("FPGA response CRC16 mismatch"));
+        return Err(DeviceError::Checksum);
     }
     Ok(Response {
         ticks: u64::from_le_bytes(header[4..12].try_into().expect("eight tick bytes")),

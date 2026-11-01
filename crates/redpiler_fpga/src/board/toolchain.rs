@@ -17,11 +17,45 @@ const CONVERSION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PROGRAM_TIMEOUT: Duration = Duration::from_secs(60);
 const LOCK_TIMEOUT: Duration = Duration::from_secs(45 * 60);
 
-pub(super) fn build(directory: &Path, progress: &dyn Fn(&'static str)) -> io::Result<PathBuf> {
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ToolchainError {
+    #[error("{0} is not set; enter an openXC7 development environment")]
+    Environment(&'static str),
+    #[error("Yosys paths must be UTF-8 without line breaks: {}", .0.display())]
+    YosysPath(PathBuf),
+    #[error("{} has no parent directory", .0.display())]
+    Orphan(PathBuf),
+    #[error("could not access the FPGA build files")]
+    Io(#[from] io::Error),
+    #[error("could not lock the FPGA chip database {}", .path.display())]
+    Lock {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("FPGA {stage} needs {program}; enter the FPGA Nix development shell")]
+    MissingTool {
+        stage: &'static str,
+        program: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("FPGA {stage} failed; see {} and {}", .stdout.display(), .stderr.display())]
+    Stage {
+        stage: &'static str,
+        stdout: PathBuf,
+        stderr: PathBuf,
+        #[source]
+        source: SubprocessError,
+    },
+}
+
+pub(super) fn build(
+    directory: &Path,
+    progress: &dyn Fn(&'static str),
+) -> Result<PathBuf, ToolchainError> {
     let directory = directory.canonicalize()?;
-    let cache = directory
-        .parent()
-        .ok_or_else(|| io::Error::other("missing build cache directory"))?;
+    let cache = parent(&directory)?;
     let database = environment_path("PRJXRAY_DB_DIR")?.join("artix7");
     let nextpnr = environment_path("NEXTPNR_XILINX_DIR")?;
     let netlist = synthesize(&directory, progress)?;
@@ -31,13 +65,16 @@ pub(super) fn build(directory: &Path, progress: &dyn Fn(&'static str)) -> io::Re
     write_bitstream(&directory, &database, &frames, progress)
 }
 
-fn synthesize(directory: &Path, progress: &dyn Fn(&'static str)) -> io::Result<PathBuf> {
+fn synthesize(
+    directory: &Path,
+    progress: &dyn Fn(&'static str),
+) -> Result<PathBuf, ToolchainError> {
     let netlist = directory.join("circuit.json");
     let script = directory.join("synthesis.ys");
     let sources = rtl::sources()
         .iter()
         .map(|source| yosys_path(&directory.join(source)))
-        .collect::<io::Result<Vec<_>>>()?
+        .collect::<Result<Vec<_>, _>>()?
         .join(" ");
     fs::write(
         &script,
@@ -61,7 +98,7 @@ fn chip_database(
     database: &Path,
     nextpnr: &Path,
     progress: &dyn Fn(&'static str),
-) -> io::Result<PathBuf> {
+) -> Result<PathBuf, ToolchainError> {
     let chip_database = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bin"));
     let lock_path = cache.join("chipdb.lock");
     let lock = fs::OpenOptions::new()
@@ -71,11 +108,9 @@ fn chip_database(
         .truncate(false)
         .open(&lock_path)?;
     progress("Waiting for device database");
-    cache::lock(&lock, Instant::now() + LOCK_TIMEOUT).map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!("FPGA chip database lock {}: {error}", lock_path.display()),
-        )
+    cache::lock(&lock, Instant::now() + LOCK_TIMEOUT).map_err(|source| ToolchainError::Lock {
+        path: lock_path,
+        source,
     })?;
     if !chip_database.is_file() {
         build_chip_database(cache, database, nextpnr, &chip_database, progress)?;
@@ -90,7 +125,7 @@ fn build_chip_database(
     nextpnr: &Path,
     chip_database: &Path,
     progress: &dyn Fn(&'static str),
-) -> io::Result<()> {
+) -> Result<(), ToolchainError> {
     let intermediate = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bba"));
     let partial = cache.join(format!("chipdb-{CHIP_DATABASE_DEVICE}.bin.partial"));
     progress("Building device database");
@@ -117,7 +152,8 @@ fn build_chip_database(
         ASSEMBLY_TIMEOUT,
     )?;
     fs::rename(partial, chip_database)?;
-    fs::remove_file(intermediate)
+    fs::remove_file(intermediate)?;
+    Ok(())
 }
 
 fn place_and_route(
@@ -125,7 +161,7 @@ fn place_and_route(
     chip_database: &Path,
     netlist: &Path,
     progress: &dyn Fn(&'static str),
-) -> io::Result<PathBuf> {
+) -> Result<PathBuf, ToolchainError> {
     let constraints = directory.join(rtl::LIBRARY_DIRECTORY).join("basys3.xdc");
     let assembly = directory.join("circuit.fasm");
     progress("Placing and routing");
@@ -152,7 +188,7 @@ fn generate_frames(
     database: &Path,
     assembly: &Path,
     progress: &dyn Fn(&'static str),
-) -> io::Result<PathBuf> {
+) -> Result<PathBuf, ToolchainError> {
     let frames = directory.join("circuit.frames");
     progress("Generating configuration frames");
     run(
@@ -174,7 +210,7 @@ fn write_bitstream(
     database: &Path,
     frames: &Path,
     progress: &dyn Fn(&'static str),
-) -> io::Result<PathBuf> {
+) -> Result<PathBuf, ToolchainError> {
     let bitstream = directory.join("circuit.bit");
     progress("Writing bitstream");
     run(
@@ -192,11 +228,8 @@ fn write_bitstream(
     Ok(bitstream)
 }
 
-pub(super) fn program(bitstream: &Path) -> io::Result<()> {
+pub(super) fn program(bitstream: &Path) -> Result<(), ToolchainError> {
     let bitstream = bitstream.canonicalize()?;
-    let directory = bitstream
-        .parent()
-        .ok_or_else(|| io::Error::other("missing bitstream directory"))?;
     let mut command = Command::new("openFPGALoader");
     command.args(["-b", "basys3", "--write-sram"]);
     if let Some(serial) = env::var_os("MCHPRS_FPGA_SERIAL").filter(|serial| !serial.is_empty()) {
@@ -204,69 +237,59 @@ pub(super) fn program(bitstream: &Path) -> io::Result<()> {
     }
     run(
         command.arg(&bitstream),
-        directory,
+        parent(&bitstream)?,
         "program",
         PROGRAM_TIMEOUT,
     )
 }
 
-fn yosys_path(path: &Path) -> io::Result<String> {
-    let path = path.to_str().filter(|value| !value.contains(['\r', '\n']));
-    let path = path.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Yosys paths must be UTF-8 without line breaks",
-        )
-    })?;
+fn yosys_path(path: &Path) -> Result<String, ToolchainError> {
+    let text = path
+        .to_str()
+        .filter(|text| !text.contains(['\r', '\n']))
+        .ok_or_else(|| ToolchainError::YosysPath(path.to_owned()))?;
     Ok(format!(
         "\"{}\"",
-        path.replace('\\', "\\\\").replace('"', "\\\"")
+        text.replace('\\', "\\\\").replace('"', "\\\"")
     ))
 }
 
-fn environment_path(name: &str) -> io::Result<PathBuf> {
+fn environment_path(name: &'static str) -> Result<PathBuf, ToolchainError> {
     env::var_os(name)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("{name} is not set; enter an openXC7 development environment"),
-            )
-        })
+        .ok_or(ToolchainError::Environment(name))
 }
 
-fn run(command: &mut Command, directory: &Path, stage: &str, timeout: Duration) -> io::Result<()> {
-    let stdout = directory.join(format!("{stage}.stdout.log"));
-    let stderr = directory.join(format!("{stage}.stderr.log"));
-    run_logged(command, directory, &stdout, &stderr, timeout).map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!(
-                "FPGA {stage}: {error}; see {} and {}",
-                stdout.display(),
-                stderr.display()
-            ),
-        )
-    })
+fn parent(path: &Path) -> Result<&Path, ToolchainError> {
+    path.parent()
+        .ok_or_else(|| ToolchainError::Orphan(path.to_owned()))
 }
 
-fn run_logged(
+fn run(
     command: &mut Command,
     directory: &Path,
-    stdout: &Path,
-    stderr: &Path,
+    stage: &'static str,
     timeout: Duration,
-) -> io::Result<()> {
+) -> Result<(), ToolchainError> {
+    let stdout = directory.join(format!("{stage}.stdout.log"));
+    let stderr = directory.join(format!("{stage}.stderr.log"));
     command
         .current_dir(directory)
         .stdin(Stdio::null())
-        .stdout(File::create(stdout)?)
-        .stderr(File::create(stderr)?);
+        .stdout(File::create(&stdout)?)
+        .stderr(File::create(&stderr)?);
     subprocess::run(command, Instant::now() + timeout).map_err(|error| match error {
-        SubprocessError::Start { .. } => {
-            io::Error::other(format!("{error}; enter the FPGA Nix development shell"))
-        }
-        error => io::Error::other(error),
+        SubprocessError::Start { program, source } => ToolchainError::MissingTool {
+            stage,
+            program,
+            source,
+        },
+        source => ToolchainError::Stage {
+            stage,
+            stdout,
+            stderr,
+            source,
+        },
     })
 }
