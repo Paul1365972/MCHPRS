@@ -185,17 +185,17 @@ impl BlockEntity {
                     SignBlockEntity {
                         front_rows: [
                             // This cloning is really dumb
-                            nbt_unwrap_val!(nbt["Text1"].clone(), Value::String),
-                            nbt_unwrap_val!(nbt["Text2"].clone(), Value::String),
-                            nbt_unwrap_val!(nbt["Text3"].clone(), Value::String),
-                            nbt_unwrap_val!(nbt["Text4"].clone(), Value::String),
+                            nbt_unwrap_val!(nbt.get("Text1")?.clone(), Value::String),
+                            nbt_unwrap_val!(nbt.get("Text2")?.clone(), Value::String),
+                            nbt_unwrap_val!(nbt.get("Text3")?.clone(), Value::String),
+                            nbt_unwrap_val!(nbt.get("Text4")?.clone(), Value::String),
                         ],
                         back_rows: Default::default(),
                     }
                 } else {
                     let get_side = |side| {
                         let messages =
-                            nbt_unwrap_val!(&nbt[side], Value::Compound).get("messages")?;
+                            nbt_unwrap_val!(nbt.get(side)?, Value::Compound).get("messages")?;
                         let mut messages = nbt_unwrap_val!(messages, Value::List).iter().cloned();
                         Some([
                             nbt_unwrap_val!(messages.next()?, Value::String),
