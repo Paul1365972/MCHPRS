@@ -19,6 +19,8 @@ Flags go after all other arguments. Short flags can be combined, and `=false` tu
 | `/version` | | Show the server version. |
 | `/stop` | | Stop the server. |
 
+`/whitelist` requires the [`whitelist` feature](../README.md#features) and the [`whitelist` setting](../README.md#configuration).
+
 ## Plots
 
 | Command | Alias | Description |

@@ -47,6 +47,8 @@ mchprs_redpiler = { path = "./crates/redpiler" }
 mchprs_redstone = { path = "./crates/redstone" }
 paste = { workspace = true }
 
+[features]
+whitelist = ["mchprs_core/whitelist"]
 
 [workspace.dependencies]
 toml = "0.9"

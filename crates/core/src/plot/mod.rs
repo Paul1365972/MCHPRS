@@ -12,7 +12,7 @@ use crate::config::CONFIG;
 use crate::interaction;
 use crate::interaction::UseOnBlockContext;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
-
+#[cfg(feature = "whitelist")]
 use crate::profile::PlayerProfile;
 use crate::server::{BroadcastMessage, Message, PrivMessage};
 use anyhow::Error;
@@ -757,6 +757,7 @@ impl Plot {
         self.locked_players.remove(&entity_id)
     }
 
+    #[cfg(feature = "whitelist")]
     pub fn whitelist_add(&self, username: String, packet_sender: PlayerPacketSender) {
         if !CONFIG.whitelist {
             packet_sender.send_error_message("Whitelist is not enabled!");
@@ -768,6 +769,7 @@ impl Plot {
         });
     }
 
+    #[cfg(feature = "whitelist")]
     pub fn whitelist_remove(&self, username: String, packet_sender: PlayerPacketSender) {
         if !CONFIG.whitelist {
             packet_sender.send_error_message("Whitelist is not enabled!");
@@ -778,6 +780,7 @@ impl Plot {
         });
     }
 
+    #[cfg(feature = "whitelist")]
     fn look_up_profile(
         &self,
         username: String,

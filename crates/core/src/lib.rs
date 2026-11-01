@@ -8,6 +8,7 @@ mod interaction;
 mod item_stack;
 mod player;
 mod plot;
+#[cfg(feature = "whitelist")]
 mod profile;
 pub mod server;
 mod worldedit;

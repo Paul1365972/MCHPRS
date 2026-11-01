@@ -35,7 +35,7 @@ rand = { workspace = true }
 backtrace = { workspace = true }
 rusqlite = { workspace = true, features=["bundled"] }
 anyhow = { workspace = true }
-ureq = { workspace = true, features = ["json"] }
+ureq = { workspace = true, features = ["json"], optional = true }
 toml_edit = { workspace = true }
 itertools = { workspace = true }
 bincode = { workspace = true }
@@ -44,3 +44,5 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 
+[features]
+whitelist = ["dep:ureq"]
