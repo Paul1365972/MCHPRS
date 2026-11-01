@@ -36,13 +36,14 @@ Once complete, the optimized executable will be located at `./target/release/mch
 
 ### Features
 
-The whitelist is optional:
+Plot claims and the whitelist are optional:
 
 | Feature | Adds |
 | --- | --- |
+| `claims` | `/plot claim`, `/plot auto`, `/plot info` and `/plot visit` |
 | `whitelist` | The `whitelist` setting and `/whitelist` |
 
-Enable it with `cargo build --release --features whitelist`. Prebuilt releases have every feature enabled.
+Enable them with `cargo build --release --features claims,whitelist`. Prebuilt releases have every feature enabled.
 
 ## Configuration
 

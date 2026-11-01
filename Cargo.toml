@@ -50,6 +50,7 @@ mchprs_redstone = { path = "./crates/redstone" }
 paste = { workspace = true }
 
 [features]
+claims = ["mchprs_core/claims"]
 whitelist = ["mchprs_core/whitelist"]
 
 [workspace.dependencies]

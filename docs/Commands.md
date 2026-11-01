@@ -43,11 +43,11 @@ Note: The plot ownership system in MCHPRS is very incomplete.
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `/plot info` | `/p i` | Show the owner of your current plot. |
-| `/plot claim` | `/p c` | Claim your current plot if it is unclaimed. |
-| `/plot auto` | `/p a` | Find and claim an unclaimed plot. |
+| `/plot info` | `/p i` | Show the owner of your current plot. Needs the [`claims` feature](../README.md#features). |
+| `/plot claim` | `/p c` | Claim your current plot if it is unclaimed. Needs the [`claims` feature](../README.md#features). |
+| `/plot auto` | `/p a` | Find and claim an unclaimed plot. Needs the [`claims` feature](../README.md#features). |
 | `/plot middle` | None | Teleport to the center of your current plot. |
-| `/plot visit <username> [<index>]` | `/p v` | Visit a player's plot. Use `index` to choose among their plots; defaults to the first. |
+| `/plot visit <username> [<index>]` | `/p v` | Visit a player's plot. Use `index` to choose among their plots; defaults to the first. Needs the [`claims` feature](../README.md#features). |
 | `/plot teleport <location>` | `/p tp` | Teleport to a plot by its X Z coordinates. Relative `~` offsets are measured in plots. |
 | `/plot lock` | None | Prevent crossing a plot boundary from transferring you to another plot. |
 | `/plot unlock` | None | Undo `/plot lock`. |
