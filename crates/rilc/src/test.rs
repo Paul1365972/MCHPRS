@@ -1,9 +1,7 @@
 use anstream::println;
-use mchprs_redpiler::{
-    passes::{build_pass_pipeline, PassRegistry},
-    ril::{self, RILModule, RILTest},
-    string_replacer::StringReplacer,
-};
+use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
+use mchprs_ril::string_replacer::StringReplacer;
+use mchprs_ril::{self as ril, RILModule, RILTest};
 use owo_colors::OwoColorize as _;
 use std::{
     ffi::OsStr,

@@ -1,12 +1,9 @@
 pub mod block_map;
 pub mod circuit;
 pub mod compile;
-pub mod direct;
 pub mod engine;
 pub mod extract;
 pub mod graph;
 pub mod passes;
 pub mod ports;
-pub mod ril;
 pub mod simulation;
-pub mod string_replacer;

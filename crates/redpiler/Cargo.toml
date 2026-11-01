@@ -20,5 +20,4 @@ bincode = { workspace = true }
 tracing = { workspace = true }
 itertools = { workspace = true }
 rustc-hash = { workspace = true }
-indexmap = { workspace = true }
 smallvec = { workspace = true }
