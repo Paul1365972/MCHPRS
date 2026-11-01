@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use line_index::{LineIndex, TextSize};
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::{
     passes::{PassPipeline, PassPipelineBuilder, PassRegistry},
@@ -68,10 +69,7 @@ enum Command {
     Version,
 }
 
-fn load_world(
-    ril_file_path: &Path,
-    schem_path: &Option<String>,
-) -> Option<(TestWorld, (BlockPos, BlockPos))> {
+fn load_world(ril_file_path: &Path, schem_path: &Option<String>) -> Option<(TestWorld, Region)> {
     Some(if let Some(schem_path) = schem_path {
         let schem_path = ril_file_path.parent().unwrap().join(schem_path);
         let Ok(schematic) = load_schematic(&schem_path) else {
@@ -84,7 +82,7 @@ fn load_world(
         let mut world = TestWorld::new(x_size, y_size, z_size);
         paste_clipboard(&mut world, &schematic, BlockPos::zero(), true);
 
-        let bounds = (
+        let region = Region::new(
             BlockPos::zero(),
             BlockPos::new(
                 schematic.size_x as i32 - 1,
@@ -93,11 +91,11 @@ fn load_world(
             ),
         );
 
-        (world, bounds)
+        (world, region)
     } else {
         (
             TestWorld::new(1, 1, 1),
-            (BlockPos::zero(), BlockPos::zero()),
+            Region::new(BlockPos::zero(), BlockPos::zero()),
         )
     })
 }

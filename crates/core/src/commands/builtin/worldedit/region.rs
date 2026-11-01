@@ -9,11 +9,12 @@ use crate::item_stack::ItemStack;
 use crate::utils;
 use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
-use crate::worldedit::{clear_area, region_positions, update};
+use crate::worldedit::{clear_area, update};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
 use mchprs_blocks::blocks::{Block, HopperFacing};
 use mchprs_blocks::items::Item;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
@@ -55,7 +56,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
                 let start_time = Instant::now();
                 let world = ctx.world();
-                let blocks_counted = region_positions(first_pos, second_pos)
+                let blocks_counted = Region::new(first_pos, second_pos)
+                    .positions()
                     .filter(|&pos| mask.matches(world, pos))
                     .count();
 
@@ -84,7 +86,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                 } else {
                     let (first_pos, second_pos) = ctx.selection()?;
                     let world = ctx.world();
-                    for pos in region_positions(first_pos, second_pos) {
+                    for pos in Region::new(first_pos, second_pos).positions() {
                         *block_counts
                             .entry(world.get_block(pos).get_name())
                             .or_insert(0) += 1;
@@ -125,18 +127,13 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                 let start_time = Instant::now();
 
                 let offset_amount = direction.offset_pos(BlockPos::zero(), count);
-                let destination = (
-                    first_pos.min(second_pos) + offset_amount,
-                    first_pos.max(second_pos) + offset_amount,
-                );
-                if ctx.clip_region(destination.0, destination.1).is_none() {
+                let selected = Region::new(first_pos, second_pos);
+                let destination = selected.translated(offset_amount);
+                if ctx.clip_region(destination).is_none() {
                     return Err(RuntimeError::DestinationOutsidePlot.into());
                 }
 
-                let clipped = ctx.capture_undo_regions(
-                    [(first_pos, second_pos), destination],
-                    first_pos.min(second_pos),
-                )?;
+                let clipped = ctx.capture_undo_regions([selected, destination], selected.min())?;
 
                 let origin = BlockPos::zero();
                 let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
@@ -170,8 +167,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .flag('p', "plot", "Update the entire plot")
             .executes(|ctx| {
                 if ctx.flag("plot") {
-                    let corners = ctx.plot().world.get_corners();
-                    update(ctx.world_mut(), corners.0, corners.1);
+                    let region = ctx.plot().world.region();
+                    update(ctx.world_mut(), region.min(), region.max());
                     ctx.worldedit_message("Updated entire plot.")
                 } else {
                     let (first_pos, second_pos) = ctx.selection()?;
@@ -222,14 +219,14 @@ fn exec_set(
 ) -> CommandResult<()> {
     let (first_pos, second_pos) = ctx.selection()?;
 
-    let origin = first_pos.min(second_pos);
-    ctx.capture_undo_regions([(first_pos, second_pos)], origin)?;
+    let region = Region::new(first_pos, second_pos);
+    ctx.capture_undo_regions([region], region.min())?;
 
     let start_time = Instant::now();
     let mut blocks_updated = 0;
 
     let world = ctx.world_mut();
-    for pos in region_positions(first_pos, second_pos) {
+    for pos in region.positions() {
         if mask.is_none_or(|mask| mask.matches(world, pos)) && pattern.place(world, pos) {
             blocks_updated += 1;
         }
@@ -247,8 +244,8 @@ fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let to: ContainerType = ctx.arg("to")?;
     let (first_pos, second_pos) = ctx.selection()?;
 
-    let origin = first_pos.min(second_pos);
-    ctx.capture_undo_regions([(first_pos, second_pos)], origin)?;
+    let region = Region::new(first_pos, second_pos);
+    ctx.capture_undo_regions([region], region.min())?;
 
     let start_time = Instant::now();
 
@@ -268,7 +265,7 @@ fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     };
 
     let world = ctx.world_mut();
-    for pos in region_positions(first_pos, second_pos) {
+    for pos in Region::new(first_pos, second_pos).positions() {
         let block_ty = match world.get_block(pos) {
             Block::Furnace { .. } => ContainerType::Furnace,
             Block::Barrel { .. } => ContainerType::Barrel,

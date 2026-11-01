@@ -7,6 +7,7 @@ use crate::commands::registry::CommandRegistry;
 use crate::commands::value::{Direction, DirectionWithDiagonals};
 use crate::plot::{PLOT_BLOCK_HEIGHT, PLOT_BLOCK_WIDTH};
 use crate::worldedit::{calculate_expanded_selection, calculate_selection_volume};
+use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFacing, BlockPos};
 use mchprs_schematic::{create_clipboard, paste_clipboard};
 use std::time::Instant;
@@ -89,19 +90,17 @@ fn exec_stack(
     check_stack_volume(first_pos, second_pos, count)?;
 
     let start_time = Instant::now();
-    let destinations = (1..=count).rev().map(|i| {
-        let offset = offset * i;
-        (first_pos + offset, second_pos + offset)
-    });
+    let region = Region::new(first_pos, second_pos);
+    let destinations = (1..=count).rev().map(|i| region.translated(offset * i));
     let clipped = ctx.capture_undo_regions(destinations, first_pos)?;
     let clipboard = create_clipboard(ctx.world(), first_pos, first_pos, second_pos);
 
     let mut last_copy = None;
     for i in 1..=count {
-        let destination = (first_pos + offset * i, second_pos + offset * i);
-        if ctx.clip_region(destination.0, destination.1).is_none() {
+        if ctx.clip_region(region.translated(offset * i)).is_none() {
             continue;
         }
+        let destination = (first_pos + offset * i, second_pos + offset * i);
         paste_clipboard(ctx.world_mut(), &clipboard, destination.0, ignore_air);
         last_copy = Some(destination);
     }

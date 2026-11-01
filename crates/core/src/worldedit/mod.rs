@@ -77,17 +77,6 @@ pub fn clear_area(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPo
     }
 }
 
-pub fn region_positions(
-    first_pos: BlockPos,
-    second_pos: BlockPos,
-) -> impl Iterator<Item = BlockPos> {
-    let start = first_pos.min(second_pos);
-    let end = first_pos.max(second_pos);
-    (start.x..=end.x).flat_map(move |x| {
-        (start.y..=end.y).flat_map(move |y| (start.z..=end.z).map(move |z| BlockPos::new(x, y, z)))
-    })
-}
-
 pub fn calculate_selection_volume(first_pos: BlockPos, second_pos: BlockPos) -> i32 {
     let min = first_pos.min(second_pos);
     let max = first_pos.max(second_pos);

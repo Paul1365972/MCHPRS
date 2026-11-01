@@ -1,8 +1,11 @@
 pub mod block_entities;
 pub mod block_state_spec;
+pub mod block_store;
+pub mod block_volume;
 pub mod blocks;
 mod generated;
 pub mod items;
+pub mod region;
 pub mod signal_strength;
 
 pub use mchprs_proc_macros::BlockProperty;

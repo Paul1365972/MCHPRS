@@ -6,6 +6,7 @@ use crate::commands::registry::CommandRegistry;
 use crate::commands::value::Direction;
 use crate::plot::PLOT_BLOCK_HEIGHT;
 use crate::worldedit::{calculate_expanded_selection, calculate_selection_volume};
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
@@ -184,11 +185,11 @@ pub(super) fn update_selection(
     old: Option<(BlockPos, BlockPos)>,
     new: (BlockPos, BlockPos),
 ) -> CommandResult<Option<(BlockPos, BlockPos)>> {
-    if ctx.clip_region(new.0, new.1).is_none() {
+    let plot = ctx.plot().world.region();
+    if Region::new(new.0, new.1).intersection(plot).is_none() {
         return Ok(None);
     }
-    let (plot_min, plot_max) = ctx.plot().world.get_corners();
-    let clamp = |pos: BlockPos| pos.max(plot_min).min(plot_max);
+    let clamp = |pos: BlockPos| pos.max(plot.min()).min(plot.max());
     let new = (clamp(new.0), clamp(new.1));
     let player = ctx.player_mut()?;
     if old.is_none_or(|old| new.0 != old.0) {

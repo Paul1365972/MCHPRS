@@ -7,6 +7,7 @@ use crate::commands::registry::CommandRegistry;
 use crate::commands::value::Direction;
 use crate::worldedit::{clear_area, update};
 use mchprs_blocks::blocks::{Block, FlipDirection, RotateAmt};
+use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFacing, BlockPos};
 use mchprs_schematic::{create_clipboard, paste_clipboard, WorldEditClipboard};
 use mchprs_world::storage::PalettedBitBuffer;
@@ -30,8 +31,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(Command::new("/cut").alias("/x").executes(|ctx| {
         let (first_pos, second_pos) = ctx.selection()?;
 
-        let origin = first_pos.min(second_pos);
-        ctx.capture_undo_regions([(first_pos, second_pos)], origin)?;
+        let region = Region::new(first_pos, second_pos);
+        ctx.capture_undo_regions([region], region.min())?;
 
         let start_time = Instant::now();
         let origin = ctx.player()?.pos.block_pos();
@@ -185,15 +186,16 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
         return ctx.worldedit_message(&format!("Region selected. ({:?})", start_time.elapsed()));
     }
 
-    let clipped = ctx.capture_undo_regions([(paste_min, paste_max)], paste_min)?;
+    let paste_region = Region::new(paste_min, paste_max);
+    let clipped = ctx.capture_undo_regions([paste_region], paste_min)?;
     let (world, player) = ctx.world_and_player_mut()?;
     let clipboard = player
         .worldedit_clipboard
         .as_ref()
         .ok_or(RuntimeError::EmptyClipboard)?;
     paste_clipboard(world, clipboard, pos, ignore_air);
-    if should_update && let Some((region_min, region_max)) = ctx.clip_region(paste_min, paste_max) {
-        update(ctx.world_mut(), region_min, region_max);
+    if should_update && let Some(region) = ctx.clip_region(paste_region) {
+        update(ctx.world_mut(), region.min(), region.max());
     }
     if select_region {
         select(ctx)?;

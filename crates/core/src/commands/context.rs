@@ -4,6 +4,7 @@ use super::value::{BlockCoordinates, FromValue, PositionCoordinates, Value};
 use crate::player::{PacketSender, Player, PlayerPos};
 use crate::plot::{Plot, PlotWorld, PLOT_BLOCK_HEIGHT};
 use crate::worldedit::{ray_trace_block, WorldEditUndo};
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_commands::flag::{FlagValue, FlagValues};
 use mchprs_commands::parse::ParsedArgument;
@@ -219,29 +220,22 @@ impl<'a> ExecutionContext<'a> {
         Ok((first, second))
     }
 
-    pub(super) fn clip_region(
-        &self,
-        first: BlockPos,
-        second: BlockPos,
-    ) -> Option<(BlockPos, BlockPos)> {
-        let (plot_min, plot_max) = self.plot.world.get_corners();
-        let min = first.min(second).max(plot_min);
-        let max = first.max(second).min(plot_max);
-        (min.x <= max.x && min.y <= max.y && min.z <= max.z).then_some((min, max))
+    pub(super) fn clip_region(&self, region: Region) -> Option<Region> {
+        region.intersection(self.plot.world.region())
     }
 
     pub(super) fn capture_undo_regions(
         &mut self,
-        regions: impl IntoIterator<Item = (BlockPos, BlockPos)>,
+        regions: impl IntoIterator<Item = Region>,
         origin: BlockPos,
     ) -> CommandResult<bool> {
         let mut clipped = false;
         let regions: Vec<_> = regions
             .into_iter()
-            .filter_map(|(first, second)| {
-                let region = self.clip_region(first, second);
-                clipped |= region != Some((first.min(second), first.max(second)));
-                region
+            .filter_map(|region| {
+                let inside = self.clip_region(region);
+                clipped |= inside != Some(region);
+                inside
             })
             .collect();
         if regions.is_empty() {
@@ -250,7 +244,7 @@ impl<'a> ExecutionContext<'a> {
         let (world, player) = self.world_and_player_mut()?;
         let clipboards = regions
             .into_iter()
-            .map(|(first_pos, second_pos)| create_clipboard(world, origin, first_pos, second_pos))
+            .map(|region| create_clipboard(world, origin, region.min(), region.max()))
             .collect();
 
         let undo = WorldEditUndo {
