@@ -736,6 +736,7 @@ impl Block {
                 eye: false,
                 facing: BlockDirection::North,
             },
+            "minecraft:cave_air" | "minecraft:void_air" => Block::Air,
             _ => return None,
         })
     }

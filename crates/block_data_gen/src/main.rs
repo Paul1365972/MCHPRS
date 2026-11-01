@@ -345,6 +345,7 @@ fn generate_from_name(blocks: &[ProcessedBlock]) -> TokenStream {
         pub fn from_name(name: &str) -> Option<Block> {
             Some(match name {
                 #( #match_arms )*
+                "minecraft:cave_air" | "minecraft:void_air" => Block::Air,
                 _ => return None,
             })
         }
