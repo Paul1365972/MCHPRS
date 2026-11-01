@@ -50,7 +50,6 @@ struct MonitorData {
     tps: AtomicTps,
     ticks_passed: Arc<AtomicU64>,
     reset_timings: AtomicU32,
-    too_slow: AtomicBool,
     ticking: AtomicBool,
     running: AtomicBool,
     timings_record: Mutex<VecDeque<u32>>,
@@ -75,7 +74,6 @@ impl TimingsMonitor {
             ticks_passed: Default::default(),
             reset_timings: Default::default(),
             running: AtomicBool::new(true),
-            too_slow: Default::default(),
             ticking: Default::default(),
             timings_record: Default::default(),
             tps: AtomicTps::from_tps(tps),
@@ -131,7 +129,6 @@ impl TimingsMonitor {
 
     pub fn set_tps(&self, new_tps: Tps) {
         self.data.tps.update(new_tps);
-        self.data.too_slow.store(false, Ordering::Relaxed);
     }
 
     pub fn tick(&self) {
@@ -140,10 +137,6 @@ impl TimingsMonitor {
 
     pub fn tickn(&self, ticks: u64) {
         self.data.ticks_passed.fetch_add(ticks, Ordering::Relaxed);
-    }
-
-    pub fn is_running_behind(&self) -> bool {
-        self.data.too_slow.load(Ordering::Relaxed)
     }
 
     pub fn set_ticking(&self, ticking: bool) {
@@ -160,7 +153,6 @@ impl TimingsMonitor {
             let mut last_ticks_count = data.ticks_passed.load(Ordering::Relaxed);
             let mut was_ticking_before = data.ticking.load(Ordering::Relaxed);
 
-            let mut behind_for = 0;
             loop {
                 thread::sleep(MONITOR_INTERVAL);
                 if !data.running.load(Ordering::Relaxed) {
@@ -186,26 +178,6 @@ impl TimingsMonitor {
                     was_ticking_before = ticking;
                     last_tps = tps;
                     continue;
-                }
-
-                // 5% threshold, floored: an on-schedule plot delivers floor or ceil of the expected ticks
-                let is_behind = match tps {
-                    Tps::Unlimited => false,
-                    Tps::Limited(tps) => {
-                        let expected = f64::from(tps) * MONITOR_INTERVAL.as_secs_f64();
-                        f64::from(ticks_passed) < (expected * 0.95).floor()
-                    }
-                };
-
-                if is_behind {
-                    behind_for += 1;
-                } else {
-                    behind_for = 0;
-                    data.too_slow.store(false, Ordering::Relaxed);
-                }
-
-                if behind_for >= 3 {
-                    data.too_slow.store(true, Ordering::Relaxed);
                 }
 
                 // The timings record will only go back 15 minutes.

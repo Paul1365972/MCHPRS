@@ -62,7 +62,6 @@ The following options are available at the toplevel (under no header):
 | `whitelist` | Whether or not the whitelist (in `whitelist.json`) should be enabled | `false` |
 | `schemati` | Mimic the verification and directory layout used by the Open Redstone Engineers [Schemati plugin](https://github.com/OpenRedstoneEngineers/Schemati) | `false` |
 | `block_in_hitbox` | Allow placing blocks inside of players (hitbox logic is simplified) | `true` |
-| `auto_redpiler` | Use redpiler automatically | `false` |
 | `autosave_interval_seconds` | Time between plot autosaves (in seconds) | `0` (disabled) |
 
 To change the plot size edit the constants defined in [plot/mod.rs](./crates/core/src/plot/mod.rs).
@@ -94,7 +93,6 @@ secret = "<secret>"
 | `/gamemode <mode>`          | `/gmc`, `/gmsp` | Sets your gamemode.                                                                                                                                                   |
 | `/container <type> <power>` | None            | Gives you a container (e.g. barrel) which outputs a specified amount of power when used with a comparator.                                                            |
 | `/worldsendrate [hertz]`    | `/wsr`          | World updates/s (0-1000, fractional; 0 disables periodic sends). Default: 60.                                                                                         |
-| `/toggleautorp`             | None            | Toggles automatic redpiler compilation.                                                                                                                               |
 | `/stop`                     | None            | Stops the server.                                                                                                                                                     |
 
 ### Plot Ownership
