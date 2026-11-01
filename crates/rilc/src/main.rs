@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use line_index::{LineIndex, TextSize};
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::{
@@ -7,8 +8,9 @@ use mchprs_redpiler::{
     ril::RILModule,
     CompilerOptions,
 };
-use mchprs_schematic::{load_schematic, paste_clipboard};
 use mchprs_world::testing::TestWorld;
+use mchprs_world::World;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -72,24 +74,32 @@ enum Command {
 fn load_world(ril_file_path: &Path, schem_path: &Option<String>) -> Option<(TestWorld, Region)> {
     Some(if let Some(schem_path) = schem_path {
         let schem_path = ril_file_path.parent().unwrap().join(schem_path);
-        let Ok(schematic) = load_schematic(&schem_path) else {
+        let Some(schematic) = fs::read(&schem_path)
+            .ok()
+            .and_then(|bytes| mchprs_schematic::read(&bytes).ok())
+        else {
             eprintln!("error: failed to load schematic at path: {:?}", schem_path);
             return None;
         };
-        let x_size = schematic.size_x.div_ceil(16) as i32;
-        let y_size = schematic.size_y.div_ceil(16) as i32;
-        let z_size = schematic.size_z.div_ceil(16) as i32;
-        let mut world = TestWorld::new(x_size, y_size, z_size);
-        paste_clipboard(&mut world, &schematic, BlockPos::zero(), true);
+        for (name, count) in &schematic.unknown_blocks {
+            eprintln!("warning: {count} block(s) of unknown or invalid state {name} were replaced with air");
+        }
+        let origin = schematic.volume.region().min();
+        let volume = schematic.volume.translated(BlockPos::zero() - origin);
+        let region = volume.region();
 
-        let region = Region::new(
-            BlockPos::zero(),
-            BlockPos::new(
-                schematic.size_x as i32 - 1,
-                schematic.size_y as i32 - 1,
-                schematic.size_z as i32 - 1,
-            ),
+        let chunks = |max: i32| (max as u32 + 1).div_ceil(16) as i32;
+        let mut world = TestWorld::new(
+            chunks(region.max().x),
+            chunks(region.max().y),
+            chunks(region.max().z),
         );
+        for pos in region.positions() {
+            world.set_block(pos, volume.block(pos));
+        }
+        for (pos, block_entity) in volume.block_entities() {
+            world.set_block_entity(pos, block_entity.clone());
+        }
 
         (world, region)
     } else {

@@ -5,15 +5,17 @@ mod suggestions;
 use crate::player::PlayerPos;
 use crate::plot::PlotWorld;
 use mchprs_blocks::block_state_spec::{parse_properties, BlockStateSpec};
+use mchprs_blocks::block_store::{BlockStore, BlockView};
+use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
-use mchprs_schematic::WorldEditClipboard;
 use mchprs_world::{for_each_block_mut_optimized, World};
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
 pub struct WorldEditUndo {
-    pub clipboards: Vec<WorldEditClipboard>,
+    pub clipboards: Vec<BlockVolume>,
     pub pos: BlockPos,
     pub plot_x: i32,
     pub plot_z: i32,
@@ -55,6 +57,47 @@ pub fn ray_trace_block(
     }
 
     None
+}
+
+pub fn create_clipboard(
+    world: &PlotWorld,
+    origin: BlockPos,
+    first_pos: BlockPos,
+    second_pos: BlockPos,
+) -> BlockVolume {
+    let region = Region::new(first_pos, second_pos);
+    let mut clipboard = BlockVolume::empty(region);
+    for pos in region.positions() {
+        let block = world.get_block(pos);
+        clipboard.set_block(pos, block);
+        if block.has_block_entity()
+            && let Some(block_entity) = world.get_block_entity(pos)
+        {
+            clipboard.set_block_entity(pos, Some(block_entity.clone()));
+        }
+    }
+    clipboard.translated(BlockPos::zero() - origin)
+}
+
+pub fn paste_clipboard(
+    world: &mut PlotWorld,
+    clipboard: &BlockVolume,
+    at: BlockPos,
+    ignore_air: bool,
+) {
+    for pos in clipboard.region().positions() {
+        let block = clipboard.block(pos);
+        if !(ignore_air && block == Block::Air) {
+            world.set_block(pos + at, block);
+        }
+    }
+
+    // Send block changes before we send block entity data, otherwise it'll be ignored
+    world.flush_block_changes();
+
+    for (pos, block_entity) in clipboard.block_entities() {
+        world.set_block_entity(pos + at, block_entity.clone());
+    }
 }
 
 pub fn clear_area(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {

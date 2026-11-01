@@ -4,6 +4,7 @@ use crate::utils::{self, HyphenatedUUID};
 use crate::worldedit::WorldEditUndo;
 use byteorder::{BigEndian, ReadBytesExt};
 use mchprs_blocks::block_entities::{ContainerType, InventoryEntry};
+use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::items::Item;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
@@ -11,7 +12,6 @@ use mchprs_network::packets::{PacketEncoder, PlayerProperty, SlotData};
 use mchprs_network::text::{ColorCode, TextComponent, TextComponentBuilder};
 use mchprs_network::{PlayerConn, PlayerPacketSender};
 use mchprs_proc_macros::protocol_id;
-use mchprs_schematic::WorldEditClipboard;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
@@ -162,7 +162,7 @@ pub struct Player {
     /// The worldedit second position.
     second_position: Option<BlockPos>,
     /// The worldedit current clipboard.
-    pub worldedit_clipboard: Option<WorldEditClipboard>,
+    pub worldedit_clipboard: Option<BlockVolume>,
     /// The saved sections used for worldedit //undo
     /// Each entry stores the plot coords and the clipboard
     pub worldedit_undo: Vec<WorldEditUndo>,

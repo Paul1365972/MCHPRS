@@ -4,9 +4,7 @@ use crate::commands::define::Command;
 use crate::commands::error::{CommandResult, RuntimeError};
 use crate::commands::registry::CommandRegistry;
 use crate::plot::PlotWorld;
-use crate::worldedit::WorldEditUndo;
-use mchprs_blocks::BlockPos;
-use mchprs_schematic::{create_clipboard, paste_clipboard};
+use crate::worldedit::{create_clipboard, paste_clipboard, WorldEditUndo};
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
@@ -70,15 +68,9 @@ fn apply_history(world: &mut PlotWorld, entry: &WorldEditUndo) -> WorldEditUndo 
     let inverse_clipboards = entry
         .clipboards
         .iter()
-        .map(|cb| {
-            let offset = BlockPos::new(cb.offset_x, cb.offset_y, cb.offset_z);
-            let first_pos = entry.pos - offset;
-            let size = BlockPos::new(
-                cb.size_x as i32 - 1,
-                cb.size_y as i32 - 1,
-                cb.size_z as i32 - 1,
-            );
-            create_clipboard(world, entry.pos, first_pos, first_pos + size)
+        .map(|clipboard| {
+            let region = clipboard.region().translated(entry.pos);
+            create_clipboard(world, entry.pos, region.min(), region.max())
         })
         .collect();
 

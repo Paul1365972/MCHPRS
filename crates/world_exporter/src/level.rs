@@ -1,5 +1,6 @@
-use super::{MC_DATA_VERSION, MC_VERSION, OVERWORLD_MIN_Y};
+use super::OVERWORLD_MIN_Y;
 use anyhow::Result;
+use mchprs_blocks::{MC_DATA_VERSION, MC_VERSION};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::File;

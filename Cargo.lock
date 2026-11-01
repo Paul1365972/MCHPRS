@@ -1326,13 +1326,11 @@ dependencies = [
 name = "mchprs_schematic"
 version = "0.5.2-dev"
 dependencies = [
- "anyhow",
  "hematite-nbt",
  "mchprs_blocks",
- "mchprs_world",
  "regex",
- "rustc-hash",
  "serde",
+ "thiserror 2.0.18",
  "tracing",
 ]
 

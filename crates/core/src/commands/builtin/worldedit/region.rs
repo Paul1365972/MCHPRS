@@ -9,16 +9,16 @@ use crate::item_stack::ItemStack;
 use crate::utils;
 use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
-use crate::worldedit::{clear_area, update};
+use crate::worldedit::{clear_area, create_clipboard, paste_clipboard, update};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, HopperFacing};
 use mchprs_blocks::items::Item;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
-use mchprs_schematic::{create_clipboard, paste_clipboard};
 use mchprs_world::World;
 use rustc_hash::FxHashMap;
 use std::time::Instant;
@@ -78,10 +78,10 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
                 if ctx.flag("clipboard") {
                     let clipboard = ctx.clipboard()?;
-                    let volume = clipboard.size_x * clipboard.size_y * clipboard.size_z;
-                    for i in 0..volume as usize {
-                        let block = Block::from_id(clipboard.data.get_entry(i));
-                        *block_counts.entry(block.get_name()).or_insert(0) += 1;
+                    for pos in clipboard.region().positions() {
+                        *block_counts
+                            .entry(clipboard.block(pos).get_name())
+                            .or_insert(0) += 1;
                     }
                 } else {
                     let (first_pos, second_pos) = ctx.selection()?;

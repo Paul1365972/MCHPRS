@@ -9,6 +9,7 @@ use crate::utils::HyphenatedUUID;
 use backtrace::Backtrace;
 use bus::Bus;
 use hmac::{Hmac, Mac};
+use mchprs_blocks::MC_VERSION;
 use mchprs_network::packets::clientbound::{
     CCommandSuggestionsResponse, CConfigurationPluginMessage, CDisconnectLogin,
     CFinishConfiguration, CGameEvent, CGameEventType, CLogin, CLoginPluginRequest, CLoginSuccess,
@@ -23,8 +24,7 @@ use mchprs_network::packets::serverbound::{
 };
 use mchprs_network::packets::{PacketEncoderExt, PlayerProperty, SlotData, COMPRESSION_THRESHOLD};
 use mchprs_network::text::TextComponent;
-use mchprs_network::{NetworkServer, NetworkState, PlayerPacketSender};
-use mchprs_world::{MC_VERSION, PROTOCOL_VERSION};
+use mchprs_network::{NetworkServer, NetworkState, PlayerPacketSender, PROTOCOL_VERSION};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;

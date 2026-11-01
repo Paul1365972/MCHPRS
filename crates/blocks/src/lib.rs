@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
+pub const MC_VERSION: &str = "1.20.4";
+pub const MC_DATA_VERSION: i32 = 3700;
+
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Serialize, Deserialize, Hash)]
 pub struct BlockPos {
     pub x: i32,

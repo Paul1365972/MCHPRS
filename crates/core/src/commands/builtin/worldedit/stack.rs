@@ -6,10 +6,11 @@ use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::{Direction, DirectionWithDiagonals};
 use crate::plot::{PLOT_BLOCK_HEIGHT, PLOT_BLOCK_WIDTH};
-use crate::worldedit::{calculate_expanded_selection, calculate_selection_volume};
+use crate::worldedit::{
+    calculate_expanded_selection, calculate_selection_volume, create_clipboard, paste_clipboard,
+};
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFacing, BlockPos};
-use mchprs_schematic::{create_clipboard, paste_clipboard};
 use std::time::Instant;
 
 const MAX_STACK_VOLUME: i64 =

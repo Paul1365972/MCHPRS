@@ -3,11 +3,10 @@ use crate::commands::context::ExecutionContext;
 use crate::commands::define::Command;
 use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
-use crate::commands::schematic::{schematic_names, schematic_path};
+use crate::commands::schematic::{save_schematic, schematic_names, schematic_path};
 use itertools::Itertools;
-use mchprs_schematic::{load_schematic, save_schematic};
-use std::io;
 use std::time::Instant;
+use std::{fs, io};
 use tracing::warn;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
@@ -63,9 +62,34 @@ fn exec_load(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let start_time = Instant::now();
     let path = schematic_path(ctx.player()?.uuid, filename)?;
 
-    match load_schematic(&path) {
-        Ok(clipboard) => {
-            ctx.set_clipboard(clipboard)?;
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(CommandError::runtime(
+                "The specified schematic file could not be found.",
+            ));
+        }
+        Err(error) => {
+            warn!("There was an error reading a schematic: {error}");
+            return Err(CommandError::runtime(
+                "There was an error loading the schematic. \
+                 Check console for more details.",
+            ));
+        }
+    };
+    match mchprs_schematic::read(&bytes) {
+        Ok(schematic) => {
+            ctx.set_clipboard(schematic.volume)?;
+            if !schematic.unknown_blocks.is_empty() {
+                ctx.worldedit_message(&format!(
+                    "Blocks with unknown or invalid states were replaced with air: {}",
+                    schematic
+                        .unknown_blocks
+                        .iter()
+                        .map(|(name, count)| format!("{name} ({count})"))
+                        .join(", ")
+                ))?;
+            }
             ctx.worldedit_message(&format!(
                 "The schematic was loaded to your clipboard. \
                  Do //paste to birth it into the world. ({:?})",
@@ -73,13 +97,6 @@ fn exec_load(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
             ))
         }
         Err(error) => {
-            if let Some(io_err) = error.downcast_ref::<io::Error>()
-                && io_err.kind() == io::ErrorKind::NotFound
-            {
-                return Err(CommandError::runtime(
-                    "The specified schematic file could not be found.",
-                ));
-            }
             warn!("There was an error loading a schematic: {error}");
             Err(CommandError::runtime(
                 "There was an error loading the schematic. \
@@ -95,20 +112,19 @@ fn exec_save(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
 
     let path = schematic_path(ctx.player()?.uuid, filename)?;
     let clipboard = ctx.clipboard()?;
-    match save_schematic(&path, clipboard, ctx.flag("force-overwrite")) {
+    let bytes = mchprs_schematic::write(clipboard).map_err(|error| {
+        warn!("There was an error encoding a schematic: {error}");
+        CommandError::runtime("There was an error saving the schematic.")
+    })?;
+    match save_schematic(&path, &bytes, ctx.flag("force-overwrite")) {
         Ok(_) => ctx.worldedit_message(&format!(
             "The schematic was saved successfully. ({:?})",
             start_time.elapsed()
         )),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(CommandError::runtime(
+            "File already exists. Use -f flag to overwrite.",
+        )),
         Err(error) => {
-            if error
-                .downcast_ref::<io::Error>()
-                .is_some_and(|io_err| io_err.kind() == io::ErrorKind::AlreadyExists)
-            {
-                return Err(CommandError::runtime(
-                    "File already exists. Use -f flag to overwrite.",
-                ));
-            }
             warn!("There was an error saving a schematic: {error:?}");
             Err(CommandError::runtime(
                 "There was an error saving the schematic.",

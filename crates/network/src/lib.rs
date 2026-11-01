@@ -12,6 +12,8 @@ use tracing::warn;
 
 pub use nbt_util::NBTCompound;
 
+pub const PROTOCOL_VERSION: i32 = 765;
+
 #[derive(Debug)]
 pub struct PlayerPacketSender {
     stream: Option<TcpStream>,
