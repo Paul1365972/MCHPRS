@@ -46,7 +46,7 @@ enum Command {
         /// Export the graph to a binary format. See the [`redpiler_graph`] crate.
         #[arg(long, short)]
         export: bool,
-        /// Only flush lamp, button, lever, pressure plate, or trapdoor updates.
+        /// While running, only report changes of input and output blocks.
         #[arg(long, short)]
         io_only: bool,
         /// Consider a redstone dot to be an output block (for color screens)
@@ -105,7 +105,7 @@ enum Command {
     Version,
 }
 
-fn report_output(path: &Option<PathBuf>) -> std::io::Result<Box<dyn std::io::Write>> {
+fn report_output(path: Option<&Path>) -> std::io::Result<Box<dyn std::io::Write>> {
     Ok(match path {
         Some(path) => Box::new(std::fs::File::create(path)?),
         None => Box::new(std::io::stdout().lock()),
@@ -195,15 +195,23 @@ fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    let cli = Cli::parse();
+    match execute(Cli::parse().command) {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
-    match cli.command {
+fn execute(command: Command) -> experiment::Result<ExitCode> {
+    match command {
         Command::Test { path, update } => {
-            return if test::run_tests(path, update) {
+            return Ok(if test::run_tests(path, update) {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE
-            };
+            });
         }
         Command::Compile {
             input_path,
@@ -237,26 +245,13 @@ fn main() -> ExitCode {
             backend,
             output,
         } => {
-            let result = report_output(&output)
-                .map_err(Into::into)
-                .and_then(|mut output| run::run(&experiment, &backend, output.as_mut()));
-            if let Err(error) = result {
-                eprintln!("error: {error}");
-                return ExitCode::FAILURE;
-            }
+            let mut output = report_output(output.as_deref())?;
+            run::run(&experiment, &backend, output.as_mut())?;
         }
-        Command::Inputs { experiment } => {
-            if let Err(error) = experiment::list_inputs(&experiment) {
-                eprintln!("error: {error}");
-                return ExitCode::FAILURE;
-            }
-        }
+        Command::Inputs { experiment } => experiment::list_inputs(&experiment)?,
         #[cfg(feature = "fpga")]
         Command::Verilog { experiment, output } => {
-            if let Err(error) = experiment::write_verilog(&experiment, &output) {
-                eprintln!("error: {error}");
-                return ExitCode::FAILURE;
-            }
+            experiment::write_verilog(&experiment, &output)?;
         }
         Command::Diff {
             experiment,
@@ -265,29 +260,20 @@ fn main() -> ExitCode {
             ignore_pending,
             output,
         } => {
-            let result = report_output(&output)
-                .map_err(Into::into)
-                .and_then(|mut output| {
-                    diff::diff(
-                        &experiment,
-                        &backends,
-                        every,
-                        ignore_pending,
-                        output.as_mut(),
-                    )
-                });
-            match result {
-                Ok(true) => {}
-                Ok(false) => return ExitCode::FAILURE,
-                Err(error) => {
-                    eprintln!("error: {error}");
-                    return ExitCode::FAILURE;
-                }
+            let mut output = report_output(output.as_deref())?;
+            if !diff::diff(
+                &experiment,
+                &backends,
+                every,
+                ignore_pending,
+                output.as_mut(),
+            )? {
+                return Ok(ExitCode::FAILURE);
             }
         }
         Command::Version => {
             println!("{}", get_version_string());
         }
     }
-    ExitCode::SUCCESS
+    Ok(ExitCode::SUCCESS)
 }
