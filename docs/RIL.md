@@ -1,6 +1,6 @@
 # Redstone Intermediate Language
 
-RIL is a text form of the graph Redpiler compiles, used to test its passes. A RIL file is a module of circuits, schematics and tests. Each has a global name prefixed with `@`, which can be used once per module and refers back to something defined earlier in the file.
+RIL is a text form of the graph Redpiler compiles, used to test its passes. [`rilc compile`](Redpiler.md#compile) writes any compiled circuit as RIL, with each node's positions in a comment. A RIL file is a module of circuits, schematics and tests. Each has a global name prefixed with `@`, which can be used once per module and refers back to something defined earlier in the file.
 
 A mistake in a file is reported with its line and column, like `opt/x.ril:2:35: unknown value %nope`. Every circuit must keep the invariants of a compiled circuit: for example, a lamp has no outgoing links and an input has no incoming ones.
 

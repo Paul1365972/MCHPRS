@@ -4,19 +4,19 @@ use mchprs_redpiler::ports::Role;
 use rustc_hash::FxHashSet;
 use std::fmt;
 
-/// Each node's name in RIL: its name, or else its index, extended until no named node has it
+/// Each node's name in RIL: its first name, or else its index, extended until no named node has it
 pub(crate) struct NodeNames(Vec<String>);
 
 impl NodeNames {
     pub(crate) fn new(graph: &Graph) -> NodeNames {
         let taken: FxHashSet<&str> = graph
             .node_indices()
-            .filter_map(|node| graph[node].name.as_ref())
+            .filter_map(|node| graph[node].names.first())
             .map(String::as_str)
             .collect();
         let mut names = vec![String::new(); graph.node_bound()];
         for node in graph.node_indices() {
-            names[node.index()] = match graph[node].name.as_ref() {
+            names[node.index()] = match graph[node].names.first() {
                 Some(name) => name.clone(),
                 None => {
                     let mut name = node.index().to_string();

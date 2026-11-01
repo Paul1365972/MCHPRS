@@ -87,7 +87,7 @@ It only removes nodes with `--io-only`; otherwise every node is observed.
 
 # Running Circuits
 
-A backend builds an engine for a compiled circuit. The engine runs the circuit from its own data, as many ticks as it is asked to, and reports the observed nodes whose state changed. It never reads a clock. A `Simulation` pairs it with a `BlockMap` on the caller's thread, which is how the tests and other programs run circuits; `BackendSetup::simulate` builds one from blocks in a single call, without threads.
+A backend builds an engine for a compiled circuit. The engine runs the circuit from its own data, as many ticks as it is asked to, and reports the observed nodes whose state changed. It never reads a clock. A `Simulation` pairs it with a `BlockMap` on the caller's thread, which is how `rilc`, the tests and other programs run circuits; `BackendSetup::simulate` builds one from blocks in a single call, without threads.
 
 The server runs a circuit as a session, which owns how its ticks happen; the plot thread never ticks. A backend can host its circuits itself, otherwise its engine runs on a worker thread that paces it by the plot's tick rate and runs `/radvance` on top. The worker sends its changes as frames: one each time the plot asks for the next, and one right away after an input or when an advance ends. The plot keeps the `BlockMap` and writes the frames into the world.
 
@@ -95,11 +95,13 @@ The plot reads a session in two ways. Polling, at every plot update, never waits
 
 The world can't be edited while Redpiler runs, so the engine's state only reaches the world this way. While running, the world shows the nodes the circuit observes, which are only the ports with `--io-only`, and the other nodes as compiling or the last flush left them; players joining see that. Stopping writes every node's state and the pending ticks back, and `/redpiler reset -r` returns every component to its compiled state first.
 
-Direct runs a circuit the same way every time, while a backend that runs parts of a circuit in parallel may leave the order of some updates open. Backends differ by design: like `--reorder`, each is an optimization level.
+Direct runs a circuit the same way every time, while a backend that runs parts of a circuit in parallel may leave the order of some updates open. Backends differ by design: like `--reorder`, each is an optimization level, and `rilc diff` shows where two of them part.
 
 # Backends
 
 A backend runs a circuit. It may implement redstone execution in any way, whether that is by just-in-time compiling redstone or by interpreting the graph.
+
+[`rilc diff`](#diff) plays a scenario on two backends tick by tick and explains the first difference, which checks an optimized circuit against the plain one, or one backend against another.
 
 ## How Redstone Works
 
@@ -180,3 +182,59 @@ While the [Direct backend](../crates/redpiler_direct) does not have a JIT compil
 - Node sizes are kept as small as possible in memory to allow the node list to fit into small CPU caches.
 - Bounds are checked beforehand to avoid performance loss at runtime.
 - The tick scheduler is powered by a rotating queue of queues that take into account that there are only 4 possible tick priorities.
+
+# rilc
+
+`rilc` is the command line of the Redpiler crates. It compiles, runs and compares circuits, and runs the [RIL](RIL.md) tests. It reads three kinds of files and never writes to them:
+
+- **Worlds:** a Sponge schematic (`.schem` or `.schematic`), moved so that its corner is at the origin, or a plot file as the server saves it, with its pending ticks and positions counted from the plot's corner. A plot saved by an older version is upgraded in memory only.
+- **Circuits:** RIL files (`.ril`). A file that holds several circuits needs the one to use named.
+- **Scenarios:** TOML files saying what to do to a world or a circuit, [below](#scenarios).
+
+A setup is a backend and its flags as `/redpiler compile` takes them, like `-b "direct -o -r"`, and can add `--passes=dedup-links,coalesce` to run the named passes instead of the backend's. A RIL circuit has no blocks, so on one the flags that pick wires by their shape (`-d`, `-l` and `-c`) are an error.
+
+`rilc` exits with 0 when the command's claim holds, 1 when it doesn't (a test fails, two setups differ), and 2 when the command can't run, like for a mistake in a file.
+
+## compile
+
+`rilc compile <INPUT> [-b SETUP] [--circuit NAME] [--print-after-all] [-o FILE]` writes the compiled circuit as RIL to stdout, or to `FILE`.
+The output starts with comments naming the setup and the input, and then one line per stage: extraction, or `parsed` for a RIL circuit, and each pass, with its nodes, links, their change and its time.
+RIL can't hold pending ticks, so a comment says how many the output leaves out.
+`--print-after-all` writes the circuit after every stage, each named after its stage, like `@extracted` or `@dedup_links`, so that any stage can be compiled again with `--circuit`.
+
+## Scenarios
+
+```toml
+input = "alu.schem"
+
+[[step]]
+toggle = [0, 1, 8]
+run = 100
+
+[[step]]
+set = [4, 1, 2]
+power = 15
+run = 20
+```
+
+- `input` is the world or RIL file, relative to the scenario. `circuit = "<name>"` picks the circuit of a RIL file that holds several.
+- Each `[[step]]` takes at most one action and then runs `run` ticks. `toggle` flips a lever, `press` presses a button, and `set` with `power` sets a pressure plate or another input to a signal strength.
+- An input is `[x, y, z]` in a world and a name like `"reset"` in a RIL circuit. An action that the node can't take is an error before anything runs.
+
+## run
+
+`rilc run <SCENARIO> -b SETUP [--repeat N] [--save-outputs FILE]` compiles the input once and plays the scenario on a fresh engine for each repeat.
+Like the server, it applies the circuit's changes to the world every 50 ms of wall time.
+It reports the compile time, and for each repeat the ticks per second and the time spent applying changes, with their median, minimum and maximum over the repeats.
+`--save-outputs` writes the final state of every output port, one per line, sorted by position (by name for a RIL circuit), like `(468, 334, 65) power 11`, with `locked` after a locked repeater. Two runs end the same when their files do, whatever their setups, which a plain text diff shows.
+
+## diff
+
+`rilc diff <SCENARIO> -b A -b B` plays the scenario on two setups, like `-b direct -b "direct -o"`, and compares them before the first tick and after every tick: a world's nodes by position, a RIL circuit's by name.
+The setups agree when every port has the same state and the note blocks play equally often.
+At the first difference, `diff` reports the tick, the differing ports with their states and the inputs feeding them under each setup, the last action, and the earliest tick and location at which any node both setups have differed.
+Every report lists what it didn't compare: the nodes only one setup has, pending ticks, and changes that revert within a tick.
+
+## test
+
+`rilc test <PATH> [--update] [--print-after-all]` runs the tests of a RIL file, or of every RIL file under a directory. `--update` replaces the expected circuit of each failing test with its result, and `--print-after-all` prints each test's circuit after every stage.

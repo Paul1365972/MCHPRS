@@ -198,7 +198,7 @@ impl NodeState {
 pub struct Node {
     pub kind: NodeKind,
     pub blocks: SmallVec<[(BlockPos, u32); 1]>,
-    pub name: Option<String>,
+    pub names: Vec<String>,
     pub state: NodeState,
     pub pending_tick: Option<QueuedTick>,
     pub port: Option<Role>,

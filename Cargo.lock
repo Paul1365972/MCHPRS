@@ -1256,11 +1256,17 @@ dependencies = [
  "anstream",
  "clap",
  "mchprs_blocks",
+ "mchprs_commands",
  "mchprs_redpiler",
  "mchprs_redpiler_backends",
+ "mchprs_redstone",
  "mchprs_ril",
+ "mchprs_save_data",
  "mchprs_schematic",
  "owo-colors",
+ "rustc-hash",
+ "serde",
+ "toml",
  "tracing-subscriber",
 ]
 

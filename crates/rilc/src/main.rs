@@ -1,20 +1,33 @@
-use clap::{Parser, Subcommand};
-use compile::Compilation;
-use mchprs_blocks::BlockPos;
-use mchprs_redpiler::compile::{optimize, BuildContext};
-use mchprs_redpiler::extract::{extract, ExtractOptions};
-use mchprs_redpiler::graph::Graph;
-use mchprs_redpiler::passes::{self, Pass};
-use mchprs_redpiler_backends::{BackendSetup, BACKENDS};
-use mchprs_ril::{Module, Printed};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-
 mod compile;
+mod diff;
+mod input;
+mod numbers;
+mod run;
+mod scenario;
+mod setup;
+mod subject;
 mod test;
 
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser, Subcommand};
+use setup::Setup;
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
+
+/// Whether the command's claim holds, or why the command couldn't run
+type Outcome = Result<bool, Error>;
+
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")");
+
+/// Compiles, runs, compares and tests Redpiler circuits.
+///
+/// Exits with 0 when the command's claim holds, 1 when it doesn't (a test fails, two setups
+/// differ), and 2 when it can't run.
 #[derive(Parser)]
+#[command(version = VERSION)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -22,176 +35,118 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Run the RIL tests of a file, or of every RIL file under a directory
     Test {
-        /// Path to the test or test directory
+        /// A RIL file or a directory
         path: PathBuf,
-
+        /// Replace the expected circuit of each failing test with its result
         #[arg(long)]
         update: bool,
-    },
-    #[command(after_help = backends_help())]
-    Compile {
-        /// Path to the input file
-        input_path: PathBuf,
-
-        /// Path to the output file
-        #[arg(long = "output")]
-        output_path: Option<PathBuf>,
-
-        /// Backend and flags to compile for, like "direct -o"; defaults to the first backend
-        #[arg(short, long, value_parser = BackendSetup::parse)]
-        backend: Option<BackendSetup>,
-        /// Print out the RIL circuit after every redpiler pass
+        /// Print each test's circuit after every stage
         #[arg(long)]
         print_after_all: bool,
-        /// A comma separated list of passes to run instead of the backend's
-        #[arg(long, value_delimiter = ',')]
-        passes: Option<Vec<String>>,
     },
-    Version,
-}
-
-fn backends_help() -> String {
-    let flags = || BACKENDS.iter().flat_map(|backend| backend.flags());
-    let width = flags()
-        .map(|flag| flag.to_string().len())
-        .max()
-        .unwrap_or(0);
-    let mut help = "Backends and their flags:".to_owned();
-    for backend in BACKENDS {
-        help.push_str(&format!("\n  {}", backend.name()));
-        for flag in backend.flags() {
-            let usage = flag.to_string();
-            help.push_str(&format!("\n    {usage:width$}  {}", flag.description()));
-        }
-    }
-    help
-}
-
-fn extract_schematic(
-    ril_file_path: &Path,
-    schematic_path: &str,
-    options: &ExtractOptions,
-) -> Option<Graph> {
-    let schematic_path = ril_file_path.parent().unwrap().join(schematic_path);
-    let Some(schematic) = fs::read(&schematic_path)
-        .ok()
-        .and_then(|bytes| mchprs_schematic::read(&bytes).ok())
-    else {
-        eprintln!(
-            "error: failed to load schematic at path: {:?}",
-            schematic_path
-        );
-        return None;
-    };
-    for (name, count) in &schematic.unknown_blocks {
-        eprintln!(
-            "warning: replaced {count} block(s) of unknown or invalid state `{name}` with air"
-        );
-    }
-    let origin = schematic.volume.region().min();
-    let volume = schematic.volume.translated(BlockPos::zero() - origin);
-    match extract(&volume, volume.region(), &[], options) {
-        Ok(graph) => Some(graph),
-        Err(error) => {
-            eprintln!("error: {error}");
-            None
-        }
-    }
-}
-
-fn run_passes(passes: &[&dyn Pass], mut graph: Graph, print_after_all: bool) -> Graph {
-    for &pass in passes {
-        optimize(&mut graph, &[pass], &mut BuildContext::silent())
-            .expect("a silent build is never cancelled");
-        if print_after_all {
-            println!("{}", Printed::new(&graph, &pass.name().replace('-', "_")));
-        }
-    }
-    graph
-}
-
-fn load_ril(path: &Path, src: &str) -> Option<Module> {
-    match Module::parse(src) {
-        Ok(module) => Some(module),
-        Err(error) => {
-            eprintln!("error: {}:{error}", path.display());
-            None
-        }
-    }
-}
-
-fn named_passes(names: &[String]) -> Result<Vec<&'static dyn Pass>, String> {
-    names
-        .iter()
-        .map(|name| passes::named(name).ok_or_else(|| format!("unknown pass `{name}`")))
-        .collect()
-}
-
-fn compile_command(
-    input_path: &Path,
-    output_path: &Option<PathBuf>,
-    backend: BackendSetup,
-    print_after_all: bool,
-    passes: Option<Vec<String>>,
-) -> Result<(), String> {
-    let plan = backend.configure()?;
-    let passes = match passes {
-        Some(names) => named_passes(&names)?,
-        None => plan.passes,
-    };
-    let compilation = Compilation {
-        extract: &plan.extract,
-        passes: &passes,
-        print_after_all,
-    };
-    compile::compile(input_path, output_path, &compilation);
-    Ok(())
-}
-
-pub fn get_version_string() -> String {
-    format!(
-        "{} v{}\n{}",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
-        env!("GIT_HASH")
-    )
+    /// Compile a world or a RIL circuit and write the result as RIL
+    #[command(after_help = setup::help())]
+    Compile {
+        /// A schematic, a plot file or a RIL file
+        input: PathBuf,
+        /// The setup to compile for, like "direct -o"; defaults to the first backend
+        #[arg(short = 'b', long = "backend", value_name = "SETUP", value_parser = Setup::parse)]
+        setup: Option<Setup>,
+        /// The circuit to compile, if the RIL file holds several
+        #[arg(long, value_name = "NAME")]
+        circuit: Option<String>,
+        /// Write the circuit after every stage, each named after its stage
+        #[arg(long)]
+        print_after_all: bool,
+        /// Write the RIL to FILE instead of stdout
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+    },
+    /// Play a scenario on a setup and time it
+    #[command(after_help = setup::help())]
+    Run {
+        /// The scenario, a TOML file
+        scenario: PathBuf,
+        /// The setup to run on, like "direct -o"
+        #[arg(short = 'b', long = "backend", value_name = "SETUP", value_parser = Setup::parse)]
+        setup: Setup,
+        /// Play the scenario this many times, each on a fresh engine
+        #[arg(long, value_name = "N", default_value = "1")]
+        repeat: NonZeroUsize,
+        /// Write the final state of every output port to FILE
+        #[arg(long, value_name = "FILE")]
+        save_outputs: Option<PathBuf>,
+    },
+    /// Play a scenario on two setups and explain where they first differ
+    #[command(after_help = setup::help())]
+    Diff {
+        /// The scenario, a TOML file
+        scenario: PathBuf,
+        /// Each of the two setups, like -b direct -b "direct -o"
+        #[arg(
+            short = 'b',
+            long = "backend",
+            value_name = "SETUP",
+            value_parser = Setup::parse,
+            required = true
+        )]
+        setups: Vec<Setup>,
+    },
 }
 
 fn main() -> ExitCode {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
 
-    let cli = Cli::parse();
-
-    match cli.command {
-        Command::Test { path, update } => {
-            return if test::run_tests(path, update) {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
-        }
-        Command::Compile {
-            input_path,
-            output_path,
-            backend,
+    let outcome = match Cli::parse().command {
+        Command::Test {
+            path,
+            update,
             print_after_all,
-            passes,
-        } => {
-            if let Err(error) = compile_command(
-                &input_path,
-                &output_path,
-                backend.unwrap_or_default(),
-                print_after_all,
-                passes,
-            ) {
-                eprintln!("error: {error}");
-                return ExitCode::FAILURE;
-            }
+        } => test::run_tests(&path, update, print_after_all),
+        Command::Compile {
+            input,
+            setup,
+            circuit,
+            print_after_all,
+            output,
+        } => compile::command(
+            &input,
+            &setup.unwrap_or_default(),
+            circuit.as_deref(),
+            print_after_all,
+            output.as_deref(),
+        ),
+        Command::Run {
+            scenario,
+            setup,
+            repeat,
+            save_outputs,
+        } => run::command(&scenario, &setup, repeat, save_outputs.as_deref()),
+        Command::Diff { scenario, setups } => {
+            let Ok([first, second]) = <[Setup; 2]>::try_from(setups) else {
+                let mut cli = Cli::command();
+                cli.build();
+                cli.find_subcommand_mut("diff")
+                    .expect("diff is a subcommand")
+                    .error(
+                        ErrorKind::WrongNumberOfValues,
+                        "diff takes exactly two setups",
+                    )
+                    .exit();
+            };
+            diff::command(&scenario, [&first, &second])
         }
-        Command::Version => {
-            println!("{}", get_version_string());
+    };
+    match outcome {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::from(1),
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::from(2)
         }
     }
-    ExitCode::SUCCESS
 }

@@ -44,7 +44,7 @@ fn add_node(
     Some(graph.add_node(Node {
         kind,
         blocks: smallvec![(pos, block.get_id())],
-        name: None,
+        names: Vec::new(),
         state,
         pending_tick: None,
         port,

@@ -1,13 +1,16 @@
-use crate::{extract_schematic, run_passes};
+use crate::compile::{compile_input, stage_lines, StageNames};
+use crate::input::{read_world, Input};
+use crate::numbers::{counted, grouped};
+use crate::{Error, Outcome};
 use anstream::println;
+use mchprs_redpiler::compile::StageReport;
 use mchprs_redpiler::graph::Graph;
-use mchprs_ril::{Input, Test};
+use mchprs_ril::{Input as TestInput, Module, Printed, Test};
 use owo_colors::OwoColorize as _;
-use std::{
-    ffi::OsStr,
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::ffi::OsStr;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 
 /// Recursively search for ril files starting from `path` and collect into `paths`.
 fn search_path(path: PathBuf, paths: &mut Vec<PathBuf>) -> io::Result<()> {
@@ -21,108 +24,145 @@ fn search_path(path: PathBuf, paths: &mut Vec<PathBuf>) -> io::Result<()> {
     Ok(())
 }
 
-enum TestOutcome {
-    Passed,
-    Updated(Graph),
-    Failed,
+#[derive(Default)]
+struct Tally {
+    passed: usize,
+    updated: usize,
+    failed: usize,
+    broken_modules: usize,
 }
 
-fn run_test(test_root: &Path, test_path: &Path, test: &Test, update: bool) -> TestOutcome {
-    let graph = match &test.input {
-        Input::Schematic(schematic) => {
-            match extract_schematic(test_path, &schematic.path, &test.options.extract) {
-                Some(graph) => graph,
-                None => return TestOutcome::Failed,
-            }
-        }
-        Input::Circuit(circuit) => circuit.graph(&test.options.extract),
-    };
-
-    let result_graph = run_passes(&test.options.passes, graph, false);
-    let test_path = test_path.strip_prefix(test_root).unwrap_or(test_path);
-    let full_name = format!("{}:{}", test_path.with_extension("").display(), test.name);
-    let mismatches = test.compare(&result_graph);
-    if mismatches.is_empty() {
-        println!("{} {}", "[PASS]".green(), full_name);
-        TestOutcome::Passed
-    } else if update {
-        println!("{} {}", "[UPDATED]".blue(), full_name);
-        TestOutcome::Updated(result_graph)
-    } else {
-        println!("{} {}", "[FAIL]".red(), full_name);
-        for mismatch in mismatches {
-            if let Some(expected) = mismatch.expected {
-                println!("{}", format!("- {expected}").red());
-            }
-            if let Some(actual) = mismatch.actual {
-                println!("{}", format!("+ {actual}").green());
-            }
-        }
-        TestOutcome::Failed
-    }
-}
-
-pub fn run_tests(path: PathBuf, update: bool) -> bool {
-    let mut ril_paths = Vec::new();
+pub fn run_tests(path: &Path, update: bool, print_after_all: bool) -> Outcome {
     let test_root = if path.is_dir() {
-        path.as_path()
+        path
     } else {
-        path.parent().unwrap_or(&path)
+        path.parent().unwrap_or(path)
     };
-    if let Err(error) = search_path(path.clone(), &mut ril_paths) {
-        eprintln!(
-            "error: failed to discover tests at {}: {error}",
-            path.display()
-        );
-        return false;
-    }
+    let mut ril_paths = Vec::new();
+    search_path(path.to_owned(), &mut ril_paths)
+        .map_err(|error| format!("couldn't search {} for tests: {error}", path.display()))?;
     ril_paths.sort();
-    println!("Found {} RIL test modules.", ril_paths.len());
+    println!(
+        "Found {}.",
+        counted(ril_paths.len() as u64, "RIL test module")
+    );
 
-    let mut num_passed = 0;
-    let mut num_failed = 0;
-    let mut num_updated = 0;
-    for path in ril_paths {
-        let src = match fs::read_to_string(&path) {
-            Ok(src) => src,
+    let mut tally = Tally::default();
+    for ril_path in &ril_paths {
+        let relative = ril_path.strip_prefix(test_root).unwrap_or(ril_path);
+        let module_name = slash_separated(&relative.with_extension(""));
+        let loaded = fs::read_to_string(ril_path)
+            .map_err(|error| error.to_string())
+            .and_then(|source| Module::parse(&source).map_err(|error| error.to_string()));
+        let module = match loaded {
+            Ok(module) => module,
             Err(error) => {
-                eprintln!("error: failed to read {}: {error}", path.display());
-                num_failed += 1;
+                eprintln!("error: {}:{error}", slash_separated(relative));
+                tally.broken_modules += 1;
                 continue;
             }
         };
-        let Some(module) = crate::load_ril(&path, &src) else {
-            num_failed += 1;
-            continue;
-        };
         let mut results = Vec::new();
         for test in module.tests() {
-            match run_test(test_root, &path, test, update) {
-                TestOutcome::Passed => num_passed += 1,
-                TestOutcome::Updated(graph) => results.push((test, graph)),
-                TestOutcome::Failed => num_failed += 1,
+            let full_name = format!("{module_name}:{}", test.name);
+            let graph = match run_test(ril_path, test, print_after_all) {
+                Ok(graph) => graph,
+                Err(error) => {
+                    println!("{} {full_name}", "[FAIL]".red());
+                    eprintln!("error: {error}");
+                    tally.failed += 1;
+                    continue;
+                }
+            };
+            let mismatches = test.compare(&graph);
+            if mismatches.is_empty() {
+                println!("{} {full_name}", "[PASS]".green());
+                tally.passed += 1;
+            } else if update {
+                println!("{} {full_name}", "[UPDATED]".blue());
+                results.push((test, graph));
+            } else {
+                println!("{} {full_name}", "[FAIL]".red());
+                for mismatch in mismatches {
+                    if let Some(expected) = mismatch.expected {
+                        println!("{}", format!("- {expected}").red());
+                    }
+                    if let Some(actual) = mismatch.actual {
+                        println!("{}", format!("+ {actual}").green());
+                    }
+                }
+                tally.failed += 1;
             }
         }
         if !results.is_empty() {
             let results: Vec<_> = results.iter().map(|(test, graph)| (*test, graph)).collect();
-            match fs::write(&path, module.with_results(&results)) {
-                Ok(()) => num_updated += results.len(),
-                Err(error) => {
-                    eprintln!("error: failed to update {}: {error}", path.display());
-                    num_failed += results.len();
-                }
-            }
+            fs::write(ril_path, module.with_results(&results))
+                .map_err(|error| format!("couldn't update {}: {error}", ril_path.display()))?;
+            tally.updated += results.len();
         }
     }
 
-    if update {
-        println!("{num_passed} tests passed, {num_updated} updated, {num_failed} failed.");
+    let total = tally.passed + tally.updated + tally.failed;
+    if total == 0 && tally.broken_modules == 0 {
+        return Err(format!("no tests found at {}", path.display()).into());
+    }
+    let mut summary = if update {
+        format!(
+            "{} passed, {} updated, {} failed",
+            counted(tally.passed as u64, "test"),
+            grouped(tally.updated as u64),
+            grouped(tally.failed as u64)
+        )
     } else {
-        println!("{}/{} tests passed.", num_passed, num_passed + num_failed)
+        format!(
+            "{}/{} passed",
+            grouped(tally.passed as u64),
+            counted(total as u64, "test")
+        )
+    };
+    match tally.broken_modules {
+        0 => {}
+        1 => summary.push_str(", 1 module failed to load"),
+        broken => summary.push_str(&format!(
+            ", {} failed to load",
+            counted(broken as u64, "module")
+        )),
     }
-    if num_passed + num_updated + num_failed == 0 {
-        eprintln!("error: no tests found at {}", path.display());
-        return false;
+    println!("{summary}.");
+    Ok(tally.failed == 0 && tally.broken_modules == 0)
+}
+
+fn run_test(ril_path: &Path, test: &Test, print_after_all: bool) -> Result<Graph, Error> {
+    let mut printed = String::new();
+    let mut names = StageNames::default();
+    let mut inspect = |stage: &StageReport, graph: &Graph| {
+        if print_after_all {
+            let name = names.next(stage.name);
+            printed.push_str(&format!("\n{}\n", Printed::new(graph, &name)));
+        }
+    };
+    let input = match &test.input {
+        TestInput::Schematic(schematic) => {
+            let path = ril_path
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(&schematic.path);
+            Input::World(read_world(&path)?)
+        }
+        TestInput::Circuit(circuit) => Input::Circuit(circuit.clone()),
+    };
+    let options = &test.options;
+    let (graph, stages) = compile_input(&input, &options.extract, &options.passes, &mut inspect)?;
+    if print_after_all {
+        println!("{}{printed}", stage_lines(&stages));
     }
-    num_failed == 0
+    Ok(graph)
+}
+
+fn slash_separated(path: &Path) -> String {
+    let components: Vec<_> = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect();
+    components.join("/")
 }

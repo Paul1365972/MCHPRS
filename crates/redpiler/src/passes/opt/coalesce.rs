@@ -56,6 +56,7 @@ fn merge_identical(graph: &mut Graph, candidates: Vec<NodeIdx>) -> Vec<NodeIdx> 
             }
             let mut removed = graph.remove_node(node).unwrap();
             graph[into].blocks.append(&mut removed.blocks);
+            graph[into].names.append(&mut removed.names);
         }
         merged_into.push(into);
     }

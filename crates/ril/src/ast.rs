@@ -24,7 +24,7 @@ impl Circuit {
             graph.add_node(Node {
                 kind: component.kind.clone(),
                 state: component.state,
-                name: Some(component.name.clone()),
+                names: vec![component.name.clone()],
                 blocks: Default::default(),
                 pending_tick: None,
                 port: component.port,
