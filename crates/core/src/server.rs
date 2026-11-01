@@ -1,3 +1,5 @@
+#[cfg(feature = "whitelist")]
+use crate::utils::HyphenatedUUID;
 use crate::{
     commands::{
         suggestions::{CommandSuggestions, SuggestionSource},
@@ -8,7 +10,7 @@ use crate::{
     permissions,
     player::{Gamemode, PacketSender, Player},
     plot::{self, database, Plot, PLOT_BLOCK_HEIGHT},
-    utils::{self, HyphenatedUUID},
+    utils,
 };
 use backtrace::Backtrace;
 use bus::Bus;
@@ -28,15 +30,20 @@ use mchprs_network::packets::serverbound::{
 };
 use mchprs_network::packets::{PacketEncoderExt, PlayerProperty, SlotData, COMPRESSION_THRESHOLD};
 use mchprs_network::text::TextComponent;
-use mchprs_network::{NetworkServer, NetworkState, PlayerPacketSender, PROTOCOL_VERSION};
+#[cfg(feature = "whitelist")]
+use mchprs_network::PlayerPacketSender;
+use mchprs_network::{NetworkServer, NetworkState, PROTOCOL_VERSION};
 use rustc_hash::FxHashMap;
+#[cfg(feature = "whitelist")]
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
+#[cfg(feature = "whitelist")]
+use std::io;
 use std::{
     collections::HashMap,
     fs,
-    io::{self, Cursor},
+    io::Cursor,
     sync::mpsc::{self, Receiver, Sender, SyncSender},
     sync::LazyLock,
     time::{Duration, Instant},
@@ -63,8 +70,10 @@ pub enum Message {
     /// This message is sent to the server thread when a plot unloads itself.
     PlotUnload(i32, i32),
     /// This message is sent to the server thread when a player runs /whitelist add.
+    #[cfg(feature = "whitelist")]
     WhitelistAdd(u128, String, PlayerPacketSender),
     /// This message is sent to the server thread when a player runs /whitelist remove.
+    #[cfg(feature = "whitelist")]
     WhitelistRemove(u128, PlayerPacketSender),
     /// This message is sent to the server thread when a player runs /stop.
     Shutdown,
@@ -124,6 +133,7 @@ struct PlotListEntry {
     priv_message_sender: mpsc::Sender<PrivMessage>,
 }
 
+#[cfg(feature = "whitelist")]
 #[derive(Clone, Serialize, Deserialize)]
 struct WhitelistEntry {
     uuid: HyphenatedUUID,
@@ -138,6 +148,7 @@ pub struct MinecraftServer {
     plot_sender: Sender<Message>,
     online_players: FxHashMap<u128, PlayerListEntry>,
     running_plots: Vec<PlotListEntry>,
+    #[cfg(feature = "whitelist")]
     whitelist: Option<Vec<WhitelistEntry>>,
 }
 
@@ -173,6 +184,12 @@ impl MinecraftServer {
 
         LazyLock::force(&COMMAND_REGISTRY);
 
+        #[cfg(not(feature = "whitelist"))]
+        if CONFIG.whitelist {
+            panic!("Config.toml enables the whitelist, but this build has no whitelist feature. Build with `--features whitelist`, or set `whitelist = false`");
+        }
+
+        #[cfg(feature = "whitelist")]
         let whitelist = CONFIG.whitelist.then(|| {
             let content = match fs::read("whitelist.json") {
                 Ok(content) => content,
@@ -201,6 +218,7 @@ impl MinecraftServer {
             plot_sender: plot_tx,
             online_players: FxHashMap::default(),
             running_plots: Vec::new(),
+            #[cfg(feature = "whitelist")]
             whitelist,
         };
 
@@ -479,6 +497,7 @@ impl MinecraftServer {
         clients[client_idx].send_packet(&set_compression);
         clients[client_idx].set_compressed(true);
 
+        #[cfg(feature = "whitelist")]
         if let Some(whitelist) = &self.whitelist {
             // uuid will only be present if velocity is enabled in config
             let whitelisted = if let Some(uuid) = clients[client_idx].uuid {
@@ -616,6 +635,7 @@ impl MinecraftServer {
                 self.broadcaster
                     .broadcast(BroadcastMessage::PlayerUpdateGamemode(uuid, gamemode));
             }
+            #[cfg(feature = "whitelist")]
             Message::WhitelistAdd(uuid, username, sender) => {
                 self.update_whitelist(sender, |whitelist| {
                     if whitelist.iter().any(|entry| entry.uuid.0 == uuid) {
@@ -629,6 +649,7 @@ impl MinecraftServer {
                     Ok(message)
                 })
             }
+            #[cfg(feature = "whitelist")]
             Message::WhitelistRemove(uuid, sender) => self.update_whitelist(sender, |whitelist| {
                 let Some(entry) = whitelist.iter().find(|entry| entry.uuid.0 == uuid) else {
                     return Err("That player is not whitelisted on this server.");
@@ -643,6 +664,7 @@ impl MinecraftServer {
         }
     }
 
+    #[cfg(feature = "whitelist")]
     fn update_whitelist(
         &mut self,
         sender: PlayerPacketSender,
