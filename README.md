@@ -49,6 +49,7 @@ Prebuilt releases have both enabled, and so does the image the `Dockerfile` buil
 | --- | --- |
 | `world/plots` | The plots. If `world/plots/pTEMPLATE` exists at startup, new plots start as a copy of it. Before a plot file of an older version is replaced, it is kept as `p<x>,<z>.v<version>`. |
 | `world/plots.db` | The plot claims. Requires the [`claims` feature](#features). |
+| `logs` | The logs. `logs/latest.log` is the log of the current run. At startup the previous one is renamed to `logs/<n>.log`. |
 
 MCHPRS has no permissions: every player can use every command and edit every plot.
 
