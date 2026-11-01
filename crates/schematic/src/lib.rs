@@ -20,7 +20,9 @@ pub struct Schematic {
 #[derive(Debug, Error)]
 pub enum SchematicError {
     #[error(transparent)]
-    Nbt(#[from] nbt::Error),
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Nbt(#[from] fastnbt::error::Error),
     #[error("unsupported schematic version {0}")]
     UnsupportedVersion(i32),
     #[error("malformed schematic: {0}")]

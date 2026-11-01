@@ -24,7 +24,7 @@ mchprs_redstone = { path = "../redstone" }
 mchprs_schematic = { path = "../schematic" }
 toml = { workspace = true }
 byteorder = { workspace = true }
-hematite-nbt = { workspace = true }
+fastnbt = { workspace = true }
 bitflags = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

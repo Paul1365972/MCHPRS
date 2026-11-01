@@ -2,12 +2,14 @@ use crate::config::CONFIG;
 use crate::item_stack::ItemStack;
 use crate::player::Player;
 use crate::plot::{PlotWorld, PLOT_BLOCK_HEIGHT};
+use fastnbt::Value;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::items::Item;
 use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
+use mchprs_network::NBTCompound;
 use mchprs_redstone as redstone;
 use mchprs_redstone::RedstoneWorld;
 
@@ -263,12 +265,12 @@ pub fn get_state_for_placement(
     }
 }
 
-fn read_block_entity_tag(nbt: &nbt::Blob, block_id: &str) -> Option<BlockEntity> {
-    let Some(nbt::Value::Compound(compound)) = nbt.get("BlockEntityTag") else {
+fn read_block_entity_tag(nbt: &NBTCompound, block_id: &str) -> Option<BlockEntity> {
+    let Some(Value::Compound(compound)) = nbt.get("BlockEntityTag") else {
         return None;
     };
     let id = match compound.get("Id").or_else(|| compound.get("id")) {
-        Some(nbt::Value::String(id)) => id,
+        Some(Value::String(id)) => id,
         Some(_) => return None,
         None => block_id,
     };
@@ -279,7 +281,7 @@ pub fn place_in_world(
     block: Block,
     world: &mut impl RedstoneWorld,
     pos: BlockPos,
-    nbt: &Option<nbt::Blob>,
+    nbt: &Option<NBTCompound>,
 ) {
     if block.has_block_entity()
         && let Some(nbt) = nbt
@@ -481,7 +483,7 @@ pub fn use_item_on_block(
             && !item
                 .nbt
                 .as_ref()
-                .is_some_and(|blob| blob.content.contains_key("BlockEntityTag"))
+                .is_some_and(|nbt| nbt.contains_key("BlockEntityTag"))
         {
             let open_sign_editor = COpenSignEditor {
                 pos_x: block_pos.x,

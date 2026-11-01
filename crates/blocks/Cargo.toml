@@ -15,7 +15,7 @@ include.workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
-hematite-nbt = { workspace = true, optional = true }
+fastnbt = { workspace = true, optional = true }
 
 [features]
-nbt = ["dep:hematite-nbt"]
+nbt = ["dep:fastnbt"]

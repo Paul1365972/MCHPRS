@@ -6,6 +6,7 @@ use crate::text::TextComponent;
 
 use super::NetworkState;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use fastnbt::{DeOpts, SerOpts};
 use flate2::bufread::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
@@ -46,11 +47,11 @@ pub type DecodeResult<T> = std::result::Result<T, PacketDecodeError>;
 pub enum PacketDecodeError {
     Io(io::Error),
     FromUtf8(std::string::FromUtf8Error),
-    Nbt(nbt::Error),
+    Nbt(fastnbt::error::Error),
 }
 
-impl From<nbt::Error> for PacketDecodeError {
-    fn from(err: nbt::Error) -> PacketDecodeError {
+impl From<fastnbt::error::Error> for PacketDecodeError {
+    fn from(err: fastnbt::error::Error) -> PacketDecodeError {
         PacketDecodeError::Nbt(err)
     }
 }
@@ -272,17 +273,15 @@ pub trait PacketDecoderExt: Read + Sized {
     }
 
     fn read_nbt_compound(&mut self) -> DecodeResult<Option<NBTCompound>> {
-        let id = self.read_byte()? as u8;
-        if id == 0 {
+        let tag = [self.read_unsigned_byte()?];
+        if tag == [0] {
             return Ok(None);
         }
-
-        let compound = match nbt::Value::from_reader(id, self)? {
-            nbt::Value::Compound(compound) => Some(compound),
-            _ => None,
-        };
-
-        Ok(compound)
+        let reader = tag.as_slice().chain(self);
+        Ok(Some(fastnbt::from_reader_with_opts(
+            reader,
+            DeOpts::network_nbt(),
+        )?))
     }
 
     fn read_player_property(&mut self) -> DecodeResult<PlayerProperty> {
@@ -383,9 +382,8 @@ pub trait PacketEncoderExt: Write {
     }
 
     fn write_nbt<T: Serialize>(&mut self, nbt: &T) {
-        let mut encoder = nbt::ser::Encoder::new(self, None, true);
-        if let Err(err) = nbt.serialize(&mut encoder) {
-            error!("There was en error encoding NBT in a packet: {}", err);
+        if let Err(err) = fastnbt::to_writer_with_opts(self, nbt, SerOpts::network_nbt()) {
+            error!("Failed to encode NBT in a packet: {}", err);
         }
     }
 
@@ -393,13 +391,7 @@ pub trait PacketEncoderExt: Write {
     where
         Self: Sized,
     {
-        if value.is_text_only() {
-            let value = nbt::Value::String(value.text.clone());
-            self.write_unsigned_byte(value.id());
-            let _ = value.to_writer(self);
-        } else {
-            self.write_nbt(value);
-        }
+        self.write_nbt(value);
     }
 
     fn write_slot_data(&mut self, slot_data: &Option<SlotData>)

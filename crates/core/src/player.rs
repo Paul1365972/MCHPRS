@@ -201,9 +201,7 @@ impl Player {
         // Load inventory
         let mut inventory: Vec<Option<ItemStack>> = vec![None; 46];
         for entry in player_data.inventory {
-            let nbt = entry
-                .nbt
-                .map(|data| nbt::Blob::from_reader(&mut Cursor::new(data)).unwrap());
+            let nbt = entry.nbt.map(|data| fastnbt::from_bytes(&data).unwrap());
             inventory[entry.slot as usize] = Some(ItemStack {
                 item_type: Item::from_id(entry.id),
                 count: entry.count as u8,
@@ -286,11 +284,7 @@ impl Player {
         let mut inventory: Vec<InventoryEntry> = Vec::new();
         for (slot, item_option) in self.inventory.iter().enumerate() {
             if let Some(item) = item_option {
-                let nbt = item.nbt.clone().map(|blob| {
-                    let mut data = Vec::new();
-                    blob.to_writer(&mut data).unwrap();
-                    data
-                });
+                let nbt = item.nbt.as_ref().map(|nbt| fastnbt::to_bytes(nbt).unwrap());
                 inventory.push(InventoryEntry {
                     count: item.count as i8,
                     id: item.item_type.get_id(),

@@ -1,4 +1,6 @@
 use crate::{Schematic, SchematicError};
+use fastnbt::{DeOpts, Value};
+use flate2::read::GzDecoder;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_state_spec::BlockStateSpec;
 use mchprs_blocks::block_store::{BlockStore, BlockView};
@@ -7,14 +9,15 @@ use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use std::collections::{BTreeMap, HashMap};
+use std::io::Read;
 use tracing::warn;
 
-type Compound = nbt::Map<String, nbt::Value>;
+type Compound = HashMap<String, Value>;
 
 macro_rules! nbt_field {
     ($compound:expr, $name:expr, $variant:ident) => {
         match $compound.get($name) {
-            Some(nbt::Value::$variant(value)) => value,
+            Some(Value::$variant(value)) => value,
             Some(_) => {
                 return Err(malformed(format!(
                     "field {} must be {}",
@@ -27,12 +30,15 @@ macro_rules! nbt_field {
     };
 }
 
-pub fn read(mut bytes: &[u8]) -> Result<Schematic, SchematicError> {
-    let nbt = nbt::Blob::from_gzip_reader(&mut bytes)?;
-    let root = if nbt.content.contains_key("Schematic") {
-        nbt_field!(nbt.content, "Schematic", Compound)
+pub fn read(bytes: &[u8]) -> Result<Schematic, SchematicError> {
+    let mut decompressed = Vec::new();
+    GzDecoder::new(bytes).read_to_end(&mut decompressed)?;
+    let nbt: Compound =
+        fastnbt::from_bytes_with_opts(&decompressed, DeOpts::new().max_seq_len(usize::MAX))?;
+    let root = if nbt.contains_key("Schematic") {
+        nbt_field!(nbt, "Schematic", Compound)
     } else {
-        &nbt.content
+        &nbt
     };
     let version = *nbt_field!(root, "Version", Int);
     match version {
@@ -101,7 +107,7 @@ fn read_block_container(
 ) -> Result<Schematic, SchematicError> {
     let mut palette = HashMap::new();
     for (name, value) in nbt_field!(nbt, "Palette", Compound) {
-        let nbt::Value::Int(index) = value else {
+        let Value::Int(index) = value else {
             return Err(malformed(format!("palette index of {name} must be Int")));
         };
         if *index < 0 {
@@ -119,7 +125,7 @@ fn read_block_container(
         2 => "BlockData",
         _ => "Data",
     };
-    let mut data = nbt_field!(nbt, data_name, ByteArray).as_slice();
+    let mut data: &[i8] = nbt_field!(nbt, data_name, ByteArray);
     let size = region.max() - region.min();
     let [size_x, size_y, size_z] = [size.x, size.y, size.z].map(|size| size as usize + 1);
     let block_count = size_x
@@ -246,11 +252,11 @@ fn read_palette_index(bytes: &mut &[i8]) -> Result<u32, SchematicError> {
 }
 
 fn read_block_entity(
-    value: &nbt::Value,
+    value: &Value,
     version: i32,
     region: Region,
 ) -> Result<Option<(BlockPos, BlockEntity)>, SchematicError> {
-    let nbt::Value::Compound(entity) = value else {
+    let Value::Compound(entity) = value else {
         return Err(malformed("block entity must be Compound"));
     };
     let pos = read_position(nbt_field!(entity, "Pos", IntArray), "Pos")?;
@@ -265,7 +271,7 @@ fn read_block_entity(
     } else {
         nbt_field!(entity, "id", String)
     };
-    let empty = nbt::Map::new();
+    let empty = Compound::new();
     let data = match version {
         2 => entity,
         _ if entity.contains_key("Data") => nbt_field!(entity, "Data", Compound),

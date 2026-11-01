@@ -19,7 +19,8 @@ mchprs_blocks = { path = "../blocks", features = ["nbt"] }
 mchprs_save_data = { path = "../save_data" }
 mchprs_world = { path = "../world" }
 serde = { workspace = true }
-hematite-nbt = { workspace = true }
+fastnbt = { workspace = true }
+flate2 = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
