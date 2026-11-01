@@ -1,6 +1,6 @@
 use crate::block_entities::ContainerType;
 pub use crate::generated::Item;
-use mchprs_utils::map;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct ItemStack {
@@ -24,21 +24,28 @@ impl ItemStack {
             let mut items = Vec::new();
             for (slot, items_added) in (0..items_needed).step_by(64).enumerate() {
                 let count = (items_needed - items_added).min(64);
-                items.push(nbt::Value::Compound(map! {
-                    "Count" => nbt::Value::Byte(count as i8),
-                    "id" => nbt::Value::String("minecraft:redstone".to_owned()),
-                    "Slot" => nbt::Value::Byte(slot as i8)
-                }));
+                items.push(nbt::Value::Compound(HashMap::from([
+                    ("Count".to_owned(), nbt::Value::Byte(count as i8)),
+                    (
+                        "id".to_owned(),
+                        nbt::Value::String("minecraft:redstone".to_owned()),
+                    ),
+                    ("Slot".to_owned(), nbt::Value::Byte(slot as i8)),
+                ])));
             }
             items
         });
 
-        let nbt = nbt::Blob::with_content(map! {
-            "BlockEntityTag" => nbt::Value::Compound(map! {
-                "Items" => list,
-                "Id" => nbt::Value::String(container_ty.to_string())
-            })
-        });
+        let nbt = nbt::Blob::with_content(HashMap::from([(
+            "BlockEntityTag".to_owned(),
+            nbt::Value::Compound(HashMap::from([
+                ("Items".to_owned(), list),
+                (
+                    "Id".to_owned(),
+                    nbt::Value::String(container_ty.to_string()),
+                ),
+            ])),
+        )]));
 
         ItemStack {
             item_type: item,

@@ -3,8 +3,8 @@ use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
+use mchprs_network::text::{ColorCode, TextComponent, TextComponentBuilder};
 use mchprs_redpiler::CompilerOptions;
-use mchprs_text::{ColorCode, TextComponent, TextComponentBuilder};
 
 #[derive(PartialEq, Eq, Default, Clone, Copy)]
 pub enum RedpilerState {

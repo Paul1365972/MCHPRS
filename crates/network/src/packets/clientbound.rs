@@ -1,9 +1,9 @@
 use super::{PacketEncoder, PacketEncoderExt, PalettedContainer, PlayerProperty, SlotData};
 use crate::nbt_util::{NBTCompound, NBTMap};
+use crate::text::TextComponent;
 use bitvec::bits;
 use bitvec::prelude::Lsb0;
 use mchprs_proc_macros::protocol_id;
-use mchprs_text::TextComponent;
 use serde::Serialize;
 use std::collections::HashMap;
 

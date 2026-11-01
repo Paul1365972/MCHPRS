@@ -6,7 +6,7 @@ use mchprs_commands::suggestion::{Suggestion, Suggestions, SuggestionsBuilder};
 use mchprs_network::packets::clientbound::{
     CCommandSuggestionsResponse, CCommandSuggestionsResponseMatch,
 };
-use mchprs_text::TextComponentBuilder;
+use mchprs_network::text::TextComponentBuilder;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SuggestionSource {

@@ -22,14 +22,14 @@ use mchprs_network::packets::serverbound::{
     SLoginStart, SPing, SRequest, ServerBoundPacketHandler, VelocityResponseData,
 };
 use mchprs_network::packets::{PacketEncoderExt, PlayerProperty, SlotData, COMPRESSION_THRESHOLD};
+use mchprs_network::text::TextComponent;
 use mchprs_network::{NetworkServer, NetworkState, PlayerPacketSender};
-use mchprs_text::TextComponent;
-use mchprs_utils::map;
 use mchprs_world::{MC_VERSION, PROTOCOL_VERSION};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Cursor, Write as _};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
@@ -799,34 +799,38 @@ impl ServerBoundPacketHandler for MinecraftServer {
         };
 
         let codec = CRegistryDataCodec {
-            dimension_types: map! {
-                "minecraft:overworld" => dimension.clone()
-            },
-            biomes: map! {
-                "mchprs:plot" => CRegistryBiome {
-                    has_precipitation: false,
-                    temperature: 0.5,
-                    downfall: 0.5,
-                    effects: CRegistryBiomeEffects {
-                        sky_color: 0x7BA4FF,
-                        water_fog_color: 0x050533,
-                        fog_color: 0xC0D8FF,
-                        water_color: 0x3F76E4,
+            dimension_types: HashMap::from([("minecraft:overworld".to_owned(), dimension.clone())]),
+            biomes: HashMap::from([
+                (
+                    "mchprs:plot".to_owned(),
+                    CRegistryBiome {
+                        has_precipitation: false,
+                        temperature: 0.5,
+                        downfall: 0.5,
+                        effects: CRegistryBiomeEffects {
+                            sky_color: 0x7BA4FF,
+                            water_fog_color: 0x050533,
+                            fog_color: 0xC0D8FF,
+                            water_color: 0x3F76E4,
+                        },
                     },
-                },
+                ),
                 // Apparently the client NEEDS this to exist (MC-267103)
-                "minecraft:plains" => CRegistryBiome {
-                    has_precipitation: false,
-                    temperature: 0.8,
-                    downfall: 0.4,
-                    effects: CRegistryBiomeEffects {
-                        sky_color: 7907327,
-                        water_fog_color: 329011,
-                        fog_color: 12638463,
-                        water_color: 4159204,
+                (
+                    "minecraft:plains".to_owned(),
+                    CRegistryBiome {
+                        has_precipitation: false,
+                        temperature: 0.8,
+                        downfall: 0.4,
+                        effects: CRegistryBiomeEffects {
+                            sky_color: 7907327,
+                            water_fog_color: 329011,
+                            fog_color: 12638463,
+                            water_color: 4159204,
+                        },
                     },
-                }
-            },
+                ),
+            ]),
         };
         let registry_data = CRegistryData {
             registry_codec: codec,

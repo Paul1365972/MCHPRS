@@ -7,8 +7,8 @@ use crate::worldedit::{ray_trace_block, WorldEditUndo};
 use mchprs_blocks::BlockPos;
 use mchprs_commands::flag::{FlagValue, FlagValues};
 use mchprs_commands::parse::ParsedArgument;
+use mchprs_network::text::TextComponent;
 use mchprs_schematic::{create_clipboard, WorldEditClipboard};
-use mchprs_text::TextComponent;
 
 pub(super) struct ExecutionContext<'a> {
     plot: &'a mut Plot,
