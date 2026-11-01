@@ -1,0 +1,19 @@
+[package]
+name = "mchprs_redpiler_fpga"
+authors.workspace = true
+description = "Phase-synchronous Redpiler engines: software reference, Verilator and FPGA board"
+edition.workspace = true
+homepage.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+include = ["src/**", "rtl/**", "build.rs", "Cargo.toml"]
+
+[dependencies]
+mchprs_redpiler = { path = "../redpiler" }
+mchprs_blocks = { path = "../blocks" }
+mchprs_world = { path = "../world" }
+include_dir = { version = "0.7.4", features = ["glob"] }
+serialport = { version = "4", default-features = false }
+sha2 = { workspace = true }
+tracing = { workspace = true }

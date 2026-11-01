@@ -13,6 +13,9 @@ include.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+fpga = ["dep:mchprs_redpiler_fpga"]
+
 [dependencies]
 mchprs_proc_macros = { path = "../proc_macros" }
 mchprs_save_data = { path = "../save_data" }
@@ -22,6 +25,7 @@ mchprs_utils = { path = "../utils" }
 mchprs_network = { path = "../network" }
 mchprs_text = { path = "../text" }
 mchprs_redpiler = { path = "../redpiler" }
+mchprs_redpiler_fpga = { path = "../redpiler_fpga", optional = true }
 mchprs_redstone = { path = "../redstone" }
 mchprs_schematic = { path = "../schematic" }
 toml = { workspace = true }

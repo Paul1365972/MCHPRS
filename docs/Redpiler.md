@@ -89,7 +89,7 @@ Once the netlist has been created, it is handed to a backend, which is responsib
 
 ## The Lifecycle
 
-`compile(world, bounds, ticks, options, progress)` runs the passes on a frozen world and returns a `Netlist`, an immutable node array indexed by `NodeId` with each node's input and output `Link`s. `CompileProgress` names the pass or backend stage currently running, and the plot's keep alive loop shows it on the scoreboard. `--backend=NAME` selects the backend; the server resolves the name and starts it on the compile thread, so a slow or failing start keeps players connected and reaches them as a chat message.
+`compile(world, bounds, ticks, options, progress)` runs the passes on a frozen world and returns a `Netlist`, an immutable node array indexed by `NodeId` with each node's input and output `Link`s. `CompileProgress` names the pass or backend stage currently running, and the plot's keep alive loop shows it on the scoreboard. `--backend=NAME` selects the backend; the server resolves the name and starts it on the compile thread, so a slow or failing start, such as building an FPGA bitstream, keeps players connected and reaches them as a chat message.
 
 The plot holds a `Backend`:
 
@@ -106,7 +106,7 @@ pub trait Backend: Send {
 
 It speaks block positions and receives `Batch`es: blocks, block entities, note sounds, the ticks completed since the last batch and the ticks still owed from a `Ticks(n)` rate. A `Snapshot` is a complete `Batch` plus the pending ticks as `TickEntry`s. Each backend is started by one function, for the direct backend `backend::direct::start(netlist, ticks, io_only)`. Threads or hardware behind it are invisible to the plot.
 
-Most backends implement `Engine` instead, the synchronous node level trait, and let `Worker::start(block_map, engine)` run it on its own thread in five millisecond slices, paced by a `TickSchedule` and published by a `SendSchedule`. `BlockMap` translates between positions and node ids and remembers the last state it reported for every node. Tests, benchmarks and `rilc` call `Engine` directly.
+Most backends implement `Engine` instead, the synchronous node level trait, and let `Worker::start(block_map, engine)` run it on its own thread in five millisecond slices, paced by a `TickSchedule` and published by a `SendSchedule`. `BlockMap` translates between positions and node ids and remembers the last state it reported for every node. Tests, benchmarks and `rilc` call `Engine` directly. Engines may live outside this crate; `mchprs_redpiler_fpga` provides the phase reference, Verilator and FPGA board engines.
 
 ```rust
 pub trait Engine: Send {

@@ -37,6 +37,8 @@ cargo build --release
 
 Once complete, the optimized executable will be located at `./target/release/mchprs` or `./target/release/mchprs.exe` depending on your operating system.
 
+Build with `--features fpga` for the phase-synchronous backends: `/rp c --backend=phase` runs the software reference, `--backend=verilator` the generated RTL in Verilator, and `--backend=fpga` a Basys 3 board, which needs openXC7 and `MCHPRS_FPGA_PORT`.
+
 ## Configuration
 
 MCHPRS will generate a `Config.toml` file in the current working directory when starting the server if it does not exist.

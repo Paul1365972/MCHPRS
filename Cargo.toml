@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/block_data_gen","crates/proc_macros", "crates/redpiler_graph", "crates/rilc", "crates/schematic", "crates/world_exporter"]
+members = ["crates/redpiler_fpga","crates/block_data_gen","crates/proc_macros", "crates/redpiler_graph", "crates/rilc", "crates/schematic", "crates/world_exporter"]
 
 [package]
 name = "mchprs"
@@ -35,6 +35,9 @@ opt-level = 1
 # This seems to speed up Redpiler compile times
 lto = "fat"
 
+[features]
+fpga = ["mchprs_core/fpga"]
+
 [dependencies]
 mchprs_core = { path = "./crates/core" }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
@@ -46,6 +49,7 @@ clap = { workspace = true }
 mchprs_world = { path = "./crates/world", features = ["testing"] }
 mchprs_blocks = { path = "./crates/blocks" }
 mchprs_redpiler = { path = "./crates/redpiler" }
+mchprs_redpiler_fpga = { path = "./crates/redpiler_fpga" }
 mchprs_redstone = { path = "./crates/redstone" }
 paste = { workspace = true }
 

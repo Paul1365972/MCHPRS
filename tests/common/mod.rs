@@ -2,6 +2,7 @@ use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode, LeverFace, Repeat
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::backend::direct::DirectEngine;
 use mchprs_redpiler::{BlockMap, CompileProgress, CompilerOptions, Engine, Input};
+use mchprs_redpiler_fpga::Target;
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
 use mchprs_world::World;
@@ -11,12 +12,16 @@ use std::time::{Duration, Instant};
 pub enum TestBackend {
     Redstone,
     Direct { optimize: bool },
+    Phase { optimize: bool },
+    Verilator { optimize: bool },
 }
 
 pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn Engine>) {
     let optimize = match backend {
         TestBackend::Redstone => unreachable!("the base redstone implementation is not compiled"),
-        TestBackend::Direct { optimize } => optimize,
+        TestBackend::Direct { optimize }
+        | TestBackend::Phase { optimize }
+        | TestBackend::Verilator { optimize } => optimize,
     };
     let options = CompilerOptions {
         optimize,
@@ -30,8 +35,17 @@ pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn En
     let netlist = mchprs_redpiler::compile(world, bounds, &world.to_be_ticked, &options, &progress);
     let block_map = BlockMap::new(&netlist);
     let pending_ticks = block_map.map_ticks(&world.to_be_ticked);
-    let engine = DirectEngine::new(&netlist, options.io_only, pending_ticks);
-    (block_map, Box::new(engine))
+    let target = match backend {
+        TestBackend::Phase { .. } => Target::Reference,
+        TestBackend::Verilator { .. } => Target::Verilator,
+        _ => {
+            let engine = DirectEngine::new(&netlist, options.io_only, pending_ticks);
+            return (block_map, Box::new(engine));
+        }
+    };
+    let engine = mchprs_redpiler_fpga::prepare(target, &netlist, &pending_ticks, false, &progress)
+        .expect("the phase backend accepts the circuit");
+    (block_map, engine)
 }
 
 enum Runner {
@@ -54,6 +68,10 @@ impl BackendRunner {
             TestBackend::Redstone => "the base redstone implementation",
             TestBackend::Direct { optimize: false } => "the direct backend",
             TestBackend::Direct { optimize: true } => "the optimized direct backend",
+            TestBackend::Phase { optimize: false } => "the phase reference",
+            TestBackend::Phase { optimize: true } => "the optimized phase reference",
+            TestBackend::Verilator { optimize: false } => "the Verilator circuit",
+            TestBackend::Verilator { optimize: true } => "the optimized Verilator circuit",
         };
         let runner = match backend {
             TestBackend::Redstone => Runner::Redstone,
@@ -157,6 +175,16 @@ macro_rules! test_all_backends {
             fn [< $name _rp_direct >]() { $name(TestBackend::Direct { optimize: false }) }
             #[test]
             fn [< $name _rp_direct_optimized >]() { $name(TestBackend::Direct { optimize: true }) }
+            #[test]
+            fn [< $name _rp_phase >]() { $name(TestBackend::Phase { optimize: false }) }
+            #[test]
+            fn [< $name _rp_phase_optimized >]() { $name(TestBackend::Phase { optimize: true }) }
+            #[test]
+            #[ignore = "needs Verilator"]
+            fn [< $name _rp_verilator >]() { $name(TestBackend::Verilator { optimize: false }) }
+            #[test]
+            #[ignore = "needs Verilator"]
+            fn [< $name _rp_verilator_optimized >]() { $name(TestBackend::Verilator { optimize: true }) }
         }
     };
 }
