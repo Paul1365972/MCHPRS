@@ -2,8 +2,10 @@ use crate::circuit::{Circuit, Kind, State};
 use mchprs_redpiler::compile_graph::{NodeState, SignalStrength};
 use mchprs_redpiler::{Engine, EngineError, Input, NodeChanges, NodeId, PendingTick};
 use std::io;
+use std::mem;
 use std::time::Instant;
 
+/// The phase engine only forwards inputs to input nodes and never advances past `u64::MAX` ticks.
 pub(crate) trait Simulator: Send {
     fn input(&mut self, node: usize, powered: bool) -> io::Result<()>;
     fn advance(&mut self, ticks: u64) -> io::Result<()>;
@@ -20,8 +22,9 @@ pub(crate) struct PhaseEngine<S> {
     kinds: Vec<Kind>,
     io_nodes: Vec<usize>,
     io_only: bool,
-    levers: Vec<bool>,
+    input_powered: Vec<bool>,
     reported: Vec<State>,
+    ticks: u64,
     ticks_per_second: f64,
 }
 
@@ -32,22 +35,22 @@ impl<S: Simulator> PhaseEngine<S> {
             kinds: circuit.nodes().iter().map(|node| node.kind).collect(),
             io_nodes: circuit.io_nodes().to_vec(),
             io_only,
-            levers: circuit
+            input_powered: circuit
                 .nodes()
                 .iter()
                 .map(|node| node.initial.is_powered())
                 .collect(),
             reported: circuit.nodes().iter().map(|node| node.initial).collect(),
+            ticks: 0,
             ticks_per_second: 0.0,
         }
     }
 
     fn report(&mut self, node: usize, state: State, changes: &mut NodeChanges) {
-        if self.kinds[node] == Kind::Constant || shown(self.reported[node]) == shown(state) {
-            self.reported[node] = state;
+        let previous = mem::replace(&mut self.reported[node], state);
+        if self.kinds[node] == Kind::Constant || appearance(previous) == appearance(state) {
             return;
         }
-        self.reported[node] = state;
         changes.states.push((
             NodeId::new(node),
             NodeState {
@@ -59,7 +62,7 @@ impl<S: Simulator> PhaseEngine<S> {
     }
 }
 
-fn shown(state: State) -> (bool, SignalStrength) {
+fn appearance(state: State) -> (bool, SignalStrength) {
     (state.locked, state.strength)
 }
 
@@ -70,7 +73,12 @@ impl<S: Simulator> Engine for PhaseEngine<S> {
             let started = Instant::now();
             let budget = deadline.saturating_duration_since(started).as_secs_f64();
             let chunk = ((self.ticks_per_second * budget) as u64).clamp(1, max_ticks - completed);
+            let ticks = self
+                .ticks
+                .checked_add(chunk)
+                .ok_or("phase tick counter overflow")?;
             self.simulator.advance(chunk)?;
+            self.ticks = ticks;
             completed += chunk;
             let elapsed = started.elapsed().as_secs_f64();
             self.ticks_per_second = if elapsed > 0.0 {
@@ -88,15 +96,15 @@ impl<S: Simulator> Engine for PhaseEngine<S> {
     fn input(&mut self, node: NodeId, input: Input) -> Result<(), EngineError> {
         let index = node.index();
         let powered = match (input, self.kinds[index]) {
-            (Input::Interact, Kind::Lever) => !self.levers[index],
+            (Input::Interact, Kind::Lever) => !self.input_powered[index],
             (Input::Interact, Kind::Button) => true,
             (Input::PressurePlate { powered }, Kind::PressurePlate) => powered,
             (input, kind) => {
-                return Err(format!("node {index}: {kind:?} does not accept {input:?}").into())
+                return Err(format!("node {index}: {kind:?} does not accept {input:?}").into());
             }
         };
         self.simulator.input(index, powered)?;
-        self.levers[index] = powered;
+        self.input_powered[index] = powered;
         Ok(())
     }
 

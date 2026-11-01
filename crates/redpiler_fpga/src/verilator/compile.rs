@@ -117,7 +117,7 @@ fn run_build_step(command: &mut Command, log: &Path, started: Instant) -> io::Re
                 "Verilator build timed out",
             ));
         }
-        if let Some(status) = process.0.try_wait()? {
+        if let Some(status) = process.try_wait()? {
             return if status.success() {
                 Ok(())
             } else {

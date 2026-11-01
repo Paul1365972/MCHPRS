@@ -18,7 +18,7 @@ use mchprs_redpiler::{
 use mchprs_world::TickEntry;
 use reference::Reference;
 use registers::Registers;
-use verilator::VerilatorEngine;
+use verilator::Verilator;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
@@ -95,12 +95,12 @@ pub fn prepare(
     let circuit = Circuit::lower(netlist, pending_ticks)?;
     let engine: Box<dyn Engine> = match target {
         Target::Reference => Box::new(PhaseEngine::new(
-            Reference::new(&circuit)?,
+            Reference::new(&circuit),
             &circuit,
             io_only,
         )),
         Target::Verilator => Box::new(PhaseEngine::new(
-            VerilatorEngine::compile(&circuit, &report)?,
+            Verilator::compile(&circuit, &report)?,
             &circuit,
             io_only,
         )),

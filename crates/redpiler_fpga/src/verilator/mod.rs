@@ -1,7 +1,7 @@
 mod compile;
 mod process;
 
-use crate::circuit::{Circuit, Snapshot, State};
+use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
 use crate::readback::Readback;
 use crate::registers::Registers;
@@ -9,13 +9,19 @@ use compile::SIMULATOR;
 use process::Process;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 const STALL_TIMEOUT: Duration = Duration::from_secs(30);
+const RUNTIME_LOG: &str = "verilator-runtime.log";
+const PROGRESS_MARKER: &[u8; 4] = b"MCHG";
+const SNAPSHOT_MARKER: &[u8; 4] = b"MCHP";
+const INPUT_REQUEST: u8 = b'I';
+const STEP_REQUEST: u8 = b'S';
+const TICKS_BYTES: usize = size_of::<u64>();
 
 enum Reply {
     Progress,
@@ -26,8 +32,8 @@ fn read_reply(output: &mut impl Read, packet_size: usize) -> io::Result<Reply> {
     let mut marker = [0; 4];
     output.read_exact(&mut marker)?;
     match &marker {
-        b"MCHG" => Ok(Reply::Progress),
-        b"MCHP" => {
+        PROGRESS_MARKER => Ok(Reply::Progress),
+        SNAPSHOT_MARKER => {
             let mut packet = vec![0; packet_size];
             output.read_exact(&mut packet)?;
             Ok(Reply::Snapshot(packet))
@@ -39,45 +45,28 @@ fn read_reply(output: &mut impl Read, packet_size: usize) -> io::Result<Reply> {
     }
 }
 
-pub(crate) struct VerilatorEngine {
-    process: Option<Process>,
+struct Running {
+    process: Process,
     input: ChildStdin,
-    replies: Option<Receiver<io::Result<Reply>>>,
-    reader: Option<JoinHandle<()>>,
-    directory: PathBuf,
-    inputs: Vec<bool>,
-    readback: Readback,
-    node_count: usize,
-    snapshot: Snapshot,
+    replies: Receiver<io::Result<Reply>>,
+    reader: JoinHandle<()>,
 }
 
-impl VerilatorEngine {
-    pub(crate) fn compile(circuit: &Circuit, progress: &dyn Fn(&'static str)) -> io::Result<Self> {
-        let registers = Registers::new(circuit);
-        let readback = Readback::new(&registers);
-        let node_count = circuit.nodes().len();
-        let state_bytes = readback.bytes(0..node_count);
-        let directory = compile::cached_simulator(&registers, state_bytes, progress)?;
-        progress("Starting Verilator circuit");
-        let log = directory.join("verilator-runtime.log");
+impl Running {
+    fn start(directory: &Path, packet_size: usize) -> io::Result<Self> {
         let mut process = Process::spawn(
             Command::new(directory.join("obj_dir").join(SIMULATOR))
-                .current_dir(&directory)
+                .current_dir(directory)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
-                .stderr(File::create(&log)?),
+                .stderr(File::create(directory.join(RUNTIME_LOG))?),
         )?;
         let input = process
-            .0
-            .stdin
-            .take()
+            .take_stdin()
             .ok_or_else(|| io::Error::other("missing simulator stdin"))?;
         let output = process
-            .0
-            .stdout
-            .take()
+            .take_stdout()
             .ok_or_else(|| io::Error::other("missing simulator stdout"))?;
-        let packet_size = 8 + state_bytes;
         let (sender, replies) = mpsc::sync_channel(1);
         let reader = thread::Builder::new()
             .name("verilator-snapshot".into())
@@ -91,142 +80,155 @@ impl VerilatorEngine {
                     }
                 }
             })?;
-        let mut engine = Self {
-            process: Some(process),
+        Ok(Self {
+            process,
             input,
-            replies: Some(replies),
-            reader: Some(reader),
-            directory,
-            inputs: circuit
-                .nodes()
-                .iter()
-                .map(|node| node.kind.is_input())
-                .collect(),
-            readback,
-            node_count,
-            snapshot: Snapshot {
-                ticks: 0,
-                states: vec![State::default(); node_count],
-            },
-        };
-        engine.receive(0)?;
-        Ok(engine)
+            replies,
+            reader,
+        })
     }
 
-    fn send_input(&mut self, index: usize, value: bool) -> io::Result<()> {
-        if !self.inputs.get(index).copied().unwrap_or(false) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "node is not an input kind or index is out of bounds",
-            ));
+    fn exchange(&mut self, request: Option<&[u8]>) -> io::Result<Vec<u8>> {
+        if let Some(request) = request {
+            self.input.write_all(request)?;
+            self.input.flush()?;
         }
-        let mut request = [b'I', 0, 0, 0, 0, u8::from(value)];
-        request[1..5].copy_from_slice(&(index as u32).to_le_bytes());
-        self.request(&request, self.snapshot.ticks)
+        self.next_snapshot()
     }
 
-    fn step(&mut self, ticks: u64) -> io::Result<()> {
-        let expected = self.snapshot.ticks.checked_add(ticks).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Verilator tick counter overflow",
-            )
-        })?;
-        let mut request = [b'S'; 9];
-        request[1..].copy_from_slice(&ticks.to_le_bytes());
-        self.request(&request, expected)
-    }
-
-    fn request(&mut self, request: &[u8], expected: u64) -> io::Result<()> {
-        if self.process.is_none() {
-            return Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "Verilator engine failed",
-            ));
-        }
-        if let Err(error) = self
-            .input
-            .write_all(request)
-            .and_then(|()| self.input.flush())
-        {
-            return Err(self.fail(error));
-        }
-        self.receive(expected)
-    }
-
-    fn receive(&mut self, expected: u64) -> io::Result<()> {
-        let result = (|| {
-            let replies = self.replies.as_ref().ok_or_else(|| {
-                io::Error::new(io::ErrorKind::BrokenPipe, "Verilator engine failed")
-            })?;
-            let packet = loop {
-                match replies
+    fn next_snapshot(&self) -> io::Result<Vec<u8>> {
+        loop {
+            let reply =
+                self.replies
                     .recv_timeout(STALL_TIMEOUT)
                     .map_err(|error| match error {
                         mpsc::RecvTimeoutError::Timeout => io::Error::new(
                             io::ErrorKind::TimedOut,
-                            "Verilator circuit made no progress for 30 seconds",
+                            format!(
+                                "Verilator circuit made no progress for {} seconds",
+                                STALL_TIMEOUT.as_secs()
+                            ),
                         ),
                         mpsc::RecvTimeoutError::Disconnected => io::Error::new(
                             io::ErrorKind::BrokenPipe,
                             "Verilator circuit disconnected",
                         ),
-                    })?? {
-                    Reply::Progress => {}
-                    Reply::Snapshot(packet) => break packet,
-                }
-            };
-            let ticks = u64::from_le_bytes(packet[..8].try_into().unwrap());
-            if ticks != expected {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "invalid Verilator snapshot tick count",
-                ));
+                    })??;
+            if let Reply::Snapshot(packet) = reply {
+                return Ok(packet);
             }
-            let states = self.readback.decode(0..self.node_count, &packet[8..])?;
-            self.snapshot = Snapshot { ticks, states };
-            Ok(())
-        })();
-        result.map_err(|error| self.fail(error))
+        }
+    }
+
+    fn stop(self) {
+        let Self {
+            mut process,
+            input,
+            replies,
+            reader,
+        } = self;
+        drop(input);
+        drop(replies);
+        process.terminate();
+        let _ = reader.join();
+    }
+}
+
+pub(crate) struct Verilator {
+    running: Option<Running>,
+    log: PathBuf,
+    readback: Readback,
+    node_count: usize,
+    ticks: u64,
+    states: Vec<State>,
+}
+
+impl Verilator {
+    pub(crate) fn compile(circuit: &Circuit, progress: &dyn Fn(&'static str)) -> io::Result<Self> {
+        let registers = Registers::new(circuit);
+        let readback = Readback::new(&registers);
+        let node_count = circuit.nodes().len();
+        let state_bytes = readback.bytes(0..node_count);
+        let directory = compile::cached_simulator(&registers, state_bytes, progress)?;
+        progress("Starting Verilator circuit");
+        let mut verilator = Self {
+            running: Some(Running::start(&directory, TICKS_BYTES + state_bytes)?),
+            log: directory.join(RUNTIME_LOG),
+            readback,
+            node_count,
+            ticks: 0,
+            states: Vec::new(),
+        };
+        verilator.exchange(None, 0)?;
+        Ok(verilator)
+    }
+
+    fn exchange(&mut self, request: Option<&[u8]>, expected: u64) -> io::Result<()> {
+        let running = self
+            .running
+            .as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Verilator engine failed"))?;
+        let result = match running.exchange(request) {
+            Ok(packet) => self.decode(&packet, expected),
+            Err(error) => Err(error),
+        };
+        match result {
+            Ok(states) => {
+                self.ticks = expected;
+                self.states = states;
+                Ok(())
+            }
+            Err(error) => Err(self.fail(error)),
+        }
+    }
+
+    fn decode(&self, packet: &[u8], expected: u64) -> io::Result<Vec<State>> {
+        let (ticks, states) = packet.split_at(TICKS_BYTES);
+        if ticks != expected.to_le_bytes() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid Verilator snapshot tick count",
+            ));
+        }
+        self.readback.decode(0..self.node_count, states)
     }
 
     fn fail(&mut self, error: io::Error) -> io::Error {
-        self.replies.take();
-        if let Some(mut process) = self.process.take() {
-            process.terminate();
+        if let Some(running) = self.running.take() {
+            running.stop();
         }
         io::Error::new(
             error.kind(),
             format!(
                 "{error}; Verilator engine is unusable; see {}",
-                self.directory.join("verilator-runtime.log").display()
+                self.log.display()
             ),
         )
     }
 }
 
-impl Drop for VerilatorEngine {
+impl Drop for Verilator {
     fn drop(&mut self) {
-        self.replies.take();
-        if let Some(mut process) = self.process.take() {
-            process.terminate();
-        }
-        if let Some(reader) = self.reader.take() {
-            let _ = reader.join();
+        if let Some(running) = self.running.take() {
+            running.stop();
         }
     }
 }
 
-impl Simulator for VerilatorEngine {
+impl Simulator for Verilator {
     fn input(&mut self, node: usize, powered: bool) -> io::Result<()> {
-        self.send_input(node, powered)
+        let mut request = [INPUT_REQUEST, 0, 0, 0, 0, u8::from(powered)];
+        request[1..5].copy_from_slice(&(node as u32).to_le_bytes());
+        self.exchange(Some(&request), self.ticks)
     }
 
     fn advance(&mut self, ticks: u64) -> io::Result<()> {
-        self.step(ticks)
+        let mut request = [STEP_REQUEST; 9];
+        request[1..].copy_from_slice(&ticks.to_le_bytes());
+        self.exchange(Some(&request), self.ticks + ticks)
     }
 
     fn states(&mut self) -> io::Result<Vec<State>> {
-        Ok(self.snapshot.states.clone())
+        Ok(self.states.clone())
     }
 }

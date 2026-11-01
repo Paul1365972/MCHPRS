@@ -4,7 +4,7 @@ mod timers;
 
 pub(crate) use settle::settled_initial_state;
 
-use crate::circuit::{Circuit, Kind, PendingTick, Snapshot, State, PULSE_PRIORITY};
+use crate::circuit::{Circuit, Kind, PendingTick, State, PULSE_PRIORITY};
 use crate::engine::Simulator;
 use aggregate::Aggregate;
 use mchprs_redpiler::compile_graph::SignalStrength;
@@ -13,33 +13,67 @@ use std::io;
 use timers::Timers;
 
 #[derive(Clone, Copy)]
+enum LinkSide {
+    Rear,
+    Side,
+}
+
+#[derive(Clone, Default)]
+struct Inputs {
+    rear: Aggregate,
+    side: Aggregate,
+}
+
+impl Inputs {
+    fn get_mut(&mut self, side: LinkSide) -> &mut Aggregate {
+        match side {
+            LinkSide::Rear => &mut self.rear,
+            LinkSide::Side => &mut self.side,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 struct Consumer {
     target: usize,
     attenuation: u8,
-    side: bool,
+    side: LinkSide,
+}
+
+struct StrengthChange {
+    node: usize,
+    previous: SignalStrength,
+    strength: SignalStrength,
 }
 
 pub(crate) struct Reference {
     kinds: Vec<Kind>,
     states: Vec<State>,
     consumers: Vec<Vec<Consumer>>,
-    aggregates: Vec<[Aggregate; 2]>,
+    inputs: Vec<Inputs>,
     timers: Timers,
     phases: [Vec<usize>; 4],
-    strength_changes: Vec<(usize, SignalStrength, SignalStrength)>,
+    strength_changes: Vec<StrengthChange>,
     affected: Vec<usize>,
     affected_flags: Vec<bool>,
     ticks: u64,
 }
 
 impl Reference {
-    pub fn new(circuit: &Circuit) -> io::Result<Self> {
+    pub(crate) fn new(circuit: &Circuit) -> Self {
         let count = circuit.nodes().len();
-        let mut engine = Self {
+        let mut reference = Self {
             kinds: circuit.nodes().iter().map(|node| node.kind).collect(),
-            states: circuit.nodes().iter().map(|node| node.initial).collect(),
+            states: circuit
+                .nodes()
+                .iter()
+                .map(|node| State {
+                    pending: None,
+                    ..node.initial
+                })
+                .collect(),
             consumers: vec![Vec::new(); count],
-            aggregates: vec![Default::default(); count],
+            inputs: vec![Inputs::default(); count],
             timers: Timers::new(count),
             phases: Default::default(),
             strength_changes: Vec::new(),
@@ -48,19 +82,22 @@ impl Reference {
             ticks: 0,
         };
         for (index, node) in circuit.nodes().iter().enumerate() {
-            engine.states[index].pending = None;
             if let Some(pending) = node.initial.pending {
-                engine.schedule(index, pending);
+                reference.schedule(index, pending);
             }
             if !node.kind.observes_inputs() {
                 continue;
             }
-            for (side, links) in [(false, &node.inputs), (true, &node.sides)] {
+            for (side, links) in [
+                (LinkSide::Rear, &node.inputs),
+                (LinkSide::Side, &node.sides),
+            ] {
                 for link in links {
-                    engine.aggregates[index][usize::from(side)]
+                    reference.inputs[index]
+                        .get_mut(side)
                         .insert(link.initial_strength(circuit.nodes()));
                     if link.attenuation < 15 {
-                        engine.consumers[link.source].push(Consumer {
+                        reference.consumers[link.source].push(Consumer {
                             target: index,
                             attenuation: link.attenuation,
                             side,
@@ -69,74 +106,13 @@ impl Reference {
                 }
             }
         }
-        Ok(engine)
-    }
-
-    pub fn input(&mut self, index: usize, value: bool) -> io::Result<()> {
-        let kind = self.kinds.get(index).copied().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "input index is out of bounds")
-        })?;
-        let mut state = self.states[index];
-        match kind {
-            Kind::Lever | Kind::PressurePlate => state.set_powered(value),
-            Kind::Button => {
-                if value && !state.is_powered() {
-                    state.set_powered(true);
-                    if let Some(tick) = kind.scheduled_tick(true) {
-                        self.schedule(index, tick);
-                    }
-                }
-            }
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "node is not an input kind",
-                ));
-            }
-        }
-        self.commit(index, state);
-        self.settle();
-        Ok(())
-    }
-
-    pub fn step(&mut self, ticks: u64) -> io::Result<()> {
-        let target = self.ticks.checked_add(ticks).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "phase tick counter overflow")
-        })?;
-        while let Some(deadline) = self.timers.next_deadline() {
-            if deadline > u128::from(target) {
-                break;
-            }
-            self.ticks = deadline as u64;
-            self.timers.freeze(deadline, &mut self.phases);
-            for phase in 0..4 {
-                for offset in 0..self.phases[phase].len() {
-                    let index = self.phases[phase][offset];
-                    self.timers.consume(index);
-                    self.fire(index);
-                }
-                self.phases[phase].clear();
-                self.settle();
-            }
-        }
-        self.ticks = target;
-        Ok(())
+        reference
     }
 
     fn state(&self, index: usize) -> State {
-        let mut state = self.states[index];
-        if let Some(pending) = self.timers.remaining(index, self.ticks) {
-            state.pending = Some(pending);
-        }
-        state
-    }
-
-    pub fn snapshot(&self) -> Snapshot {
-        Snapshot {
-            ticks: self.ticks,
-            states: (0..self.states.len())
-                .map(|index| self.state(index))
-                .collect(),
+        State {
+            pending: self.timers.remaining(index, self.ticks),
+            ..self.states[index]
         }
     }
 
@@ -148,15 +124,18 @@ impl Reference {
     fn commit(&mut self, index: usize, state: State) {
         let previous = self.states[index];
         if previous.strength != state.strength {
-            self.strength_changes
-                .push((index, previous.strength, state.strength));
+            self.strength_changes.push(StrengthChange {
+                node: index,
+                previous: previous.strength,
+                strength: state.strength,
+            });
         }
         self.states[index] = state;
     }
 
     fn fire(&mut self, index: usize) {
-        let input = self.aggregates[index][0].maximum();
-        let side = self.aggregates[index][1].maximum();
+        let input = self.inputs[index].rear.maximum();
+        let side = self.inputs[index].side.maximum();
         let mut state = self.states[index];
         let kind = self.kinds[index];
         match kind {
@@ -188,14 +167,15 @@ impl Reference {
     }
 
     fn settle(&mut self) {
-        for (source, previous, strength) in self.strength_changes.drain(..) {
-            for consumer in &self.consumers[source] {
-                let previous = previous.saturating_sub(consumer.attenuation);
-                let strength = strength.saturating_sub(consumer.attenuation);
+        for change in self.strength_changes.drain(..) {
+            for consumer in &self.consumers[change.node] {
+                let previous = change.previous.saturating_sub(consumer.attenuation);
+                let strength = change.strength.saturating_sub(consumer.attenuation);
                 if previous == strength {
                     continue;
                 }
-                self.aggregates[consumer.target][usize::from(consumer.side)]
+                self.inputs[consumer.target]
+                    .get_mut(consumer.side)
                     .replace(previous, strength);
                 if !self.affected_flags[consumer.target] {
                     self.affected_flags[consumer.target] = true;
@@ -206,11 +186,15 @@ impl Reference {
         for offset in 0..self.affected.len() {
             let index = self.affected[offset];
             self.affected_flags[index] = false;
-            let input = self.aggregates[index][0].maximum();
-            let side = self.aggregates[index][1].maximum();
+            let inputs = &self.inputs[index];
             let pending = self.timers.is_pending(index);
-            let (state, tick) =
-                settle_node(self.kinds[index], self.states[index], input, side, pending);
+            let (state, tick) = settle_node(
+                self.kinds[index],
+                self.states[index],
+                inputs.rear.maximum(),
+                inputs.side.maximum(),
+                pending,
+            );
             if let Some(tick) = tick {
                 self.schedule(index, tick);
             }
@@ -223,14 +207,49 @@ impl Reference {
 
 impl Simulator for Reference {
     fn input(&mut self, node: usize, powered: bool) -> io::Result<()> {
-        Reference::input(self, node, powered)
+        let kind = self.kinds[node];
+        let mut state = self.states[node];
+        if kind == Kind::Button {
+            if powered
+                && !state.is_powered()
+                && let Some(tick) = kind.scheduled_tick(true)
+            {
+                state.set_powered(true);
+                self.schedule(node, tick);
+            }
+        } else {
+            state.set_powered(powered);
+        }
+        self.commit(node, state);
+        self.settle();
+        Ok(())
     }
 
     fn advance(&mut self, ticks: u64) -> io::Result<()> {
-        self.step(ticks)
+        let target = self.ticks + ticks;
+        while let Some(deadline) = self.timers.next_deadline() {
+            if deadline > u128::from(target) {
+                break;
+            }
+            self.ticks = deadline as u64;
+            self.timers.freeze(deadline, &mut self.phases);
+            for phase in 0..self.phases.len() {
+                for offset in 0..self.phases[phase].len() {
+                    let index = self.phases[phase][offset];
+                    self.timers.consume(index);
+                    self.fire(index);
+                }
+                self.phases[phase].clear();
+                self.settle();
+            }
+        }
+        self.ticks = target;
+        Ok(())
     }
 
     fn states(&mut self) -> io::Result<Vec<State>> {
-        Ok(self.snapshot().states)
+        Ok((0..self.states.len())
+            .map(|index| self.state(index))
+            .collect())
     }
 }

@@ -2,6 +2,13 @@ use crate::circuit::PendingTick;
 use mchprs_world::TickPriority;
 use std::num::NonZeroU8;
 
+// Each slot must hold a single deadline, so the slot count must exceed the longest delay.
+const SLOT_COUNT: usize = 16;
+
+fn slot(deadline: u128) -> usize {
+    (deadline % SLOT_COUNT as u128) as usize
+}
+
 #[derive(Clone, Copy)]
 struct Timer {
     deadline: u128,
@@ -11,7 +18,7 @@ struct Timer {
 
 pub(super) struct Timers {
     pending: Vec<Option<Timer>>,
-    queue: [Vec<usize>; 16],
+    queue: [Vec<usize>; SLOT_COUNT],
 }
 
 impl Timers {
@@ -45,7 +52,7 @@ impl Timers {
     }
 
     pub(super) fn freeze(&mut self, deadline: u128, phases: &mut [Vec<usize>; 4]) {
-        for index in self.queue[deadline as usize & 15].drain(..) {
+        for index in self.queue[slot(deadline)].drain(..) {
             let timer = self.pending[index].as_mut().unwrap();
             timer.position = None;
             phases[timer.priority as usize].push(index);
@@ -63,18 +70,18 @@ impl Timers {
             ..
         }) = self.pending[index]
         {
-            let slot = &mut self.queue[previous as usize & 15];
-            slot.swap_remove(position);
-            if let Some(moved) = slot.get(position) {
+            let due = &mut self.queue[slot(previous)];
+            due.swap_remove(position);
+            if let Some(moved) = due.get(position) {
                 self.pending[*moved].as_mut().unwrap().position = Some(position);
             }
         }
-        let slot = &mut self.queue[deadline as usize & 15];
+        let due = &mut self.queue[slot(deadline)];
         self.pending[index] = Some(Timer {
             deadline,
-            position: Some(slot.len()),
+            position: Some(due.len()),
             priority,
         });
-        slot.push(index);
+        due.push(index);
     }
 }

@@ -3,7 +3,7 @@ use crate::circuit::{
 };
 use crate::engine::Simulator;
 use crate::reference::{settled_initial_state, Reference};
-use crate::verilator::VerilatorEngine;
+use crate::verilator::Verilator;
 use mchprs_redpiler::compile_graph::SignalStrength;
 use std::num::NonZeroU8;
 
@@ -172,7 +172,7 @@ fn input_nodes(circuit: &Circuit) -> Vec<usize> {
 
 fn simulated_circuit(seed: u64, count: usize, ticks: u64) -> Circuit {
     let circuit = random_circuit(seed, count);
-    let mut reference = Reference::new(&circuit).unwrap();
+    let mut reference = Reference::new(&circuit);
     let inputs = input_nodes(&circuit);
     let mut random = Random(seed ^ 0x2545f4914f6cdd1d);
     for _ in 0..ticks {
@@ -200,7 +200,7 @@ fn compare_with_reference(
     ticks: u64,
     simulator: impl FnOnce(&Circuit) -> Box<dyn Simulator>,
 ) {
-    let mut reference = Reference::new(circuit).unwrap();
+    let mut reference = Reference::new(circuit);
     let mut simulator = simulator(circuit);
     let inputs = input_nodes(circuit);
     let mut random = Random(seed ^ 0x5851f42d4c957f2d);
@@ -238,7 +238,7 @@ fn random_circuits_are_valid() {
 #[ignore = "needs Verilator"]
 fn random_circuits_match_the_reference_in_verilator() {
     let verilator = |circuit: &Circuit| -> Box<dyn Simulator> {
-        Box::new(VerilatorEngine::compile(circuit, &|_| {}).unwrap())
+        Box::new(Verilator::compile(circuit, &|_| {}).unwrap())
     };
     for seed in 0..8 {
         compare_with_reference(seed, &random_circuit(seed, 1500), 2000, verilator);

@@ -17,7 +17,7 @@ pub(crate) struct Board {
     device: Device,
     ticks: u64,
     readback: Readback,
-    nodes: Vec<usize>,
+    node_count: usize,
 }
 
 impl Board {
@@ -39,11 +39,11 @@ impl Board {
         rtl::write(&registers, &directory)?;
         progress("Opening board connection");
         let readback = Readback::new(&registers);
-        let nodes: Vec<_> = (0..circuit.nodes().len()).collect();
+        let node_count = circuit.nodes().len();
         let mut device = Device::serial(
             &port,
             circuit,
-            readback.bytes(nodes.iter().copied()),
+            readback.bytes(0..node_count),
             readback.bytes(circuit.io_nodes().iter().copied()),
         )?;
         let bitstream = toolchain::build(&directory, progress)?;
@@ -57,9 +57,7 @@ impl Board {
         }
         let programmed = device.execute(Command::Snapshot)?;
         let initial: Vec<_> = circuit.nodes().iter().map(|node| node.initial).collect();
-        if programmed.ticks != 0
-            || readback.decode(nodes.iter().copied(), &programmed.data)? != initial
-        {
+        if programmed.ticks != 0 || readback.decode(0..node_count, &programmed.data)? != initial {
             return Err(io::Error::other(
                 "programmed board state does not match the compiled circuit",
             ));
@@ -71,7 +69,7 @@ impl Board {
             device,
             ticks: 0,
             readback,
-            nodes,
+            node_count,
         })
     }
 }
@@ -114,7 +112,7 @@ impl Simulator for Board {
 
     fn states(&mut self) -> io::Result<Vec<State>> {
         let data = self.device.execute(Command::Snapshot)?.data;
-        self.readback.decode(self.nodes.iter().copied(), &data)
+        self.readback.decode(0..self.node_count, &data)
     }
 
     fn io_states(&mut self, io_nodes: &[usize]) -> io::Result<Vec<State>> {

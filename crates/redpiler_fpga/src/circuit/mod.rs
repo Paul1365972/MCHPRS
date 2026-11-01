@@ -148,11 +148,6 @@ impl Kind {
     }
 }
 
-pub(crate) struct Snapshot {
-    pub ticks: u64,
-    pub states: Vec<State>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct PendingTick {
     pub(crate) delay: NonZeroU8,
