@@ -1,6 +1,7 @@
 use super::{BlockEntity, ContainerType, InventoryEntry, SignBlockEntity};
 use crate::items::Item;
 use crate::signal_strength::SignalStrength;
+use fastnbt::Value;
 use std::collections::HashMap;
 
 const EMPTY_SIGN_ROW: &str = r#""""#;
@@ -15,8 +16,7 @@ macro_rules! nbt_unwrap_val {
 }
 
 impl BlockEntity {
-    fn load_container(slots_nbt: &[nbt::Value], ty: ContainerType) -> Option<BlockEntity> {
-        use nbt::Value;
+    fn load_container(slots_nbt: &[Value], ty: ContainerType) -> Option<BlockEntity> {
         let num_slots = ty.num_slots();
         let mut fullness_sum: f32 = 0.0;
         let mut inventory = Vec::new();
@@ -35,16 +35,7 @@ impl BlockEntity {
             occupied_slots |= 1 << slot;
 
             let tag = match item_compound.get("tag") {
-                Some(nbt::Value::Compound(map)) => {
-                    let mut blob = nbt::Blob::new();
-                    for (k, v) in map {
-                        blob.insert(k, v.clone()).ok()?;
-                    }
-
-                    let mut data = Vec::new();
-                    blob.to_writer(&mut data).ok()?;
-                    Some(data)
-                }
+                Some(Value::Compound(tag)) => Some(fastnbt::to_bytes(tag).ok()?),
                 _ => None,
             };
             inventory.push(InventoryEntry {
@@ -74,8 +65,7 @@ impl BlockEntity {
         )
     }
 
-    pub fn from_nbt(id: &str, nbt: &HashMap<String, nbt::Value>) -> Option<BlockEntity> {
-        use nbt::Value;
+    pub fn from_nbt(id: &str, nbt: &HashMap<String, Value>) -> Option<BlockEntity> {
         match id.trim_start_matches("minecraft:") {
             "comparator" => Some(BlockEntity::Comparator {
                 // Like vanilla, a missing signal reads as 0
@@ -131,12 +121,11 @@ impl BlockEntity {
         }
     }
 
-    pub fn to_nbt(&self, sign_only: bool) -> Option<nbt::Blob> {
+    pub fn to_nbt(&self, sign_only: bool) -> Option<HashMap<String, Value>> {
         if sign_only && !matches!(self, BlockEntity::Sign(_)) {
             return None;
         }
 
-        use nbt::Value;
         match self {
             BlockEntity::Sign(sign) => Some({
                 // Vanilla's SignText codec rejects an empty string, rows must be text components
@@ -149,7 +138,7 @@ impl BlockEntity {
                 };
                 let front = sign.front_rows.iter().map(message);
                 let back = sign.back_rows.iter().map(message);
-                nbt::Blob::with_content(HashMap::from([
+                HashMap::from([
                     ("is_waxed".to_owned(), Value::Byte(0)),
                     (
                         "front_text".to_owned(),
@@ -168,62 +157,56 @@ impl BlockEntity {
                         ])),
                     ),
                     ("id".to_owned(), Value::String("minecraft:sign".to_owned())),
-                ]))
+                ])
             }),
-            BlockEntity::Comparator { output_strength } => Some({
-                nbt::Blob::with_content(HashMap::from([
-                    (
-                        "OutputSignal".to_owned(),
-                        Value::Int(*output_strength as i32),
-                    ),
-                    (
-                        "id".to_owned(),
-                        Value::String("minecraft:comparator".to_owned()),
-                    ),
-                ]))
-            }),
+            BlockEntity::Comparator { output_strength } => Some(HashMap::from([
+                (
+                    "OutputSignal".to_owned(),
+                    Value::Int(output_strength.get().into()),
+                ),
+                (
+                    "id".to_owned(),
+                    Value::String("minecraft:comparator".to_owned()),
+                ),
+            ])),
             BlockEntity::Container { inventory, ty, .. } => Some({
                 let mut items = Vec::new();
                 for entry in inventory {
                     let mut nbt = HashMap::from([
-                        ("Count".to_owned(), nbt::Value::Byte(entry.count)),
+                        ("Count".to_owned(), Value::Byte(entry.count)),
                         (
                             "id".to_owned(),
-                            nbt::Value::String(Item::from_id(entry.id).get_name().to_owned()),
+                            Value::String(Item::from_id(entry.id).get_name().to_owned()),
                         ),
-                        ("Slot".to_owned(), nbt::Value::Byte(entry.slot)),
+                        ("Slot".to_owned(), Value::Byte(entry.slot)),
                     ]);
                     if let Some(tag) = &entry.nbt {
-                        let tag = nbt::Blob::from_reader(&mut tag.as_slice())
-                            .expect("item tags are stored as NBT");
-                        nbt.insert("tag".to_owned(), Value::Compound(tag.content));
+                        let tag = fastnbt::from_bytes(tag).expect("item tags are stored as NBT");
+                        nbt.insert("tag".to_owned(), Value::Compound(tag));
                     }
-                    items.push(nbt::Value::Compound(nbt));
+                    items.push(Value::Compound(nbt));
                 }
-                nbt::Blob::with_content(HashMap::from([
+                HashMap::from([
                     ("id".to_owned(), Value::String(ty.to_string())),
                     ("Items".to_owned(), Value::List(items)),
-                ]))
+                ])
             }),
         }
     }
 }
 
-fn nbt_case_insensitive<'a>(
-    compound: &'a HashMap<String, nbt::Value>,
-    name: &str,
-) -> Option<&'a nbt::Value> {
+fn nbt_case_insensitive<'a>(compound: &'a HashMap<String, Value>, name: &str) -> Option<&'a Value> {
     // It's not really case insensitive, this is really just checking both cases of the first character.
     compound
         .get(name)
         .or_else(|| compound.get(&name.to_lowercase()))
 }
 
-fn nbt_get_int(compound: &HashMap<String, nbt::Value>, name: &str) -> Option<i32> {
+fn nbt_get_int(compound: &HashMap<String, Value>, name: &str) -> Option<i32> {
     let value = nbt_case_insensitive(compound, name)?;
     match value {
-        nbt::Value::Byte(val) => Some(*val as i32),
-        nbt::Value::Int(val) => Some(*val),
+        Value::Byte(val) => Some(*val as i32),
+        Value::Int(val) => Some(*val),
         _ => None,
     }
 }

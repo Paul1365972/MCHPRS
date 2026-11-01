@@ -1,4 +1,7 @@
 use anyhow::Result;
+use fastnbt::{LongArray, Value};
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use mchprs_blocks::MC_DATA_VERSION;
@@ -9,7 +12,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-fn encode_section(section: &ChunkSection) -> HashMap<String, nbt::Value> {
+fn encode_section(section: &ChunkSection) -> HashMap<String, Value> {
     let num_entries = 16 * 16 * 16;
     // Copy the chunk section's internal buffer
     let orig_buffer = PalettedBitBuffer::load(
@@ -33,33 +36,39 @@ fn encode_section(section: &ChunkSection) -> HashMap<String, nbt::Value> {
         let props = block.properties();
         let props = props
             .iter()
-            .map(|(name, val)| (name.to_string(), nbt::Value::String(val.to_string())))
+            .map(|(name, val)| (name.to_string(), Value::String(val.to_string())))
             .collect();
-        let entry = nbt::Value::Compound(HashMap::from([
-            ("Name".to_owned(), nbt::Value::String(name.to_string())),
-            ("Properties".to_owned(), nbt::Value::Compound(props)),
+        let entry = Value::Compound(HashMap::from([
+            ("Name".to_owned(), Value::String(name.to_string())),
+            ("Properties".to_owned(), Value::Compound(props)),
         ]));
         palette.push(entry);
     }
 
     HashMap::from([
-        ("palette".to_owned(), nbt::Value::List(palette)),
+        ("palette".to_owned(), Value::List(palette)),
         (
             "data".to_owned(),
-            nbt::Value::LongArray(buffer.data().iter().map(|val| *val as i64).collect()),
+            Value::LongArray(LongArray::new(
+                buffer.data().iter().map(|val| *val as i64).collect(),
+            )),
         ),
     ])
 }
 
 fn serialize_chunk(chunk_x: i32, chunk_z: i32, chunk: ChunkData) -> Result<Vec<u8>> {
     let chunk = chunk.load(chunk_x, chunk_z);
-    let mut nbt = nbt::Blob::new();
-    nbt.insert("DataVersion", nbt::Value::Int(MC_DATA_VERSION))?;
-    nbt.insert("xPos", nbt::Value::Int(chunk_x))?;
-    nbt.insert("zPos", nbt::Value::Int(chunk_z))?;
-    nbt.insert("yPos", nbt::Value::Int(0))?;
-    nbt.insert("Status", nbt::Value::String("minecraft:full".to_string()))?;
-    nbt.insert("LastUpdate", nbt::Value::Long(0))?;
+    let mut nbt = HashMap::from([
+        ("DataVersion".to_owned(), Value::Int(MC_DATA_VERSION)),
+        ("xPos".to_owned(), Value::Int(chunk_x)),
+        ("zPos".to_owned(), Value::Int(chunk_z)),
+        ("yPos".to_owned(), Value::Int(0)),
+        (
+            "Status".to_owned(),
+            Value::String("minecraft:full".to_owned()),
+        ),
+        ("LastUpdate".to_owned(), Value::Long(0)),
+    ]);
 
     let mut block_entities = Vec::new();
     for (pos, block_entity) in &chunk.block_entities {
@@ -69,36 +78,34 @@ fn serialize_chunk(chunk_x: i32, chunk_z: i32, chunk: ChunkData) -> Result<Vec<u
             ..*pos
         };
         let mut block_entity_nbt = block_entity.to_nbt(false).unwrap();
-        block_entity_nbt.insert("x", nbt::Value::Int(pos.x))?;
-        block_entity_nbt.insert("y", nbt::Value::Int(pos.y))?;
-        block_entity_nbt.insert("z", nbt::Value::Int(pos.z))?;
-        block_entities.push(nbt::Value::Compound(block_entity_nbt.content));
+        block_entity_nbt.insert("x".to_owned(), Value::Int(pos.x));
+        block_entity_nbt.insert("y".to_owned(), Value::Int(pos.y));
+        block_entity_nbt.insert("z".to_owned(), Value::Int(pos.z));
+        block_entities.push(Value::Compound(block_entity_nbt));
     }
-    nbt.insert("block_entities", nbt::Value::List(block_entities))?;
+    nbt.insert("block_entities".to_owned(), Value::List(block_entities));
 
     let mut sections = Vec::new();
     for (section_y, section) in chunk.sections.iter().enumerate() {
         let mut section_nbt = HashMap::new();
-        section_nbt.insert("Y".to_string(), nbt::Value::Byte(section_y as i8));
+        section_nbt.insert("Y".to_string(), Value::Byte(section_y as i8));
         let block_states = if section.block_count() != 0 {
             encode_section(section)
         } else {
-            let air = nbt::Value::Compound(HashMap::from([(
+            let air = Value::Compound(HashMap::from([(
                 "Name".to_owned(),
-                nbt::Value::String("minecraft:air".to_string()),
+                Value::String("minecraft:air".to_string()),
             )]));
-            HashMap::from([("palette".to_owned(), nbt::Value::List(vec![air]))])
+            HashMap::from([("palette".to_owned(), Value::List(vec![air]))])
         };
-        section_nbt.insert(
-            "block_states".to_string(),
-            nbt::Value::Compound(block_states),
-        );
-        sections.push(nbt::Value::Compound(section_nbt));
+        section_nbt.insert("block_states".to_string(), Value::Compound(block_states));
+        sections.push(Value::Compound(section_nbt));
     }
-    nbt.insert("sections", nbt::Value::List(sections))?;
+    nbt.insert("sections".to_owned(), Value::List(sections));
 
-    let mut data = vec![0, 0, 0, 0, 2];
-    nbt.to_zlib_writer(&mut data)?;
+    let mut encoder = ZlibEncoder::new(vec![0, 0, 0, 0, 2], Compression::default());
+    fastnbt::to_writer(&mut encoder, &nbt)?;
+    let mut data = encoder.finish()?;
     let len = data.len() - 5;
     data[0] = ((len >> 24) & 0xFF) as u8;
     data[1] = ((len >> 16) & 0xFF) as u8;

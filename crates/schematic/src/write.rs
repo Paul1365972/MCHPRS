@@ -1,4 +1,7 @@
 use crate::SchematicError;
+use fastnbt::{ByteArray, IntArray, SerOpts, Value};
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::Block;
@@ -16,19 +19,16 @@ struct Metadata {
     offset_z: i32,
 }
 
-/// Only serializes, because `hematite-nbt` cannot deserialize it:
-/// https://github.com/PistonDevelopers/hematite_nbt/issues/45
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct Schematic {
     width: i16,
     length: i16,
     height: i16,
-    palette: nbt::Blob,
+    palette: HashMap<String, i32>,
     metadata: Metadata,
-    #[serde(serialize_with = "nbt::i8_array")]
-    block_data: Vec<i8>,
-    block_entities: Vec<nbt::Blob>,
+    block_data: ByteArray,
+    block_entities: Vec<HashMap<String, Value>>,
     version: i32,
     data_version: i32,
 }
@@ -69,25 +69,22 @@ pub fn write(volume: &BlockVolume) -> Result<Vec<u8>, SchematicError> {
         }
     }
 
-    let mut encoded_palette = nbt::Blob::new();
-    for (id, index) in palette {
-        encoded_palette.insert(block_state(Block::from_id(id)), index as i32)?;
-    }
+    let encoded_palette = palette
+        .into_iter()
+        .map(|(id, index)| (block_state(Block::from_id(id)), index as i32))
+        .collect();
 
     let mut block_entities = Vec::new();
     for (position, block_entity) in volume.block_entities() {
-        if let Some(mut blob) = block_entity.to_nbt(false) {
-            let id = blob
-                .content
-                .remove("id")
-                .expect("block entity NBT has an id");
-            blob.insert("Id", id)?;
+        if let Some(mut nbt) = block_entity.to_nbt(false) {
+            let id = nbt.remove("id").expect("block entity NBT has an id");
+            nbt.insert("Id".to_owned(), id);
             let position = position - region.min();
-            blob.insert(
-                "Pos",
-                nbt::Value::IntArray(vec![position.x, position.y, position.z]),
-            )?;
-            block_entities.push(blob);
+            nbt.insert(
+                "Pos".to_owned(),
+                Value::IntArray(IntArray::new(vec![position.x, position.y, position.z])),
+            );
+            block_entities.push(nbt);
         }
     }
 
@@ -101,14 +98,18 @@ pub fn write(volume: &BlockVolume) -> Result<Vec<u8>, SchematicError> {
             offset_y: region.min().y,
             offset_z: region.min().z,
         },
-        block_data,
+        block_data: ByteArray::new(block_data),
         block_entities,
         version: 2,
         data_version: MC_DATA_VERSION,
     };
-    let mut encoded = Vec::new();
-    nbt::to_gzip_writer(&mut encoded, &schematic, Some("Schematic"))?;
-    Ok(encoded)
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    fastnbt::to_writer_with_opts(
+        &mut encoder,
+        &schematic,
+        SerOpts::new().root_name("Schematic"),
+    )?;
+    Ok(encoder.finish()?)
 }
 
 fn block_state(block: Block) -> String {

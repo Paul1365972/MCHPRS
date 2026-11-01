@@ -309,17 +309,6 @@ impl TextComponent {
     pub fn encode_json(&self) -> String {
         serde_json::to_string(self).unwrap()
     }
-
-    pub fn is_text_only(&self) -> bool {
-        !self.bold
-            && !self.italic
-            && !self.underlined
-            && !self.strikethrough
-            && !self.obfuscated
-            && self.extra.is_empty()
-            && self.color.is_none()
-            && self.click_event.is_none()
-    }
 }
 
 impl<S> From<S> for TextComponent

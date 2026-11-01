@@ -4,7 +4,6 @@ use mchprs_blocks::items::Item;
 use mchprs_network::packets::SlotData;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
-use std::io::Cursor;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -72,7 +71,7 @@ pub fn encode_slot_data(item: &ItemStack) -> SlotData {
     SlotData {
         item_count: item.count as i8,
         item_id: item.item_type.get_id() as i32,
-        nbt: item.nbt.clone().map(|nbt| nbt.content),
+        nbt: item.nbt.clone(),
     }
 }
 
@@ -80,7 +79,7 @@ pub fn inventory_entry_to_stack(entry: &InventoryEntry) -> ItemStack {
     let nbt = entry
         .nbt
         .clone()
-        .map(|data| nbt::Blob::from_reader(&mut Cursor::new(data)).unwrap());
+        .map(|data| fastnbt::from_bytes(&data).unwrap());
     ItemStack {
         item_type: Item::from_id(entry.id),
         count: entry.count as u8,
