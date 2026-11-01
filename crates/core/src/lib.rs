@@ -4,6 +4,7 @@
 mod utils;
 mod config;
 mod interaction;
+mod item_stack;
 mod player;
 pub mod plot;
 mod profile;

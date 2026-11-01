@@ -1,10 +1,11 @@
 use super::{Plot, PLOT_BLOCK_HEIGHT};
 use crate::config::CONFIG;
+use crate::item_stack::ItemStack;
 use crate::player::{PacketSender, PlayerPos, SkinParts};
 use crate::server::Message;
 use crate::utils::{self, HyphenatedUUID};
 use mchprs_blocks::block_entities::BlockEntity;
-use mchprs_blocks::items::{Item, ItemStack};
+use mchprs_blocks::items::Item;
 use mchprs_blocks::BlockPos;
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::*;
