@@ -17,14 +17,13 @@ use crate::{
 use itertools::Itertools;
 use mchprs_blocks::{
     block_entities::{BlockEntity, ContainerType, InventoryEntry},
-    block_store::BlockView,
+    block_store::{BlockStore, BlockView},
     blocks::{Block, HopperFacing},
     items::Item,
     signal_strength::SignalStrength,
     BlockDirection, BlockFacing, BlockPos,
 };
 use mchprs_network::packets::clientbound::*;
-use mchprs_world::World;
 use rustc_hash::FxHashMap;
 use std::time::Instant;
 
@@ -45,7 +44,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         let world = ctx.world_mut();
         for pos in region_positions(first_pos, second_pos) {
             if mask.is_none_or(|mask| mask.matches(world, pos))
-                && world.set_block_raw(pos, pattern.pick(world, pos).get_id())
+                && world.set_block(pos, pattern.pick(world, pos))
             {
                 blocks_updated += 1;
             }
@@ -137,9 +136,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     let (first_pos, second_pos) = ctx.get_selection()?;
                     let world = ctx.world();
                     for pos in region_positions(first_pos, second_pos) {
-                        *block_counts
-                            .entry(world.get_block(pos).get_name())
-                            .or_insert(0) += 1;
+                        *block_counts.entry(world.block(pos).get_name()).or_insert(0) += 1;
                     }
                 }
 
@@ -307,14 +304,14 @@ fn exec_replacecontainer(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
 
     let world = ctx.world_mut();
     for pos in region_positions(first_pos, second_pos) {
-        let block_ty = match world.get_block(pos) {
+        let block_ty = match world.block(pos) {
             Block::Furnace { .. } => ContainerType::Furnace,
             Block::Barrel { .. } => ContainerType::Barrel,
             Block::Hopper { .. } => ContainerType::Hopper,
             _ => continue,
         };
 
-        let (current_ty, ss) = match world.get_block_entity(pos) {
+        let (current_ty, ss) = match world.block_entity(pos) {
             Some(BlockEntity::Container {
                 comparator_override,
                 ty,
@@ -344,7 +341,7 @@ fn exec_replacecontainer(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
             inventory,
             ty: to,
         };
-        world.set_block_entity(pos, new_entity);
+        world.set_block_entity(pos, Some(new_entity));
         world.set_block(pos, new_block);
     }
 

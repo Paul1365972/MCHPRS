@@ -8,7 +8,7 @@ use crate::compile_graph::{
 };
 use crate::passes::{AnalysisInfos, Pass};
 use crate::{CompilerInput, CompilerOptions};
-use mchprs_world::World;
+use mchprs_blocks::block_store::BlockView;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::collections::VecDeque;
@@ -16,7 +16,7 @@ use tracing::trace;
 
 pub struct Coalesce;
 
-impl<W: World> Pass<W> for Coalesce {
+impl<W: BlockView> Pass<W> for Coalesce {
     fn run_pass(
         &self,
         graph: &mut CompileGraph,

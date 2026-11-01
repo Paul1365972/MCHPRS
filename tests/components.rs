@@ -1,6 +1,7 @@
 mod common;
 use common::*;
 
+use mchprs_blocks::block_store::BlockStore;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockDirection;
 use mchprs_world::{testing::TestWorld, TickPriority, World};

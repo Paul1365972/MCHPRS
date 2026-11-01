@@ -1,5 +1,6 @@
 mod turbo;
 
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, RedstoneWire, RedstoneWireSide};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_world::World;
@@ -15,7 +16,7 @@ pub fn make_cross(power: u8) -> RedstoneWire {
     }
 }
 
-pub fn get_state_for_placement(world: &impl World, pos: BlockPos) -> RedstoneWire {
+pub fn get_state_for_placement(world: &impl BlockView, pos: BlockPos) -> RedstoneWire {
     let mut wire = RedstoneWire {
         power: calculate_power(world, pos),
         ..Default::default()
@@ -29,7 +30,7 @@ pub fn get_state_for_placement(world: &impl World, pos: BlockPos) -> RedstoneWir
 
 pub fn on_neighbor_changed(
     mut wire: RedstoneWire,
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     side: BlockFace,
 ) -> RedstoneWire {
@@ -131,23 +132,21 @@ pub fn get_current_side(wire: RedstoneWire, side: BlockDirection) -> RedstoneWir
     }
 }
 
-pub fn get_side(world: &impl World, pos: BlockPos, side: BlockDirection) -> RedstoneWireSide {
+pub fn get_side(world: &impl BlockView, pos: BlockPos, side: BlockDirection) -> RedstoneWireSide {
     let neighbor_pos = pos.offset(side.block_face());
-    let neighbor = world.get_block(neighbor_pos);
+    let neighbor = world.block(neighbor_pos);
 
     if can_connect_to(neighbor, side) {
         return RedstoneWireSide::Side;
     }
 
     let up_pos = pos.offset(BlockFace::Top);
-    let up = world.get_block(up_pos);
+    let up = world.block(up_pos);
 
-    if !up.is_solid()
-        && can_connect_diagonal_to(world.get_block(neighbor_pos.offset(BlockFace::Top)))
-    {
+    if !up.is_solid() && can_connect_diagonal_to(world.block(neighbor_pos.offset(BlockFace::Top))) {
         RedstoneWireSide::Up
     } else if !neighbor.is_solid()
-        && can_connect_diagonal_to(world.get_block(neighbor_pos.offset(BlockFace::Bottom)))
+        && can_connect_diagonal_to(world.block(neighbor_pos.offset(BlockFace::Bottom)))
     {
         RedstoneWireSide::Side
     } else {
@@ -155,7 +154,7 @@ pub fn get_side(world: &impl World, pos: BlockPos, side: BlockDirection) -> Reds
     }
 }
 
-fn get_all_sides(mut wire: RedstoneWire, world: &impl World, pos: BlockPos) -> RedstoneWire {
+fn get_all_sides(mut wire: RedstoneWire, world: &impl BlockView, pos: BlockPos) -> RedstoneWire {
     wire.north = get_side(world, pos, BlockDirection::North);
     wire.south = get_side(world, pos, BlockDirection::South);
     wire.east = get_side(world, pos, BlockDirection::East);
@@ -163,7 +162,11 @@ fn get_all_sides(mut wire: RedstoneWire, world: &impl World, pos: BlockPos) -> R
     wire
 }
 
-pub fn get_regulated_sides(wire: RedstoneWire, world: &impl World, pos: BlockPos) -> RedstoneWire {
+pub fn get_regulated_sides(
+    wire: RedstoneWire,
+    world: &impl BlockView,
+    pos: BlockPos,
+) -> RedstoneWire {
     let mut state = get_all_sides(wire, world, pos);
     if is_dot(wire) && is_dot(state) {
         return state;
@@ -212,8 +215,8 @@ pub fn is_illegal(wire: RedstoneWire) -> bool {
         == 3
 }
 
-fn max_wire_power(wire_power: u8, world: &impl World, pos: BlockPos) -> u8 {
-    let block = world.get_block(pos);
+fn max_wire_power(wire_power: u8, world: &impl BlockView, pos: BlockPos) -> u8 {
+    let block = world.block(pos);
     if let Block::RedstoneWire(wire) = block {
         wire_power.max(wire.power)
     } else {
@@ -221,17 +224,17 @@ fn max_wire_power(wire_power: u8, world: &impl World, pos: BlockPos) -> u8 {
     }
 }
 
-fn calculate_power(world: &impl World, pos: BlockPos) -> u8 {
+fn calculate_power(world: &impl BlockView, pos: BlockPos) -> u8 {
     let mut block_power = 0;
     let mut wire_power = 0;
 
     let up_pos = pos.offset(BlockFace::Top);
-    let up_block = world.get_block(up_pos);
+    let up_block = world.block(up_pos);
 
     for side in &BlockFace::values() {
         let neighbor_pos = pos.offset(*side);
         wire_power = max_wire_power(wire_power, world, neighbor_pos);
-        let neighbor = world.get_block(neighbor_pos);
+        let neighbor = world.block(neighbor_pos);
         block_power = block_power.max(super::get_redstone_power_no_dust(
             neighbor,
             world,

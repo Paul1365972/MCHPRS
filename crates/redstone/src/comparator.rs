@@ -1,13 +1,14 @@
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_world::{TickPriority, World};
 use tracing::warn;
 
-fn get_power_on_side(world: &impl World, pos: BlockPos, side: BlockDirection) -> u8 {
+fn get_power_on_side(world: &impl BlockView, pos: BlockPos, side: BlockDirection) -> u8 {
     let side_pos = pos.offset(side.block_face());
-    let side_block = world.get_block(side_pos);
+    let side_block = world.block(side_pos);
     if super::is_diode(side_block) {
         super::get_weak_power(side_block, world, side_pos, side.block_face(), false)
     } else if let Block::RedstoneWire(wire) = side_block {
@@ -19,17 +20,17 @@ fn get_power_on_side(world: &impl World, pos: BlockPos, side: BlockDirection) ->
     }
 }
 
-fn get_power_on_sides(comp: Comparator, world: &impl World, pos: BlockPos) -> u8 {
+fn get_power_on_sides(comp: Comparator, world: &impl BlockView, pos: BlockPos) -> u8 {
     std::cmp::max(
         get_power_on_side(world, pos, comp.facing.rotate()),
         get_power_on_side(world, pos, comp.facing.rotate_ccw()),
     )
 }
 
-pub fn analog_output(block: Block, world: &impl World, pos: BlockPos) -> Option<u8> {
+pub fn analog_output(block: Block, world: &impl BlockView, pos: BlockPos) -> Option<u8> {
     Some(match block {
         Block::Barrel { .. } | Block::Furnace { .. } | Block::Hopper { .. } => {
-            match world.get_block_entity(pos) {
+            match world.block_entity(pos) {
                 Some(BlockEntity::Container {
                     comparator_override,
                     ..
@@ -57,36 +58,35 @@ pub fn analog_output(block: Block, world: &impl World, pos: BlockPos) -> Option<
     })
 }
 
-pub fn get_far_input(world: &impl World, pos: BlockPos, facing: BlockDirection) -> Option<u8> {
+pub fn get_far_input(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> Option<u8> {
     let face = facing.block_face();
     let input_pos = pos.offset(face);
-    let input_block = world.get_block(input_pos);
+    let input_block = world.block(input_pos);
     if !input_block.is_solid() || analog_output(input_block, world, input_pos).is_some() {
         return None;
     }
 
     let far_input_pos = input_pos.offset(face);
-    analog_output(world.get_block(far_input_pos), world, far_input_pos)
+    analog_output(world.block(far_input_pos), world, far_input_pos)
 }
 
-fn calculate_input_strength(comp: Comparator, world: &impl World, pos: BlockPos) -> u8 {
+fn calculate_input_strength(comp: Comparator, world: &impl BlockView, pos: BlockPos) -> u8 {
     let input_pos = pos.offset(comp.facing.block_face());
-    let input_block = world.get_block(input_pos);
+    let input_block = world.block(input_pos);
     if let Some(strength) = analog_output(input_block, world, input_pos) {
         return strength;
     }
     let base_input_strength = super::diode_get_input_strength(world, pos, comp.facing);
     if base_input_strength < 15 && input_block.is_solid() {
         let far_input_pos = input_pos.offset(comp.facing.block_face());
-        if let Some(strength) = analog_output(world.get_block(far_input_pos), world, far_input_pos)
-        {
+        if let Some(strength) = analog_output(world.block(far_input_pos), world, far_input_pos) {
             return strength;
         }
     }
     base_input_strength
 }
 
-pub fn should_be_powered(comp: Comparator, world: &impl World, pos: BlockPos) -> bool {
+pub fn should_be_powered(comp: Comparator, world: &impl BlockView, pos: BlockPos) -> bool {
     let input_strength = calculate_input_strength(comp, world, pos);
     if input_strength == 0 {
         false
@@ -116,12 +116,19 @@ fn calculate_output_strength(comp: Comparator, world: &mut impl World, pos: Bloc
 // it way, but te human brane wil not!
 fn on_state_change(comp: Comparator, world: &mut impl World, pos: BlockPos) {
     let front_pos = pos.offset(comp.facing.opposite().block_face());
-    let front_block = world.get_block(front_pos);
+    let front_block = world.block(front_pos);
     super::update(front_block, world, front_pos);
     for direction in &BlockFace::values() {
         let neighbor_pos = front_pos.offset(*direction);
-        let block = world.get_block(neighbor_pos);
+        let block = world.block(neighbor_pos);
         super::update(block, world, neighbor_pos);
+    }
+}
+
+fn stored_output_strength(world: &impl BlockView, pos: BlockPos) -> u8 {
+    match world.block_entity(pos) {
+        Some(BlockEntity::Comparator { output_strength }) => output_strength.get(),
+        _ => 0,
     }
 }
 
@@ -130,12 +137,7 @@ pub fn update(comp: Comparator, world: &mut impl World, pos: BlockPos) {
         return;
     }
     let output_strength = calculate_output_strength(comp, world, pos);
-    let old_strength =
-        if let Some(BlockEntity::Comparator { output_strength }) = world.get_block_entity(pos) {
-            output_strength.get()
-        } else {
-            0
-        };
+    let old_strength = stored_output_strength(world, pos);
     if output_strength != old_strength || comp.powered != should_be_powered(comp, world, pos) {
         let priority = if super::diode_should_be_prioritized(world, pos, comp.facing) {
             TickPriority::High
@@ -148,21 +150,14 @@ pub fn update(comp: Comparator, world: &mut impl World, pos: BlockPos) {
 
 pub fn tick(mut comp: Comparator, world: &mut impl World, pos: BlockPos) {
     let new_strength = calculate_output_strength(comp, world, pos);
-    let old_strength = if let Some(BlockEntity::Comparator {
-        output_strength: old_output_strength,
-    }) = world.get_block_entity(pos)
-    {
-        old_output_strength.get()
-    } else {
-        0
-    };
+    let old_strength = stored_output_strength(world, pos);
     if new_strength != old_strength || comp.mode == ComparatorMode::Compare {
         world.set_block_entity(
             pos,
-            BlockEntity::Comparator {
+            Some(BlockEntity::Comparator {
                 output_strength: SignalStrength::try_from(new_strength)
                     .expect("a comparator outputs at most its input"),
-            },
+            }),
         );
         let should_be_powered = should_be_powered(comp, world, pos);
         let powered = comp.powered;

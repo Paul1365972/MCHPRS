@@ -3,6 +3,7 @@ use crate::item_stack::ItemStack;
 use crate::player::Player;
 use crate::plot::{PlotWorld, PLOT_BLOCK_HEIGHT};
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::items::Item;
 use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
@@ -51,7 +52,7 @@ pub fn on_use(
         }
         b if b.has_block_entity() => {
             // Open container
-            let block_entity = world.get_block_entity(pos);
+            let block_entity = world.block_entity(pos);
             if let Some(BlockEntity::Container { inventory, ty, .. }) = block_entity {
                 player.open_container(inventory, *ty);
             }
@@ -284,7 +285,7 @@ pub fn place_in_world(
         && let Some(nbt) = nbt
         && let Some(block_entity) = read_block_entity_tag(nbt, block.get_name())
     {
-        world.set_block_entity(pos, block_entity);
+        world.set_block_entity(pos, Some(block_entity));
     };
     world.set_block(pos, block);
     change_surrounding_blocks(world, pos);
@@ -297,7 +298,7 @@ pub fn place_in_world(
 
 pub fn destroy(block: Block, world: &mut impl World, pos: BlockPos) {
     if block.has_block_entity() {
-        world.delete_block_entity(pos);
+        world.set_block_entity(pos, None);
     }
 
     match block {
@@ -337,10 +338,6 @@ pub fn destroy(block: Block, world: &mut impl World, pos: BlockPos) {
 }
 
 pub fn is_valid_position(block: Block, world: &impl World, pos: BlockPos) -> bool {
-    if world.is_cursed() {
-        return true;
-    }
-
     let check_bottom = matches!(
         block,
         Block::RedstoneWire(_)
@@ -384,13 +381,13 @@ pub fn is_valid_position(block: Block, world: &impl World, pos: BlockPos) -> boo
     });
 
     if check_bottom {
-        let bottom_block = world.get_block(pos.offset(BlockFace::Bottom));
+        let bottom_block = world.block(pos.offset(BlockFace::Bottom));
         bottom_block.is_cube()
     } else if check_top {
-        let top_block = world.get_block(pos.offset(BlockFace::Top));
+        let top_block = world.block(pos.offset(BlockFace::Top));
         top_block.is_cube()
     } else if let Some(facing) = check_parent {
-        let parent_block = world.get_block(pos.offset(facing.opposite().block_face()));
+        let parent_block = world.block(pos.offset(facing.opposite().block_face()));
         parent_block.is_cube()
     } else {
         true
@@ -413,17 +410,17 @@ pub fn change(block: Block, world: &mut impl World, pos: BlockPos, direction: Bl
 fn change_surrounding_blocks(world: &mut impl World, pos: BlockPos) {
     for direction in &BlockFace::values() {
         let neighbor_pos = pos.offset(*direction);
-        let block = world.get_block(neighbor_pos);
+        let block = world.block(neighbor_pos);
         change(block, world, neighbor_pos, *direction);
 
         // Also change diagonal blocks
 
         let up_pos = neighbor_pos.offset(BlockFace::Top);
-        let up_block = world.get_block(up_pos);
+        let up_block = world.block(up_pos);
         change(up_block, world, up_pos, *direction);
 
         let down_pos = neighbor_pos.offset(BlockFace::Bottom);
-        let down_block = world.get_block(down_pos);
+        let down_block = world.block(down_pos);
         change(down_block, world, down_pos, *direction);
     }
 }
@@ -454,7 +451,7 @@ pub fn use_item_on_block(
     ctx: UseOnBlockContext<'_>,
 ) -> bool {
     let use_pos = ctx.block_pos;
-    let use_block = world.get_block(use_pos);
+    let use_block = world.block(use_pos);
     let block_pos = ctx.block_pos.offset(ctx.block_face);
     let mut top_pos = ctx.player.pos.block_pos();
     top_pos.y += 1;
@@ -462,7 +459,7 @@ pub fn use_item_on_block(
     {
         return false;
     }
-    let can_place = item.item_type.is_block() && world.get_block(block_pos).can_place_block_in();
+    let can_place = item.item_type.is_block() && world.block(block_pos).can_place_block_in();
 
     if !ctx.player.crouching
         && on_use(

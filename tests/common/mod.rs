@@ -1,10 +1,10 @@
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::{Block, LeverFace, Repeater};
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::{BackendVariant, Compiler, CompilerOptions};
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
-use mchprs_world::World;
 
 struct RedpilerInstance {
     options: CompilerOptions,
@@ -73,7 +73,7 @@ impl BackendRunner {
         }
         while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
             let entry = self.world.to_be_ticked.remove(0);
-            let block = self.world.get_block(entry.pos);
+            let block = self.world.block(entry.pos);
             if entry.is_for(block) {
                 mchprs_redstone::tick(block, &mut self.world, entry.pos);
             }
@@ -86,13 +86,13 @@ impl BackendRunner {
             redpiler.compiler.flush(&mut self.world);
             return;
         }
-        mchprs_redstone::on_use(self.world.get_block(pos), &mut self.world, pos);
+        mchprs_redstone::on_use(self.world.block(pos), &mut self.world, pos);
     }
 
     pub fn check_block_powered(&self, pos: BlockPos, powered: bool) {
         if let Some(redpiler) = &self.redpiler {
             assert_eq!(
-                is_block_powered(self.world.get_block(pos)),
+                is_block_powered(self.world.block(pos)),
                 Some(powered),
                 "when testing on redpiler options: {:#?}",
                 redpiler.options
@@ -100,7 +100,7 @@ impl BackendRunner {
             return;
         }
         assert_eq!(
-            is_block_powered(self.world.get_block(pos)),
+            is_block_powered(self.world.block(pos)),
             Some(powered),
             "when testing with the base redstone implementation"
         );

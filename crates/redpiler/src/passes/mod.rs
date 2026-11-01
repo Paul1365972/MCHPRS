@@ -3,7 +3,7 @@ mod frontend;
 mod misc;
 mod opt;
 
-use mchprs_world::World;
+use mchprs_blocks::block_store::BlockView;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ril::DumpGraph;
@@ -22,7 +22,7 @@ use frontend::*;
 use misc::*;
 use opt::*;
 
-pub fn build_pass_pipeline<'p, W: World>(
+pub fn build_pass_pipeline<'p, W: BlockView + 'static>(
     registry: &'p PassRegistry<W>,
     options: &CompilerOptions,
 ) -> PassPipeline<'p, W> {
@@ -51,12 +51,12 @@ pub fn build_pass_pipeline<'p, W: World>(
     builder.build()
 }
 
-pub struct PassRegistry<W: World> {
+pub struct PassRegistry<W: BlockView + 'static> {
     passes: FxHashMap<TypeId, Box<dyn Pass<W>>>,
     driver_name_map: FxHashMap<&'static str, TypeId>,
 }
 
-impl<W: World> Default for PassRegistry<W> {
+impl<W: BlockView + 'static> Default for PassRegistry<W> {
     fn default() -> Self {
         let mut registry = Self::new();
 
@@ -80,7 +80,7 @@ impl<W: World> Default for PassRegistry<W> {
     }
 }
 
-impl<W: World> PassRegistry<W> {
+impl<W: BlockView + 'static> PassRegistry<W> {
     pub fn new() -> Self {
         Self {
             passes: FxHashMap::default(),
@@ -132,13 +132,13 @@ impl AnalysisInfos {
     }
 }
 
-pub struct PassPipelineBuilder<'p, W: World> {
+pub struct PassPipelineBuilder<'p, W: BlockView + 'static> {
     registry: &'p PassRegistry<W>,
     passes: Vec<&'p dyn Pass<W>>,
     available_analysis: FxHashSet<TypeId>,
 }
 
-impl<'p, W: World> PassPipelineBuilder<'p, W> {
+impl<'p, W: BlockView + 'static> PassPipelineBuilder<'p, W> {
     pub fn new(registry: &'p PassRegistry<W>) -> Self {
         Self {
             registry,
@@ -189,11 +189,11 @@ impl<'p, W: World> PassPipelineBuilder<'p, W> {
     }
 }
 
-pub struct PassPipeline<'p, W: World> {
+pub struct PassPipeline<'p, W: BlockView + 'static> {
     passes: Vec<&'p dyn Pass<W>>,
 }
 
-impl<'p, W: World> PassPipeline<'p, W> {
+impl<'p, W: BlockView + 'static> PassPipeline<'p, W> {
     pub fn run_passes(
         &self,
         options: &CompilerOptions,
@@ -249,16 +249,16 @@ impl AnalysisUsage {
         self.preserves_all = true;
     }
 
-    pub fn set_required<P: Pass<W>, W: World>(&mut self) {
+    pub fn set_required<P: Pass<W>, W: BlockView>(&mut self) {
         self.required.push(TypeId::of::<P>());
     }
 
-    pub fn set_preserved<P: Pass<W>, W: World>(&mut self) {
+    pub fn set_preserved<P: Pass<W>, W: BlockView>(&mut self) {
         self.preserved.push(TypeId::of::<P>());
     }
 }
 
-pub trait Pass<W: World>: 'static {
+pub trait Pass<W: BlockView>: 'static {
     fn run_pass(
         &self,
         graph: &mut CompileGraph,

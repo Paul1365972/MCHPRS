@@ -70,7 +70,7 @@ impl BlockPattern {
         match self {
             Self::Fixed(block) => *block,
             Self::TypeApplying { block, states } => {
-                let existing = world.get_block(pos);
+                let existing = world.block(pos);
                 let mut block = block.unwrap_or(existing);
                 let existing_props = existing.properties();
                 let mut props: HashMap<&str, &str> = existing_props

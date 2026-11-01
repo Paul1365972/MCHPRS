@@ -1,5 +1,12 @@
-use crate::{has_tick_entry, schedule_tick_entry, storage::Chunk, TickEntry, TickPriority, World};
-use mchprs_blocks::{block_entities::BlockEntity, BlockPos};
+use crate::{
+    has_tick_entry, occupied_regions, schedule_tick_entry, storage::Chunk, TickEntry, TickPriority,
+    World,
+};
+use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::{BlockStore, BlockView};
+use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
+use mchprs_blocks::BlockPos;
 
 /// A reference world implementation used for testing.
 #[derive(Clone)]
@@ -32,10 +39,6 @@ impl TestWorld {
         }
     }
 
-    fn get_chunk_index_for_chunk(&self, chunk_x: i32, chunk_z: i32) -> usize {
-        (chunk_x * self.z_size + chunk_z).unsigned_abs() as usize
-    }
-
     fn get_chunk_index_for_block(&self, block_x: i32, block_z: i32) -> Option<usize> {
         let chunk_x = block_x >> 4;
         let chunk_z = block_z >> 4;
@@ -46,19 +49,33 @@ impl TestWorld {
     }
 }
 
-impl World for TestWorld {
-    /// Returns the block state id of the block at `pos`
-    fn get_block_raw(&self, pos: BlockPos) -> u32 {
+impl BlockView for TestWorld {
+    fn block(&self, pos: BlockPos) -> Block {
         let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
             Some(idx) => idx,
-            None => return 0,
+            None => return Block::Air,
         };
         let chunk = &self.chunks[chunk_index];
-        chunk.get_block((pos.x & 0xF) as u32, pos.y as u32, (pos.z & 0xF) as u32)
+        Block::from_id(chunk.get_block((pos.x & 0xF) as u32, pos.y as u32, (pos.z & 0xF) as u32))
     }
 
-    /// Sets a block in storage. Returns true if a block was changed.
-    fn set_block_raw(&mut self, pos: BlockPos, block: u32) -> bool {
+    fn block_entity(&self, pos: BlockPos) -> Option<&BlockEntity> {
+        let chunk_index = self.get_chunk_index_for_block(pos.x, pos.z)?;
+        let chunk = &self.chunks[chunk_index];
+        chunk.get_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF))
+    }
+
+    fn occupied_regions(&self, region: Region) -> Vec<Region> {
+        occupied_regions(region, |x, z| {
+            self.chunks
+                .iter()
+                .find(|chunk| chunk.x == x && chunk.z == z)
+        })
+    }
+}
+
+impl BlockStore for TestWorld {
+    fn set_block(&mut self, pos: BlockPos, block: Block) -> bool {
         let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
             Some(idx) => idx,
             None => return false,
@@ -74,49 +91,31 @@ impl World for TestWorld {
             (pos.x & 0xF) as u32,
             pos.y as u32,
             (pos.z & 0xF) as u32,
-            block,
+            block.get_id(),
         )
     }
 
-    fn delete_block_entity(&mut self, pos: BlockPos) {
+    fn set_block_entity(&mut self, pos: BlockPos, block_entity: Option<BlockEntity>) {
         let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
             Some(idx) => idx,
             None => return,
         };
         let chunk = &mut self.chunks[chunk_index];
-        chunk.delete_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF));
+        let pos = BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF);
+        match block_entity {
+            Some(block_entity) => chunk.set_block_entity(pos, block_entity),
+            None => chunk.delete_block_entity(pos),
+        }
     }
+}
 
-    fn get_block_entity(&self, pos: BlockPos) -> Option<&BlockEntity> {
-        let chunk_index = self.get_chunk_index_for_block(pos.x, pos.z)?;
-        let chunk = &self.chunks[chunk_index];
-        chunk.get_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF))
-    }
-
-    fn set_block_entity(&mut self, pos: BlockPos, block_entity: BlockEntity) {
-        let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
-            Some(idx) => idx,
-            None => return,
-        };
-        let chunk = &mut self.chunks[chunk_index];
-        chunk.set_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF), block_entity);
-    }
-
-    fn get_chunk(&self, x: i32, z: i32) -> Option<&Chunk> {
-        self.chunks.get(self.get_chunk_index_for_chunk(x, z))
-    }
-
-    fn get_chunk_mut(&mut self, x: i32, z: i32) -> Option<&mut Chunk> {
-        let chunk_idx = self.get_chunk_index_for_chunk(x, z);
-        self.chunks.get_mut(chunk_idx)
-    }
-
+impl World for TestWorld {
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority) {
-        let block = self.get_block(pos);
+        let block = self.block(pos);
         schedule_tick_entry(&mut self.to_be_ticked, block, pos, delay, priority);
     }
 
     fn pending_tick_at(&mut self, pos: BlockPos) -> bool {
-        has_tick_entry(&self.to_be_ticked, self.get_block(pos), pos)
+        has_tick_entry(&self.to_be_ticked, self.block(pos), pos)
     }
 }
