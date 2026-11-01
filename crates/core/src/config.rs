@@ -1,96 +1,85 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::Write;
+use std::io;
 use std::{fs, sync::LazyLock};
-use toml_edit::{value, DocumentMut};
+use tracing::warn;
 
 pub static CONFIG: LazyLock<ServerConfig> = LazyLock::new(|| ServerConfig::load("Config.toml"));
 
-trait ConfigSerializeDefault {
-    fn fix_config(self, name: &str, doc: &mut DocumentMut);
-}
-
-macro_rules! impl_simple_default {
-    ( $( $type:ty ),* ) => {
-        $(
-            impl ConfigSerializeDefault for $type {
-                fn fix_config(self, name: &str, doc: &mut DocumentMut) {
-                    doc.entry(name).or_insert_with(|| value(self));
-                }
-            }
-        )*
-    }
-}
-
-impl_simple_default!(String, i64, bool);
-
-impl<T> ConfigSerializeDefault for Option<T> {
-    fn fix_config(self, _: &str, _: &mut DocumentMut) {
-        assert!(self.is_none(), "`Some` as default is unimplemented");
-    }
-}
-
-impl ConfigSerializeDefault for HashMap<String, String> {
-    fn fix_config(self, name: &str, doc: &mut DocumentMut) {
-        if doc.get(name).is_none() {
-            let mut table = toml_edit::Table::new();
-            for (key, val) in self {
-                table.insert(&key, toml_edit::value(val));
-            }
-            doc.insert(name, toml_edit::Item::Table(table));
-        }
-    }
-}
-
-macro_rules! gen_config {
-    (
-        $( $name:ident: $type:ty = $default:expr),*
-    ) => {
-        #[derive(Serialize, Deserialize)]
-        pub struct ServerConfig {
-            $(
-                pub $name: $type,
-            )*
-        }
-
-        impl ServerConfig {
-            fn load(config_file: &str) -> ServerConfig {
-                let str = fs::read_to_string("Config.toml").unwrap_or_default();
-                let mut doc = str.parse::<DocumentMut>().unwrap();
-                if doc.contains_key("luckperms") {
-                    panic!("{config_file} has a [luckperms] table, but LuckPerms support was removed, so every player could edit every plot and run every command. Remove the table to start the server");
-                }
-
-                $(
-                    <$type as ConfigSerializeDefault>::fix_config($default, stringify!($name), &mut doc);
-                )*
-
-                let patched = doc.to_string();
-                if str != patched {
-                    let mut file = fs::OpenOptions::new().create(true).write(true).open(&config_file).unwrap();
-                    write!(file, "{}", patched).unwrap();
-                }
-
-                toml::from_str(&patched).unwrap()
-            }
-        }
-    };
-}
-
-gen_config! {
-    bind_address: String = "0.0.0.0:25565".to_string(),
-    motd: String = "Minecraft High Performance Redstone Server".to_string(),
-    chat_format: String = "<{username}> {message}".to_string(),
-    max_players: i64 = 99999,
-    view_distance: i64 = 8,
-    whitelist: bool = false,
-    schemati: bool = false,
-    block_in_hitbox: bool = true,
-    velocity: Option<VelocityConfig> = None,
-    command_aliases: HashMap<String, String> = HashMap::new()
-}
-
 #[derive(Serialize, Deserialize)]
+#[serde(default)]
+pub struct ServerConfig {
+    pub bind_address: String,
+    pub motd: String,
+    pub chat_format: String,
+    pub max_players: i64,
+    pub view_distance: i64,
+    pub whitelist: bool,
+    pub schemati: bool,
+    pub block_in_hitbox: bool,
+    pub velocity: VelocityConfig,
+    pub command_aliases: HashMap<String, String>,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        ServerConfig {
+            bind_address: "0.0.0.0:25565".to_owned(),
+            motd: "Minecraft High Performance Redstone Server".to_owned(),
+            chat_format: "<{username}> {message}".to_owned(),
+            max_players: 99999,
+            view_distance: 8,
+            whitelist: false,
+            schemati: false,
+            block_in_hitbox: true,
+            velocity: VelocityConfig::default(),
+            command_aliases: HashMap::new(),
+        }
+    }
+}
+
+impl ServerConfig {
+    fn load(path: &str) -> ServerConfig {
+        let text = match fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let defaults = toml::to_string(&ServerConfig::default())
+                    .expect("the default config serializes");
+                if let Err(error) = fs::write(path, defaults) {
+                    warn!("Failed to write the default {path}: {error}");
+                }
+                return ServerConfig::default();
+            }
+            Err(error) => panic!("Failed to read {path}: {error}"),
+        };
+        let table: toml::Table = toml::from_str(&text)
+            .unwrap_or_else(|error| panic!("{path} is not valid TOML: {error}"));
+        if table.contains_key("luckperms") {
+            panic!("{path} has a [luckperms] table, but LuckPerms support was removed, so every player could edit every plot and run every command. Remove the table to start the server");
+        }
+        let defaults =
+            toml::Table::try_from(ServerConfig::default()).expect("the default config serializes");
+        for key in table.keys().filter(|key| !defaults.contains_key(*key)) {
+            warn!("{path} has `{key}`, which is not a setting, so it is ignored");
+        }
+        for (key, value) in defaults {
+            if !table.contains_key(&key) {
+                let mut default = toml::Table::new();
+                default.insert(key.clone(), value);
+                let default = toml::to_string(&default).expect("a default value serializes");
+                warn!(
+                    "{path} has no `{key}`, so it uses the default:\n{}",
+                    default.trim_end()
+                );
+            }
+        }
+        table
+            .try_into()
+            .unwrap_or_else(|error| panic!("{path} is invalid: {error}"))
+    }
+}
+
+#[derive(Serialize, Deserialize, Default)]
 pub struct VelocityConfig {
     pub enabled: bool,
     pub secret: String,

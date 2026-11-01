@@ -35,7 +35,6 @@ tracing = { workspace = true }
 rand = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"], optional = true }
 anyhow = { workspace = true }
-toml_edit = { workspace = true }
 ureq = { workspace = true, features = ["json"], optional = true }
 itertools = { workspace = true }
 bincode = { workspace = true }

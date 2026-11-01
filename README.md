@@ -64,6 +64,8 @@ The following options are available at the toplevel (under no header):
 To change the plot size edit the constants defined in [plot/mod.rs](./crates/core/src/plot/mod.rs).
 If `world/plots/pTEMPLATE` exists, new plots start as a copy of it.
 
+Set `MCHPRS_LOG` to change the log level, for example `MCHPRS_LOG=debug`.
+
 ### Command Aliases
 
 Aliases go in the `command_aliases` table, both sides without the leading `/`:
@@ -80,7 +82,7 @@ Arguments replace `{}`, or go at the end without it: `//stackair 5 north` runs `
 
 MCHPRS has no support for player authentication on its own, but supports Velocity modern ip-forwarding.
 
-To use [Velocity](https://papermc.io/software/velocity) ip-forwarding, you must have a Velocity proxy set up and configured. Make sure `player-info-forwarding-mode` is set to `modern` in your Velocity config. Then, append this to your `Config.toml`:
+To use [Velocity](https://papermc.io/software/velocity) ip-forwarding, you must have a Velocity proxy set up and configured. Make sure `player-info-forwarding-mode` is set to `modern` in your Velocity config. Then, set the following in your `Config.toml`:
 
 ```toml
 [velocity]
