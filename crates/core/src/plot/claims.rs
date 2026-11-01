@@ -1,4 +1,7 @@
+use super::Plot;
+use crate::player::{PacketSender, PlayerPos};
 use rusqlite::{params, Connection};
+use std::cmp::Ordering;
 use std::sync::{Mutex, MutexGuard};
 
 pub struct Claims {
@@ -143,5 +146,48 @@ impl Claims {
                 params![uuid, name, name],
             )
             .unwrap();
+    }
+}
+
+impl Plot {
+    pub fn claim_plot(&mut self, plot_x: i32, plot_z: i32, player: usize) {
+        let player = &mut self.players[player];
+        self.shared
+            .claims
+            .claim_plot(plot_x, plot_z, &format!("{:032x}", player.uuid));
+        let center = Plot::get_center(plot_x, plot_z);
+        player.teleport(PlayerPos::new(center.0, 64.0, center.1));
+        player.send_system_message(&format!("Claimed plot {},{}", plot_x, plot_z));
+    }
+
+    pub fn get_next_plot(plot_x: i32, plot_z: i32) -> (i32, i32) {
+        let x = plot_x.abs();
+        let z = plot_z.abs();
+
+        match x.cmp(&z) {
+            Ordering::Greater => {
+                if plot_x > 0 {
+                    (plot_x, plot_z + 1)
+                } else {
+                    (plot_x, plot_z - 1)
+                }
+            }
+            Ordering::Less => {
+                if plot_z > 0 {
+                    (plot_x - 1, plot_z)
+                } else {
+                    (plot_x + 1, plot_z)
+                }
+            }
+            Ordering::Equal => {
+                if plot_x == plot_z && plot_x > 0 || plot_x == x {
+                    (plot_x, plot_z + 1)
+                } else if plot_z == z {
+                    (plot_x, plot_z - 1)
+                } else {
+                    (plot_x + 1, plot_z)
+                }
+            }
+        }
     }
 }
