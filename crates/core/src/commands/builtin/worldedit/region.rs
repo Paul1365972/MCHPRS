@@ -18,6 +18,7 @@ use mchprs_blocks::{
     block_entities::{BlockEntity, ContainerType, InventoryEntry},
     blocks::{Block, HopperFacing},
     items::Item,
+    signal_strength::SignalStrength,
     BlockDirection, BlockFacing, BlockPos,
 };
 use mchprs_network::packets::clientbound::*;
@@ -318,7 +319,7 @@ fn exec_replacecontainer(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
                 ty,
                 ..
             }) => (*ty, *comparator_override),
-            _ => (block_ty, 0),
+            _ => (block_ty, SignalStrength::Zero),
         };
 
         if from.is_some_and(|from| from != current_ty) {
