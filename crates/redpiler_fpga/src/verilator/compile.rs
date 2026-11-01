@@ -1,6 +1,6 @@
 use super::process::Process;
-use crate::circuit::Circuit;
-use crate::rtl::RTL;
+use crate::registers::Registers;
+use crate::rtl::{self, RTL};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io;
@@ -168,11 +168,12 @@ fn build(
 }
 
 pub(super) fn cached_simulator(
-    circuit: &Circuit,
+    registers: &Registers,
     state_bytes: usize,
     progress: &dyn Fn(&'static str),
 ) -> io::Result<PathBuf> {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let circuit = registers.circuit;
     let root = cache_root();
     let staging = root.join(format!(
         "staging-{:016x}-{}-{}",
@@ -181,7 +182,7 @@ pub(super) fn cached_simulator(
         SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ));
     progress("Writing Verilator circuit");
-    circuit.write(&staging)?;
+    rtl::write(registers, &staging)?;
     fs::write(staging.join("runner.cpp"), include_str!("runner.cpp"))?;
     let mut sources: Vec<_> = RTL
         .find("**/*.v")

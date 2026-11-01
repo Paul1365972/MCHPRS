@@ -4,6 +4,7 @@ mod process;
 use crate::circuit::{Circuit, Snapshot, State};
 use crate::engine::Simulator;
 use crate::readback::Readback;
+use crate::registers::Registers;
 use compile::SIMULATOR;
 use process::Process;
 use std::fs::File;
@@ -52,10 +53,11 @@ pub(crate) struct VerilatorEngine {
 
 impl VerilatorEngine {
     pub(crate) fn compile(circuit: &Circuit, progress: &dyn Fn(&'static str)) -> io::Result<Self> {
-        let readback = Readback::new(circuit);
+        let registers = Registers::new(circuit);
+        let readback = Readback::new(&registers);
         let node_count = circuit.nodes().len();
         let state_bytes = readback.bytes(0..node_count);
-        let directory = compile::cached_simulator(circuit, state_bytes, progress)?;
+        let directory = compile::cached_simulator(&registers, state_bytes, progress)?;
         progress("Starting Verilator circuit");
         let log = directory.join("verilator-runtime.log");
         let mut process = Process::spawn(

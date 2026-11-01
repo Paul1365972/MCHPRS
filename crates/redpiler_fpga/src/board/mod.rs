@@ -4,6 +4,8 @@ mod toolchain;
 use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
 use crate::readback::Readback;
+use crate::registers::Registers;
+use crate::rtl;
 use device::{Command, Device};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -33,15 +35,16 @@ impl Board {
             BUILD_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         progress("Generating Verilog");
-        circuit.write(&directory)?;
+        let registers = Registers::new(circuit);
+        rtl::write(&registers, &directory)?;
         progress("Opening board connection");
-        let readback = Readback::new(circuit);
+        let readback = Readback::new(&registers);
         let nodes: Vec<_> = (0..circuit.nodes().len()).collect();
         let mut device = Device::serial(
             &port,
             circuit,
             readback.bytes(nodes.iter().copied()),
-            readback.bytes(circuit.io_nodes()),
+            readback.bytes(circuit.io_nodes().iter().copied()),
         )?;
         let bitstream = toolchain::build(&directory, progress)?;
         progress("Programming board");

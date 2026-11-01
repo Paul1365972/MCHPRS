@@ -17,6 +17,7 @@ use mchprs_redpiler::{
 };
 use mchprs_world::TickEntry;
 use reference::Reference;
+use registers::Registers;
 use verilator::VerilatorEngine;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,7 +70,8 @@ pub fn write_verilog(
     pending_ticks: &[PendingTick],
     directory: &std::path::Path,
 ) -> Result<(), EngineError> {
-    Circuit::lower(netlist, pending_ticks)?.write(directory)?;
+    let circuit = Circuit::lower(netlist, pending_ticks)?;
+    rtl::write(&Registers::new(&circuit), directory)?;
     Ok(())
 }
 

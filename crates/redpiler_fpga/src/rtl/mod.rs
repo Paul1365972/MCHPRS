@@ -4,7 +4,7 @@ mod instance;
 mod node_modules;
 
 use crate::circuit::Circuit;
-use crate::registers::{readback_bytes, Registers};
+use crate::registers::{ReadbackLayout, Registers};
 use expression::signal_name;
 use include_dir::{include_dir, Dir};
 use instance::Instance;
@@ -17,62 +17,27 @@ pub(crate) static RTL: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/rtl");
 
 const ITEMS_PER_LINE: usize = 16;
 
-impl Circuit {
-    pub(crate) fn write(&self, directory: &Path) -> io::Result<()> {
-        let rtl = directory.join("rtl");
-        fs::create_dir_all(&rtl)?;
-        RTL.extract(rtl)?;
-        fs::write(directory.join("circuit.v"), Writer::new(self).verilog())
-    }
-}
-
-struct ReadbackLayout {
-    offsets: Vec<usize>,
-    widths: Vec<usize>,
-}
-
-impl ReadbackLayout {
-    fn new(registers: &Registers) -> Self {
-        let widths: Vec<usize> = (0..registers.circuit.nodes().len())
-            .map(|index| {
-                registers
-                    .fields(index)
-                    .iter()
-                    .map(|field| field.width() as usize)
-                    .sum()
-            })
-            .collect();
-        let offsets = widths
-            .iter()
-            .scan(0, |offset, width| {
-                let start = *offset;
-                *offset += width;
-                Some(start)
-            })
-            .collect();
-        Self { offsets, widths }
-    }
-
-    fn bits(&self, nodes: &[usize]) -> usize {
-        nodes.iter().map(|&index| self.widths[index]).sum()
-    }
-
-    fn padded_bits(&self, nodes: &[usize]) -> usize {
-        readback_bytes(self.bits(nodes)) * 8
-    }
+pub(crate) fn write(registers: &Registers, directory: &Path) -> io::Result<()> {
+    let rtl = directory.join("rtl");
+    fs::create_dir_all(&rtl)?;
+    RTL.extract(rtl)?;
+    fs::write(
+        directory.join("circuit.v"),
+        Writer::new(registers).verilog(),
+    )
 }
 
 struct Writer<'a> {
     circuit: &'a Circuit,
-    registers: Registers<'a>,
+    registers: &'a Registers<'a>,
     output: String,
 }
 
 impl<'a> Writer<'a> {
-    fn new(circuit: &'a Circuit) -> Self {
+    fn new(registers: &'a Registers<'a>) -> Self {
         Self {
-            circuit,
-            registers: Registers::new(circuit),
+            circuit: registers.circuit,
+            registers,
             output: String::new(),
         }
     }
@@ -84,10 +49,11 @@ impl<'a> Writer<'a> {
     }
 
     fn verilog(mut self) -> String {
-        let all: Vec<_> = (0..self.circuit.nodes().len()).collect();
+        let all = 0..self.circuit.nodes().len();
         let io_nodes = self.circuit.io_nodes();
-        let layout = ReadbackLayout::new(&self.registers);
-        let (state_bits, output_bits) = (layout.padded_bits(&all), layout.padded_bits(&io_nodes));
+        let layout = self.registers.readback_layout();
+        let state_bits = layout.bytes(all.clone()) * 8;
+        let output_bits = layout.bytes(io_nodes.iter().copied()) * 8;
         self.header(state_bits, output_bits);
         let (instances, read) = self.instances(&layout);
         self.signal_declarations(&read);
@@ -96,11 +62,11 @@ impl<'a> Writer<'a> {
             self.line(instance.to_string());
         }
         self.output.push('\n');
-        let used = layout.bits(&all);
+        let used = layout.bits(all);
         if used != state_bits {
             self.line(format!("assign states[{}:{used}] = 0;", state_bits - 1));
         }
-        let output_states = self.packed(&layout, &io_nodes, output_bits);
+        let output_states = self.packed(&layout, io_nodes, output_bits);
         self.line(format!("assign output_states = {output_states};"));
         self.output.push_str("endmodule\n");
         self.system(state_bits / 8, output_bits / 8);
@@ -141,9 +107,9 @@ impl<'a> Writer<'a> {
     }
 
     fn instances(&self, layout: &ReadbackLayout) -> (Vec<Instance>, BTreeSet<usize>) {
-        let builder = NodeModules::new(&self.registers);
+        let node_modules = NodeModules::new(self.registers);
         let mut instances: Vec<_> = (0..self.circuit.nodes().len())
-            .filter_map(|index| builder.instance(index))
+            .filter_map(|index| node_modules.instance(index))
             .collect();
         let mut read = BTreeSet::new();
         for instance in &instances {
@@ -156,7 +122,7 @@ impl<'a> Writer<'a> {
             if read.contains(&index) {
                 instance.signal();
             }
-            instance.readback(&self.registers.fields(index), layout.offsets[index]);
+            instance.readback(layout.node(index));
         }
         (instances, read)
     }
@@ -171,13 +137,14 @@ impl<'a> Writer<'a> {
     fn packed(&self, layout: &ReadbackLayout, nodes: &[usize], bits: usize) -> String {
         let mut parts: Vec<_> = nodes
             .iter()
-            .filter(|&&index| layout.widths[index] != 0)
-            .map(|&index| match layout.widths[index] {
-                1 => format!("states[{}]", layout.offsets[index]),
-                width => format!("states[{} +: {width}]", layout.offsets[index]),
+            .map(|&index| layout.node(index))
+            .filter(|node| node.width != 0)
+            .map(|node| match node.width {
+                1 => format!("states[{}]", node.offset),
+                width => format!("states[{} +: {width}]", node.offset),
             })
             .collect();
-        let padding = bits - layout.bits(nodes);
+        let padding = bits - layout.bits(nodes.iter().copied());
         if padding != 0 {
             parts.push(format!("{padding}'d0"));
         }
@@ -192,7 +159,7 @@ impl<'a> Writer<'a> {
     fn system(&mut self, state_bytes: usize, output_bytes: usize) {
         let node_count = self.circuit.nodes().len();
         let output_count = self.circuit.io_nodes().len();
-        let identity = self.circuit.identity;
+        let identity = self.circuit.identity();
         writeln!(
             self.output,
             "

@@ -63,7 +63,7 @@ impl Device {
             .map_err(io::Error::other)?;
         Ok(Self {
             port: Some(port),
-            node_count: circuit.nodes.len(),
+            node_count: circuit.nodes().len(),
             output_count: circuit.io_nodes().len(),
             state_bytes,
             output_bytes,

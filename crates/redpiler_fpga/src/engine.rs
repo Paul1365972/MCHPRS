@@ -30,7 +30,7 @@ impl<S: Simulator> PhaseEngine<S> {
         PhaseEngine {
             simulator,
             kinds: circuit.nodes().iter().map(|node| node.kind).collect(),
-            io_nodes: circuit.io_nodes(),
+            io_nodes: circuit.io_nodes().to_vec(),
             io_only,
             levers: circuit
                 .nodes()

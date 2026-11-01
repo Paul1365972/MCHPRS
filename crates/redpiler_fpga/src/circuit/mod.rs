@@ -213,8 +213,9 @@ pub struct Node {
 
 #[derive(Clone, Debug)]
 pub struct Circuit {
-    pub(crate) nodes: Vec<Node>,
-    pub(crate) identity: u64,
+    nodes: Vec<Node>,
+    io_nodes: Vec<usize>,
+    identity: u64,
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -226,24 +227,29 @@ impl Circuit {
         &self.nodes
     }
 
-    pub fn identity(&self) -> u64 {
-        self.identity
+    pub(crate) fn io_nodes(&self) -> &[usize] {
+        &self.io_nodes
     }
 
-    pub(crate) fn io_nodes(&self) -> Vec<usize> {
-        self.nodes
-            .iter()
-            .enumerate()
-            .filter(|(_, node)| node.is_input || node.is_output)
-            .map(|(index, _)| index)
-            .collect()
+    pub fn identity(&self) -> u64 {
+        self.identity
     }
 
     pub fn new(nodes: Vec<Node>) -> io::Result<Self> {
         if nodes.is_empty() || u32::try_from(nodes.len()).is_err() {
             return Err(invalid("node count must fit the 32-bit protocol"));
         }
-        let mut circuit = Self { nodes, identity: 0 };
+        let io_nodes = nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.is_input || node.is_output)
+            .map(|(index, _)| index)
+            .collect();
+        let mut circuit = Self {
+            nodes,
+            io_nodes,
+            identity: 0,
+        };
         circuit.validate()?;
         circuit.identity = circuit.fingerprint();
         Ok(circuit)

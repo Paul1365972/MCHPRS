@@ -1,5 +1,5 @@
 use super::expression::{signal_name, Expression};
-use crate::registers::Field;
+use crate::registers::{Field, NodeLayout};
 use std::fmt;
 
 pub(super) enum Connection {
@@ -79,16 +79,13 @@ impl Instance {
         self.port("next_signal", signal_name(self.index));
     }
 
-    pub(super) fn readback(&mut self, fields: &[Field], offset: usize) {
-        let mut offset = offset;
-        for &field in fields {
-            let width = field.width() as usize;
-            let slice = match width {
+    pub(super) fn readback(&mut self, layout: &NodeLayout) {
+        for (field, offset) in layout.field_offsets() {
+            let slice = match field.width() {
                 1 => format!("states[{offset}]"),
                 width => format!("states[{offset} +: {width}]"),
             };
             self.port(field_port(field), slice);
-            offset += width;
         }
     }
 }
@@ -116,7 +113,7 @@ impl fmt::Display for Instance {
 fn field_port(field: Field) -> &'static str {
     match field {
         Field::Powered => "powered",
-        Field::High => "high",
+        Field::High { .. } => "high",
         Field::Strength => "strength",
         Field::Locked => "locked",
         Field::Countdown(_) => "countdown",
