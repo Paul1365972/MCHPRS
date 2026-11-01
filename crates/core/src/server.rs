@@ -2,8 +2,8 @@ use crate::config::CONFIG;
 use crate::player::{Gamemode, PacketSender, Player};
 use crate::plot::commands::DECLARE_COMMANDS;
 use crate::plot::{self, database, Plot, PLOT_BLOCK_HEIGHT};
+use crate::utils;
 use crate::utils::HyphenatedUUID;
-use crate::{permissions, utils};
 use backtrace::Backtrace;
 use bus::Bus;
 use hmac::{Hmac, Mac};
@@ -178,10 +178,6 @@ impl MinecraftServer {
                 serde_json::from_slice(&content).expect("Invalid whitelist.json")
             }
         });
-
-        if let Some(permissions_config) = &CONFIG.luckperms {
-            permissions::init(permissions_config.clone()).unwrap();
-        }
 
         // Create server struct
         let mut server = MinecraftServer {

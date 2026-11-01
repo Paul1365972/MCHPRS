@@ -16,7 +16,6 @@ MCHPRS has made it possible to run programs such as [a limited form of Minecraft
 - [Building](#building)
 - [Running](#running)
 - [Configuration](#configuration)
-    - [LuckPerms](#luckperms)
 - [Usage](#usage)
     - [General Commands](#general-commands)
     - [Plot Ownership](#plot-ownership)
@@ -43,6 +42,8 @@ Once complete, the optimized executable will be located at `./target/release/mch
 | Path | Content |
 | --- | --- |
 | `world/plots` | The plots. If `world/plots/pTEMPLATE` exists at startup, new plots start as a copy of it. Before a plot file of an older version is replaced, it is kept as `p<x>,<z>.v<version>`. |
+
+MCHPRS has no permissions: every player can use every command and edit every plot.
 
 `cargo run --release -p mchprs_world_exporter -- world <saves>` writes the plots of `world` as a new Minecraft save in the directory `<saves>`.
 
@@ -78,26 +79,6 @@ enabled = true
 # This is the secret contained within `forwarding-secret-file` from your velocity config,
 # NOT the path to the file.
 secret = "<secret>"
-```
-
-### LuckPerms
-
-MCHPRS has basic support for LuckPerms with MySQL or MariaDB remote database storage. This implementation has no commands or interface and would have to be managed through LuckPerms running on a proxy (`/lpb`) or other server (`/lp`)
-
-To use LuckPerms, append this to your `Config.toml`:
-
-```toml
-[luckperms]
-# Define the address for the database.
-host = "localhost"
-# The name of the database the LuckPerms data is in.
-db_name = "minecraft"
-# Credentials for the database.
-username = "minecraft"
-password = "minecraft"
-# The name of the server, used for server specific permissions.
-# See: https://luckperms.net/wiki/Context
-server_context = "global"
 ```
 
 ## Usage
