@@ -85,3 +85,54 @@ impl Timers {
         due.push(index);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frozen(timers: &mut Timers, deadline: u128) -> [Vec<usize>; 4] {
+        let mut phases = Default::default();
+        timers.freeze(deadline, &mut phases);
+        phases
+    }
+
+    #[test]
+    fn due_timers_freeze_into_their_priority_phases() {
+        let mut timers = Timers::new(3);
+        timers.schedule(0, 5, TickPriority::Normal);
+        timers.schedule(1, 5, TickPriority::Highest);
+        timers.schedule(2, 6, TickPriority::High);
+        assert_eq!(timers.next_deadline(), Some(5));
+        assert_eq!(frozen(&mut timers, 5), [vec![1], vec![], vec![], vec![0]]);
+        timers.consume(0);
+        timers.consume(1);
+        assert!(!timers.is_pending(0));
+        assert_eq!(timers.next_deadline(), Some(6));
+    }
+
+    #[test]
+    fn remaining_counts_down_to_the_deadline() {
+        let mut timers = Timers::new(1);
+        timers.schedule(0, 18, TickPriority::Higher);
+        assert_eq!(
+            timers.remaining(0, 15),
+            Some(PendingTick {
+                delay: NonZeroU8::new(3).unwrap(),
+                priority: TickPriority::Higher,
+            })
+        );
+        assert_eq!(timers.remaining(0, 18), None);
+    }
+
+    #[test]
+    fn rescheduling_moves_a_timer_out_of_its_slot() {
+        let mut timers = Timers::new(3);
+        for index in 0..3 {
+            timers.schedule(index, 3, TickPriority::Normal);
+        }
+        timers.schedule(0, 4, TickPriority::Normal);
+        timers.schedule(2, 4, TickPriority::Normal);
+        assert_eq!(frozen(&mut timers, 3), [vec![], vec![], vec![], vec![1]]);
+        assert_eq!(frozen(&mut timers, 4), [vec![], vec![], vec![], vec![0, 2]]);
+    }
+}

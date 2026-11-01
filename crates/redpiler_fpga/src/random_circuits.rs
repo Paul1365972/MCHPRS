@@ -9,7 +9,7 @@ use std::num::NonZeroU8;
 
 const LINK_WINDOW: usize = 24;
 
-struct Random(u64);
+pub(crate) struct Random(pub(crate) u64);
 
 impl Random {
     fn next(&mut self) -> u64 {
@@ -19,11 +19,11 @@ impl Random {
         self.0
     }
 
-    fn below(&mut self, bound: usize) -> usize {
+    pub(crate) fn below(&mut self, bound: usize) -> usize {
         (self.next() % bound as u64) as usize
     }
 
-    fn chance(&mut self, numerator: usize, denominator: usize) -> bool {
+    pub(crate) fn chance(&mut self, numerator: usize, denominator: usize) -> bool {
         self.below(denominator) < numerator
     }
 
@@ -110,7 +110,7 @@ fn random_links(random: &mut Random, kinds: &[Kind], target: usize, count: usize
         .collect()
 }
 
-fn random_circuit(seed: u64, count: usize) -> Circuit {
+pub(crate) fn random_circuit(seed: u64, count: usize) -> Circuit {
     let mut random = Random(seed.wrapping_mul(0x9e3779b97f4a7c15) | 1);
     let kinds: Vec<_> = (0..count).map(|_| random_kind(&mut random)).collect();
     let mut nodes: Vec<_> = kinds
@@ -181,7 +181,7 @@ fn assert_same_states(
     );
 }
 
-fn input_nodes(circuit: &Circuit) -> Vec<usize> {
+pub(crate) fn input_nodes(circuit: &Circuit) -> Vec<usize> {
     (0..circuit.nodes().len())
         .filter(|&index| circuit.nodes()[index].kind.is_input())
         .collect()

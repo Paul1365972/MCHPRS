@@ -149,3 +149,95 @@ impl fmt::Display for Expression {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn powered(node: usize) -> Expression {
+        Expression::Signal(node).nonzero()
+    }
+
+    #[test]
+    fn any_of_nothing_is_false() {
+        assert_eq!(Expression::any([]), Expression::Bit(false));
+        assert_eq!(
+            Expression::any([Expression::Bit(false)]),
+            Expression::Bit(false)
+        );
+    }
+
+    #[test]
+    fn any_with_a_true_term_is_true() {
+        assert_eq!(
+            Expression::any([powered(1), Expression::Bit(true)]),
+            Expression::Bit(true)
+        );
+    }
+
+    #[test]
+    fn any_of_one_term_is_that_term() {
+        assert_eq!(
+            Expression::any([Expression::Bit(false), powered(1)]),
+            powered(1)
+        );
+    }
+
+    #[test]
+    fn any_flattens_sorts_and_deduplicates() {
+        let nested = Expression::any([powered(3), powered(1)]);
+        assert_eq!(
+            Expression::any([powered(2), nested, powered(1)]),
+            Expression::Any(vec![powered(1), powered(2), powered(3)])
+        );
+    }
+
+    #[test]
+    fn constant_conditions_select_a_branch() {
+        let then = Expression::Strength(SignalStrength::Fifteen);
+        let otherwise = Expression::Strength(SignalStrength::Zero);
+        assert_eq!(
+            Expression::Bit(true).select(then.clone(), otherwise.clone()),
+            then
+        );
+        assert_eq!(
+            Expression::Bit(false).select(then, otherwise.clone()),
+            otherwise
+        );
+    }
+
+    #[test]
+    fn attenuating_by_zero_keeps_the_term() {
+        assert_eq!(Expression::Signal(4).attenuated(0), Expression::Signal(4));
+    }
+
+    #[test]
+    fn maximum_halves_its_terms() {
+        assert_eq!(
+            Expression::maximum(&[]),
+            Expression::Strength(SignalStrength::Zero)
+        );
+        let terms = [
+            Expression::Signal(1),
+            Expression::Signal(2),
+            Expression::Signal(3),
+        ];
+        assert_eq!(
+            Expression::maximum(&terms).to_string(),
+            "maximum(next_signal_1, maximum(next_signal_2, next_signal_3))"
+        );
+    }
+
+    #[test]
+    fn operations_are_parenthesized_as_operands() {
+        let condition = Expression::any([powered(1), Expression::Signal(2).above(3)]);
+        let expression = condition.select(
+            Expression::Strength(SignalStrength::Fifteen),
+            Expression::Signal(4).attenuated(2),
+        );
+        assert_eq!(
+            expression.to_string(),
+            "(|next_signal_1 || (next_signal_2 > 4'd3)) ? 4'd15 : attenuated(next_signal_4, 4'd2)"
+        );
+    }
+}

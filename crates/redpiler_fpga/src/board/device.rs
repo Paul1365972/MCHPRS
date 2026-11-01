@@ -259,3 +259,102 @@ fn crc16(bytes: &[u8]) -> u16 {
         checksum
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn response(sequence: u8, opcode: u8, ticks: u64, count: u32, data: &[u8]) -> Vec<u8> {
+        let mut response = RESPONSE_SYNCHRONIZATION.to_vec();
+        response.extend([sequence, opcode]);
+        response.extend(ticks.to_le_bytes());
+        response.extend(count.to_le_bytes());
+        response.extend(data);
+        let checksum = crc16(&response[2..]);
+        response.extend(checksum.to_le_bytes());
+        response
+    }
+
+    #[test]
+    fn checksum_is_crc16_ccitt_false() {
+        assert_eq!(crc16(b"123456789"), 0x29b1);
+    }
+
+    #[test]
+    fn requests_carry_opcode_argument_version_and_checksum() {
+        let frame = request_frame(
+            7,
+            Command::Input {
+                index: 0x0403_0201,
+                powered: true,
+            },
+        );
+        assert_eq!(
+            frame[..14],
+            [0xa5, 0x5a, 7, 2, 1, 2, 3, 4, 1, 0, 0, 0, 1, 0]
+        );
+        assert_eq!(frame[14..], crc16(&frame[2..14]).to_le_bytes());
+        let frame = request_frame(0, Command::RunUntil(0x0102));
+        assert_eq!(frame[3..12], [8, 2, 1, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn only_status_and_run_until_responses_omit_the_payload() {
+        let commands = [
+            (Command::Snapshot, Payload::States),
+            (
+                Command::Input {
+                    index: 0,
+                    powered: false,
+                },
+                Payload::States,
+            ),
+            (Command::Identity, Payload::States),
+            (Command::Status, Payload::None),
+            (Command::RunUntil(0), Payload::None),
+            (Command::Outputs, Payload::Outputs),
+        ];
+        for (command, payload) in commands {
+            assert_eq!(command.payload(), payload, "{command:?}");
+        }
+    }
+
+    #[test]
+    fn responses_decode_ticks_and_data() {
+        let bytes = response(3, 0, 42, 5, &[0xde, 0xad]);
+        assert_eq!(
+            decode_response(&bytes, 3, Command::Snapshot, 5).unwrap(),
+            Response {
+                ticks: 42,
+                data: vec![0xde, 0xad],
+            }
+        );
+    }
+
+    #[test]
+    fn corrupt_responses_are_rejected() {
+        let valid = response(3, 9, 42, 5, &[0xde, 0xad]);
+        let decode = |bytes: &[u8]| decode_response(bytes, 3, Command::Outputs, 5);
+        let mut unsynchronized = valid.clone();
+        unsynchronized[0] = 0;
+        assert!(matches!(
+            decode(&unsynchronized),
+            Err(DeviceError::Synchronization)
+        ));
+        assert!(matches!(
+            decode(&response(4, 9, 42, 5, &[0xde, 0xad])),
+            Err(DeviceError::Sequence)
+        ));
+        assert!(matches!(
+            decode(&response(3, REJECTED_OPCODE, 42, 5, &[0xde, 0xad])),
+            Err(DeviceError::Opcode)
+        ));
+        assert!(matches!(
+            decode(&response(3, 9, 42, 6, &[0xde, 0xad])),
+            Err(DeviceError::NodeCount)
+        ));
+        let mut corrupted = valid.clone();
+        corrupted[16] ^= 1;
+        assert!(matches!(decode(&corrupted), Err(DeviceError::Checksum)));
+    }
+}

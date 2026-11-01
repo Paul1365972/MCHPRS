@@ -82,3 +82,34 @@ impl FromIterator<SignalStrength> for StrengthSet {
             .fold(Self::default(), |set, strength| set | Self::only(strength))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use SignalStrength::{Fifteen, One, Three, Two, Zero};
+
+    #[test]
+    fn extremes_and_single_values() {
+        let set: StrengthSet = [Three, One, Fifteen].into_iter().collect();
+        assert_eq!(set.len(), 3);
+        assert_eq!(set.minimum(), Some(One));
+        assert_eq!(set.maximum(), Some(Fifteen));
+        assert_eq!(set.single(), None);
+        assert_eq!(StrengthSet::ON.single(), Some(Fifteen));
+        assert_eq!(StrengthSet::default().maximum(), None);
+    }
+
+    #[test]
+    fn attenuation_saturates_at_zero() {
+        let set: StrengthSet = [One, Three, Fifteen].into_iter().collect();
+        let expected: StrengthSet = [Zero, One, SignalStrength::Thirteen].into_iter().collect();
+        assert_eq!(set.attenuated(2), expected);
+    }
+
+    #[test]
+    fn at_least_drops_weaker_strengths() {
+        let set: StrengthSet = [Zero, One, Three].into_iter().collect();
+        let expected: StrengthSet = [Three].into_iter().collect();
+        assert_eq!(set.at_least(Two), expected);
+    }
+}
