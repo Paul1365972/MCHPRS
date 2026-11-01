@@ -1,47 +1,87 @@
-use clap::Parser;
 use mchprs_core::server::{get_version_string, MinecraftServer};
-use std::fs;
+use std::fs::{self, File};
+use std::io;
 use std::path::Path;
-use tracing::debug;
-use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
-use tracing_subscriber::EnvFilter;
+use std::process::ExitCode;
+use std::sync::Mutex;
+use tracing::warn;
+use tracing_subscriber::filter::{LevelFilter, Targets};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{fmt, Layer};
 
-#[derive(Parser)]
-struct Cli {
-    /// Print version
-    #[arg(short, long)]
-    version: bool,
-}
+const LOGS: &str = "./logs";
 
-fn main() {
-    let cli = Cli::parse();
-    if cli.version {
-        println!("{}", get_version_string());
-        return;
+fn main() -> ExitCode {
+    match std::env::args().nth(1).as_deref() {
+        None => {}
+        Some("-v" | "--version") => {
+            println!("{}", get_version_string());
+            return ExitCode::SUCCESS;
+        }
+        Some(argument) => {
+            eprintln!("error: unknown argument `{argument}`");
+            eprintln!("usage: mchprs [--version]");
+            return ExitCode::FAILURE;
+        }
     }
 
-    // Setup logging
-    let logfile = tracing_appender::rolling::daily("./logs", "mchprs.log");
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .with_env_var("MCHPRS_LOG")
-        .from_env_lossy();
-    tracing_subscriber::fmt()
-        .with_writer(logfile.and(std::io::stdout))
-        .with_env_filter(env_filter)
+    let log_file = match open_log_file() {
+        Ok(file) => file,
+        Err(error) => {
+            eprintln!("Failed to open {LOGS}/latest.log: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (filter, filter_error) = log_filter();
+    tracing_subscriber::registry()
+        .with(
+            fmt::layer()
+                .log_internal_errors(true)
+                .with_filter(filter.clone()),
+        )
+        .with(
+            fmt::layer()
+                .log_internal_errors(true)
+                .with_ansi(false)
+                .with_writer(Mutex::new(log_file))
+                .with_filter(filter),
+        )
         .init();
-
-    // Move old log file into logs folder
-    let old_log_path = Path::new("./output.log");
-    if old_log_path.exists() {
-        let dest_path = "./logs/old_output.log";
-        fs::rename(old_log_path, "./logs/old_output.log").unwrap();
-        debug!(
-            "Moving old log file from {old_log_path} to {dest_path}",
-            old_log_path = old_log_path.display()
-        );
+    if let Some(error) = filter_error {
+        warn!("Invalid MCHPRS_LOG, using `info`: {error}");
     }
 
     MinecraftServer::run();
+    ExitCode::SUCCESS
+}
+
+fn log_filter() -> (Targets, Option<String>) {
+    let default = Targets::new().with_default(LevelFilter::INFO);
+    let value = std::env::var("MCHPRS_LOG").unwrap_or_default();
+    let directives: Vec<&str> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|directive| !directive.is_empty())
+        .collect();
+    if directives.is_empty() {
+        return (default, None);
+    }
+    match directives.join(",").parse::<Targets>() {
+        Ok(targets) => (targets, None),
+        Err(error) => (default, Some(error.to_string())),
+    }
+}
+
+fn open_log_file() -> io::Result<File> {
+    fs::create_dir_all(LOGS)?;
+    let latest = Path::new(LOGS).join("latest.log");
+    if latest.exists() {
+        let mut number = 1u32;
+        while Path::new(LOGS).join(format!("{number}.log")).exists() {
+            number += 1;
+        }
+        fs::rename(&latest, Path::new(LOGS).join(format!("{number}.log")))?;
+    }
+    File::create(latest)
 }
