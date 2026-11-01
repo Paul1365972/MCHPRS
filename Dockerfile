@@ -17,7 +17,6 @@ COPY --from=planner /app/recipe.json ./
 RUN cargo chef cook --locked --release --recipe-path recipe.json
 COPY ./src/ ./src/
 COPY ./crates/ ./crates/
-COPY ./mc_data/ ./mc_data/
 COPY ./Cargo.toml ./Cargo.lock ./
 RUN cargo build --locked --release
 

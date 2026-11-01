@@ -6,9 +6,9 @@ pub mod blocks;
 mod generated;
 pub mod items;
 pub mod region;
+pub mod registries;
 pub mod signal_strength;
 
-pub use mchprs_proc_macros::BlockProperty;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;

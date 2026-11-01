@@ -1,8 +1,8 @@
 #[cfg(feature = "nbt")]
 mod nbt_codec;
 
+use crate::registries::{block_entity_type, menu};
 use crate::signal_strength::SignalStrength;
-use mchprs_proc_macros::protocol_id;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -72,9 +72,9 @@ impl ContainerType {
     pub fn window_type(self) -> i32 {
         // https://wiki.vg/Inventory
         match self {
-            ContainerType::Furnace => protocol_id!("minecraft:menu", "minecraft:furnace"),
-            ContainerType::Barrel => protocol_id!("minecraft:menu", "minecraft:generic_9x3"),
-            ContainerType::Hopper => protocol_id!("minecraft:menu", "minecraft:hopper"),
+            ContainerType::Furnace => menu::FURNACE,
+            ContainerType::Barrel => menu::GENERIC_9X3,
+            ContainerType::Hopper => menu::HOPPER,
         }
     }
 }
@@ -97,19 +97,14 @@ pub enum BlockEntity {
 impl BlockEntity {
     /// The protocol id for the block entity
     pub fn ty(&self) -> i32 {
-        macro_rules! block_entity_id {
-            ($name:literal) => {
-                protocol_id!("minecraft:block_entity_type", $name)
-            };
-        }
         match self {
-            BlockEntity::Comparator { .. } => block_entity_id!("minecraft:comparator"),
+            BlockEntity::Comparator { .. } => block_entity_type::COMPARATOR,
             BlockEntity::Container { ty, .. } => match ty {
-                ContainerType::Furnace => block_entity_id!("minecraft:furnace"),
-                ContainerType::Barrel => block_entity_id!("minecraft:barrel"),
-                ContainerType::Hopper => block_entity_id!("minecraft:hopper"),
+                ContainerType::Furnace => block_entity_type::FURNACE,
+                ContainerType::Barrel => block_entity_type::BARREL,
+                ContainerType::Hopper => block_entity_type::HOPPER,
             },
-            BlockEntity::Sign(_) => block_entity_id!("minecraft:sign"),
+            BlockEntity::Sign(_) => block_entity_type::SIGN,
         }
     }
 }

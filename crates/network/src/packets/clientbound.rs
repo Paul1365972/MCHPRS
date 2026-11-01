@@ -1,7 +1,7 @@
 use super::{PacketEncoder, PacketEncoderExt, PalettedContainer, PlayerProperty, SlotData};
 use crate::nbt_util::{NBTCompound, NBTMap};
 use crate::text::TextComponent;
-use mchprs_proc_macros::protocol_id;
+use mchprs_blocks::registries::command_argument_type;
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -407,35 +407,30 @@ pub enum CDeclareCommandsNodeParser {
 impl CDeclareCommandsNodeParser {
     fn write(&self, buf: &mut Vec<u8>) {
         use CDeclareCommandsNodeParser::*;
-        macro_rules! arg_type {
-            ($name:literal) => {
-                protocol_id!("minecraft:command_argument_type", $name)
-            };
-        }
         match self {
             Entity(flags) => {
-                buf.write_varint(arg_type!("minecraft:entity"));
+                buf.write_varint(command_argument_type::ENTITY);
                 buf.write_byte(*flags);
             }
-            Vec2 => buf.write_varint(arg_type!("minecraft:vec2")),
-            Vec3 => buf.write_varint(arg_type!("minecraft:vec3")),
-            BlockPos => buf.write_varint(arg_type!("minecraft:block_pos")),
-            ColumnPos => buf.write_varint(arg_type!("minecraft:column_pos")),
-            BlockState => buf.write_varint(arg_type!("minecraft:block_state")),
+            Vec2 => buf.write_varint(command_argument_type::VEC2),
+            Vec3 => buf.write_varint(command_argument_type::VEC3),
+            BlockPos => buf.write_varint(command_argument_type::BLOCK_POS),
+            ColumnPos => buf.write_varint(command_argument_type::COLUMN_POS),
+            BlockState => buf.write_varint(command_argument_type::BLOCK_STATE),
             Integer(min, max) => {
-                buf.write_varint(arg_type!("brigadier:integer"));
+                buf.write_varint(command_argument_type::BRIGADIER_INTEGER);
                 buf.write_byte(3); // Supply min and max value
                 buf.write_int(*min);
                 buf.write_int(*max);
             }
             Float(min, max) => {
-                buf.write_varint(arg_type!("brigadier:float"));
+                buf.write_varint(command_argument_type::BRIGADIER_FLOAT);
                 buf.write_byte(3);
                 buf.write_float(*min);
                 buf.write_float(*max);
             }
             String(ty) => {
-                buf.write_varint(arg_type!("brigadier:string"));
+                buf.write_varint(command_argument_type::BRIGADIER_STRING);
                 buf.write_varint(*ty);
             }
         }

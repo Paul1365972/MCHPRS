@@ -248,3 +248,11 @@ items:
   "minecraft:milk_bucket": "max_stack:1"
   "minecraft:redstone": "block"
   "minecraft:ender_eye": ""
+
+# Registries whose protocol ids are generated into crates/blocks/src/registries.rs
+registries:
+  - block_entity_type
+  - command_argument_type
+  - entity_type
+  - menu
+  - sound_event
