@@ -12,6 +12,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 mod compile;
+mod diff;
+mod experiment;
+mod run;
 mod test;
 
 #[derive(Parser)]
@@ -62,7 +65,51 @@ enum Command {
         #[arg(long)]
         passes: Option<String>,
     },
+    /// Run an experiment file on one backend and print a JSON report
+    Run {
+        experiment: PathBuf,
+        #[arg(long, default_value = "direct")]
+        backend: String,
+        /// Write the report to this file instead of stdout
+        #[arg(short = 'o')]
+        output: Option<PathBuf>,
+    },
+    /// List the compiled inputs and outputs of an experiment's plot
+    Inputs {
+        experiment: PathBuf,
+    },
+    /// Write the Verilog that the board backend would synthesize for an experiment's plot
+    #[cfg(feature = "fpga")]
+    Verilog {
+        experiment: PathBuf,
+        /// Directory to write circuit.v and the RTL library into
+        #[arg(short = 'o')]
+        output: PathBuf,
+    },
+    /// Run an experiment on several backends side by side and report the first difference
+    Diff {
+        experiment: PathBuf,
+        /// Comma separated backends, for example direct,phase
+        #[arg(long, value_delimiter = ',', default_value = "direct,phase")]
+        backends: Vec<String>,
+        /// Compare every this many ticks
+        #[arg(long, default_value_t = 1)]
+        every: u64,
+        /// Compare only what the world shows, not pending ticks
+        #[arg(long)]
+        ignore_pending: bool,
+        /// Write the report to this file instead of stdout
+        #[arg(short = 'o')]
+        output: Option<PathBuf>,
+    },
     Version,
+}
+
+fn report_output(path: &Option<PathBuf>) -> std::io::Result<Box<dyn std::io::Write>> {
+    Ok(match path {
+        Some(path) => Box::new(std::fs::File::create(path)?),
+        None => Box::new(std::io::stdout().lock()),
+    })
 }
 
 fn load_world(
@@ -144,7 +191,9 @@ pub fn get_version_string() -> String {
 }
 
 fn main() -> ExitCode {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
 
     let cli = Cli::parse();
 
@@ -182,6 +231,59 @@ fn main() -> ExitCode {
                 backend: None,
             };
             compile::compile(&input_path, &output_path, &options);
+        }
+        Command::Run {
+            experiment,
+            backend,
+            output,
+        } => {
+            let result = report_output(&output)
+                .map_err(Into::into)
+                .and_then(|mut output| run::run(&experiment, &backend, output.as_mut()));
+            if let Err(error) = result {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+        Command::Inputs { experiment } => {
+            if let Err(error) = experiment::list_inputs(&experiment) {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+        #[cfg(feature = "fpga")]
+        Command::Verilog { experiment, output } => {
+            if let Err(error) = experiment::write_verilog(&experiment, &output) {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+        Command::Diff {
+            experiment,
+            backends,
+            every,
+            ignore_pending,
+            output,
+        } => {
+            let result = report_output(&output)
+                .map_err(Into::into)
+                .and_then(|mut output| {
+                    diff::diff(
+                        &experiment,
+                        &backends,
+                        every,
+                        ignore_pending,
+                        output.as_mut(),
+                    )
+                });
+            match result {
+                Ok(true) => {}
+                Ok(false) => return ExitCode::FAILURE,
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    return ExitCode::FAILURE;
+                }
+            }
         }
         Command::Version => {
             println!("{}", get_version_string());

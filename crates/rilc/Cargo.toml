@@ -11,8 +11,17 @@ license.workspace = true
 repository.workspace = true
 include.workspace = true
 
+[features]
+fpga = ["dep:mchprs_redpiler_fpga"]
+
 [dependencies]
 mchprs_redpiler = { path = "../redpiler" }
+mchprs_redpiler_fpga = { path = "../redpiler_fpga", optional = true }
+mchprs_save_data = { path = "../save_data" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+toml = { workspace = true }
 mchprs_blocks = { path = "../blocks" }
 mchprs_world = { path = "../world", features = ["testing"] }
 mchprs_schematic = { path = "../schematic" }

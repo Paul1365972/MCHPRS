@@ -2144,9 +2144,15 @@ dependencies = [
  "line-index",
  "mchprs_blocks",
  "mchprs_redpiler",
+ "mchprs_redpiler_fpga",
+ "mchprs_save_data",
  "mchprs_schematic",
  "mchprs_world",
  "owo-colors",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
  "tracing-subscriber",
 ]
 
