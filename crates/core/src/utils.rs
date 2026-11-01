@@ -1,5 +1,6 @@
+use crate::item_stack::ItemStack;
 use mchprs_blocks::block_entities::InventoryEntry;
-use mchprs_blocks::items::{Item, ItemStack};
+use mchprs_blocks::items::Item;
 use mchprs_network::packets::SlotData;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};

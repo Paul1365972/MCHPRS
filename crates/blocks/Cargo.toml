@@ -15,5 +15,8 @@ include.workspace = true
 
 [dependencies]
 mchprs_proc_macros = { path = "../proc_macros" }
-serde = { workspace = true }
-hematite-nbt = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+hematite-nbt = { workspace = true, optional = true }
+
+[features]
+nbt = ["dep:hematite-nbt"]
