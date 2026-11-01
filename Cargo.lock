@@ -2149,6 +2149,7 @@ dependencies = [
  "mchprs_redstone",
  "mchprs_save_data",
  "mchprs_schematic",
+ "mchprs_utils",
  "mchprs_world",
  "owo-colors",
  "serde",

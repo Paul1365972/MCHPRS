@@ -238,7 +238,7 @@ fn start_backend(
             .parse::<mchprs_redpiler_fpga::Target>()
             .map_err(|_| format!("unknown backend {name}; use direct, phase, verilator or fpga"))?;
         mchprs_redpiler_fpga::start(target, netlist, ticks, options.io_only, progress)
-            .map_err(|error| error.to_string())
+            .map_err(|error| mchprs_utils::ErrorChain(&*error).to_string())
     }
     #[cfg(not(feature = "fpga"))]
     {

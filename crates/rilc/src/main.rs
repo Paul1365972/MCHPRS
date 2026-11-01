@@ -198,7 +198,7 @@ fn main() -> ExitCode {
     match execute(Cli::parse().command) {
         Ok(code) => code,
         Err(error) => {
-            eprintln!("error: {error}");
+            eprintln!("error: {}", mchprs_utils::ErrorChain(&*error));
             ExitCode::FAILURE
         }
     }

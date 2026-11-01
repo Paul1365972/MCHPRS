@@ -23,3 +23,18 @@ macro_rules! nbt_unwrap_val {
         }
     };
 }
+
+/// Displays an error followed by each of its sources, separated by colons.
+pub struct ErrorChain<'a>(pub &'a (dyn std::error::Error + 'static));
+
+impl std::fmt::Display for ErrorChain<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}", self.0)?;
+        let mut source = self.0.source();
+        while let Some(error) = source {
+            write!(formatter, ": {error}")?;
+            source = error.source();
+        }
+        Ok(())
+    }
+}
