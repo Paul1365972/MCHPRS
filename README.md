@@ -71,6 +71,8 @@ The environment variable `MCHPRS_LOG` sets the log level, for example `MCHPRS_LO
 
 MCHPRS will generate a `Config.toml` file in the current working directory when starting the server if it does not exist.
 
+A missing key takes its default and an unknown key is ignored.
+
 The following options are available at the toplevel (under no header):
 | Field | Description | Default |
 | --- | --- |--- |
