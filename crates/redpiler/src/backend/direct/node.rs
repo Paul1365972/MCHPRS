@@ -137,7 +137,7 @@ impl ForwardLinks {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum NodeType {
+pub enum NodeKind {
     Repeater {
         delay: u8,
         prioritized: bool,
@@ -214,7 +214,7 @@ impl FromIterator<SignalStrength> for NodeInput {
 #[repr(align(64))]
 #[derive(Debug, Clone)]
 pub struct Node {
-    pub ty: NodeType,
+    pub kind: NodeKind,
     pub default_inputs: NodeInput,
     pub side_inputs: NodeInput,
 

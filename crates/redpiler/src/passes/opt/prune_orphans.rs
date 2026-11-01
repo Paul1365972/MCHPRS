@@ -1,25 +1,22 @@
 //! # [`PruneOrphans`]
 //!
-//! This pass removes any nodes in the graph that aren't transitively connected to an output
-//! redstone component by using Depth-First-Search.
+//! Removes every node that neither is a port nor leads to a port or a pending tick.
 
-use crate::compile_graph::{CompileGraph, Direction};
+use crate::graph::{Direction, Graph};
 use crate::passes::{AnalysisInfos, Pass};
 use itertools::Itertools;
 
 pub struct PruneOrphans;
 
 impl Pass for PruneOrphans {
-    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
-        // We start searching from output nodes and nodes with pending ticks
+    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
         let mut worklist = graph
             .node_indices()
-            .filter(|&idx| graph[idx].is_output || graph[idx].state.pending_tick)
+            .filter(|&idx| graph[idx].port.is_some() || graph[idx].state.pending_tick.is_some())
             .collect_vec();
 
         let mut visited = vec![false; graph.node_bound()];
 
-        // Visit initial nodes
         for &idx in &worklist {
             visited[idx.index()] = true;
         }
@@ -33,13 +30,7 @@ impl Pass for PruneOrphans {
             }
         }
 
-        graph.retain_nodes(|g, idx| {
-            let visible = visited[idx.index()];
-            let is_input = g[idx].is_input;
-
-            // Retain inputs so they can be updated when used
-            visible || is_input
-        });
+        graph.retain_nodes(|_, idx| visited[idx.index()]);
     }
 
     fn status_message(&self) -> &'static str {

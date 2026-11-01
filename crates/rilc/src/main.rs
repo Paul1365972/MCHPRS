@@ -2,13 +2,14 @@ use clap::{Parser, Subcommand};
 use line_index::{LineIndex, TextSize};
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::{
-    compile_graph::CompileGraph,
     extract::extract,
+    graph::Graph,
     passes::{PassPipeline, PassPipelineBuilder, PassRegistry},
-    ril::RILModule,
-    CompilerOptions,
+    ril::{DumpGraph, RILModule},
+    CompileOptions, CompilerOptions,
 };
 use std::fs;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -72,8 +73,8 @@ enum Command {
 fn extract_schematic(
     ril_file_path: &Path,
     schematic_path: &str,
-    options: &CompilerOptions,
-) -> Option<CompileGraph> {
+    options: &CompileOptions,
+) -> Option<Graph> {
     let schematic_path = ril_file_path.parent().unwrap().join(schematic_path);
     let Some(schematic) = fs::read(&schematic_path)
         .ok()
@@ -92,7 +93,24 @@ fn extract_schematic(
     }
     let origin = schematic.volume.region().min();
     let volume = schematic.volume.translated(BlockPos::zero() - origin);
-    Some(extract(&volume, volume.region(), &[], options))
+    match extract(&volume, volume.region(), &[], options) {
+        Ok(graph) => Some(graph),
+        Err(error) => {
+            eprintln!("error: {error}");
+            None
+        }
+    }
+}
+
+fn run_pipeline(pipeline: &PassPipeline, mut graph: Graph, print_after_all: bool) -> Graph {
+    let _ = pipeline.run_passes(&mut graph, &mut |pass, graph| {
+        if print_after_all {
+            println!("Circuit after pass: {}", pass.debug_name());
+            graph.dump();
+        }
+        ControlFlow::Continue(())
+    });
+    graph
 }
 
 fn load_ril(path: &Path, src: &str) -> Option<RILModule> {

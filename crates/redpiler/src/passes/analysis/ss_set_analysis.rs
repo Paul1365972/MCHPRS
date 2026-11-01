@@ -1,7 +1,8 @@
 //! # [`SSSetAnalysis`]
 //!
 //! This analysis approximates output strengths using the compile graph's node states and inputs.
-//! Every node starts with its current output strength. Sweeps in index order grow each set by what
+//! Every node starts with its current output strength, and an input with every strength the
+//! caller can set it to. Sweeps in index order grow each set by what
 //! the sets of its inputs allow until a sweep changes nothing. Sets only grow, so the sweeps
 //! terminate and can retain tighter bounds through cycles. Correlations between inputs are not
 //! tracked.
@@ -9,7 +10,7 @@
 //! A queued repeater tick can emit a pulse after its input disappears, so pending repeaters
 //! also admit both 0 and 15.
 
-use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx, NodeState, NodeType};
+use crate::graph::{Direction, Graph, LinkKind, NodeIdx, NodeKind, NodeState};
 use crate::passes::{AnalysisInfo, AnalysisInfos, AnalysisUsage, Pass};
 use mchprs_blocks::blocks::ComparatorMode;
 
@@ -19,6 +20,15 @@ pub struct SSSet(u16);
 impl SSSet {
     pub const ZERO: SSSet = SSSet(1);
     pub const BINARY: SSSet = SSSet(1 | 1 << 15);
+
+    const ALL: SSSet = SSSet(u16::MAX);
+
+    fn drivable_strengths(kind: &NodeKind) -> SSSet {
+        match kind {
+            NodeKind::Comparator { .. } => SSSet::ALL,
+            _ => SSSet::BINARY,
+        }
+    }
 
     pub fn singleton(ss: u8) -> SSSet {
         SSSet(1 << ss)
@@ -107,13 +117,16 @@ impl AnalysisInfo for SSSetInfo {}
 pub struct SSSetAnalysis;
 
 impl Pass for SSSetAnalysis {
-    fn run_pass(&self, graph: &mut CompileGraph, analysis_infos: &mut AnalysisInfos) {
+    fn run_pass(&self, graph: &mut Graph, analysis_infos: &mut AnalysisInfos) {
         let nodes: Vec<NodeIdx> = graph.node_indices().collect();
         let mut sets = vec![None; graph.node_bound()];
         let mut dirty = vec![true; graph.node_bound()];
         for &node_idx in &nodes {
             let node = &graph[node_idx];
-            let initial = if node.state.pending_tick && matches!(node.ty, NodeType::Repeater { .. })
+            let initial = if node.is_input() {
+                SSSet::drivable_strengths(&node.kind)
+            } else if node.state.pending_tick.is_some()
+                && matches!(node.kind, NodeKind::Repeater { .. })
             {
                 SSSet::BINARY
             } else {
@@ -134,7 +147,7 @@ impl Pass for SSSetAnalysis {
                 let (default_input, side_input) = collect_inputs(graph, &sets, node_idx);
                 let node = &graph[node_idx];
                 let old = sets[node_idx.index()].unwrap();
-                let new = old.union(evaluate(&node.ty, &node.state, default_input, side_input));
+                let new = old.union(evaluate(&node.kind, &node.state, default_input, side_input));
                 if new == old {
                     continue;
                 }
@@ -163,38 +176,34 @@ impl Pass for SSSetAnalysis {
     }
 }
 
-fn collect_inputs(
-    graph: &CompileGraph,
-    sets: &[Option<SSSet>],
-    node_idx: NodeIdx,
-) -> (SSSet, SSSet) {
+fn collect_inputs(graph: &Graph, sets: &[Option<SSSet>], node_idx: NodeIdx) -> (SSSet, SSSet) {
     let mut default_input = SSSet::ZERO;
     let mut side_input = SSSet::ZERO;
     for edge in graph.edges(node_idx, Direction::Incoming) {
         let link = edge.weight();
         let source = sets[edge.source().index()].unwrap().decay(link.weight);
-        match link.ty {
-            LinkType::Default => default_input = default_input.combine(source),
-            LinkType::Side => side_input = side_input.combine(source),
+        match link.kind {
+            LinkKind::Default => default_input = default_input.combine(source),
+            LinkKind::Side => side_input = side_input.combine(source),
         }
     }
     (default_input, side_input)
 }
 
-fn evaluate(ty: &NodeType, state: &NodeState, default_input: SSSet, side_input: SSSet) -> SSSet {
-    match ty {
-        NodeType::Repeater { .. } => {
+fn evaluate(kind: &NodeKind, state: &NodeState, default_input: SSSet, side_input: SSSet) -> SSSet {
+    match kind {
+        NodeKind::Repeater { .. } => {
             if side_input.contains(0) {
                 default_input.to_binary()
             } else {
                 SSSet::singleton(state.power.get())
             }
         }
-        NodeType::Torch => default_input.to_inverted_binary(),
-        NodeType::Lamp | NodeType::Trapdoor | NodeType::NoteBlock { .. } => {
+        NodeKind::Torch => default_input.to_inverted_binary(),
+        NodeKind::Lamp | NodeKind::Trapdoor | NodeKind::NoteBlock { .. } => {
             default_input.to_binary()
         }
-        NodeType::Comparator {
+        NodeKind::Comparator {
             mode, far_input, ..
         } => {
             let input = match far_input {
@@ -206,8 +215,8 @@ fn evaluate(ty: &NodeType, state: &NodeState, default_input: SSSet, side_input: 
                 ComparatorMode::Subtract => input.saturating_sub(side_input),
             }
         }
-        NodeType::Wire => default_input,
-        NodeType::Constant => SSSet::singleton(state.power.get()),
-        NodeType::Button | NodeType::Lever | NodeType::PressurePlate => SSSet::BINARY,
+        NodeKind::Wire => default_input,
+        NodeKind::Constant => SSSet::singleton(state.power.get()),
+        NodeKind::Button | NodeKind::Lever | NodeKind::PressurePlate => SSSet::BINARY,
     }
 }

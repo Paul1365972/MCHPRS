@@ -2,23 +2,16 @@ pub mod direct;
 
 use std::sync::Arc;
 
-use super::compile_graph::CompileGraph;
+use super::graph::Graph;
 use super::task_monitor::TaskMonitor;
 use super::CompilerOptions;
 use enum_dispatch::enum_dispatch;
 use mchprs_blocks::BlockPos;
-use mchprs_redstone::tick_queue::TickEntry;
 use mchprs_redstone::RedstoneWorld;
 
 #[enum_dispatch]
 pub trait JITBackend {
-    fn compile(
-        &mut self,
-        graph: CompileGraph,
-        ticks: Vec<TickEntry>,
-        options: &CompilerOptions,
-        monitor: Arc<TaskMonitor>,
-    );
+    fn compile(&mut self, graph: Graph, options: &CompilerOptions, monitor: Arc<TaskMonitor>);
     fn tick(&mut self);
 
     fn tickn(&mut self, ticks: u64) {

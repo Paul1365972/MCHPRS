@@ -3,7 +3,7 @@ use crate::{
         argument::ArgumentType,
         context::ExecutionContext,
         define::{alt, arg, Command},
-        error::{CommandResult, RuntimeError},
+        error::{CommandError, CommandResult, RuntimeError},
         registry::CommandRegistry,
         value::{PlayerTarget, PlotCoordinates},
     },
@@ -453,7 +453,8 @@ fn exec_redpiler_compile(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let plot = ctx.plot_mut();
     plot.reset_redpiler();
     let start_time = Instant::now();
-    plot.start_redpiler(options);
+    plot.start_redpiler(options)
+        .map_err(|error| CommandError::runtime(error.to_string()))?;
     let duration = start_time.elapsed();
     plot.publish_world();
     let msg = format!("Compilation completed in {:?}", duration);

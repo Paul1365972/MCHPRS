@@ -27,7 +27,9 @@ impl RedpilerInstance {
         let region = world.blocks().region();
         let monitor = Default::default();
         let ticks = world.pending_ticks().to_vec();
-        compiler.compile(world, region, options.clone(), ticks, monitor);
+        compiler
+            .compile(world, region, options.clone(), ticks, monitor)
+            .expect("the test circuit has no declared ports");
         RedpilerInstance { options, compiler }
     }
 }

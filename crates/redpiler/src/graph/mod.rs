@@ -1,16 +1,20 @@
+mod stable_graph;
+
+use crate::ports::Role;
 use mchprs_blocks::blocks::{ComparatorMode, Instrument};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
+use mchprs_redstone::tick_queue::TickPriority;
 use smallvec::SmallVec;
 use stable_graph::{NodeIndex, StableGraph};
-
-mod stable_graph;
 
 pub use stable_graph::{Direction, EdgeRef};
 pub type NodeIdx = NodeIndex<u32>;
 
+pub type Graph = StableGraph<Node, Link, u32>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum NodeType {
+pub enum NodeKind {
     Repeater {
         delay: u8,
         prioritized: bool,
@@ -34,38 +38,58 @@ pub enum NodeType {
     },
 }
 
-impl NodeType {
-    pub fn is_normally_input(&self) -> bool {
-        matches!(
-            self,
-            NodeType::Button | NodeType::Lever | NodeType::PressurePlate
-        )
+impl NodeKind {
+    pub fn conventional_role(&self) -> Option<Role> {
+        match self {
+            NodeKind::Button | NodeKind::Lever | NodeKind::PressurePlate => Some(Role::Input),
+            NodeKind::Trapdoor | NodeKind::Lamp | NodeKind::NoteBlock { .. } => Some(Role::Output),
+            _ => None,
+        }
     }
 
-    pub fn is_normally_output(&self) -> bool {
+    /// Whether the caller can own the output of this node.
+    pub fn is_drivable(&self) -> bool {
         matches!(
             self,
-            NodeType::Trapdoor | NodeType::Lamp | NodeType::NoteBlock { .. }
+            NodeKind::Button
+                | NodeKind::Lever
+                | NodeKind::PressurePlate
+                | NodeKind::Repeater { .. }
+                | NodeKind::Comparator { .. }
+                | NodeKind::Torch
         )
     }
 
     pub fn is_binary_reader(&self) -> bool {
-        !matches!(self, NodeType::Comparator { .. } | NodeType::Wire)
+        !matches!(self, NodeKind::Comparator { .. } | NodeKind::Wire)
     }
 
     pub fn is_binary_source(&self) -> bool {
         !matches!(
             self,
-            NodeType::Comparator { .. } | NodeType::Wire | NodeType::Constant
+            NodeKind::Comparator { .. } | NodeKind::Wire | NodeKind::Constant
         )
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PendingTick {
+    pub delay: u32,
+    pub priority: TickPriority,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct QueuedTick {
+    pub tick: PendingTick,
+    /// Ticks due together with the same priority run in this order
+    pub order: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct NodeState {
     pub power: SignalStrength,
     pub repeater_locked: bool,
-    pub pending_tick: bool,
+    pub pending_tick: Option<QueuedTick>,
 }
 
 impl NodeState {
@@ -94,46 +118,48 @@ impl NodeState {
 }
 
 #[derive(Debug)]
-pub struct CompileNode {
-    pub ty: NodeType,
+pub struct Node {
+    pub kind: NodeKind,
     pub block: SmallVec<[(BlockPos, u32); 1]>,
     pub name: Option<String>,
     pub state: NodeState,
+    pub port: Option<Role>,
+}
 
-    pub is_input: bool,
-    pub is_output: bool,
+impl Node {
+    pub fn is_input(&self) -> bool {
+        self.port == Some(Role::Input)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum LinkType {
+pub enum LinkKind {
     Default,
     Side,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CompileLink {
-    pub ty: LinkType,
+pub struct Link {
+    pub kind: LinkKind,
     pub weight: u8,
 }
 
-impl CompileLink {
-    pub fn new(ty: LinkType, weight: u8) -> Self {
-        Self { ty, weight }
+impl Link {
+    pub fn new(kind: LinkKind, weight: u8) -> Self {
+        Self { kind, weight }
     }
 
     pub fn default(weight: u8) -> Self {
         Self {
-            ty: LinkType::Default,
+            kind: LinkKind::Default,
             weight,
         }
     }
 
     pub fn side(weight: u8) -> Self {
         Self {
-            ty: LinkType::Side,
+            kind: LinkKind::Side,
             weight,
         }
     }
 }
-
-pub type CompileGraph = StableGraph<CompileNode, CompileLink, u32>;

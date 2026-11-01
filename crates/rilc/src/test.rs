@@ -3,14 +3,12 @@ use mchprs_redpiler::{
     passes::{build_pass_pipeline, PassRegistry},
     ril::{self, RILModule, RILTest},
     string_replacer::StringReplacer,
-    TaskMonitor,
 };
 use owo_colors::OwoColorize as _;
 use std::{
     ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 /// Recursively search for ril files starting from `path` and collect into `paths`.
@@ -53,7 +51,11 @@ fn run_test(
 ) -> TestOutcome {
     let graph = match &test.schematic_path {
         Some(schematic_path) => {
-            match crate::extract_schematic(test_path, schematic_path, &test.options) {
+            match crate::extract_schematic(
+                test_path,
+                schematic_path,
+                &test.options.compile_options(),
+            ) {
                 Some(graph) => graph,
                 None => return TestOutcome::Failed,
             }
@@ -67,10 +69,9 @@ fn run_test(
             Some(pipeline) => pipeline,
             None => return TestOutcome::Failed,
         },
-        None => build_pass_pipeline(&registry, &test.options),
+        None => build_pass_pipeline(&registry, &test.options.compile_options()),
     };
-    let monitor = Arc::new(TaskMonitor::default());
-    let result_graph = pass_pipeline.run_passes(&test.options, graph, monitor);
+    let result_graph = crate::run_pipeline(&pass_pipeline, graph, false);
     let test_path = match test_root {
         Some(test_root) => test_path.strip_prefix(test_root).unwrap(),
         None => test_path,
