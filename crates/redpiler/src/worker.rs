@@ -141,6 +141,7 @@ struct WorkerThread {
     send_schedule: SendSchedule,
     tick_rate_version: u64,
     ticks_completed: u64,
+    owed_ticks_finished: bool,
     publish_pending: bool,
     requests: Receiver<Request>,
     batches: Sender<Published>,
@@ -161,6 +162,7 @@ impl WorkerThread {
             send_schedule: SendSchedule::new(SendRate::Never, now),
             tick_rate_version: 0,
             ticks_completed: 0,
+            owed_ticks_finished: false,
             publish_pending: false,
             requests,
             batches,
@@ -228,8 +230,10 @@ impl WorkerThread {
 
     fn run_slice(&mut self, due: u64, now: Instant) -> ControlFlow<Exit> {
         let completed = proceed(self.engine.run_ticks(due, now + RUN_SLICE))?;
+        let owed = self.tick_schedule.ticks_owed();
         self.tick_schedule.complete(completed);
         self.ticks_completed += completed;
+        self.owed_ticks_finished |= owed != 0 && self.tick_schedule.ticks_owed() == 0;
         self.publish_pending |= completed != 0;
         ControlFlow::Continue(())
     }
@@ -267,7 +271,8 @@ impl WorkerThread {
     }
 
     fn publish_if_due(&mut self, now: Instant) -> ControlFlow<Exit> {
-        if !self.publish_pending || !self.send_schedule.is_due(now) {
+        let due = self.owed_ticks_finished || self.send_schedule.is_due(now);
+        if !self.publish_pending || !due {
             return ControlFlow::Continue(());
         }
         let changes = proceed(self.engine.take_changes())?;
@@ -295,6 +300,7 @@ impl WorkerThread {
         let mut batch = self.block_map.translate(changes);
         batch.ticks_completed = std::mem::take(&mut self.ticks_completed);
         batch.ticks_owed = self.tick_schedule.ticks_owed();
+        self.owed_ticks_finished = false;
         self.publish_pending = false;
         batch
     }

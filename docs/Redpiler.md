@@ -127,7 +127,7 @@ Rules for every backend:
 - The plot waits on the worker only in `next_batch`, `snapshot` and `stop`. The worker never waits on the plot.
 - `Paused` runs nothing. `PerSecond` catches up a bounded backlog and never runs ahead. `Unlimited` runs as fast as the engine can. `Ticks(n)` runs `n` ticks as fast as possible and then behaves as `Paused` until the plot sets a rate again.
 - `Input::Interact` flicks a lever or presses a button, `Input::PressurePlate` sets a plate. An input takes effect within one slice.
-- A batch is published at most once per slice and no more often than the send rate. `SendRate::Never` publishes nothing; the plot then learns of changes through snapshots only. `io_only` limits batches to input and output nodes.
+- A batch is published at most once per slice and no more often than the send rate, except that the slice which finishes a `Ticks(n)` rate always publishes one. Otherwise `SendRate::Never` publishes nothing; the plot then learns of changes through snapshots only. `io_only` limits batches to input and output nodes.
 - `next_batch` blocks for at most `timeout` and returns `None` when nothing was published.
 - `snapshot` and `stop` are answered at the end of the running slice with every block that differs from the last report, hidden nodes included, plus all pending ticks. Batches published before the answer are folded into it, so applying a snapshot never rewinds a block.
 - `Err(BackendFailure)` means the worker has died. The plot drops it and keeps interpreting.
