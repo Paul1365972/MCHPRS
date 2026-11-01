@@ -44,6 +44,8 @@ Once complete, the optimized executable will be located at `./target/release/mch
 | --- | --- |
 | `world/plots` | The plots. If `world/plots/pTEMPLATE` exists at startup, new plots start as a copy of it. Before a plot file of an older version is replaced, it is kept as `p<x>,<z>.v<version>`. |
 
+`cargo run --release -p mchprs_world_exporter -- world <saves>` writes the plots of `world` as a new Minecraft save in the directory `<saves>`.
+
 ## Configuration
 
 MCHPRS will generate a `Config.toml` file in the current working directory when starting the server if it does not exist.
