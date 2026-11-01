@@ -243,13 +243,11 @@ fn calculate_power(world: &impl World, pos: BlockPos) -> u8 {
             *side,
         ));
         if side.is_horizontal() {
-            if !up_block.is_solid() && !neighbor.is_transparent() {
-                wire_power = max_wire_power(wire_power, world, neighbor_pos.offset(BlockFace::Top));
-            }
-
             if !neighbor.is_solid() {
                 wire_power =
                     max_wire_power(wire_power, world, neighbor_pos.offset(BlockFace::Bottom));
+            } else if !up_block.is_solid() && !neighbor.is_transparent() {
+                wire_power = max_wire_power(wire_power, world, neighbor_pos.offset(BlockFace::Top));
             }
         }
     }
