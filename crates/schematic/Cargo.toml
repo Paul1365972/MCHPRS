@@ -17,5 +17,7 @@ serde = { workspace = true }
 anyhow = { workspace = true }
 rustc-hash = { workspace = true }
 regex = { workspace = true }
-hematite-nbt = { workspace = true }
+fastnbt = { workspace = true }
 tracing = { workspace = true }
+
+flate2 = { workspace = true }
