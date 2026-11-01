@@ -46,7 +46,18 @@ pub struct Observation {
 pub struct InputAt {
     pub tick: u64,
     pub position: [i32; 3],
-    pub powered: Option<bool>,
+    #[serde(default)]
+    pub action: Action,
+}
+
+#[derive(Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Action {
+    #[default]
+    Interact,
+    PressurePlate {
+        powered: bool,
+    },
 }
 
 impl InputAt {
@@ -55,9 +66,9 @@ impl InputAt {
     }
 
     pub fn input(self) -> Input {
-        match self.powered {
-            Some(powered) => Input::PressurePlate { powered },
-            None => Input::Interact,
+        match self.action {
+            Action::Interact => Input::Interact,
+            Action::PressurePlate { powered } => Input::PressurePlate { powered },
         }
     }
 }
