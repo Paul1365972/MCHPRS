@@ -49,7 +49,7 @@ static EMPTY_PLOT: LazyLock<PlotData<'static>> = LazyLock::new(|| {
             x: 0,
             z: 0,
             chunks,
-            to_be_ticked: Vec::new(),
+            ticks: Default::default(),
             packet_senders: HashMap::new(),
             world_send_rate: WorldSendRate::default(),
             pending_block_entities: Default::default(),

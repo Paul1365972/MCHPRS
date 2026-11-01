@@ -1180,7 +1180,6 @@ dependencies = [
  "mchprs_core",
  "mchprs_redpiler",
  "mchprs_redstone",
- "mchprs_world",
  "paste",
  "tracing",
  "tracing-appender",
@@ -1290,7 +1289,6 @@ dependencies = [
  "itertools",
  "mchprs_blocks",
  "mchprs_redstone",
- "mchprs_world",
  "redpiler_graph",
  "rustc-hash",
  "serde_json",
@@ -1303,8 +1301,8 @@ name = "mchprs_redstone"
 version = "0.5.2-dev"
 dependencies = [
  "mchprs_blocks",
- "mchprs_world",
  "rustc-hash",
+ "serde",
  "tracing",
 ]
 
@@ -1315,6 +1313,7 @@ dependencies = [
  "bincode",
  "byteorder",
  "mchprs_blocks",
+ "mchprs_redstone",
  "mchprs_world",
  "rustc-hash",
  "serde",
@@ -1342,7 +1341,6 @@ dependencies = [
  "mchprs_blocks",
  "mchprs_network",
  "rustc-hash",
- "serde",
 ]
 
 [[package]]

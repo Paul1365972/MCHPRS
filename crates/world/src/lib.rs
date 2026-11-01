@@ -1,87 +1,8 @@
 pub mod storage;
-#[cfg(feature = "testing")]
-pub mod testing;
 
-use mchprs_blocks::block_store::BlockStore;
-use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
-use serde::{Deserialize, Serialize};
-use std::mem;
 use storage::Chunk;
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum TickPriority {
-    Highest = 0,
-    Higher = 1,
-    High = 2,
-    Normal = 3,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TickEntry {
-    pub ticks_left: u32,
-    pub tick_priority: TickPriority,
-    pub pos: BlockPos,
-    pub block: Block,
-}
-
-impl TickEntry {
-    pub fn new(pos: BlockPos, delay: u32, priority: TickPriority, block: Block) -> TickEntry {
-        TickEntry {
-            ticks_left: delay,
-            tick_priority: priority,
-            pos,
-            block,
-        }
-    }
-
-    pub fn is_for(&self, block: Block) -> bool {
-        mem::discriminant(&self.block) == mem::discriminant(&block)
-    }
-}
-
-/// Schedules a tick unless `block` has one in a later tick, like vanilla `LevelChunkTicks`
-pub fn schedule_tick_entry(
-    ticks: &mut Vec<TickEntry>,
-    block: Block,
-    pos: BlockPos,
-    delay: u32,
-    priority: TickPriority,
-) {
-    let scheduled = ticks
-        .iter()
-        .any(|e| e.pos == pos && e.ticks_left > 0 && e.is_for(block));
-    if !scheduled {
-        ticks.push(TickEntry::new(pos, delay, priority, block));
-    }
-}
-
-/// Returns true if `block` at `pos` has a tick scheduled, or due in this tick but not run yet
-pub fn has_tick_entry(ticks: &[TickEntry], block: Block, pos: BlockPos) -> bool {
-    ticks.iter().any(|e| e.pos == pos && e.is_for(block))
-}
-
-pub trait World: BlockStore + 'static {
-    /// Schedules a tick in the world with `delay` and `pritority`, unless already scheduled
-    fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority);
-
-    /// Returns true if the block at `pos` has a tick scheduled or due but not run yet
-    fn pending_tick_at(&mut self, pos: BlockPos) -> bool;
-
-    #[allow(unused_variables)]
-    fn play_sound(
-        &mut self,
-        pos: BlockPos,
-        sound_id: i32,
-        sound_category: i32,
-        volume: f32,
-        pitch: f32,
-    ) {
-    }
-
-    fn flush_block_changes(&mut self) {}
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct ChunkSectionIdx {

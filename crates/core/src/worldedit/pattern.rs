@@ -2,8 +2,8 @@
 
 use super::{
     parse_block, parse_block_states, parse_raw_block, split_top_level_commas, validate_states,
-    World,
 };
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use mchprs_commands::suggestion::SuggestionsBuilder;
@@ -25,7 +25,7 @@ impl WorldEditPattern {
         });
     }
 
-    pub fn place(&self, world: &mut impl World, pos: BlockPos) -> bool {
+    pub fn place(&self, world: &mut impl BlockStore, pos: BlockPos) -> bool {
         let block = self.select().pick(world, pos);
         world.set_block(pos, block)
     }
@@ -96,7 +96,7 @@ enum BlockPattern {
 }
 
 impl BlockPattern {
-    fn pick(&self, world: &impl World, pos: BlockPos) -> Block {
+    fn pick(&self, world: &impl BlockView, pos: BlockPos) -> Block {
         match self {
             Self::Fixed(block) => *block,
             Self::TypeApplying { block, states } => {

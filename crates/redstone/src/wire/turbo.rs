@@ -2,10 +2,10 @@
 //! the accelorator created by theosib. For more information, see:
 //! https://bugs.mojang.com/browse/MC-81098.
 
+use crate::RedstoneWorld;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, RedstoneWire};
 use mchprs_blocks::{BlockFace, BlockPos};
-use mchprs_world::World;
 use rustc_hash::FxHashMap;
 
 fn unwrap_wire(block: Block) -> RedstoneWire {
@@ -135,7 +135,7 @@ impl RedstoneWireTurbo {
     //     true, false, true, true, false, false   // 18 to 23
     // ];
 
-    fn identify_neighbors(&mut self, world: &mut impl World, upd1: NodeId) {
+    fn identify_neighbors(&mut self, world: &mut impl RedstoneWorld, upd1: NodeId) {
         let pos = self.nodes[upd1.index].pos;
         let neighbors = Self::compute_all_neighbors(pos);
         let mut neighbors_visited = Vec::with_capacity(24);
@@ -249,7 +249,7 @@ impl RedstoneWireTurbo {
     }
 
     /// This is the start of a great adventure
-    pub fn update_surrounding_neighbors(world: &mut impl World, pos: BlockPos) {
+    pub fn update_surrounding_neighbors(world: &mut impl RedstoneWorld, pos: BlockPos) {
         let mut turbo = RedstoneWireTurbo::new();
         let mut root_node = UpdateNode::new(world, pos);
         root_node.visited = true;
@@ -260,7 +260,7 @@ impl RedstoneWireTurbo {
         turbo.breadth_first_walk(world);
     }
 
-    fn propagate_changes(&mut self, world: &mut impl World, upd1: NodeId, layer: u32) {
+    fn propagate_changes(&mut self, world: &mut impl RedstoneWorld, upd1: NodeId, layer: u32) {
         if self.nodes[upd1.index].neighbors.is_none() {
             self.identify_neighbors(world, upd1);
         }
@@ -290,7 +290,7 @@ impl RedstoneWireTurbo {
         }
     }
 
-    fn breadth_first_walk(&mut self, world: &mut impl World) {
+    fn breadth_first_walk(&mut self, world: &mut impl RedstoneWorld) {
         self.shift_queue();
         self.current_walk_layer = 1;
 
@@ -320,7 +320,7 @@ impl RedstoneWireTurbo {
         self.update_queue.push(t);
     }
 
-    fn update_node(&mut self, world: &mut impl World, upd1: NodeId, layer: u32) {
+    fn update_node(&mut self, world: &mut impl RedstoneWorld, upd1: NodeId, layer: u32) {
         let old_wire = {
             let node = &mut self.nodes[upd1.index];
             node.visited = true;
@@ -339,7 +339,11 @@ impl RedstoneWireTurbo {
     const RS_NEIGHBORS_UP: [usize; 4] = [9, 11, 13, 15];
     const RS_NEIGHBORS_DN: [usize; 4] = [8, 10, 12, 14];
 
-    fn calculate_current_changes(&mut self, world: &mut impl World, upd: NodeId) -> RedstoneWire {
+    fn calculate_current_changes(
+        &mut self,
+        world: &mut impl RedstoneWorld,
+        upd: NodeId,
+    ) -> RedstoneWire {
         let mut wire = unwrap_wire(self.nodes[upd.index].state);
         let i = wire.power;
         let mut block_power = 0;

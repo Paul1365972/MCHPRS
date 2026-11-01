@@ -10,7 +10,8 @@ use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
-use mchprs_world::{TickEntry, World};
+use mchprs_redstone::tick_queue::TickEntry;
+use mchprs_redstone::RedstoneWorld;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, trace, warn};
@@ -210,7 +211,7 @@ impl Compiler {
         debug!("Compile completed in {:?}", start.elapsed());
     }
 
-    pub fn reset<W: World>(&mut self, world: &mut W, region: Region) {
+    pub fn reset<W: RedstoneWorld>(&mut self, world: &mut W, region: Region) {
         if self.is_active {
             self.is_active = false;
             if let Some(backend) = &mut self.backend {
@@ -259,11 +260,11 @@ impl Compiler {
         self.backend().set_pressure_plate(pos, powered);
     }
 
-    pub fn flush<W: World>(&mut self, world: &mut W) {
+    pub fn flush<W: RedstoneWorld>(&mut self, world: &mut W) {
         self.backend().flush(world);
     }
 
-    pub fn flush_all<W: World>(&mut self, world: &mut W) {
+    pub fn flush_all<W: RedstoneWorld>(&mut self, world: &mut W) {
         self.backend().flush_all(world);
     }
 

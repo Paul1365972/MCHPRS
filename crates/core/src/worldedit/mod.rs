@@ -10,7 +10,6 @@ use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
-use mchprs_world::World;
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
@@ -22,7 +21,7 @@ pub struct WorldEditUndo {
 }
 
 pub fn ray_trace_block(
-    world: &impl World,
+    world: &impl BlockView,
     mut pos: PlayerPos,
     start_pitch: f64,
     start_yaw: f64,

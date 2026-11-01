@@ -14,8 +14,8 @@ use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, ComparatorMode, Instrument};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
-use mchprs_redstone::noteblock;
-use mchprs_world::{TickEntry, TickPriority, World};
+use mchprs_redstone::tick_queue::{TickEntry, TickPriority};
+use mchprs_redstone::RedstoneWorld;
 use node::{Node, NodeId, NodeType, Nodes};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
@@ -49,7 +49,11 @@ impl TickScheduler {
     const NUM_PRIORITIES: usize = 4;
     const NUM_QUEUES: usize = 16;
 
-    fn reset<W: World>(&mut self, world: &mut W, blocks: &[impl AsRef<[(BlockPos, Block)]>]) {
+    fn reset<W: RedstoneWorld>(
+        &mut self,
+        world: &mut W,
+        blocks: &[impl AsRef<[(BlockPos, Block)]>],
+    ) {
         for delay in 1..=Self::NUM_QUEUES {
             let queues = &self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES];
             for (entries, priority) in queues.0.iter().zip(Self::priorities()) {
@@ -124,11 +128,11 @@ pub struct DirectBackend {
 }
 
 impl DirectBackend {
-    fn play_pending_notes<W: World>(&mut self, world: &mut W) {
+    fn play_pending_notes<W: RedstoneWorld>(&mut self, world: &mut W) {
         for info in &mut self.noteblock_info {
             if mem::take(&mut info.pending) {
                 for pos in info.positions.iter().copied() {
-                    noteblock::play_note(world, pos, info.instrument, info.note);
+                    world.play_note(pos, info.instrument, info.note);
                 }
             }
         }
@@ -171,7 +175,7 @@ impl DirectBackend {
 }
 
 impl JITBackend for DirectBackend {
-    fn reset<W: World>(&mut self, world: &mut W) {
+    fn reset<W: RedstoneWorld>(&mut self, world: &mut W) {
         self.flush_all(world);
         self.scheduler.reset(world, &self.blocks);
         self.nodes = Nodes::default();
@@ -232,7 +236,7 @@ impl JITBackend for DirectBackend {
         self.scheduler.end_tick(queues);
     }
 
-    fn flush<W: World>(&mut self, world: &mut W) {
+    fn flush<W: RedstoneWorld>(&mut self, world: &mut W) {
         for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
             if node.changed && node.visible {
                 node.changed = false;
@@ -242,7 +246,7 @@ impl JITBackend for DirectBackend {
         self.play_pending_notes(world);
     }
 
-    fn flush_all<W: World>(&mut self, world: &mut W) {
+    fn flush_all<W: RedstoneWorld>(&mut self, world: &mut W) {
         for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
             if node.changed {
                 node.changed = false;
@@ -267,7 +271,7 @@ impl JITBackend for DirectBackend {
     }
 }
 
-fn write_blocks<W: World>(world: &mut W, blocks: &mut [(BlockPos, Block)], node: &Node) {
+fn write_blocks<W: RedstoneWorld>(world: &mut W, blocks: &mut [(BlockPos, Block)], node: &Node) {
     for (pos, block) in blocks {
         if let Some(powered) = block_powered_mut(block) {
             *powered = node.is_powered()

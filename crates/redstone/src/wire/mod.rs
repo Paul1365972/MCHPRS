@@ -1,9 +1,9 @@
 mod turbo;
 
+use crate::RedstoneWorld;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, RedstoneWire, RedstoneWireSide};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
-use mchprs_world::World;
 use turbo::RedstoneWireTurbo;
 
 pub fn make_cross(power: u8) -> RedstoneWire {
@@ -69,7 +69,7 @@ pub fn on_neighbor_changed(
     wire
 }
 
-pub fn on_neighbor_updated(mut wire: RedstoneWire, world: &mut impl World, pos: BlockPos) {
+pub fn on_neighbor_updated(mut wire: RedstoneWire, world: &mut impl RedstoneWorld, pos: BlockPos) {
     let new_power = calculate_power(world, pos);
 
     if wire.power != new_power {

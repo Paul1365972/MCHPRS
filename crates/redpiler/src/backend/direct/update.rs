@@ -1,4 +1,4 @@
-use mchprs_world::TickPriority;
+use mchprs_redstone::tick_queue::TickPriority;
 
 use super::node::{NodeId, NodeType};
 use super::*;

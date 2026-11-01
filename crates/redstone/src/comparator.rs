@@ -1,9 +1,10 @@
+use crate::tick_queue::TickPriority;
+use crate::RedstoneWorld;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
-use mchprs_world::{TickPriority, World};
 use tracing::warn;
 
 fn get_power_on_side(world: &impl BlockView, pos: BlockPos, side: BlockDirection) -> u8 {
@@ -100,7 +101,11 @@ pub fn should_be_powered(comp: Comparator, world: &impl BlockView, pos: BlockPos
     }
 }
 
-fn calculate_output_strength(comp: Comparator, world: &mut impl World, pos: BlockPos) -> u8 {
+fn calculate_output_strength(
+    comp: Comparator,
+    world: &mut impl RedstoneWorld,
+    pos: BlockPos,
+) -> u8 {
     let input_strength = calculate_input_strength(comp, world, pos);
     if comp.mode == ComparatorMode::Subtract {
         input_strength.saturating_sub(get_power_on_sides(comp, world, pos))
@@ -114,7 +119,7 @@ fn calculate_output_strength(comp: Comparator, world: &mut impl World, pos: Bloc
 // This is exactly the same as it is in the RedstoneRepeater struct.
 // Sometime in the future, this needs to be reused. LLVM might optimize
 // it way, but te human brane wil not!
-fn on_state_change(comp: Comparator, world: &mut impl World, pos: BlockPos) {
+fn on_state_change(comp: Comparator, world: &mut impl RedstoneWorld, pos: BlockPos) {
     let front_pos = pos.offset(comp.facing.opposite().block_face());
     let front_block = world.block(front_pos);
     super::update(front_block, world, front_pos);
@@ -132,7 +137,7 @@ fn stored_output_strength(world: &impl BlockView, pos: BlockPos) -> u8 {
     }
 }
 
-pub fn update(comp: Comparator, world: &mut impl World, pos: BlockPos) {
+pub fn update(comp: Comparator, world: &mut impl RedstoneWorld, pos: BlockPos) {
     if world.pending_tick_at(pos) {
         return;
     }
@@ -148,7 +153,7 @@ pub fn update(comp: Comparator, world: &mut impl World, pos: BlockPos) {
     }
 }
 
-pub fn tick(mut comp: Comparator, world: &mut impl World, pos: BlockPos) {
+pub fn tick(mut comp: Comparator, world: &mut impl RedstoneWorld, pos: BlockPos) {
     let new_strength = calculate_output_strength(comp, world, pos);
     let old_strength = stored_output_strength(world, pos);
     if new_strength != old_strength || comp.mode == ComparatorMode::Compare {

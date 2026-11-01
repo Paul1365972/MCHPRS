@@ -2,8 +2,8 @@
 
 use super::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
 use mchprs_blocks::BlockPos;
+use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_world::storage::Chunk;
-use mchprs_world::TickPriority;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
