@@ -1,5 +1,6 @@
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::items::Item;
+use mchprs_blocks::signal_strength::SignalStrength;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
@@ -11,7 +12,7 @@ pub struct ItemStack {
 
 impl ItemStack {
     /// Create container item with specified signal strength
-    pub fn container_with_ss(container_ty: ContainerType, ss: u8) -> ItemStack {
+    pub fn container_with_ss(container_ty: ContainerType, ss: SignalStrength) -> ItemStack {
         let item = match container_ty {
             ContainerType::Barrel => Item::Barrel {},
             ContainerType::Hopper => Item::Hopper {},

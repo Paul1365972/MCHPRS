@@ -1,5 +1,6 @@
 use super::{BlockEntity, ContainerType, InventoryEntry, SignBlockEntity};
 use crate::items::Item;
+use crate::signal_strength::SignalStrength;
 use std::collections::HashMap;
 
 const EMPTY_SIGN_ROW: &str = r#""""#;
@@ -58,10 +59,11 @@ impl BlockEntity {
             fullness_sum += count as f32 / item_type.map_or(64, Item::max_stack_size) as f32;
         }
         Some(BlockEntity::Container {
-            comparator_override: ((if fullness_sum > 0.0 { 1.0 } else { 0.0 }
-                + (fullness_sum / num_slots as f32) * 14.0)
-                .floor() as u8)
-                .min(15),
+            comparator_override: SignalStrength::saturating_from(
+                ((if fullness_sum > 0.0 { 1.0 } else { 0.0 })
+                    + (fullness_sum / num_slots as f32) * 14.0)
+                    .floor() as i32,
+            ),
             inventory,
             ty,
         })
@@ -78,7 +80,9 @@ impl BlockEntity {
         use nbt::Value;
         match id.trim_start_matches("minecraft:") {
             "comparator" => Some(BlockEntity::Comparator {
-                output_strength: nbt_get_int(nbt, "OutputSignal").unwrap_or(0).clamp(0, 15) as u8,
+                output_strength: SignalStrength::saturating_from(
+                    nbt_get_int(nbt, "OutputSignal").unwrap_or(0),
+                ),
             }),
             "furnace" => BlockEntity::load_container(
                 nbt_unwrap_val!(nbt.get("Items")?, Value::List),

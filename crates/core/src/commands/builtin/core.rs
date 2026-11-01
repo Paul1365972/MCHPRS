@@ -9,6 +9,7 @@ use crate::player::{Gamemode, PlayerPos};
 use crate::server::{get_version_string, Message};
 use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::ContainerType;
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_network::PlayerPacketSender;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use std::time::Instant;
@@ -103,7 +104,10 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                 let container_type: ContainerType = ctx.arg("type")?;
                 let power: i32 = ctx.arg("power")?;
 
-                let item = ItemStack::container_with_ss(container_type, power as u8);
+                let item = ItemStack::container_with_ss(
+                    container_type,
+                    SignalStrength::saturating_from(power),
+                );
                 let player = ctx.player_mut()?;
                 let slot = 36 + player.selected_slot;
                 player.set_inventory_slot(slot, Some(item));

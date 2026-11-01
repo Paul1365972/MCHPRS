@@ -14,6 +14,7 @@ use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
 use mchprs_blocks::blocks::{Block, HopperFacing};
 use mchprs_blocks::items::Item;
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_schematic::{create_clipboard, paste_clipboard};
@@ -281,7 +282,7 @@ fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
                 ty,
                 ..
             }) => (*ty, *comparator_override),
-            _ => (block_ty, 0),
+            _ => (block_ty, SignalStrength::Zero),
         };
 
         if from.is_some_and(|from| from != current_ty) {

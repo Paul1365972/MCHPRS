@@ -1,5 +1,6 @@
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode};
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_world::{TickPriority, World};
 use tracing::warn;
@@ -32,7 +33,7 @@ pub fn analog_output(block: Block, world: &impl World, pos: BlockPos) -> Option<
                 Some(BlockEntity::Container {
                     comparator_override,
                     ..
-                }) => *comparator_override,
+                }) => comparator_override.get(),
                 Some(other) => {
                     warn!("Backing container blockentity type is invalid: {other:?}");
                     0
@@ -131,7 +132,7 @@ pub fn update(comp: Comparator, world: &mut impl World, pos: BlockPos) {
     let output_strength = calculate_output_strength(comp, world, pos);
     let old_strength =
         if let Some(BlockEntity::Comparator { output_strength }) = world.get_block_entity(pos) {
-            *output_strength
+            output_strength.get()
         } else {
             0
         };
@@ -151,7 +152,7 @@ pub fn tick(mut comp: Comparator, world: &mut impl World, pos: BlockPos) {
         output_strength: old_output_strength,
     }) = world.get_block_entity(pos)
     {
-        *old_output_strength
+        old_output_strength.get()
     } else {
         0
     };
@@ -159,7 +160,8 @@ pub fn tick(mut comp: Comparator, world: &mut impl World, pos: BlockPos) {
         world.set_block_entity(
             pos,
             BlockEntity::Comparator {
-                output_strength: new_strength,
+                output_strength: SignalStrength::try_from(new_strength)
+                    .expect("a comparator outputs at most its input"),
             },
         );
         let should_be_powered = should_be_powered(comp, world, pos);

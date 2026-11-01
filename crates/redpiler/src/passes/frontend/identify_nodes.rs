@@ -146,7 +146,7 @@ fn identify_block<W: World>(
                 if let Some(BlockEntity::Comparator { output_strength }) =
                     world.get_block_entity(pos)
                 {
-                    SignalStrength::try_from(*output_strength).expect("invalid comparator output")
+                    *output_strength
                 } else {
                     SignalStrength::Zero
                 },
