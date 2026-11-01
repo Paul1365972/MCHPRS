@@ -5,6 +5,7 @@ use mchprs_network::packets::clientbound::{
 };
 use mchprs_redpiler::{CompilerOptions, PassStatus};
 use mchprs_text::{ColorCode, TextComponent, TextComponentBuilder};
+use std::borrow::Cow;
 
 #[derive(PartialEq, Eq, Default, Clone, Copy)]
 pub enum RedpilerState {
@@ -150,30 +151,30 @@ impl Scoreboard {
     pub fn set_redpiler_options(&mut self, players: &[Player], options: &CompilerOptions) {
         let mut new_lines = vec![self.current_state[0].clone()];
 
-        let mut flags = Vec::new();
+        let mut flags: Vec<(&str, Cow<'static, str>)> = Vec::new();
         if let Some(backend) = &options.backend {
-            flags.push(("backend", format!("- {backend} backend")));
+            flags.push(("backend", format!("- {backend} backend").into()));
         }
         if options.optimize {
-            flags.push(("o", "- optimize".to_owned()));
+            flags.push(("o", "- optimize".into()));
         }
         if options.export {
-            flags.push(("e", "- export".to_owned()));
+            flags.push(("e", "- export".into()));
         }
         if options.io_only {
-            flags.push(("i", "- io only".to_owned()));
+            flags.push(("i", "- io only".into()));
         }
         if options.update {
-            flags.push(("u", "- update".to_owned()));
+            flags.push(("u", "- update".into()));
         }
         if options.wire_dot_out {
-            flags.push(("d", "- wire dot out".to_owned()));
+            flags.push(("d", "- wire dot out".into()));
         }
         if options.illegal_states_out {
-            flags.push(("l", "- illegal states out".to_owned()));
+            flags.push(("l", "- illegal states out".into()));
         }
         if options.wire_cross_out {
-            flags.push(("c", "- wire cross out".to_owned()));
+            flags.push(("c", "- wire cross out".into()));
         }
 
         if !flags.is_empty() {
@@ -183,10 +184,10 @@ impl Scoreboard {
                     .color_code(ColorCode::Gray)
                     .finish(),
             ));
-            new_lines.extend(flags.iter().map(|flag| {
+            new_lines.extend(flags.into_iter().map(|(name, text)| {
                 ScoreboardLine::new(
-                    format!("flag_{}", flag.0),
-                    TextComponentBuilder::new(flag.1.clone())
+                    format!("flag_{name}"),
+                    TextComponentBuilder::new(text.into_owned())
                         .color_code(ColorCode::Aqua)
                         .finish(),
                 )

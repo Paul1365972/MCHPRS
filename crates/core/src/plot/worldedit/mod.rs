@@ -148,7 +148,7 @@ pub fn execute_command(
     if command.mutates_world {
         plot.stop_redpiler();
     } else {
-        plot.pull_snapshot();
+        plot.sync_world();
     }
     let ctx = CommandExecuteContext {
         plot: &mut plot.world,

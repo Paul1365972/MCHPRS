@@ -23,7 +23,7 @@ use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
-use mchprs_redpiler::Input;
+use mchprs_redpiler::{Input, Worker};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use mchprs_text::TextComponent;
 use mchprs_world::storage::Chunk;
@@ -440,9 +440,8 @@ impl Plot {
                     .client
                     .send_packet(&Chunk::encode_empty_packet(chunk_x, chunk_z, PLOT_SECTIONS));
             } else {
-                let chunk_data = self.world.chunks
-                    [self.world.get_chunk_index_for_chunk(chunk_x, chunk_z)]
-                .encode_packet();
+                let chunk_idx = self.world.get_chunk_index_for_chunk(chunk_x, chunk_z);
+                let chunk_data = self.world.chunks[chunk_idx].encode_packet();
                 self.players[player_idx].client.send_packet(&chunk_data);
             }
         }
@@ -1062,9 +1061,13 @@ impl Plot {
     }
 
     fn save(&mut self) {
-        let pending_ticks = self
-            .pull_snapshot()
-            .unwrap_or_else(|| self.world.to_be_ticked.clone());
+        let pending_ticks = match self.with_worker(Worker::snapshot) {
+            Some(snapshot) => {
+                self.apply_batch(snapshot.changes);
+                snapshot.pending_ticks
+            }
+            None => self.world.to_be_ticked.clone(),
+        };
         let world = &mut self.world;
         let chunk_data: Vec<ChunkData> = world.chunks.iter_mut().map(ChunkData::new).collect();
         let data = PlotData {

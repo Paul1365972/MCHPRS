@@ -1,16 +1,19 @@
 use super::scoreboard::RedpilerState;
 use super::Plot;
-use crate::player::PacketSender;
+use crate::player::{PacketSender, Player};
 use mchprs_redpiler::backend::direct;
 use mchprs_redpiler::{
     BackendFailure, Batch, CompileProgress, CompilerInput, CompilerOptions, Netlist, Worker,
 };
 use mchprs_world::{TickEntry, TickRate, World};
+use std::convert::Infallible;
+use std::mem;
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 use tracing::{debug, error};
 
-const KEEP_ALIVE_POLL: Duration = Duration::from_millis(20);
+const KEEP_ALIVE_INTERVAL: Duration = Duration::from_millis(20);
 
 pub(super) struct Redpiler {
     pub(super) worker: Worker,
@@ -35,18 +38,21 @@ impl Plot {
         mchprs_redstone::update_region(&mut self.world, bounds.0, bounds.1);
         self.world.flush_block_changes();
         let progress = CompileProgress::default();
-        let started = thread::scope(|s| {
-            let handle = s.spawn(|| {
+        let started = thread::scope(|scope| {
+            let (finished_sender, finished) = mpsc::channel::<Infallible>();
+            let compiling = scope.spawn(|| {
                 let input = CompilerInput {
                     world: &self.world,
                     bounds,
                     ticks: &self.world.to_be_ticked,
                 };
                 let netlist = mchprs_redpiler::compile(&input, &options, &progress);
-                start_backend(&netlist, input.ticks, &options, &progress)
+                let started = start_backend(&netlist, input.ticks, &options, &progress);
+                drop(finished_sender);
+                started
             });
             let mut shown = None;
-            while !handle.is_finished() {
+            while let Err(RecvTimeoutError::Timeout) = finished.recv_timeout(KEEP_ALIVE_INTERVAL) {
                 let status = progress.status();
                 if status != shown {
                     shown = status;
@@ -56,9 +62,8 @@ impl Plot {
                 for player in &mut self.players {
                     player.update();
                 }
-                thread::sleep(KEEP_ALIVE_POLL);
             }
-            handle.join()
+            compiling.join()
         });
 
         let worker = match started {
@@ -133,14 +138,14 @@ impl Plot {
         }
     }
 
-    pub(super) fn pull_snapshot(&mut self) -> Option<Vec<TickEntry>> {
-        let snapshot = self.with_worker(Worker::snapshot)?;
-        self.apply_batch(snapshot.changes);
-        Some(snapshot.pending_ticks)
+    pub(super) fn sync_world(&mut self) {
+        if let Some(snapshot) = self.with_worker(Worker::snapshot) {
+            self.apply_batch(snapshot.changes);
+        }
     }
 
     pub(super) fn publish_world(&mut self) {
-        self.pull_snapshot();
+        self.sync_world();
         self.world.flush_block_changes();
     }
 
@@ -160,24 +165,19 @@ impl Plot {
         if ticks_owed != 0 || self.advance_requests.is_empty() {
             return;
         }
-        for request in self.advance_requests.drain(..) {
-            let message = format!(
-                "Plot has been advanced by {} ticks ({:?})",
-                request.ticks,
-                request.started.elapsed()
-            );
-            if let Some(player) = self
-                .players
-                .iter()
-                .find(|player| player.uuid == request.player)
-            {
-                player.send_system_message(&message);
+        for request in mem::take(&mut self.advance_requests) {
+            if let Some(player) = self.player_by_uuid(request.player) {
+                player.send_system_message(&format!(
+                    "Plot has been advanced by {} ticks ({:?})",
+                    request.ticks,
+                    request.started.elapsed()
+                ));
             }
         }
         self.update_tick_rate();
     }
 
-    fn apply_batch(&mut self, batch: Batch) {
+    pub(super) fn apply_batch(&mut self, batch: Batch) {
         let ticks_completed = batch.ticks_completed;
         let ticks_owed = batch.ticks_owed;
         let changes_world = batch.changes_world();
@@ -203,15 +203,15 @@ impl Plot {
 
     fn fail_advance_requests(&mut self, message: &str) {
         self.advance_ticks_owed = 0;
-        for request in self.advance_requests.drain(..) {
-            if let Some(player) = self
-                .players
-                .iter()
-                .find(|player| player.uuid == request.player)
-            {
+        for request in mem::take(&mut self.advance_requests) {
+            if let Some(player) = self.player_by_uuid(request.player) {
                 player.send_error_message(message);
             }
         }
+    }
+
+    fn player_by_uuid(&self, uuid: u128) -> Option<&Player> {
+        self.players.iter().find(|player| player.uuid == uuid)
     }
 
     fn show_redpiler_stopped(&mut self) {
