@@ -6,12 +6,16 @@ use mchprs_redpiler::{
 };
 use mchprs_save_data::plot_data::PlotData;
 use mchprs_world::testing::TestWorld;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::fs;
+use std::io::Write;
+use std::iter::Peekable;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use std::{slice, vec};
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -113,7 +117,7 @@ impl Loaded {
             block_map,
             pending_ticks,
             compile_seconds: started.elapsed().as_secs_f64(),
-            stages: Default::default(),
+            stages: Vec::new(),
         }
     }
 }
@@ -174,22 +178,24 @@ pub struct Compiled {
     pub block_map: BlockMap,
     pub pending_ticks: Vec<PendingTick>,
     pub compile_seconds: f64,
-    pub stages: std::cell::RefCell<Vec<Stage>>,
+    pub stages: Vec<Stage>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Serialize)]
 pub struct Stage {
     pub backend: String,
     pub name: &'static str,
     pub seconds: f64,
 }
 
+#[cfg(feature = "fpga")]
 #[derive(Default)]
 struct Stages {
     current: Option<(&'static str, Instant)>,
     finished: Vec<Stage>,
 }
 
+#[cfg(feature = "fpga")]
 impl Stages {
     fn observe(&mut self, backend: &str, name: Option<&'static str>) {
         if self.current.map(|(current, _)| current) == name {
@@ -209,7 +215,7 @@ impl Stages {
 }
 
 impl Compiled {
-    pub fn engine(&self, backend: &str, reporting: Reporting) -> Result<Box<dyn Engine>> {
+    pub fn engine(&mut self, backend: &str, reporting: Reporting) -> Result<Box<dyn Engine>> {
         if backend == "direct" {
             return Ok(Box::new(DirectEngine::new(
                 &self.netlist,
@@ -219,30 +225,46 @@ impl Compiled {
         }
         #[cfg(feature = "fpga")]
         if let Ok(target) = backend.parse::<mchprs_redpiler_fpga::Target>() {
-            let progress = CompileProgress::default();
-            let (netlist, pending_ticks) = (&self.netlist, &self.pending_ticks);
-            return std::thread::scope(|scope| {
-                let preparing = scope.spawn(|| {
-                    mchprs_redpiler_fpga::prepare(
-                        target,
-                        netlist,
-                        pending_ticks,
-                        reporting == Reporting::InputsAndOutputs,
-                        &progress,
-                    )
-                });
-                let mut stages = Stages::default();
-                while !preparing.is_finished() {
-                    stages.observe(backend, progress.status().map(|status| status.name));
-                    std::thread::sleep(std::time::Duration::from_millis(20));
-                }
-                stages.observe(backend, None);
-                let engine = preparing.join().unwrap()?;
-                self.stages.borrow_mut().extend(stages.finished);
-                Ok(engine)
-            });
+            let (prepared, stages) = self.prepare(target, backend, reporting);
+            self.stages.extend(stages);
+            return prepared;
         }
         Err(format!("unknown backend {backend}; phase, verilator and fpga need rilc built with --features fpga").into())
+    }
+
+    #[cfg(feature = "fpga")]
+    fn prepare(
+        &self,
+        target: mchprs_redpiler_fpga::Target,
+        backend: &str,
+        reporting: Reporting,
+    ) -> (Result<Box<dyn Engine>>, Vec<Stage>) {
+        use std::sync::mpsc::{self, RecvTimeoutError};
+        let progress = CompileProgress::default();
+        std::thread::scope(|scope| {
+            let (finished_sender, finished) = mpsc::channel::<std::convert::Infallible>();
+            let preparing = scope.spawn(|| {
+                let prepared = mchprs_redpiler_fpga::prepare(
+                    target,
+                    &self.netlist,
+                    &self.pending_ticks,
+                    reporting == Reporting::InputsAndOutputs,
+                    &progress,
+                );
+                drop(finished_sender);
+                prepared
+            });
+            let mut stages = Stages::default();
+            loop {
+                stages.observe(backend, progress.status().map(|status| status.name));
+                let waited = finished.recv_timeout(Duration::from_millis(20));
+                if waited != Err(RecvTimeoutError::Timeout) {
+                    break;
+                }
+            }
+            stages.observe(backend, None);
+            (preparing.join().unwrap(), stages.finished)
+        })
     }
 
     pub fn node_at(&self, input: InputAt) -> Result<NodeId> {
@@ -259,27 +281,89 @@ impl Compiled {
     }
 }
 
-pub fn run_until(engine: &mut dyn Engine, ticks: u64) -> Result<()> {
+pub struct Schedule<'e> {
+    boundaries: vec::IntoIter<u64>,
+    inputs: Peekable<slice::Iter<'e, InputAt>>,
+    completed: u64,
+}
+
+impl<'e> Schedule<'e> {
+    pub fn new(experiment: &'e Experiment, every: Option<u64>) -> Schedule<'e> {
+        let mut boundaries: Vec<u64> = experiment.inputs.iter().map(|input| input.tick).collect();
+        if let Some(every) = every.filter(|every| *every != 0) {
+            boundaries.extend((0..=experiment.ticks).step_by(every as usize));
+        }
+        boundaries.push(0);
+        boundaries.push(experiment.ticks);
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        Schedule {
+            boundaries: boundaries.into_iter(),
+            inputs: experiment.inputs.iter().peekable(),
+            completed: 0,
+        }
+    }
+
+    pub fn advance(
+        &mut self,
+        compiled: &Compiled,
+        engines: &mut [Box<dyn Engine>],
+    ) -> Result<Option<u64>> {
+        let Some(boundary) = self.boundaries.next() else {
+            return Ok(None);
+        };
+        for engine in engines.iter_mut() {
+            run_until(engine.as_mut(), boundary - self.completed)?;
+        }
+        self.completed = boundary;
+        while let Some(input) = self.inputs.next_if(|input| input.tick == boundary) {
+            let node = compiled.node_at(*input)?;
+            for engine in engines.iter_mut() {
+                engine.input(node, input.input())?;
+            }
+        }
+        Ok(Some(boundary))
+    }
+}
+
+fn run_until(engine: &mut dyn Engine, ticks: u64) -> Result<()> {
     let mut remaining = ticks;
     while remaining != 0 {
-        remaining -= engine.run_ticks(
-            remaining,
-            Instant::now() + std::time::Duration::from_secs(1),
-        )?;
+        remaining -= engine.run_ticks(remaining, Instant::now() + Duration::from_secs(1))?;
     }
     Ok(())
 }
 
-pub fn boundaries(experiment: &Experiment, every: Option<u64>) -> Vec<u64> {
-    let mut ticks: Vec<u64> = experiment.inputs.iter().map(|input| input.tick).collect();
-    if let Some(every) = every.filter(|every| *every != 0) {
-        ticks.extend((0..=experiment.ticks).step_by(every as usize));
-    }
-    ticks.push(0);
-    ticks.push(experiment.ticks);
-    ticks.sort_unstable();
-    ticks.dedup();
-    ticks
+#[derive(Serialize)]
+struct Report<'r> {
+    rilc: &'r str,
+    experiment: &'r Path,
+    plot_sha256: &'r str,
+    options: &'r str,
+    nodes: usize,
+    stages: &'r [Stage],
+    #[serde(flatten)]
+    details: Value,
+}
+
+pub fn write_report(
+    output: &mut dyn Write,
+    loaded: &Loaded,
+    compiled: &Compiled,
+    details: Value,
+) -> Result<()> {
+    let report = Report {
+        rilc: env!("GIT_HASH").trim(),
+        experiment: &loaded.path,
+        plot_sha256: &loaded.plot_sha256,
+        options: &loaded.experiment.options,
+        nodes: compiled.netlist.len(),
+        stages: &compiled.stages,
+        details,
+    };
+    serde_json::to_writer(&mut *output, &report)?;
+    writeln!(output)?;
+    Ok(())
 }
 
 pub fn list_inputs(path: &Path) -> Result<()> {

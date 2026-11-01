@@ -1,4 +1,4 @@
-use crate::experiment::{boundaries, position, run_until, Loaded, Observation, Result};
+use crate::experiment::{position, write_report, Loaded, Observation, Result, Schedule};
 use mchprs_blocks::BlockPos;
 use mchprs_world::testing::TestWorld;
 use mchprs_world::World;
@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::Path;
+use std::slice;
 use std::time::Instant;
 
 pub fn run(path: &Path, backend: &str, output: &mut dyn Write) -> Result<()> {
@@ -18,45 +19,31 @@ pub fn run(path: &Path, backend: &str, output: &mut dyn Write) -> Result<()> {
 
     let experiment = &loaded.experiment;
     let observation = experiment.observe;
+    let mut schedule = Schedule::new(experiment, observation.and_then(|observe| observe.every));
     let mut checkpoints = Vec::new();
-    let mut inputs = experiment.inputs.iter().peekable();
-    let mut completed = 0;
     let started = Instant::now();
-    for boundary in boundaries(experiment, observation.and_then(|observe| observe.every)) {
-        run_until(engine.as_mut(), boundary - completed)?;
-        completed = boundary;
-        while let Some(input) = inputs.next_if(|input| input.tick == completed) {
-            engine.input(compiled.node_at(*input)?, input.input())?;
-        }
+    while let Some(tick) = schedule.advance(&compiled, slice::from_mut(&mut engine))? {
         compiled
             .block_map
             .translate(&engine.take_changes()?)
             .apply(&mut loaded.world);
         if let Some(observation) = observation {
-            checkpoints.push(checkpoint(&loaded.world, observation, completed));
+            checkpoints.push(checkpoint(&loaded.world, observation, tick));
         }
-        eprintln!("tick {completed}/{}", experiment.ticks);
+        eprintln!("tick {tick}/{}", experiment.ticks);
     }
     let run_seconds = started.elapsed().as_secs_f64();
 
-    let report = json!({
-        "rilc": env!("GIT_HASH").trim(),
-        "experiment": loaded.path,
-        "plot_sha256": loaded.plot_sha256,
+    let details = json!({
         "backend": backend,
-        "options": experiment.options,
         "ticks": experiment.ticks,
-        "nodes": compiled.netlist.len(),
         "compile_seconds": compiled.compile_seconds,
         "prepare_seconds": prepare_seconds,
-        "stages": compiled.stages.borrow().as_slice(),
         "run_seconds": run_seconds,
         "ticks_per_second": experiment.ticks as f64 / run_seconds,
         "checkpoints": checkpoints,
     });
-    serde_json::to_writer(&mut *output, &report)?;
-    writeln!(output)?;
-    Ok(())
+    write_report(output, &loaded, &compiled, details)
 }
 
 fn checkpoint(world: &TestWorld, observation: Observation, tick: u64) -> Value {
