@@ -1,5 +1,5 @@
 use anstream::println;
-use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
+use mchprs_redpiler::passes::PassRegistry;
 use mchprs_ril::string_replacer::StringReplacer;
 use mchprs_ril::{self as ril, RILModule, RILTest};
 use owo_colors::OwoColorize as _;
@@ -50,8 +50,7 @@ fn run_test(
     let graph = match &test.schematic_path {
         Some(schematic_path) => {
             match crate::extract_schematic(
-                test_path,
-                schematic_path,
+                &test_path.parent().unwrap().join(schematic_path),
                 &test.options.compile_options(),
             ) {
                 Some(graph) => graph,
@@ -62,12 +61,8 @@ fn run_test(
     };
 
     let registry = PassRegistry::default();
-    let pass_pipeline = match &test.options.passes {
-        Some(passes) => match crate::parse_pass_pipeline(&registry, passes) {
-            Some(pipeline) => pipeline,
-            None => return TestOutcome::Failed,
-        },
-        None => build_pass_pipeline(&registry, &test.options.compile_options()),
+    let Some(pass_pipeline) = crate::pass_pipeline(&registry, &test.options) else {
+        return TestOutcome::Failed;
     };
     let result_graph = crate::run_pipeline(&pass_pipeline, graph, false);
     let test_path = match test_root {

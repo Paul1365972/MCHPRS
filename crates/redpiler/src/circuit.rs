@@ -173,6 +173,14 @@ impl Circuit {
     }
 }
 
+impl PartialEq for Circuit {
+    fn eq(&self, other: &Circuit) -> bool {
+        self.nodes == other.nodes && self.outputs.links == other.outputs.links
+    }
+}
+
+impl Eq for Circuit {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SnapshotError {
     NodeCount { expected: usize, found: usize },

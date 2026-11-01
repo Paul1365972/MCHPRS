@@ -1,42 +1,46 @@
 # Redpiler
 
-At a high level, Redpiler transforms an input Minecraft world into a directed weighted graph. The weights represent the distance taken by a redstone signal when travelling through a wire. Since Redpiler was inspired by the design of modern compilers such as LLVM, it has several passes which are run depending on how Redpiler was configured. Some passes are mandatory and are required to be run in order for redstone to function properly. Other passes are simply for optimization and are completely optional.
+At a high level, Redpiler transforms the redstone in a Minecraft world into a directed weighted graph. The weights represent the distance taken by a redstone signal when travelling through a wire. Since Redpiler was inspired by the design of modern compilers such as LLVM, the graph then goes through several passes which are run depending on how Redpiler was configured. Every pass is an optional optimization.
 
-Once the graph has been created, it is sent to a Redpiler backend which is responsible for the runtime execution of the Redstone circuit. There are several types of backends, but the one which is in use today is known as the Direct backend. The backend implements several optimizations such as small buffer optimization which not only reduces allocations, but also helps with memory fragmentation that can lead to cache misses. Another optimization is one focused on keeping the node list in memory as small as possible to allow the graph to fit into the small CPU caches.
+The final graph becomes a `Circuit`, which an engine runs. A `Simulation` wraps the engine: it takes inputs by block position and turns the engine's changes back into blocks.
 
-# The Pass System
+# Extraction
 
-Redpiler was inspired by the design of modern compilers such as LLVM. As such, Redpiler has several passes which are run depending on how Redpiler was configured. Passes receive mutable access to the compile graph.
+Extraction turns the plot into the nodes and links of the graph.
 
-## The `IdentifyNodes` Pass
+## Nodes
 
-At the start of the compile, the graph is completely empty. This mandatory pass populates the graph with nodes using the given input world. This input is usually the plot the player is in, but it can also be a WorldEdit selection if Redpiler was invoked with certain flags.
+Extraction iterates through all the blocks in the plot and tries to identify them as Redstone components. If a block is a Repeater, Comparator, Torch, Stone Button, Lamp, Lever, Pressure Plate, Iron Trapdoor or Note Block, a new node is created in the graph with the appropriate node type containing the necessary state information. Redstone Wires are added too, unless the circuit is optimized and the wire is not observed.
 
-The pass iterates through all the blocks in the input, and tries to identify them as Redstone components. If a block is a Repeater, Comparator, Torch, Stone Button, Lamp, Lever, Stone Pressure Plate, a new node is created in the graph with the appropriate node type containing the necessary state information. If an optimization flag is not set, Redstone Wires are also added to the graph.
+Blocks that have a comparator override such as Barrels, Furnaces, Hoppers, Cauldron, Composters, and Cake are also added into the graph as constant nodes, and so are Redstone Blocks.
 
-Blocks that have a comparator override such as Barrels, Furnaces, Hoppers, Cauldron, Composters, and Cake are also added into the graph as constant nodes.
+Some nodes are ports: inputs the caller sets, and outputs the caller watches. Levers, buttons and pressure plates are inputs; lamps, trapdoors and note blocks are outputs, and the `--wire-*-out` flags make some wires outputs too. The caller sees the observed nodes change while the circuit runs: every node by default; with `--optimize`, every node except wires that aren't ports; with `--io-only`, only the ports.
 
-Nodes with pending ticks are marked before optimization; the backend keeps the original schedule.
+The plot's pending ticks become the pending ticks of their nodes. Ticks due together with the same priority keep their order from the plot's tick queue.
 
-## The `InputSearch` Pass
+## Links
 
-Now that the graph been populated with nodes, Redpiler can now start finding the connections between Redstone components. This mandatory pass populates the graph with links.
+Now that the graph has been populated with nodes, Redpiler can start finding the connections between Redstone components.
 
-This pass is the most complex out of them all, but it is also one of the most important aspects of Redpiler. One of the major reasons vanilla Minecraft is so slow at processing redstone is because of  the fact that when a component is updated, which can happen several times in a tick, it has to look for all sources of input. This can take a relatively very long time, and Redpiler solves this issue by only looking once and saving this information in the form of the links in the graph.
+This is the most complex part of the compile, but it is also one of the most important aspects of Redpiler. One of the major reasons vanilla Minecraft is so slow at processing redstone is because of  the fact that when a component is updated, which can happen several times in a tick, it has to look for all sources of input. This can take a relatively very long time, and Redpiler solves this issue by only looking once and saving this information in the form of the links in the graph.
 
-To start, this pass iterates through all nodes in the graph. Different types of nodes need to be handled differently. For example, Torches need to look for links on the block it is placed on, but Comparators and Repeaters need to look for links in the direction it is facing as well as links from the side.
+To start, extraction iterates through all nodes in the graph. Different types of nodes need to be handled differently. For example, Torches need to look for links on the block it is placed on, but Comparators and Repeaters need to look for links in the direction it is facing as well as links from the side.
 
 When the input block of a node is searched, the block is either a component that can provide Redstone power on its own, or a Redstone Wire. If it can provide power, then it can directly create a link to that component. The corresponding node in the graph is looked up based on the position of the component, and a link to the node is created with a weight of 0. If the block is a Redstone Wire, then a breadth-first search is run to look for components that provide power to the Wire. The distance of the path taken from the starting wire to the input components are recorded as the weight of the links. Then, input components are looked up in the graph, and links are created.
 
-Each node's outgoing links are ordered by target type, then by target index, which is the order the backend updates them in.
+Each node's outgoing links are ordered by target type, then by target index, which is the order the engine updates them in.
+
+# The Pass System
+
+Passes receive mutable access to the compile graph.
 
 ## The `ClampWeights` Pass
 
-The links created in the `InputSearch` pass are weighted by the distance taken in the breadth-first search, but this may search Wires infinetely even though wires can only have a maximum 15 signal strength that decays every block. Therefore, this optimization pass was created to remove any links with a 15 or greater weight since they ultimately have no effect.
+The links created by extraction are weighted by the distance taken in the breadth-first search, but this may search Wires infinetely even though wires can only have a maximum 15 signal strength that decays every block. Therefore, this optimization pass was created to remove any links with a 15 or greater weight since they ultimately have no effect.
 
 ## The `DedupLinks` Pass
 
-Sometimes, the breadth-first search done by the `InputSearch` pass can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 15, the link with weight 15 is removed.
+Sometimes, the breadth-first search done by extraction can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 15, the link with weight 15 is removed.
 
 ## The `ConstantFold` Pass
 
@@ -84,13 +88,15 @@ Any redstone components that do not contribute to the functioning of output comp
 This pass recusively marks all nodes connected to an output node and removes all remaining unmarked nodes (Depth-First-Search).
 Nodes with pending ticks and their input dependencies are also retained.
 
-## The `ExportGraph` Pass
+# Circuit Files
 
-This pass is neither a mandatory pass nor an optimization pass. This pass is only run when the `--export` flag is set and serializes the graph into a binary file which can be read by other programs. This can be greatly useful for people who wish to experiement with Redstone and might want a directed weighted graph just like what Redpiler creates. Using this pass, they can utilize Redpiler for their projects.
+`/redpiler export` writes the compiled circuit to a file, and `rilc compile` writes one from a schematic. The file holds the nodes and links of the circuit in a versioned binary format which can be read by other programs. This can be greatly useful for people who wish to experiment with Redstone and might want a directed weighted graph just like what Redpiler creates.
 
-# The Backend
+# Engines
 
-Once the graph has been created, it is sent to a Redpiler backend which is responsible for the runtime execution of the Redstone circuit. A backend may implement redstone executation in any way, whether that is by just-in-time compiling redstone or by interpreting the graph.
+An engine runs a circuit. It may implement redstone execution in any way, whether that is by just-in-time compiling redstone or by interpreting the graph.
+
+`rilc diff` runs a circuit on two engines tick by tick and explains the first difference, comparing every node's state and pending tick, and how many notes each note block played.
 
 ## How Redstone Works
 
@@ -136,7 +142,7 @@ A tick is never scheduled at a Trapdoor node, therefore a Trapdoor is never tick
 
 ### Wire
 
-If a wire is updated (wire nodes only exist if unoptimized), its signal strength is calculated. If that value is different from its current state, its state is changed (this is instant). Since Wires are leaf nodes, there is no need to update any nodes here since no nodes can be affected by this change.
+If a wire is updated (in an optimized circuit, only observed wires are nodes), its signal strength is calculated. If that value is different from its current state, its state is changed (this is instant). Since Wires are leaf nodes, there is no need to update any nodes here since no nodes can be affected by this change.
 
 A tick is never scheduled at a Wire node, therefore a Wire is never ticked.
 
@@ -163,9 +169,9 @@ The order in which one change reaches the nodes it links to is not specified.
 Vanilla derives it from block positions: a fixed neighbor update order, each component's update pattern, and the iteration order of a Java hash set for redstone wire. Rotating or moving a build can therefore change its behavior.
 Redpiler uses the order of each node's outgoing links instead, which matches vanilla only by chance. The other passes keep this order, but the `Coalesce` pass can move a tick that ran between two merged nodes after both of them.
 
-## The Direct Backend
+## The Direct Engine
 
-There are several types of backends, but the one which is in use today is known as the [Direct backend](https://github.com/MCHPR/MCHPRS/tree/master/crates/core/src/redpiler/backend/direct). While this backend does not have a JIT compiler, it does implement several optimizations when compared to vanilla:
+While the [Direct engine](../crates/redpiler_direct) does not have a JIT compiler, it does implement several optimizations when compared to vanilla:
 
 - Small buffer optimization (SBO) - This not only reduces allocations, but it also helps with memory fragmentation that can lead to cache misses.
 - Node sizes are kept as small as possible in memory to allow the node list to fit into small CPU caches.
