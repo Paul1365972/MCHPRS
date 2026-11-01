@@ -11,7 +11,6 @@ use crate::interaction;
 use crate::interaction::UseOnBlockContext;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
 use crate::server::{BroadcastMessage, Message, PrivMessage};
-use crate::utils::HyphenatedUUID;
 use anyhow::Error;
 use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
@@ -92,7 +91,6 @@ pub struct Plot {
     always_running: bool,
     auto_redpiler: bool,
 
-    owner: Option<u128>,
     async_rt: Runtime,
     scoreboard: Scoreboard,
 }
@@ -536,30 +534,16 @@ impl Plot {
             return;
         }
 
-        if let Some(item) = &item_in_hand {
-            let has_permission = self.players[player].has_permission("worldedit.selection.pos");
-            if item.item_type == (Item::WoodenAxe) && has_permission {
-                let same = self.players[player].second_position == Some(block_pos);
-                if !same {
-                    self.players[player].worldedit_set_second_position(block_pos);
-                }
-                cancel(self);
-                // FIXME: Because the client sends another packet after this for the left hand for
-                // most blocks, redpiler will get reset anyways.
-                return;
+        if let Some(item) = &item_in_hand
+            && item.item_type == Item::WoodenAxe
+        {
+            let same = self.players[player].second_position == Some(block_pos);
+            if !same {
+                self.players[player].worldedit_set_second_position(block_pos);
             }
-        }
-
-        if let Some(owner) = self.owner {
-            let player = &mut self.players[player];
-            if owner != player.uuid && !player.has_permission("plots.admin.interact.other") {
-                player.send_no_permission_message();
-                cancel(self);
-                return;
-            }
-        } else if !self.players[player].has_permission("plots.admin.interact.unowned") {
-            self.players[player].send_no_permission_message();
             cancel(self);
+            // FIXME: Because the client sends another packet after this for the left hand for
+            // most blocks, redpiler will get reset anyways.
             return;
         }
 
@@ -627,30 +611,16 @@ impl Plot {
         let item_in_hand = self.players[player].inventory
             [self.players[player].selected_slot as usize + 36]
             .clone();
-        if let Some(item) = item_in_hand {
-            let has_permission = self.players[player].has_permission("worldedit.selection.pos");
-            if item.item_type == (Item::WoodenAxe) && has_permission {
-                self.send_block_corrections(&[block_pos]);
-                if let Some(pos) = self.players[player].first_position
-                    && pos == block_pos
-                {
-                    return;
-                }
-                self.players[player].worldedit_set_first_position(block_pos);
-                return;
-            }
-        }
-
-        if let Some(owner) = self.owner {
-            let player = &mut self.players[player];
-            if owner != player.uuid && !player.has_permission("plots.admin.interact.other") {
-                player.send_no_permission_message();
-                self.send_block_corrections(&[block_pos]);
-                return;
-            }
-        } else if !self.players[player].has_permission("plots.admin.interact.unowned") {
-            self.players[player].send_no_permission_message();
+        if let Some(item) = item_in_hand
+            && item.item_type == Item::WoodenAxe
+        {
             self.send_block_corrections(&[block_pos]);
+            if let Some(pos) = self.players[player].first_position
+                && pos == block_pos
+            {
+                return;
+            }
+            self.players[player].worldedit_set_first_position(block_pos);
             return;
         }
 
@@ -1195,7 +1165,6 @@ impl Plot {
             always_running,
             redpiler: Default::default(),
             timings: TimingsMonitor::new(tps),
-            owner: database::get_plot_owner(x, z).map(|s| s.parse::<HyphenatedUUID>().unwrap().0),
             async_rt: Plot::create_async_rt(),
             scoreboard: Default::default(),
             world,

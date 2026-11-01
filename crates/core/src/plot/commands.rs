@@ -37,25 +37,6 @@ impl Plot {
     fn handle_plot_command(&mut self, player: usize, command: &str, args: &[&str]) {
         let (plot_x, plot_z) = self.players[player].pos.plot_pos();
 
-        let permission_node = match command {
-            "info" | "i" => "plots.info",
-            "claim" | "c" => "plots.claim",
-            "auto" | "a" => "plots.auto",
-            "middle" => "plots.middle",
-            "visit" | "v" => "plots.visit",
-            "teleport" | "tp" => "plots.visit",
-            "lock" | "unlock" => "plots.lock",
-            "sel" | "select" => "plots.select",
-            _ => {
-                self.players[player].send_error_message("Invalid argument for /plot");
-                return;
-            }
-        };
-        if !self.players[player].has_permission(permission_node) {
-            self.players[player].send_no_permission_message();
-            return;
-        }
-
         match command {
             "info" | "i" => {
                 if let Some(owner) = database::get_plot_owner(plot_x, plot_z) {

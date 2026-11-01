@@ -4,7 +4,6 @@
 mod utils;
 mod config;
 mod interaction;
-mod permissions;
 mod player;
 pub mod plot;
 mod profile;
