@@ -1,7 +1,8 @@
+use crate::extract_schematic;
 use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
 use mchprs_redpiler::ril::ast::Global;
 use mchprs_redpiler::ril::dump_graph;
-use mchprs_redpiler::{CompilerInput, CompilerOptions, TaskMonitor};
+use mchprs_redpiler::{CompilerOptions, TaskMonitor};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fs, process};
@@ -29,9 +30,14 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
 
     let mut result = String::new();
     for (name, global) in &module.globals {
-        let (graph, schem_path) = match global {
-            Global::Circuit(circuit) => (module.get_graph(circuit), None),
-            Global::Schematic(schem) => (Default::default(), Some(schem.path.clone())),
+        let graph = match global {
+            Global::Circuit(circuit) => module.get_graph(circuit),
+            Global::Schematic(schematic) => {
+                match extract_schematic(input_path, &schematic.path, options) {
+                    Some(graph) => graph,
+                    None => process::exit(1),
+                }
+            }
             Global::Test(_) => {
                 eprintln!("error: tests are not supported in this context");
                 process::exit(1);
@@ -39,17 +45,8 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
             Global::BackendCircuit(_) => todo!("backend circuit compilation"),
         };
 
-        let Some((world, region)) = crate::load_world(input_path, &schem_path) else {
-            process::exit(1);
-        };
-        let input = CompilerInput {
-            world: &world,
-            region,
-            ticks: &[],
-        };
-
         let monitor = Arc::new(TaskMonitor::default());
-        let result_graph = pass_pipeline.run_passes(options, &input, graph, monitor);
+        let result_graph = pass_pipeline.run_passes(options, graph, monitor);
         result.push('\n');
         dump_graph(&mut result, &result_graph, name).unwrap();
         result.push('\n');

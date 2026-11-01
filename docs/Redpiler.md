@@ -1,42 +1,44 @@
 # Redpiler
 
-At a high level, Redpiler transforms an input Minecraft world into a directed weighted graph. The weights represent the distance taken by a redstone signal when travelling through a wire. Since Redpiler was inspired by the design of modern compilers such as LLVM, it has several passes which are run depending on how Redpiler was configured. Some passes are mandatory and are required to be run in order for redstone to function properly. Other passes are simply for optimization and are completely optional.
+At a high level, Redpiler transforms the redstone in a Minecraft world into a directed weighted graph. The weights represent the distance taken by a redstone signal when travelling through a wire. Since Redpiler was inspired by the design of modern compilers such as LLVM, the graph then goes through several passes which are run depending on how Redpiler was configured.
 
 Once the graph has been created, it is sent to a Redpiler backend which is responsible for the runtime execution of the Redstone circuit. There are several types of backends, but the one which is in use today is known as the Direct backend. The backend implements several optimizations such as small buffer optimization which not only reduces allocations, but also helps with memory fragmentation that can lead to cache misses. Another optimization is one focused on keeping the node list in memory as small as possible to allow the graph to fit into the small CPU caches.
 
-# The Pass System
+# Extraction
 
-Redpiler was inspired by the design of modern compilers such as LLVM. As such, Redpiler has several passes which are run depending on how Redpiler was configured. Passes receive mutable access to the compile graph.
+Extraction turns the plot into the nodes and links of the graph.
 
-## The `IdentifyNodes` Pass
+## Nodes
 
-At the start of the compile, the graph is completely empty. This mandatory pass populates the graph with nodes using the given input world. This input is usually the plot the player is in, but it can also be a WorldEdit selection if Redpiler was invoked with certain flags.
-
-The pass iterates through all the blocks in the input, and tries to identify them as Redstone components. If a block is a Repeater, Comparator, Torch, Stone Button, Lamp, Lever, Stone Pressure Plate, a new node is created in the graph with the appropriate node type containing the necessary state information. If an optimization flag is not set, Redstone Wires are also added to the graph.
+Extraction iterates through all the blocks in the plot and tries to identify them as Redstone components. If a block is a Repeater, Comparator, Torch, Stone Button, Lamp, Lever, Stone Pressure Plate, a new node is created in the graph with the appropriate node type containing the necessary state information. If an optimization flag is not set, Redstone Wires are also added to the graph.
 
 Blocks that have a comparator override such as Barrels, Furnaces, Hoppers, Cauldron, Composters, and Cake are also added into the graph as constant nodes.
 
 Nodes with pending ticks are marked before optimization; the backend keeps the original schedule.
 
-## The `InputSearch` Pass
+## Links
 
-Now that the graph been populated with nodes, Redpiler can now start finding the connections between Redstone components. This mandatory pass populates the graph with links.
+Now that the graph has been populated with nodes, Redpiler can start finding the connections between Redstone components.
 
-This pass is the most complex out of them all, but it is also one of the most important aspects of Redpiler. One of the major reasons vanilla Minecraft is so slow at processing redstone is because of  the fact that when a component is updated, which can happen several times in a tick, it has to look for all sources of input. This can take a relatively very long time, and Redpiler solves this issue by only looking once and saving this information in the form of the links in the graph.
+This is the most complex part of the compile, but it is also one of the most important aspects of Redpiler. One of the major reasons vanilla Minecraft is so slow at processing redstone is because of  the fact that when a component is updated, which can happen several times in a tick, it has to look for all sources of input. This can take a relatively very long time, and Redpiler solves this issue by only looking once and saving this information in the form of the links in the graph.
 
-To start, this pass iterates through all nodes in the graph. Different types of nodes need to be handled differently. For example, Torches need to look for links on the block it is placed on, but Comparators and Repeaters need to look for links in the direction it is facing as well as links from the side.
+To start, extraction iterates through all nodes in the graph. Different types of nodes need to be handled differently. For example, Torches need to look for links on the block it is placed on, but Comparators and Repeaters need to look for links in the direction it is facing as well as links from the side.
 
 When the input block of a node is searched, the block is either a component that can provide Redstone power on its own, or a Redstone Wire. If it can provide power, then it can directly create a link to that component. The corresponding node in the graph is looked up based on the position of the component, and a link to the node is created with a weight of 0. If the block is a Redstone Wire, then a breadth-first search is run to look for components that provide power to the Wire. The distance of the path taken from the starting wire to the input components are recorded as the weight of the links. Then, input components are looked up in the graph, and links are created.
 
 Each node's outgoing links are ordered by target type, then by target index, which is the order the backend updates them in.
 
+# The Pass System
+
+Redpiler was inspired by the design of modern compilers such as LLVM. As such, Redpiler has several passes which are run depending on how Redpiler was configured. Passes receive mutable access to the compile graph.
+
 ## The `ClampWeights` Pass
 
-The links created in the `InputSearch` pass are weighted by the distance taken in the breadth-first search, but this may search Wires infinetely even though wires can only have a maximum 15 signal strength that decays every block. Therefore, this optimization pass was created to remove any links with a 15 or greater weight since they ultimately have no effect.
+The links created during extraction are weighted by the distance taken in the breadth-first search, but this may search Wires infinetely even though wires can only have a maximum 15 signal strength that decays every block. Therefore, this optimization pass was created to remove any links with a 15 or greater weight since they ultimately have no effect.
 
 ## The `DedupLinks` Pass
 
-Sometimes, the breadth-first search done by the `InputSearch` pass can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 15, the link with weight 15 is removed.
+Sometimes, the breadth-first search done by extraction can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 15, the link with weight 15 is removed.
 
 ## The `ConstantFold` Pass
 

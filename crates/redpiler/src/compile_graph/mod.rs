@@ -94,9 +94,6 @@ impl NodeState {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Annotations {}
-
 #[derive(Debug)]
 pub struct CompileNode {
     pub ty: NodeType,
@@ -106,7 +103,6 @@ pub struct CompileNode {
 
     pub is_input: bool,
     pub is_output: bool,
-    pub annotations: Annotations,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

@@ -939,7 +939,6 @@ dependencies = [
  "mchprs_redstone",
  "redpiler_graph",
  "rustc-hash",
- "serde_json",
  "smallvec",
  "tracing",
 ]

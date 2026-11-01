@@ -7,22 +7,14 @@ use crate::compile_graph::{
     CompileGraph, CompileLink, Direction, LinkType, NodeIdx, NodeState, NodeType,
 };
 use crate::passes::{AnalysisInfos, Pass};
-use crate::{CompilerInput, CompilerOptions};
-use mchprs_blocks::block_store::BlockView;
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use tracing::trace;
 
 pub struct Coalesce;
 
-impl<W: BlockView> Pass<W> for Coalesce {
-    fn run_pass(
-        &self,
-        graph: &mut CompileGraph,
-        _: &CompilerOptions,
-        _: &CompilerInput<'_, W>,
-        _: &mut AnalysisInfos,
-    ) {
+impl Pass for Coalesce {
+    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
         let node_count = graph.node_count();
         let mut candidates: Vec<NodeIdx> = graph.node_indices().collect();
         while !candidates.is_empty() {

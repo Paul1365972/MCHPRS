@@ -1,16 +1,14 @@
 mod analysis;
-mod frontend;
 mod misc;
 mod opt;
 
-use mchprs_blocks::block_store::BlockView;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ril::DumpGraph;
 
 use super::compile_graph::CompileGraph;
 use super::task_monitor::TaskMonitor;
-use super::{CompilerInput, CompilerOptions};
+use super::CompilerOptions;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,18 +16,15 @@ use std::time::Instant;
 use tracing::{debug, trace};
 
 use analysis::*;
-use frontend::*;
 use misc::*;
 use opt::*;
 
-pub fn build_pass_pipeline<'p, W: BlockView + 'static>(
-    registry: &'p PassRegistry<W>,
+pub fn build_pass_pipeline<'p>(
+    registry: &'p PassRegistry,
     options: &CompilerOptions,
-) -> PassPipeline<'p, W> {
+) -> PassPipeline<'p> {
     let mut builder = PassPipelineBuilder::new(registry);
 
-    builder.add_pass::<identify_nodes::IdentifyNodes>();
-    builder.add_pass::<input_search::InputSearch>();
     builder.add_pass::<clamp_weights::ClampWeights>();
 
     if options.optimize {
@@ -51,23 +46,17 @@ pub fn build_pass_pipeline<'p, W: BlockView + 'static>(
     builder.build()
 }
 
-pub struct PassRegistry<W: BlockView + 'static> {
-    passes: FxHashMap<TypeId, Box<dyn Pass<W>>>,
+pub struct PassRegistry {
+    passes: FxHashMap<TypeId, Box<dyn Pass>>,
     driver_name_map: FxHashMap<&'static str, TypeId>,
 }
 
-impl<W: BlockView + 'static> Default for PassRegistry<W> {
+impl Default for PassRegistry {
     fn default() -> Self {
         let mut registry = Self::new();
 
-        // Frontend passes
-        registry.register_pass(identify_nodes::IdentifyNodes);
-        registry.register_pass(input_search::InputSearch);
-
-        // Analysis Passes
         registry.register_pass(ss_set_analysis::SSSetAnalysis);
 
-        // Optimization Passes
         registry.register_pass(clamp_weights::ClampWeights);
         registry.register_pass(dedup_links::DedupLinks);
         registry.register_pass(constant_fold::ConstantFold);
@@ -80,7 +69,7 @@ impl<W: BlockView + 'static> Default for PassRegistry<W> {
     }
 }
 
-impl<W: BlockView + 'static> PassRegistry<W> {
+impl PassRegistry {
     pub fn new() -> Self {
         Self {
             passes: FxHashMap::default(),
@@ -88,7 +77,7 @@ impl<W: BlockView + 'static> PassRegistry<W> {
         }
     }
 
-    pub fn register_pass<P: Pass<W>>(&mut self, pass: P) {
+    pub fn register_pass<P: Pass>(&mut self, pass: P) {
         self.driver_name_map
             .insert(pass.driver_key(), pass.type_id());
         if let Some(pass) = self.passes.insert(pass.type_id(), Box::new(pass)) {
@@ -96,15 +85,15 @@ impl<W: BlockView + 'static> PassRegistry<W> {
         }
     }
 
-    pub fn get_pass<P: Pass<W>>(&self) -> &dyn Pass<W> {
+    pub fn get_pass<P: Pass>(&self) -> &dyn Pass {
         self.get_pass_from_id(TypeId::of::<P>())
     }
 
-    pub fn get_pass_from_id(&self, id: TypeId) -> &dyn Pass<W> {
+    pub fn get_pass_from_id(&self, id: TypeId) -> &dyn Pass {
         &*self.passes[&id]
     }
 
-    pub fn get_pass_from_driver_key(&self, key: &str) -> Option<&dyn Pass<W>> {
+    pub fn get_pass_from_driver_key(&self, key: &str) -> Option<&dyn Pass> {
         self.driver_name_map
             .get(key)
             .map(|type_id| self.get_pass_from_id(*type_id))
@@ -132,14 +121,14 @@ impl AnalysisInfos {
     }
 }
 
-pub struct PassPipelineBuilder<'p, W: BlockView + 'static> {
-    registry: &'p PassRegistry<W>,
-    passes: Vec<&'p dyn Pass<W>>,
+pub struct PassPipelineBuilder<'p> {
+    registry: &'p PassRegistry,
+    passes: Vec<&'p dyn Pass>,
     available_analysis: FxHashSet<TypeId>,
 }
 
-impl<'p, W: BlockView + 'static> PassPipelineBuilder<'p, W> {
-    pub fn new(registry: &'p PassRegistry<W>) -> Self {
+impl<'p> PassPipelineBuilder<'p> {
+    pub fn new(registry: &'p PassRegistry) -> Self {
         Self {
             registry,
             passes: Vec::new(),
@@ -156,12 +145,12 @@ impl<'p, W: BlockView + 'static> PassPipelineBuilder<'p, W> {
         true
     }
 
-    pub fn add_pass<P: Pass<W>>(&mut self) {
+    pub fn add_pass<P: Pass>(&mut self) {
         let pass = self.registry.get_pass::<P>();
         self.add_pass_by_instance(pass);
     }
 
-    pub fn add_pass_by_instance(&mut self, pass: &'p dyn Pass<W>) {
+    pub fn add_pass_by_instance(&mut self, pass: &'p dyn Pass) {
         let mut au = AnalysisUsage::default();
 
         pass.analysis_usage(&mut au);
@@ -182,22 +171,21 @@ impl<'p, W: BlockView + 'static> PassPipelineBuilder<'p, W> {
         self.available_analysis.insert(pass.pass_type_id());
     }
 
-    pub fn build(self) -> PassPipeline<'p, W> {
+    pub fn build(self) -> PassPipeline<'p> {
         PassPipeline {
             passes: self.passes,
         }
     }
 }
 
-pub struct PassPipeline<'p, W: BlockView + 'static> {
-    passes: Vec<&'p dyn Pass<W>>,
+pub struct PassPipeline<'p> {
+    passes: Vec<&'p dyn Pass>,
 }
 
-impl<'p, W: BlockView + 'static> PassPipeline<'p, W> {
+impl PassPipeline<'_> {
     pub fn run_passes(
         &self,
         options: &CompilerOptions,
-        input: &CompilerInput<'_, W>,
         mut graph: CompileGraph,
         monitor: Arc<TaskMonitor>,
     ) -> CompileGraph {
@@ -215,7 +203,7 @@ impl<'p, W: BlockView + 'static> PassPipeline<'p, W> {
             monitor.set_message(pass.status_message().to_string());
             let start = Instant::now();
 
-            pass.run_pass(&mut graph, options, input, &mut analysis_infos);
+            pass.run_pass(&mut graph, &mut analysis_infos);
 
             trace!("Completed pass in {:?}", start.elapsed());
             trace!("node_count: {}", graph.node_count());
@@ -249,23 +237,17 @@ impl AnalysisUsage {
         self.preserves_all = true;
     }
 
-    pub fn set_required<P: Pass<W>, W: BlockView>(&mut self) {
+    pub fn set_required<P: Pass>(&mut self) {
         self.required.push(TypeId::of::<P>());
     }
 
-    pub fn set_preserved<P: Pass<W>, W: BlockView>(&mut self) {
+    pub fn set_preserved<P: Pass>(&mut self) {
         self.preserved.push(TypeId::of::<P>());
     }
 }
 
-pub trait Pass<W: BlockView>: 'static {
-    fn run_pass(
-        &self,
-        graph: &mut CompileGraph,
-        options: &CompilerOptions,
-        input: &CompilerInput<'_, W>,
-        analysis_infos: &mut AnalysisInfos,
-    );
+pub trait Pass: 'static {
+    fn run_pass(&self, graph: &mut CompileGraph, analysis_infos: &mut AnalysisInfos);
 
     /// This name should only be use for debugging purposes,
     /// it is not a valid identifier of the pass.

@@ -11,8 +11,6 @@
 
 use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx, NodeState, NodeType};
 use crate::passes::{AnalysisInfo, AnalysisInfos, AnalysisUsage, Pass};
-use crate::{CompilerInput, CompilerOptions};
-use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::ComparatorMode;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -108,14 +106,8 @@ impl AnalysisInfo for SSSetInfo {}
 
 pub struct SSSetAnalysis;
 
-impl<W: BlockView> Pass<W> for SSSetAnalysis {
-    fn run_pass(
-        &self,
-        graph: &mut CompileGraph,
-        _: &CompilerOptions,
-        _: &CompilerInput<'_, W>,
-        analysis_infos: &mut AnalysisInfos,
-    ) {
+impl Pass for SSSetAnalysis {
+    fn run_pass(&self, graph: &mut CompileGraph, analysis_infos: &mut AnalysisInfos) {
         let nodes: Vec<NodeIdx> = graph.node_indices().collect();
         let mut sets = vec![None; graph.node_bound()];
         let mut dirty = vec![true; graph.node_bound()];
