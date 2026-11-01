@@ -1,6 +1,6 @@
 use crate::backend::Batch;
 use crate::compile_graph::{NodeState, NodeType};
-use crate::engine::{NodeChanges, PendingTick};
+use crate::engine::{Input, NodeChanges, PendingTick};
 use crate::netlist::{Netlist, NodeId};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::Block;
@@ -53,8 +53,9 @@ impl BlockMap {
         self.nodes_by_position.get(&pos).copied()
     }
 
-    pub fn node_type(&self, node: NodeId) -> &NodeType {
-        &self.types[node.index()]
+    pub fn node_accepting(&self, pos: BlockPos, input: Input) -> Option<NodeId> {
+        self.node_at(pos)
+            .filter(|node| input.is_accepted_by(&self.types[node.index()]))
     }
 
     pub fn translate_ticks(&self, ticks: &[PendingTick]) -> Vec<TickEntry> {

@@ -247,8 +247,15 @@ impl Compiled {
 
     pub fn node_at(&self, input: InputAt) -> Result<NodeId> {
         self.block_map
-            .node_at(input.position())
-            .ok_or_else(|| format!("no compiled input at {}", input.position()).into())
+            .node_accepting(input.position(), input.input())
+            .ok_or_else(|| {
+                format!(
+                    "no node accepting {:?} at {}",
+                    input.input(),
+                    input.position()
+                )
+                .into()
+            })
     }
 }
 

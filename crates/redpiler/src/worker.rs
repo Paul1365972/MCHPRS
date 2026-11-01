@@ -1,6 +1,5 @@
 use crate::backend::{Backend, BackendFailure, Batch, Snapshot};
 use crate::block_map::BlockMap;
-use crate::compile_graph::NodeType;
 use crate::engine::{Engine, EngineError, Input, NodeChanges};
 use mchprs_blocks::BlockPos;
 use mchprs_world::{SendRate, SendSchedule, Step, TickRate, TickSchedule};
@@ -285,12 +284,12 @@ impl WorkerThread {
                 self.publish_pending = true;
             }
             Request::SetSendRate(rate) => self.send_schedule.set_rate(rate),
-            Request::Input(pos, input) => match self.block_map.node_at(pos) {
-                Some(node) if accepts(self.block_map.node_type(node), input) => {
+            Request::Input(pos, input) => match self.block_map.node_accepting(pos, input) {
+                Some(node) => {
                     self.engine.input(node, input)?;
                     self.publish_pending = true;
                 }
-                _ => warn!("no node accepting {input:?} at {pos}"),
+                None => warn!("no node accepting {input:?} at {pos}"),
             },
             Request::Snapshot => {
                 let snapshot = self.snapshot()?;
@@ -329,12 +328,5 @@ impl WorkerThread {
         batch.ticks_owed = self.tick_schedule.ticks_owed();
         self.publish_pending = false;
         batch
-    }
-}
-
-fn accepts(node_type: &NodeType, input: Input) -> bool {
-    match input {
-        Input::Interact => matches!(node_type, NodeType::Lever | NodeType::Button),
-        Input::PressurePlate { .. } => matches!(node_type, NodeType::PressurePlate),
     }
 }

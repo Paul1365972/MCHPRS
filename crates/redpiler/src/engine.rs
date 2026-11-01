@@ -1,4 +1,4 @@
-use crate::compile_graph::NodeState;
+use crate::compile_graph::{NodeState, NodeType};
 use crate::netlist::NodeId;
 use mchprs_world::TickPriority;
 use std::error::Error;
@@ -23,6 +23,15 @@ pub struct NodeChanges {
 pub enum Input {
     Interact,
     PressurePlate { powered: bool },
+}
+
+impl Input {
+    pub fn is_accepted_by(self, node_type: &NodeType) -> bool {
+        match self {
+            Input::Interact => matches!(node_type, NodeType::Lever | NodeType::Button),
+            Input::PressurePlate { .. } => matches!(node_type, NodeType::PressurePlate),
+        }
+    }
 }
 
 pub trait Engine: Send {

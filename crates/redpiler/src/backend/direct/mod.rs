@@ -199,10 +199,12 @@ impl Engine for DirectEngine {
                     self.set_power_and_propagate(node_id, powered.into());
                 }
             }
-            _ => unreachable!(
-                "node {node_id:?} is a {:?}, which does not accept {input:?}",
-                node.ty
-            ),
+            (input, ty) => {
+                return Err(format!(
+                    "node {node_id:?} is a {ty:?}, which does not accept {input:?}"
+                )
+                .into())
+            }
         }
         Ok(())
     }
