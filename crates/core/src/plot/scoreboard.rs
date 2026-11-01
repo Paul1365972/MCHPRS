@@ -16,17 +16,29 @@ pub enum RedpilerState {
 }
 
 impl RedpilerState {
-    fn to_str(self) -> TextComponent {
+    fn lines(self) -> Vec<ScoreboardLine> {
         let (text, color) = match self {
             RedpilerState::Stopped => ("Stopped".to_owned(), ColorCode::LightPurple.into()),
             RedpilerState::Compiling(None) => ("Compiling".to_owned(), ColorCode::Yellow.into()),
             RedpilerState::Compiling(Some(pass)) => (
-                format!("Compiling {}/{}: {}", pass.index + 1, pass.count, pass.name),
+                format!("Compiling {}/{}", pass.index + 1, pass.count),
                 ColorCode::Yellow.into(),
             ),
             RedpilerState::Running => ("Running".to_owned(), ColorCode::Green.into()),
         };
-        TextComponentBuilder::new(text).color(color).bold().finish()
+        let mut lines = vec![ScoreboardLine::new(
+            "redpiler_state".into(),
+            TextComponentBuilder::new(text).color(color).bold().finish(),
+        )];
+        if let RedpilerState::Compiling(Some(pass)) = self {
+            lines.push(ScoreboardLine::new(
+                "redpiler_step".into(),
+                TextComponentBuilder::new(pass.name.to_owned())
+                    .color_code(ColorCode::Gray)
+                    .finish(),
+            ));
+        }
+        lines
     }
 }
 
@@ -44,12 +56,16 @@ impl ScoreboardLine {
 
 pub struct Scoreboard {
     current_state: Vec<ScoreboardLine>,
+    state_lines: Vec<ScoreboardLine>,
+    option_lines: Vec<ScoreboardLine>,
 }
 
 impl Default for Scoreboard {
     fn default() -> Scoreboard {
         let mut sb = Scoreboard {
             current_state: vec![],
+            state_lines: vec![],
+            option_lines: vec![],
         };
         sb.set_redpiler_state(&[], RedpilerState::Stopped);
         sb
@@ -74,7 +90,8 @@ impl Scoreboard {
         }
     }
 
-    fn set_lines(&mut self, players: &[Player], lines: Vec<ScoreboardLine>) {
+    fn show_lines(&mut self, players: &[Player]) {
+        let lines = [self.state_lines.as_slice(), self.option_lines.as_slice()].concat();
         for line in 0..self.current_state.len() {
             let kept = lines
                 .iter()
@@ -91,22 +108,6 @@ impl Scoreboard {
             let update_packet = self.make_update_packet(line).encode();
             players.iter().for_each(|p| p.send_packet(&update_packet));
         }
-    }
-
-    fn set_line(&mut self, players: &[Player], line: usize, text: ScoreboardLine) {
-        if line == self.current_state.len() {
-            self.current_state.push(text);
-        } else {
-            if self.current_state[line].entity_name != text.entity_name {
-                let removal_packet = self.make_removal_packet(line).encode();
-                players.iter().for_each(|p| p.send_packet(&removal_packet));
-            }
-
-            self.current_state[line] = text;
-        }
-
-        let update_packet = self.make_update_packet(line).encode();
-        players.iter().for_each(|p| p.send_packet(&update_packet));
     }
 
     pub fn add_player(&self, player: &Player) {
@@ -141,16 +142,12 @@ impl Scoreboard {
     }
 
     pub fn set_redpiler_state(&mut self, players: &[Player], state: RedpilerState) {
-        self.set_line(
-            players,
-            0,
-            ScoreboardLine::new("redpiler_state".into(), state.to_str()),
-        );
+        self.state_lines = state.lines();
+        self.show_lines(players);
     }
 
     pub fn set_redpiler_options(&mut self, players: &[Player], options: &CompilerOptions) {
-        let mut new_lines = vec![self.current_state[0].clone()];
-
+        let mut new_lines = Vec::new();
         let mut flags: Vec<(&str, Cow<'static, str>)> = Vec::new();
         if let Some(backend) = &options.backend {
             flags.push(("backend", format!("- {backend} backend").into()));
@@ -195,6 +192,7 @@ impl Scoreboard {
                 )
             }));
         }
-        self.set_lines(players, new_lines);
+        self.option_lines = new_lines;
+        self.show_lines(players);
     }
 }
