@@ -144,9 +144,10 @@ impl BlockEntity {
             fullness_sum += count as f32 / item_type.map_or(64, Item::max_stack_size) as f32;
         }
         Some(BlockEntity::Container {
-            comparator_override: (if fullness_sum > 0.0 { 1.0 } else { 0.0 }
+            comparator_override: ((if fullness_sum > 0.0 { 1.0 } else { 0.0 }
                 + (fullness_sum / num_slots as f32) * 14.0)
-                .floor() as u8,
+                .floor() as u8)
+                .min(15),
             inventory,
             ty,
         })
@@ -277,5 +278,31 @@ fn nbt_get_int(compound: &HashMap<String, nbt::Value>, name: &str) -> Option<i32
         nbt::Value::Byte(val) => Some(*val as i32),
         nbt::Value::Int(val) => Some(*val),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overstacked_container_caps_its_comparator_override() {
+        let axes = nbt::Value::Compound(HashMap::from([
+            ("Count".to_owned(), nbt::Value::Byte(64)),
+            ("Slot".to_owned(), nbt::Value::Byte(0)),
+            (
+                "id".to_owned(),
+                nbt::Value::String("minecraft:wooden_axe".to_owned()),
+            ),
+        ]));
+        let hopper = HashMap::from([("Items".to_owned(), nbt::Value::List(vec![axes]))]);
+        let Some(BlockEntity::Container {
+            comparator_override,
+            ..
+        }) = BlockEntity::from_nbt("minecraft:hopper", &hopper)
+        else {
+            panic!("a hopper with items loads as a container");
+        };
+        assert_eq!(comparator_override, 15);
     }
 }
