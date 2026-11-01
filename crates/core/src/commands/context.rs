@@ -1,6 +1,6 @@
 use super::argument::{Arguments, Handle};
 use super::error::{CommandError, CommandResult, InternalError};
-use super::value::PositionCoordinates;
+use super::value::{BlockCoordinates, PositionCoordinates};
 use crate::player::{PacketSender, Player, PlayerPos};
 use crate::plot::{Plot, PlotWorld, PLOT_BLOCK_HEIGHT};
 use crate::worldedit::{ray_trace_block, WorldEditUndo};
@@ -41,6 +41,16 @@ impl<'a> ExecutionContext<'a> {
             player.pitch,
         )?;
         Ok(PlayerPos::new(x, y, z))
+    }
+
+    pub(super) fn block_position(&self, coordinates: BlockCoordinates) -> CommandResult<BlockPos> {
+        let player = self.player()?;
+        let position = player.pos;
+        coordinates.resolve(
+            (position.x, position.y, position.z),
+            player.yaw,
+            player.pitch,
+        )
     }
 
     pub(super) fn reply(&self, message: &str) -> CommandResult<()> {

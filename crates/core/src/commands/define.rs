@@ -1,4 +1,4 @@
-use super::argument::{AllFlags, ArgParser, Optional, Parameter, Required, Switch};
+use super::argument::{AllFlags, ArgParser, OneOf, Optional, Parameter, Required, Switch};
 use super::context::ExecutionContext;
 use super::error::CommandResult;
 use super::executor::Executor;
@@ -70,6 +70,17 @@ impl Command {
     pub(super) fn flag(&mut self, flag: Flag) -> Switch {
         self.flags.push(flag);
         Switch(flag)
+    }
+
+    pub(super) fn one_of<T: Copy, const N: usize>(
+        &mut self,
+        choices: [(Flag, T); N],
+    ) -> OneOf<T, N> {
+        let group = choices.first().map_or("", |(flag, _)| flag.name());
+        for (flag, _) in &choices {
+            self.flags.push(flag.excluding_others_of(group));
+        }
+        OneOf(choices)
     }
 
     pub(super) fn flags_from(&mut self, flags: &[Flag]) -> AllFlags {

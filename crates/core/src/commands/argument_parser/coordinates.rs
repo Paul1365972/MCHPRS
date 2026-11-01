@@ -1,5 +1,5 @@
 use crate::commands::argument::{ArgParser, ClientArgument};
-use crate::commands::value::{Coordinate, PlotCoordinates, PositionCoordinates};
+use crate::commands::value::{BlockCoordinates, Coordinate, PlotCoordinates, PositionCoordinates};
 use mchprs_network::packets::clientbound::CDeclareCommandsNodeParser as ProtocolParser;
 use mchprs_syntax::expect::Expect;
 use mchprs_syntax::reader::{Reader, SyntaxError};
@@ -20,6 +20,24 @@ impl ArgParser for PositionParser {
 
     fn client(&self) -> ClientArgument {
         ClientArgument::Client(ProtocolParser::Vec3)
+    }
+}
+
+pub(in crate::commands) struct BlockPositionParser;
+
+impl ArgParser for BlockPositionParser {
+    type Output = BlockCoordinates;
+
+    fn parse(
+        &self,
+        reader: &mut Reader<'_>,
+        _: &mut Expect,
+    ) -> Result<BlockCoordinates, SyntaxError> {
+        parse_vec3(reader, false).map(BlockCoordinates)
+    }
+
+    fn client(&self) -> ClientArgument {
+        ClientArgument::Client(ProtocolParser::BlockPos)
     }
 }
 

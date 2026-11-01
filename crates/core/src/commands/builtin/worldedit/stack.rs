@@ -13,6 +13,11 @@ use mchprs_syntax::flag::Flag;
 use std::time::Instant;
 
 const IGNORE_AIR: Flag = Flag::switch("ignore-air", Some('a'), "Stack without air blocks");
+const SHIFT_SELECTION: Flag = Flag::switch(
+    "shift-selection",
+    Some('s'),
+    "Shift the selection to the last stacked copy",
+);
 const WITH_AIR: Flag = Flag::switch("with-air", Some('w'), "Stack with air blocks");
 const EXPAND_SELECTION: Flag = Flag::switch(
     "expand-selection",
@@ -20,12 +25,18 @@ const EXPAND_SELECTION: Flag = Flag::switch(
     "Expand selection to include stacked region",
 );
 
+const SELECTION_UPDATES: [(Flag, SelectionUpdate); 2] = [
+    (SHIFT_SELECTION, SelectionUpdate::Shift),
+    (EXPAND_SELECTION, SelectionUpdate::Expand),
+];
+
 const MAX_STACK_VOLUME: i64 =
     PLOT_BLOCK_WIDTH as i64 * PLOT_BLOCK_WIDTH as i64 * PLOT_BLOCK_HEIGHT as i64;
 
 #[derive(Clone, Copy)]
 enum SelectionUpdate {
     Keep,
+    Shift,
     Expand,
 }
 
@@ -34,6 +45,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     let count = stack.optional("count", IntegerParser::new(1, 1000));
     let direction = stack.optional("direction", DirectionParser);
     let ignore_air = stack.flag(IGNORE_AIR);
+    let shift_selection = stack.flag(SHIFT_SELECTION);
     registry.register(stack.executes(move |ctx| {
         let direction = ctx.get(direction).unwrap_or(Direction::Me);
         let direction = direction.resolve(ctx.player()?.get_facing());
@@ -48,7 +60,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             count: ctx.get(count).unwrap_or(1),
             offset: direction.offset_pos(BlockPos::zero(), spacing),
             ignore_air: ctx.get(ignore_air),
-            selection_update: SelectionUpdate::Keep,
+            selection_update: if ctx.get(shift_selection) {
+                SelectionUpdate::Shift
+            } else {
+                SelectionUpdate::Keep
+            },
         };
         exec_stack(ctx, (first_pos, second_pos), stacking)
     }));
@@ -59,7 +75,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     let direction = rstack.optional("direction", DiagonalDirectionParser);
     let spacing = rstack.optional("offset", IntegerParser::new(1, 1000));
     let with_air = rstack.flag(WITH_AIR);
-    let selection_update = rstack.flag(EXPAND_SELECTION);
+    let selection_update = rstack.one_of(SELECTION_UPDATES);
     registry.register(rstack.executes(move |ctx| {
         let direction = ctx.get(direction).unwrap_or(DirectionWithDiagonals::Me);
         let player = ctx.player()?;
@@ -69,11 +85,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             count: ctx.get(count).unwrap_or(1),
             offset: direction * ctx.get(spacing).unwrap_or(2),
             ignore_air: !ctx.get(with_air),
-            selection_update: if ctx.get(selection_update) {
-                SelectionUpdate::Expand
-            } else {
-                SelectionUpdate::Keep
-            },
+            selection_update: ctx.get(selection_update).unwrap_or(SelectionUpdate::Keep),
         };
         exec_stack(ctx, selection, stacking)
     }));
@@ -108,16 +120,23 @@ fn exec_stack(
     let clipped = ctx.capture_undo_regions(destinations, first_pos)?;
     let clipboard = create_clipboard(ctx.world(), first_pos, first_pos, second_pos);
 
+    let mut last_copy = None;
     for i in 1..=count {
         let destination = (first_pos + offset * i, second_pos + offset * i);
         if ctx.clip_region(destination.0, destination.1).is_none() {
             continue;
         }
         paste_clipboard(ctx.world_mut(), &clipboard, destination.0, ignore_air);
+        last_copy = Some(destination);
     }
 
     match selection_update {
         SelectionUpdate::Keep => {}
+        SelectionUpdate::Shift => {
+            if let Some(last_copy) = last_copy {
+                update_selection(ctx, Some(selection), last_copy)?;
+            }
+        }
         SelectionUpdate::Expand => {
             let expanded =
                 calculate_expanded_selection(first_pos, second_pos, offset * count, false);

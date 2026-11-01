@@ -16,6 +16,7 @@ use std::time::Instant;
 const IGNORE_AIR: Flag = Flag::switch("ignore-air", Some('a'), "Paste without air blocks");
 const UPDATE: Flag = Flag::switch("update", Some('u'), "Update blocks after pasting");
 const SELECT_REGION: Flag = Flag::switch("select-region", Some('s'), "Select the pasted region");
+const NO_PASTE: Flag = Flag::switch("no-paste", Some('n'), "No paste, select only");
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(Command::new("/copy").alias("/c").executes(|ctx| {
@@ -54,11 +55,13 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     let ignore_air = paste.flag(IGNORE_AIR);
     let update = paste.flag(UPDATE);
     let select_region = paste.flag(SELECT_REGION);
+    let no_paste = paste.flag(NO_PASTE);
     registry.register(paste.executes(move |ctx| {
         let pasting = Pasting {
             ignore_air: ctx.get(ignore_air),
             update: ctx.get(update),
             select_region: ctx.get(select_region),
+            no_paste: ctx.get(no_paste),
         };
         exec_paste(ctx, pasting)
     }));
@@ -157,6 +160,7 @@ struct Pasting {
     ignore_air: bool,
     update: bool,
     select_region: bool,
+    no_paste: bool,
 }
 
 fn exec_paste(ctx: &mut ExecutionContext<'_>, pasting: Pasting) -> CommandResult<()> {
@@ -164,6 +168,7 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>, pasting: Pasting) -> CommandResult
         ignore_air,
         update: should_update,
         select_region,
+        no_paste,
     } = pasting;
     let start_time = Instant::now();
 
@@ -178,6 +183,11 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>, pasting: Pasting) -> CommandResult
         );
     let select =
         |ctx: &mut ExecutionContext<'_>| update_selection(ctx, None, (paste_min, paste_max));
+
+    if no_paste {
+        select(ctx)?.ok_or_else(CommandError::destination_outside_plot)?;
+        return ctx.worldedit_message(&format!("Region selected. ({:?})", start_time.elapsed()));
+    }
 
     let clipped = ctx.capture_undo_regions([(paste_min, paste_max)], paste_min)?;
     let (world, player) = ctx.world_and_player_mut()?;

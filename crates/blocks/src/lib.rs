@@ -3,6 +3,7 @@ pub mod block_state;
 pub mod blocks;
 mod generated;
 pub mod items;
+pub mod region;
 
 pub use mchprs_proc_macros::BlockProperty;
 use serde::{Deserialize, Serialize};

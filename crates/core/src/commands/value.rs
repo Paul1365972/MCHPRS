@@ -198,6 +198,32 @@ impl PlotCoordinates {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct BlockCoordinates(pub(super) PositionCoordinates);
+
+impl BlockCoordinates {
+    pub(super) fn resolve(
+        &self,
+        reference: (f64, f64, f64),
+        yaw: f32,
+        pitch: f32,
+    ) -> CommandResult<BlockPos> {
+        let (x, y, z) = self.0.resolve(reference, yaw, pitch)?;
+        let coordinates = [x.floor(), y.floor(), z.floor()];
+        if coordinates
+            .iter()
+            .any(|&value| value < i32::MIN as f64 || value > i32::MAX as f64)
+        {
+            return Err(CommandError::coordinate_out_of_range());
+        }
+        Ok(BlockPos::new(
+            coordinates[0] as i32,
+            coordinates[1] as i32,
+            coordinates[2] as i32,
+        ))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum PlayerTarget {
     Name(String),
