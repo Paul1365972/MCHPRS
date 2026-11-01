@@ -2,6 +2,7 @@ use mchprs_blocks::BlockPos;
 use mchprs_redpiler::backend::direct::DirectEngine;
 use mchprs_redpiler::{
     BlockMap, CompileProgress, CompilerOptions, Engine, Input, Netlist, NodeId, PendingTick,
+    Reporting,
 };
 use mchprs_save_data::plot_data::PlotData;
 use mchprs_world::testing::TestWorld;
@@ -209,11 +210,11 @@ impl Stages {
 }
 
 impl Compiled {
-    pub fn engine(&self, backend: &str, io_only: bool) -> Result<Box<dyn Engine>> {
+    pub fn engine(&self, backend: &str, reporting: Reporting) -> Result<Box<dyn Engine>> {
         if backend == "direct" {
             return Ok(Box::new(DirectEngine::new(
                 &self.netlist,
-                io_only,
+                reporting,
                 &self.pending_ticks,
             )));
         }
@@ -227,7 +228,7 @@ impl Compiled {
                         target,
                         netlist,
                         pending_ticks,
-                        io_only,
+                        reporting == Reporting::InputsAndOutputs,
                         &progress,
                     )
                 });

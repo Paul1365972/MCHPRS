@@ -11,7 +11,7 @@ mod worker;
 
 pub use backend::{BackendFailure, Batch, Snapshot};
 pub use block_map::BlockMap;
-pub use engine::{Engine, EngineError, Input, NodeChanges, PendingTick};
+pub use engine::{Engine, EngineError, Input, NodeChanges, PendingTick, Reporting};
 pub use netlist::{Link, Netlist, NodeId};
 pub use progress::{CompileProgress, PassStatus};
 pub use worker::Worker;
@@ -50,6 +50,14 @@ pub struct CompilerOptions {
 }
 
 impl CompilerOptions {
+    pub fn reporting(&self) -> Reporting {
+        if self.io_only {
+            Reporting::InputsAndOutputs
+        } else {
+            Reporting::All
+        }
+    }
+
     fn parse_option(&mut self, option: &str) {
         if option.starts_with("--") {
             if let Some(passes_str) = option.strip_prefix("--passes=") {

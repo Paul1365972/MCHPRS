@@ -1,7 +1,7 @@
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode, LeverFace, Repeater};
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::backend::direct::DirectEngine;
-use mchprs_redpiler::{BlockMap, CompileProgress, CompilerOptions, Engine, Input};
+use mchprs_redpiler::{BlockMap, CompileProgress, CompilerOptions, Engine, Input, Reporting};
 use mchprs_redpiler_fpga::Target;
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
@@ -41,7 +41,7 @@ pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn En
         TestBackend::Phase { .. } => Target::Phase,
         TestBackend::Verilator { .. } => Target::Verilator,
         _ => {
-            let engine = DirectEngine::new(&netlist, options.io_only, &pending_ticks);
+            let engine = DirectEngine::new(&netlist, Reporting::All, &pending_ticks);
             return (block_map, Box::new(engine));
         }
     };

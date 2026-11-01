@@ -12,7 +12,7 @@ pub fn run(path: &Path, backend: &str, output: &mut dyn Write) -> Result<()> {
     let mut loaded = Loaded::open(path)?;
     let mut compiled = loaded.compile();
     let prepare_started = Instant::now();
-    let mut engine = compiled.engine(backend, loaded.options.io_only)?;
+    let mut engine = compiled.engine(backend, loaded.options.reporting())?;
     let prepare_seconds = prepare_started.elapsed().as_secs_f64();
     loaded.world.to_be_ticked.clear();
 

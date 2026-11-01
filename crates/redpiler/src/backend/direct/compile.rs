@@ -1,7 +1,7 @@
 use super::node::{ForwardLink, ForwardLinks, Node, NodeInput, NodeType, Nodes};
 use super::{DirectEngine, TickScheduler};
 use crate::compile_graph::LinkType;
-use crate::engine::PendingTick;
+use crate::engine::{PendingTick, Reporting};
 use crate::netlist::{Netlist, NodeId};
 use itertools::Itertools;
 use tracing::trace;
@@ -17,7 +17,7 @@ struct FinalGraphStats {
 fn compile_node(
     netlist: &Netlist,
     id: NodeId,
-    io_only: bool,
+    reporting: Reporting,
     forward_links: &mut ForwardLinks,
     stats: &mut FinalGraphStats,
 ) -> Node {
@@ -95,17 +95,21 @@ fn compile_node(
         repeater_locked: node.state.repeater_locked,
         changed: false,
         pending_tick: false,
-        visible: !io_only || node.is_input || node.is_output,
+        visible: reporting == Reporting::All || node.is_input || node.is_output,
     }
 }
 
 impl DirectEngine {
-    pub fn new(netlist: &Netlist, io_only: bool, pending_ticks: &[PendingTick]) -> DirectEngine {
+    pub fn new(
+        netlist: &Netlist,
+        reporting: Reporting,
+        pending_ticks: &[PendingTick],
+    ) -> DirectEngine {
         let mut stats = FinalGraphStats::default();
         let mut forward_links = ForwardLinks::default();
         let nodes: Box<[Node]> = netlist
             .ids()
-            .map(|id| compile_node(netlist, id, io_only, &mut forward_links, &mut stats))
+            .map(|id| compile_node(netlist, id, reporting, &mut forward_links, &mut stats))
             .collect();
         stats.nodes_bytes = nodes.len() * std::mem::size_of::<Node>();
         trace!("{:#?}", stats);

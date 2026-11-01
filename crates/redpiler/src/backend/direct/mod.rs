@@ -8,7 +8,7 @@ mod update;
 use crate::backend::direct::node::ForwardLinks;
 use crate::block_map::BlockMap;
 use crate::compile_graph::SignalStrength;
-use crate::engine::{Engine, EngineError, Input, NodeChanges, PendingTick};
+use crate::engine::{Engine, EngineError, Input, NodeChanges, PendingTick, Reporting};
 use crate::netlist::{Netlist, NodeId};
 use crate::worker::Worker;
 use mchprs_blocks::blocks::ComparatorMode;
@@ -17,10 +17,10 @@ use node::{Node, NodeType, Nodes};
 use std::mem;
 use std::time::Instant;
 
-pub fn start(netlist: &Netlist, ticks: &[TickEntry], io_only: bool) -> Worker {
+pub fn start(netlist: &Netlist, ticks: &[TickEntry], reporting: Reporting) -> Worker {
     let block_map = BlockMap::new(netlist);
     let pending_ticks = block_map.map_ticks(ticks);
-    let engine = DirectEngine::new(netlist, io_only, &pending_ticks);
+    let engine = DirectEngine::new(netlist, reporting, &pending_ticks);
     Worker::start(block_map, Box::new(engine))
 }
 

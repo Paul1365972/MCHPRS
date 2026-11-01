@@ -225,7 +225,7 @@ fn start_backend(
 ) -> Result<Worker, String> {
     let name = options.backend.as_deref().unwrap_or("direct");
     if name == "direct" {
-        return Ok(direct::start(netlist, ticks, options.io_only));
+        return Ok(direct::start(netlist, ticks, options.reporting()));
     }
     #[cfg(feature = "fpga")]
     {

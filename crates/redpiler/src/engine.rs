@@ -20,6 +20,12 @@ pub struct NodeChanges {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reporting {
+    All,
+    InputsAndOutputs,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {
     Interact,
     PressurePlate { powered: bool },

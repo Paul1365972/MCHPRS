@@ -1,6 +1,6 @@
 use crate::experiment::{boundaries, run_until, Compiled, Loaded, Result};
 use mchprs_redpiler::compile_graph::NodeState;
-use mchprs_redpiler::{Engine, NodeId};
+use mchprs_redpiler::{Engine, NodeId, Reporting};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -66,7 +66,7 @@ pub fn diff(
         .map(|backend| {
             Ok(Mirror {
                 backend: backend.clone(),
-                engine: compiled.engine(backend, false)?,
+                engine: compiled.engine(backend, Reporting::All)?,
                 states: initial.clone(),
                 pending: BTreeMap::new(),
             })
