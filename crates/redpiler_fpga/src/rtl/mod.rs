@@ -7,7 +7,7 @@ use crate::circuit::Circuit;
 use crate::registers::{ReadbackLayout, Registers};
 use expression::signal_name;
 use include_dir::{include_dir, Dir};
-use instance::Instance;
+use instance::{Instance, StatesSlice};
 use node_modules::NodeModules;
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -155,9 +155,12 @@ impl<'a> Writer<'a> {
             .iter()
             .map(|&index| layout.node(index))
             .filter(|node| node.width != 0)
-            .map(|node| match node.width {
-                1 => format!("states[{}]", node.offset),
-                width => format!("states[{} +: {width}]", node.offset),
+            .map(|node| {
+                StatesSlice {
+                    offset: node.offset,
+                    width: node.width,
+                }
+                .to_string()
             })
             .collect();
         let padding = bits - layout.bits(nodes.iter().copied());

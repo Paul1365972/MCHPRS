@@ -12,7 +12,7 @@ use mchprs_world::TickPriority;
 use std::num::NonZeroU8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ComparatorMode {
+pub(crate) enum ComparatorMode {
     Compare,
     Subtract,
 }
@@ -37,7 +37,7 @@ impl ComparatorMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
+pub(crate) enum Kind {
     Lever,
     Button,
     PressurePlate,
@@ -158,14 +158,14 @@ pub(crate) struct PendingTick {
 pub(crate) const PULSE_PRIORITY: TickPriority = TickPriority::Higher;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct State {
-    pub strength: SignalStrength,
-    pub locked: bool,
-    pub pending: Option<PendingTick>,
+pub(crate) struct State {
+    pub(crate) strength: SignalStrength,
+    pub(crate) locked: bool,
+    pub(crate) pending: Option<PendingTick>,
 }
 
 impl State {
-    pub fn is_powered(self) -> bool {
+    pub(crate) fn is_powered(self) -> bool {
         !self.strength.is_zero()
     }
 
@@ -175,9 +175,9 @@ impl State {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Link {
-    pub source: usize,
-    pub attenuation: u8,
+pub(crate) struct Link {
+    pub(crate) source: usize,
+    pub(crate) attenuation: u8,
 }
 
 impl Link {
@@ -198,24 +198,29 @@ pub(crate) fn initial_input_strength(nodes: &[Node], links: &[Link]) -> SignalSt
 }
 
 #[derive(Clone, Debug)]
-pub struct Node {
-    pub kind: Kind,
-    pub initial: State,
-    pub inputs: Vec<Link>,
-    pub sides: Vec<Link>,
-    pub is_input: bool,
-    pub is_output: bool,
+pub(crate) struct Node {
+    pub(crate) kind: Kind,
+    pub(crate) initial: State,
+    pub(crate) inputs: Vec<Link>,
+    pub(crate) sides: Vec<Link>,
+    pub(crate) is_input: bool,
+    pub(crate) is_output: bool,
 }
 
+const FINGERPRINT_VERSION: &[u8] = b"mchprs-fpga-phase-v3";
+const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x100000001b3;
+const NO_FAR_INPUT: u8 = 16;
+
 #[derive(Clone, Debug)]
-pub struct Circuit {
+pub(crate) struct Circuit {
     nodes: Vec<Node>,
     io_nodes: Vec<usize>,
     identity: u64,
 }
 
 impl Circuit {
-    pub fn nodes(&self) -> &[Node] {
+    pub(crate) fn nodes(&self) -> &[Node] {
         &self.nodes
     }
 
@@ -223,11 +228,11 @@ impl Circuit {
         &self.io_nodes
     }
 
-    pub fn identity(&self) -> u64 {
+    pub(crate) fn identity(&self) -> u64 {
         self.identity
     }
 
-    pub fn new(nodes: Vec<Node>) -> Result<Self, CircuitError> {
+    pub(crate) fn new(nodes: Vec<Node>) -> Result<Self, CircuitError> {
         if nodes.is_empty() {
             return Err(CircuitError::Empty);
         }
@@ -251,13 +256,13 @@ impl Circuit {
     }
 
     fn fingerprint(&self) -> u64 {
-        let mut hash = 0xcbf29ce484222325_u64;
+        let mut hash = FNV_OFFSET_BASIS;
         let mut feed = |bytes: &[u8]| {
             for byte in bytes {
-                hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
+                hash = (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME);
             }
         };
-        feed(b"mchprs-fpga-phase-v3");
+        feed(FINGERPRINT_VERSION);
         feed(&(self.nodes.len() as u32).to_le_bytes());
         for node in &self.nodes {
             let tag = match node.kind {
@@ -276,7 +281,7 @@ impl Circuit {
                 } => [
                     5,
                     u8::from(mode == ComparatorMode::Subtract),
-                    far_input.map_or(16, SignalStrength::get),
+                    far_input.map_or(NO_FAR_INPUT, SignalStrength::get),
                     u8::from(facing_diode),
                 ],
                 Kind::Lamp => [6, 0, 0, 0],

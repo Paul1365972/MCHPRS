@@ -2,9 +2,26 @@ use super::expression::{signal_name, Expression};
 use crate::registers::{Field, NodeLayout};
 use std::fmt;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct StatesSlice {
+    pub(super) offset: usize,
+    pub(super) width: usize,
+}
+
+impl fmt::Display for StatesSlice {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.width {
+            1 => write!(formatter, "states[{}]", self.offset),
+            width => write!(formatter, "states[{} +: {width}]", self.offset),
+        }
+    }
+}
+
 pub(super) enum Connection {
     Expression(Expression),
-    Net(String),
+    Net(&'static str),
+    Signal(usize),
+    States(StatesSlice),
 }
 
 impl From<Expression> for Connection {
@@ -13,15 +30,15 @@ impl From<Expression> for Connection {
     }
 }
 
-impl From<&str> for Connection {
-    fn from(net: &str) -> Self {
-        Self::Net(net.to_owned())
+impl From<&'static str> for Connection {
+    fn from(net: &'static str) -> Self {
+        Self::Net(net)
     }
 }
 
-impl From<String> for Connection {
-    fn from(net: String) -> Self {
-        Self::Net(net)
+impl From<StatesSlice> for Connection {
+    fn from(slice: StatesSlice) -> Self {
+        Self::States(slice)
     }
 }
 
@@ -30,6 +47,8 @@ impl fmt::Display for Connection {
         match self {
             Self::Expression(expression) => write!(formatter, "{expression}"),
             Self::Net(net) => formatter.write_str(net),
+            Self::Signal(node) => formatter.write_str(&signal_name(*node)),
+            Self::States(slice) => write!(formatter, "{slice}"),
         }
     }
 }
@@ -37,7 +56,7 @@ impl fmt::Display for Connection {
 pub(super) struct Instance {
     module: &'static str,
     index: usize,
-    parameters: Vec<(&'static str, String)>,
+    parameters: Vec<(&'static str, u32)>,
     ports: Vec<(&'static str, Connection)>,
 }
 
@@ -55,7 +74,7 @@ impl Instance {
     pub(super) fn parameter(&mut self, name: &'static str, value: impl Into<u32>) {
         let value = value.into();
         if value != 0 {
-            self.parameters.push((name, value.to_string()));
+            self.parameters.push((name, value));
         }
     }
 
@@ -76,16 +95,13 @@ impl Instance {
     }
 
     pub(super) fn signal(&mut self) {
-        self.port("next_signal", signal_name(self.index));
+        self.port("next_signal", Connection::Signal(self.index));
     }
 
     pub(super) fn readback(&mut self, layout: &NodeLayout) {
         for (field, offset) in layout.field_offsets() {
-            let slice = match field.width() {
-                1 => format!("states[{offset}]"),
-                width => format!("states[{offset} +: {width}]"),
-            };
-            self.port(field_port(field), slice);
+            let width = field.width();
+            self.port(field_port(field), StatesSlice { offset, width });
         }
     }
 }
@@ -93,20 +109,21 @@ impl Instance {
 impl fmt::Display for Instance {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.module)?;
-        if !self.parameters.is_empty() {
-            let parameters: Vec<_> = self
-                .parameters
-                .iter()
-                .map(|(name, value)| format!(".{name}({value})"))
-                .collect();
-            write!(formatter, " #({})", parameters.join(", "))?;
+        for (position, (name, value)) in self.parameters.iter().enumerate() {
+            let separator = if position == 0 { " #(" } else { ", " };
+            write!(formatter, "{separator}.{name}({value})")?;
         }
-        let ports: Vec<_> = self
-            .ports
-            .iter()
-            .map(|(name, connection)| format!(".{name}({connection})"))
-            .collect();
-        write!(formatter, " node_{} ({});", self.index, ports.join(", "))
+        if !self.parameters.is_empty() {
+            formatter.write_str(")")?;
+        }
+        write!(formatter, " node_{} (", self.index)?;
+        for (position, (name, connection)) in self.ports.iter().enumerate() {
+            if position != 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, ".{name}({connection})")?;
+        }
+        formatter.write_str(");")
     }
 }
 

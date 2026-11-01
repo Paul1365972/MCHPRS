@@ -39,23 +39,23 @@ impl Expression {
     }
 
     pub(super) fn any(terms: impl IntoIterator<Item = Self>) -> Self {
-        let mut terms: Vec<_> = terms
-            .into_iter()
-            .flat_map(|term| match term {
-                Self::Any(terms) => terms,
-                term => vec![term],
-            })
-            .filter(|term| *term != Self::Bit(false))
-            .collect();
-        if terms.contains(&Self::Bit(true)) {
+        let mut flattened = Vec::new();
+        for term in terms {
+            match term {
+                Self::Any(nested) => flattened.extend(nested),
+                term => flattened.push(term),
+            }
+        }
+        flattened.retain(|term| *term != Self::Bit(false));
+        if flattened.contains(&Self::Bit(true)) {
             return Self::Bit(true);
         }
-        terms.sort();
-        terms.dedup();
-        match terms.len() {
+        flattened.sort();
+        flattened.dedup();
+        match flattened.len() {
             0 => Self::Bit(false),
-            1 => terms.remove(0),
-            _ => Self::Any(terms),
+            1 => flattened.remove(0),
+            _ => Self::Any(flattened),
         }
     }
 

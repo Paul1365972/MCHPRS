@@ -1,3 +1,5 @@
+#![warn(unreachable_pub)]
+
 mod board;
 mod cache;
 mod circuit;
