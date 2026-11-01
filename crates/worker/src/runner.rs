@@ -1,5 +1,6 @@
 use super::*;
 use crate::pacing::Pacing;
+use std::mem;
 
 const BATCH_TIME: Duration = Duration::from_millis(10);
 
@@ -26,6 +27,7 @@ pub(super) fn run<F>(
         events,
         pacing,
         advances: VecDeque::new(),
+        report: TickReport::default(),
         ticks_since_batch: 0,
         publish_now: false,
     };
@@ -93,6 +95,7 @@ struct Runner {
     events: Events,
     pacing: Pacing,
     advances: VecDeque<Advance>,
+    report: TickReport,
     ticks_since_batch: u64,
     publish_now: bool,
 }
@@ -158,12 +161,14 @@ impl Runner {
                 remaining: ticks,
                 inputs_after: Vec::new(),
             }),
+            Command::ReportTicks => self.report_ticks(),
             Command::Sync => {
                 let changes = self.simulation.sync_all()?;
                 let ticks = self.simulation.pending_ticks()?;
                 self.events.send(Event::Synced { changes, ticks });
             }
             Command::Stop { restore } => {
+                self.report_ticks();
                 if restore {
                     self.simulation.reset()?;
                 }
@@ -174,6 +179,10 @@ impl Runner {
             }
         }
         Ok(ControlFlow::Continue(()))
+    }
+
+    fn report_ticks(&mut self) {
+        self.events.send(Event::Ticked(mem::take(&mut self.report)));
     }
 
     fn drive(&mut self, position: BlockPos, input: Input) -> Result<(), EngineError> {
@@ -242,6 +251,8 @@ impl Runner {
             let fitting = (rate * (BATCH_TIME - elapsed).as_secs_f64()) as u64;
             chunk = chunk.saturating_mul(2).min(fitting).max(1);
         }
+        self.report.ticks += ran;
+        self.report.ticking += start.elapsed();
         self.ticks_since_batch += ran;
         Ok(ran)
     }
@@ -261,9 +272,9 @@ impl Runner {
     fn publish(&mut self) -> Result<(), EngineError> {
         self.publish_now = false;
         let changes = self.simulation.sync()?;
-        let ticks = std::mem::take(&mut self.ticks_since_batch);
-        if ticks > 0 || !changes.is_empty() {
-            self.events.send(Event::Batch { changes, ticks });
+        self.ticks_since_batch = 0;
+        if !changes.is_empty() {
+            self.events.send(Event::Batch(changes));
         }
         if let Some(interval) = self.pacing.send_interval {
             self.pacing.next_send = Instant::now() + interval;

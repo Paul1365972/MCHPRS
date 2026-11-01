@@ -54,6 +54,7 @@ struct MonitorData {
     ticking: AtomicBool,
     running: AtomicBool,
     timings_record: Mutex<VecDeque<u32>>,
+    recent_tps: Mutex<Option<f32>>,
 }
 
 #[derive(Debug)]
@@ -78,6 +79,7 @@ impl TimingsMonitor {
             too_slow: Default::default(),
             ticking: Default::default(),
             timings_record: Default::default(),
+            recent_tps: Default::default(),
             tps: AtomicTps::from_tps(tps),
         });
         let monitor_thread = Some(Self::run_thread(data.clone()));
@@ -129,6 +131,10 @@ impl TimingsMonitor {
         })
     }
 
+    pub fn recent_tps(&self) -> Option<f32> {
+        *self.data.recent_tps.lock().unwrap()
+    }
+
     pub fn set_tps(&self, new_tps: Tps) {
         self.data.tps.update(new_tps);
         self.data.too_slow.store(false, Ordering::Relaxed);
@@ -161,6 +167,7 @@ impl TimingsMonitor {
             let mut was_ticking_before = data.ticking.load(Ordering::Relaxed);
 
             let mut behind_for = 0;
+            let mut previous_ticks_passed = None;
             loop {
                 thread::sleep(MONITOR_INTERVAL);
                 if !data.running.load(Ordering::Relaxed) {
@@ -173,6 +180,13 @@ impl TimingsMonitor {
                 }
                 let ticks_passed = (ticks_count - last_ticks_count) as u32;
                 last_ticks_count = ticks_count;
+                let (recent_ticks, intervals) = match previous_ticks_passed {
+                    Some(previous) => (ticks_passed + previous, 2),
+                    None => (ticks_passed, 1),
+                };
+                *data.recent_tps.lock().unwrap() =
+                    Some(recent_ticks as f32 / (intervals as f32 * MONITOR_INTERVAL.as_secs_f32()));
+                previous_ticks_passed = Some(ticks_passed);
 
                 let tps = data.tps.get();
                 let ticking = data.ticking.load(Ordering::Relaxed);

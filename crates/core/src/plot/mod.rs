@@ -7,8 +7,8 @@ pub mod redpiler;
 mod scoreboard;
 
 use self::data::sleep_time_for_tps;
-use self::redpiler::{send_rate, tick_rate, Advance, EngineKind, Redpiler, RedpilerOptions};
-use self::scoreboard::Scoreboard;
+use self::redpiler::{send_rate, tick_rate, Advance, EngineKind, Redpiler};
+use self::scoreboard::{PlotStatus, RedpilerStatus, Scoreboard};
 use crate::commands::COMMAND_REGISTRY;
 use crate::config::CONFIG;
 use crate::interaction;
@@ -69,6 +69,8 @@ const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler 
 
 const MAX_BATCH_SIZE: u32 = 50_000;
 
+const SCOREBOARD_INTERVAL: Duration = Duration::from_millis(500);
+
 pub struct Plot {
     pub world: PlotWorld,
     pub players: Vec<Player>,
@@ -85,12 +87,13 @@ pub struct Plot {
     tps: Tps,
     last_update_time: Instant,
     lag_time: Duration,
-    last_nspt: Option<Duration>,
+    tick_time: Option<Duration>,
     timings: TimingsMonitor,
     /// The last time a player was in this plot
     last_player_time: Instant,
     /// The last time the world changes were sent to the player
     last_world_send_time: Instant,
+    last_scoreboard_time: Instant,
     /// The duration we should sleep for after every update
     sleep_time: Duration,
     /// When this is false, the update loop will end and the thread will stop.
@@ -350,9 +353,14 @@ impl PlotWorld {
 
 impl Plot {
     pub fn tickn(&mut self, ticks: u64) {
+        if ticks == 0 {
+            return;
+        }
+        let start = Instant::now();
         for _ in 0..ticks {
             self.tick();
         }
+        self.tick_time = Some(start.elapsed().div_f64(ticks as f64));
     }
 
     fn tick(&mut self) {
@@ -461,6 +469,7 @@ impl Plot {
         self.world
             .packet_senders
             .insert(player.entity_id, PlayerPacketSender::new(&player.client));
+        self.refresh_scoreboard();
         self.scoreboard.add_player(&player);
         self.players.push(player);
         self.update_view_pos_for_player(self.players.len() - 1, true);
@@ -709,7 +718,7 @@ impl Plot {
     pub fn reset_timings(&mut self) {
         self.lag_time = Duration::ZERO;
         self.last_update_time = Instant::now();
-        self.last_nspt = None;
+        self.tick_time = None;
         self.timings.reset_timings();
     }
 
@@ -742,6 +751,36 @@ impl Plot {
     fn world_send_interval(&self) -> Duration {
         Duration::try_from_secs_f64(1.0 / f64::from(self.world.world_send_rate.0))
             .unwrap_or(Duration::MAX)
+    }
+
+    fn plot_status(&self) -> PlotStatus {
+        let compiling = self.is_compiling_redpiler();
+        let redpiler = match &self.redpiler {
+            None => RedpilerStatus::Stopped,
+            Some(redpiler) if compiling => RedpilerStatus::Compiling {
+                engine: redpiler.engine,
+                options: redpiler.options.clone(),
+                stage: redpiler.stage,
+            },
+            Some(redpiler) => RedpilerStatus::Running {
+                engine: redpiler.engine,
+                options: redpiler.options.clone(),
+            },
+        };
+        PlotStatus {
+            redpiler,
+            tps: self.timings.recent_tps().filter(|_| !compiling),
+            tps_target: self.tps,
+            tick_time: self.tick_time.filter(|_| !compiling),
+            world_send_rate: self.world.world_send_rate,
+            running_behind: !compiling && self.timings.is_running_behind(),
+        }
+    }
+
+    fn refresh_scoreboard(&mut self) {
+        let status = self.plot_status();
+        self.scoreboard.show(&self.players, &status);
+        self.last_scoreboard_time = Instant::now();
     }
 
     pub fn send_message(&self, message: Message) {
@@ -1097,17 +1136,17 @@ impl Plot {
 
         // Only tick if there are players in the plot
         if !self.players.is_empty() {
-            self.timings.set_ticking(true);
+            self.timings.set_ticking(!self.is_compiling_redpiler());
             let now = Instant::now();
             self.last_player_time = now;
 
             let world_send_interval = self.world_send_interval();
 
             let batch_interval = world_send_interval.min(Duration::from_millis(50));
-            let max_batch_size = match self.last_nspt {
+            let max_batch_size = match self.tick_time {
                 Some(Duration::ZERO) | None => 1,
-                Some(last_nspt) => {
-                    let ticks_fit = batch_interval.as_nanos() / last_nspt.as_nanos();
+                Some(tick_time) => {
+                    let ticks_fit = batch_interval.as_nanos() / tick_time.as_nanos();
                     // A tick previously took longer than the batch interval.
                     // Run at least one just so we're not stuck doing nothing
                     ticks_fit.clamp(1, u128::from(MAX_BATCH_SIZE)) as u32
@@ -1141,7 +1180,7 @@ impl Plot {
                         break;
                     }
                 }
-                self.last_nspt = Some(self.last_update_time.elapsed() / ticks_completed);
+                self.tick_time = Some(self.last_update_time.elapsed() / ticks_completed);
             }
 
             if self.auto_redpiler
@@ -1156,6 +1195,10 @@ impl Plot {
             if time_since_last_world_send > world_send_interval {
                 self.last_world_send_time = now;
                 self.world.flush_block_changes();
+            }
+
+            if self.last_scoreboard_time.elapsed() >= SCOREBOARD_INTERVAL {
+                self.refresh_scoreboard();
             }
         } else {
             self.timings.set_ticking(false);
@@ -1255,9 +1298,10 @@ impl Plot {
             last_player_time: Instant::now(),
             last_update_time: Instant::now(),
             last_world_send_time: Instant::now(),
+            last_scoreboard_time: Instant::now(),
             lag_time: Duration::new(0, 0),
             sleep_time: sleep_time_for_tps(tps),
-            last_nspt: None,
+            tick_time: None,
             message_receiver: rx,
             message_sender: tx,
             priv_message_receiver: priv_rx,
@@ -1269,7 +1313,7 @@ impl Plot {
             always_running,
             redpiler: None,
             timings: TimingsMonitor::new(tps),
-            scoreboard: Default::default(),
+            scoreboard: Scoreboard::new(x, z),
             world,
         }
     }

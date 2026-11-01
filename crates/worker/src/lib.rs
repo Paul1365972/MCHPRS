@@ -30,14 +30,18 @@ pub struct SendRate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RequestId(u64);
 
+/// The ticks run since the previous report, and how long running them took.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TickReport {
+    pub ticks: u64,
+    pub ticking: Duration,
+}
+
 pub enum Event {
     Progress(Stage),
     Started(Arc<Circuit>),
-    /// The blocks that changed since the previous batch, and how many ticks ran in between.
-    Batch {
-        changes: BlockChanges,
-        ticks: u64,
-    },
+    Ticked(TickReport),
+    Batch(BlockChanges),
     Advanced(RequestId),
     Rejected {
         position: BlockPos,
@@ -75,6 +79,7 @@ enum Command {
         request: RequestId,
         ticks: u64,
     },
+    ReportTicks,
     Sync,
     /// Advances that haven't finished are dropped, with the inputs waiting for them.
     Stop {
@@ -128,6 +133,11 @@ impl Worker {
             }
         }
         events
+    }
+
+    /// Asks for an [`Event::Ticked`] about the ticks run since the previous one.
+    pub fn report_ticks(&self) {
+        self.send(Command::ReportTicks);
     }
 
     pub fn set_tick_rate(&self, rate: TickRate) {
