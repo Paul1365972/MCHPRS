@@ -1,6 +1,7 @@
 //! Masks as in WorldEdit: <https://worldedit.enginehub.org/en/latest/usage/general/masks/>
 
-use super::{parse_block, parse_block_states, split_top_level_commas, World};
+use super::{parse_block, parse_block_states, split_top_level_commas};
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_commands::suggestion::SuggestionsBuilder;
@@ -80,7 +81,7 @@ impl WorldEditMask {
         }])
     }
 
-    pub fn matches(&self, world: &impl World, pos: BlockPos) -> bool {
+    pub fn matches(&self, world: &impl BlockView, pos: BlockPos) -> bool {
         self.0.iter().all(|term| {
             let pos = BlockPos::new(pos.x, pos.y + term.offset_y, pos.z);
             term.predicate.matches(world, pos) != term.negated
@@ -89,7 +90,7 @@ impl WorldEditMask {
 }
 
 impl MaskPredicate {
-    fn matches(&self, world: &impl World, pos: BlockPos) -> bool {
+    fn matches(&self, world: &impl BlockView, pos: BlockPos) -> bool {
         match self {
             Self::Blocks(matchers) => {
                 let block = world.block(pos);

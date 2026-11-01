@@ -1,7 +1,8 @@
+use crate::tick_queue::TickPriority;
+use crate::RedstoneWorld;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Repeater};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
-use mchprs_world::{TickPriority, World};
 
 pub fn get_state_for_placement(
     world: &impl BlockView,
@@ -32,7 +33,7 @@ fn get_power_on_side(world: &impl BlockView, pos: BlockPos, side: BlockDirection
     }
 }
 
-fn on_state_change(rep: Repeater, world: &mut impl World, pos: BlockPos) {
+fn on_state_change(rep: Repeater, world: &mut impl RedstoneWorld, pos: BlockPos) {
     let front_pos = pos.offset(rep.facing.opposite().block_face());
     let front_block = world.block(front_pos);
     super::update(front_block, world, front_pos);
@@ -43,7 +44,12 @@ fn on_state_change(rep: Repeater, world: &mut impl World, pos: BlockPos) {
     }
 }
 
-fn schedule_tick(rep: Repeater, world: &mut impl World, pos: BlockPos, should_be_powered: bool) {
+fn schedule_tick(
+    rep: Repeater,
+    world: &mut impl RedstoneWorld,
+    pos: BlockPos,
+    should_be_powered: bool,
+) {
     let priority = if super::diode_should_be_prioritized(world, pos, rep.facing) {
         TickPriority::Highest
     } else if !should_be_powered {
@@ -58,7 +64,7 @@ fn should_be_powered(rep: Repeater, world: &impl BlockView, pos: BlockPos) -> bo
     super::diode_get_input_strength(world, pos, rep.facing) > 0
 }
 
-pub fn on_neighbor_updated(mut rep: Repeater, world: &mut impl World, pos: BlockPos) {
+pub fn on_neighbor_updated(mut rep: Repeater, world: &mut impl RedstoneWorld, pos: BlockPos) {
     let should_be_locked = should_be_locked(rep.facing, world, pos);
     if !rep.locked && should_be_locked {
         rep.locked = true;
@@ -76,7 +82,7 @@ pub fn on_neighbor_updated(mut rep: Repeater, world: &mut impl World, pos: Block
     }
 }
 
-pub fn tick(mut rep: Repeater, world: &mut impl World, pos: BlockPos) {
+pub fn tick(mut rep: Repeater, world: &mut impl RedstoneWorld, pos: BlockPos) {
     if rep.locked {
         return;
     }

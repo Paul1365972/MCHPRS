@@ -1,6 +1,7 @@
 //! Patterns as in WorldEdit: <https://worldedit.enginehub.org/en/latest/usage/general/patterns/>
 
-use super::{parse_block, parse_block_states, split_top_level_commas, validate_states, World};
+use super::{parse_block, parse_block_states, split_top_level_commas, validate_states};
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use mchprs_commands::suggestion::SuggestionsBuilder;
@@ -46,7 +47,7 @@ impl WorldEditPattern {
         });
     }
 
-    pub fn pick(&self, world: &impl World, pos: BlockPos) -> Block {
+    pub fn pick(&self, world: &impl BlockView, pos: BlockPos) -> Block {
         let pattern = match &self.0 {
             PatternSelection::Single(pattern) => pattern,
             PatternSelection::Random {
@@ -66,7 +67,7 @@ impl WorldEditPattern {
 }
 
 impl BlockPattern {
-    fn pick(&self, world: &impl World, pos: BlockPos) -> Block {
+    fn pick(&self, world: &impl BlockView, pos: BlockPos) -> Block {
         match self {
             Self::Fixed(block) => *block,
             Self::TypeApplying { block, states } => {

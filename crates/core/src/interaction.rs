@@ -9,11 +9,11 @@ use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
 use mchprs_redstone as redstone;
-use mchprs_world::World;
+use mchprs_redstone::RedstoneWorld;
 
 pub fn on_use(
     block: Block,
-    world: &mut impl World,
+    world: &mut impl RedstoneWorld,
     player: &mut Player,
     pos: BlockPos,
     item_in_hand: Option<Item>,
@@ -77,7 +77,7 @@ fn get_sign_placement(
 }
 
 pub fn get_state_for_placement(
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     item: Item,
     context: &UseOnBlockContext<'_>,
@@ -277,7 +277,7 @@ fn read_block_entity_tag(nbt: &nbt::Blob, block_id: &str) -> Option<BlockEntity>
 
 pub fn place_in_world(
     block: Block,
-    world: &mut impl World,
+    world: &mut impl RedstoneWorld,
     pos: BlockPos,
     nbt: &Option<nbt::Blob>,
 ) {
@@ -296,7 +296,7 @@ pub fn place_in_world(
     }
 }
 
-pub fn destroy(block: Block, world: &mut impl World, pos: BlockPos) {
+pub fn destroy(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) {
     if block.has_block_entity() {
         world.set_block_entity(pos, None);
     }
@@ -337,7 +337,7 @@ pub fn destroy(block: Block, world: &mut impl World, pos: BlockPos) {
     }
 }
 
-pub fn is_valid_position(block: Block, world: &impl World, pos: BlockPos) -> bool {
+pub fn is_valid_position(block: Block, world: &impl BlockView, pos: BlockPos) -> bool {
     let check_bottom = matches!(
         block,
         Block::RedstoneWire(_)
@@ -394,7 +394,7 @@ pub fn is_valid_position(block: Block, world: &impl World, pos: BlockPos) -> boo
     }
 }
 
-pub fn change(block: Block, world: &mut impl World, pos: BlockPos, direction: BlockFace) {
+pub fn change(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos, direction: BlockFace) {
     if !is_valid_position(block, world, pos) {
         destroy(block, world, pos);
         return;
@@ -407,7 +407,7 @@ pub fn change(block: Block, world: &mut impl World, pos: BlockPos, direction: Bl
     }
 }
 
-fn change_surrounding_blocks(world: &mut impl World, pos: BlockPos) {
+fn change_surrounding_blocks(world: &mut impl RedstoneWorld, pos: BlockPos) {
     for direction in &BlockFace::values() {
         let neighbor_pos = pos.offset(*direction);
         let block = world.block(neighbor_pos);
