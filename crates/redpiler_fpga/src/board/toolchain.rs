@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 const DEVICE: &str = "xc7a35tcpg236-1";
-// The XC7A35T is an XC7A50T die, and nextpnr only has a chip database for the latter.
+// The XC7A35T shares the XC7A50T die, so nextpnr routes it with the XC7A50T chip database.
 const CHIP_DATABASE_DEVICE: &str = "xc7a50t";
 const BUILD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const ASSEMBLY_TIMEOUT: Duration = Duration::from_secs(10 * 60);

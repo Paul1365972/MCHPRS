@@ -48,7 +48,7 @@ impl Board {
         progress: &dyn Fn(Stage),
     ) -> Result<Board, BoardError> {
         let port = std::env::var(PORT_VARIABLE).map_err(|_| BoardError::MissingPort)?;
-        let directory = cache::build_directory(&cache::board_root(), "", circuit.identity());
+        let directory = cache::unique_build_directory(&cache::board_root(), "", circuit.identity());
         progress(Stage::GenerateVerilog);
         let registers = Registers::new(circuit);
         rtl::write(&registers, &directory).map_err(BoardError::Write)?;

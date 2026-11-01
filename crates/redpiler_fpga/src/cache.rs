@@ -26,8 +26,7 @@ pub(crate) fn verilator_root() -> PathBuf {
     )
 }
 
-/// A directory no other build of this or a concurrent process uses.
-pub(crate) fn build_directory(root: &Path, prefix: &str, identity: u64) -> PathBuf {
+pub(crate) fn unique_build_directory(root: &Path, prefix: &str, identity: u64) -> PathBuf {
     root.join(format!(
         "{prefix}{identity:016x}-{}-{}",
         std::process::id(),

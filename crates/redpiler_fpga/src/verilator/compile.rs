@@ -162,7 +162,7 @@ pub(super) fn cached_simulator(
 ) -> Result<PathBuf, VerilatorError> {
     let circuit = registers.circuit;
     let root = cache::verilator_root();
-    let staging = cache::build_directory(&root, STAGING_PREFIX, circuit.identity());
+    let staging = cache::unique_build_directory(&root, STAGING_PREFIX, circuit.identity());
     progress(Stage::WriteVerilatorCircuit);
     rtl::write(registers, &staging)?;
     fs::write(staging.join(RUNNER), include_str!("runner.cpp"))?;
