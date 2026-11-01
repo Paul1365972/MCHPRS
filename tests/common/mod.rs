@@ -41,7 +41,7 @@ pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn En
         TestBackend::Phase { .. } => Target::Phase,
         TestBackend::Verilator { .. } => Target::Verilator,
         _ => {
-            let engine = DirectEngine::new(&netlist, options.io_only, pending_ticks);
+            let engine = DirectEngine::new(&netlist, options.io_only, &pending_ticks);
             return (block_map, Box::new(engine));
         }
     };

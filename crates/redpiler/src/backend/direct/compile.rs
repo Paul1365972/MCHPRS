@@ -99,29 +99,30 @@ fn compile_node(
     }
 }
 
-pub fn compile(netlist: &Netlist, io_only: bool, pending_ticks: Vec<PendingTick>) -> DirectEngine {
-    let mut stats = FinalGraphStats::default();
-    let mut forward_links = ForwardLinks::default();
-    let nodes: Box<[Node]> = netlist
-        .ids()
-        .map(|id| compile_node(netlist, id, io_only, &mut forward_links, &mut stats))
-        .collect();
-    stats.nodes_bytes = nodes.len() * std::mem::size_of::<Node>();
-    trace!("{:#?}", stats);
+impl DirectEngine {
+    pub fn new(netlist: &Netlist, io_only: bool, pending_ticks: &[PendingTick]) -> DirectEngine {
+        let mut stats = FinalGraphStats::default();
+        let mut forward_links = ForwardLinks::default();
+        let nodes: Box<[Node]> = netlist
+            .ids()
+            .map(|id| compile_node(netlist, id, io_only, &mut forward_links, &mut stats))
+            .collect();
+        stats.nodes_bytes = nodes.len() * std::mem::size_of::<Node>();
+        trace!("{:#?}", stats);
 
-    let mut nodes = Nodes::new(nodes);
-    let mut scheduler = TickScheduler::default();
-    for tick in pending_ticks {
-        nodes.inner_mut()[tick.node.index()].pending_tick = true;
-        scheduler.schedule_tick(tick.node, tick.delay as usize, tick.priority);
-    }
+        let mut nodes = Nodes::new(nodes);
+        let mut scheduler = TickScheduler::default();
+        for tick in pending_ticks {
+            nodes.inner_mut()[tick.node.index()].pending_tick = true;
+            scheduler.schedule_tick(tick.node, tick.delay as usize, tick.priority);
+        }
 
-    DirectEngine {
-        nodes,
-        forward_links,
-        scheduler,
-        notes: Vec::new(),
-        work: 0,
-        changed_since_take: false,
+        DirectEngine {
+            nodes,
+            forward_links,
+            scheduler,
+            notes: Vec::new(),
+            changed_since_take: false,
+        }
     }
 }

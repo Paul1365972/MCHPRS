@@ -214,7 +214,7 @@ impl Compiled {
             return Ok(Box::new(DirectEngine::new(
                 &self.netlist,
                 io_only,
-                self.pending_ticks.clone(),
+                &self.pending_ticks,
             )));
         }
         #[cfg(feature = "fpga")]

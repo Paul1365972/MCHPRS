@@ -20,7 +20,7 @@ use std::time::Instant;
 pub fn start(netlist: &Netlist, ticks: &[TickEntry], io_only: bool) -> Worker {
     let block_map = BlockMap::new(netlist);
     let pending_ticks = block_map.map_ticks(ticks);
-    let engine = DirectEngine::new(netlist, io_only, pending_ticks);
+    let engine = DirectEngine::new(netlist, io_only, &pending_ticks);
     Worker::start(block_map, Box::new(engine))
 }
 
@@ -98,30 +98,43 @@ pub struct DirectEngine {
     forward_links: ForwardLinks,
     scheduler: TickScheduler,
     notes: Vec<NodeId>,
-    work: usize,
     changed_since_take: bool,
 }
 
 impl DirectEngine {
     const WORK_PER_TIME_CHECK: usize = 20_000;
 
-    pub fn new(netlist: &Netlist, io_only: bool, pending_ticks: Vec<PendingTick>) -> DirectEngine {
-        compile::compile(netlist, io_only, pending_ticks)
-    }
-
     fn node(&self, node_id: NodeId) -> &Node {
         &self.nodes.inner()[node_id.index()]
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self) -> usize {
         let mut queues = self.scheduler.queues_this_tick();
         let mut work = 1;
         queues.drain_each(|node_id| {
             work += 1;
             self.tick_node(node_id);
         });
-        self.work += work;
         self.scheduler.end_tick(queues);
+        work
+    }
+
+    fn take_changed_nodes(&mut self, reported: impl Fn(&Node) -> bool) -> NodeChanges {
+        let states = self
+            .nodes
+            .inner_mut()
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, node)| node.changed && reported(node))
+            .map(|(index, node)| {
+                node.changed = false;
+                (NodeId::new(index), node.state())
+            })
+            .collect();
+        NodeChanges {
+            states,
+            notes: mem::take(&mut self.notes),
+        }
     }
 
     fn set_power_and_propagate(&mut self, node_id: NodeId, power: SignalStrength) {
@@ -163,12 +176,12 @@ impl DirectEngine {
 impl Engine for DirectEngine {
     fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> Result<u64, EngineError> {
         let mut remaining = max_ticks;
-        self.work = 0;
+        let mut work = 0;
         while remaining != 0 {
-            self.tick();
+            work += self.tick();
             remaining -= 1;
-            if self.work >= Self::WORK_PER_TIME_CHECK {
-                self.work = 0;
+            if work >= Self::WORK_PER_TIME_CHECK {
+                work = 0;
                 if Instant::now() >= deadline {
                     break;
                 }
@@ -210,35 +223,15 @@ impl Engine for DirectEngine {
     }
 
     fn take_changes(&mut self) -> Result<NodeChanges, EngineError> {
-        let mut changes = NodeChanges::default();
         if !mem::take(&mut self.changed_since_take) {
-            return Ok(changes);
+            return Ok(NodeChanges::default());
         }
-        for (index, node) in self.nodes.inner_mut().iter_mut().enumerate() {
-            if node.changed && node.visible {
-                node.changed = false;
-                changes.states.push((NodeId::new(index), node.state()));
-            }
-        }
-        changes.notes = mem::take(&mut self.notes);
-        Ok(changes)
+        Ok(self.take_changed_nodes(|node| node.visible))
     }
 
     fn snapshot(&mut self) -> Result<(NodeChanges, Vec<PendingTick>), EngineError> {
         self.changed_since_take = false;
-        let states = self
-            .nodes
-            .inner_mut()
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(index, node)| {
-                mem::take(&mut node.changed).then(|| (NodeId::new(index), node.state()))
-            })
-            .collect();
-        let changes = NodeChanges {
-            states,
-            notes: mem::take(&mut self.notes),
-        };
+        let changes = self.take_changed_nodes(|_| true);
         Ok((changes, self.scheduler.pending_ticks()))
     }
 }
