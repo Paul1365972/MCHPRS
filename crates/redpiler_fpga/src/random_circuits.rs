@@ -1,7 +1,11 @@
-use crate::circuit::{Circuit, ComparatorMode, Kind, Link, Node, State, PULSE_PRIORITY};
+use crate::circuit::{
+    Circuit, ComparatorMode, Kind, Link, Node, PendingTick, State, PULSE_PRIORITY,
+};
 use crate::engine::Simulator;
 use crate::reference::{settled_initial_state, Reference};
 use crate::verilator::VerilatorEngine;
+use mchprs_redpiler::compile_graph::SignalStrength;
+use std::num::NonZeroU8;
 
 const LINK_WINDOW: usize = 24;
 
@@ -23,8 +27,8 @@ impl Random {
         self.below(denominator) < numerator
     }
 
-    fn strength(&mut self) -> u8 {
-        self.below(16) as u8
+    fn strength(&mut self) -> SignalStrength {
+        SignalStrength::try_from(self.below(16) as u8).expect("strengths are below 16")
     }
 }
 
@@ -54,10 +58,6 @@ fn random_kind(random: &mut Random) -> Kind {
     }
 }
 
-fn is_input(kind: Kind) -> bool {
-    matches!(kind, Kind::Lever | Kind::Button | Kind::PressurePlate)
-}
-
 fn random_state(random: &mut Random, kind: Kind, has_sides: bool) -> State {
     let mut state = State::default();
     match kind {
@@ -73,14 +73,20 @@ fn random_state(random: &mut Random, kind: Kind, has_sides: bool) -> State {
                 matches!(kind, Kind::Repeater { .. }) && has_sides && random.chance(1, 4);
         }
     }
-    if let Some(delay) = kind.delay().filter(|_| random.chance(1, 4)) {
-        state.delay = 1 + random.below(usize::from(delay)) as u8;
-        state.priority = if kind.has_pulse_countdown() && random.chance(1, 2) {
+    if let Some(scheduled) = kind
+        .scheduled_tick(state.is_powered())
+        .filter(|_| random.chance(1, 4))
+    {
+        let delay = random.below(usize::from(scheduled.delay.get())) as u8;
+        let priority = if kind.has_pulse_countdown() && random.chance(1, 2) {
             PULSE_PRIORITY
         } else {
-            kind.priority(state.is_powered())
-                .expect("timed nodes have a priority")
+            scheduled.priority
         };
+        state.pending = Some(PendingTick {
+            delay: NonZeroU8::MIN.saturating_add(delay),
+            priority,
+        });
     }
     state
 }
@@ -94,7 +100,7 @@ fn random_links(random: &mut Random, kinds: &[Kind], target: usize, count: usize
             let attenuation = match random.below(10) {
                 0..=4 => 0,
                 5..=7 => 1 + random.below(3) as u8,
-                _ => random.strength(),
+                _ => random.below(16) as u8,
             };
             (kinds[source].drives_links() && kinds[source] != Kind::Wire).then_some(Link {
                 source,
@@ -126,7 +132,7 @@ fn random_circuit(seed: u64, count: usize) -> Circuit {
                 initial: random_state(&mut random, kind, !sides.is_empty()),
                 inputs,
                 sides,
-                is_input: is_input(kind),
+                is_input: kind.is_input(),
                 is_output: matches!(kind, Kind::Lamp | Kind::Trapdoor),
             }
         })
@@ -160,7 +166,7 @@ fn assert_same_states(
 
 fn input_nodes(circuit: &Circuit) -> Vec<usize> {
     (0..circuit.nodes().len())
-        .filter(|&index| is_input(circuit.nodes()[index].kind))
+        .filter(|&index| circuit.nodes()[index].kind.is_input())
         .collect()
 }
 

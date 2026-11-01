@@ -1,12 +1,15 @@
-use super::{invalid, Circuit, ComparatorMode, Kind, Link, Node, State};
+use super::{invalid, Circuit, ComparatorMode, Kind, Link, Node, PendingTick, State};
 use mchprs_blocks::blocks::ComparatorMode as BlockComparatorMode;
-use mchprs_redpiler::compile_graph::{LinkType, NodeType, SignalStrength};
-use mchprs_redpiler::{Netlist, PendingTick};
-use mchprs_world::TickPriority;
+use mchprs_redpiler::compile_graph::{LinkType, NodeType};
+use mchprs_redpiler::Netlist;
 use std::io;
+use std::num::NonZeroU8;
 
 impl Circuit {
-    pub(crate) fn lower(netlist: &Netlist, pending_ticks: &[PendingTick]) -> io::Result<Circuit> {
+    pub(crate) fn lower(
+        netlist: &Netlist,
+        pending_ticks: &[mchprs_redpiler::PendingTick],
+    ) -> io::Result<Circuit> {
         let mut nodes = netlist
             .ids()
             .map(|id| {
@@ -33,9 +36,9 @@ impl Circuit {
                 Ok(Node {
                     kind,
                     initial: State {
-                        strength: node.state.power.get(),
+                        strength: node.state.power,
                         locked: node.state.repeater_locked,
-                        ..State::default()
+                        pending: None,
                     },
                     inputs,
                     sides,
@@ -53,25 +56,33 @@ impl Circuit {
                     node.kind
                 )));
             }
-            let delay = tick.delay.max(1);
-            if delay > 15 {
-                return Err(invalid(format!(
-                    "node {index}: pending delay {delay} exceeds 15"
-                )));
-            }
-            let delay = delay as u8;
-            let priority = priority_index(tick.priority);
-            let state = &mut node.initial;
-            if state.delay != 0 && (state.delay, state.priority) != (delay, priority) {
+            let delay = u8::try_from(tick.delay.max(1))
+                .ok()
+                .and_then(NonZeroU8::new)
+                .filter(|delay| delay.get() <= 15)
+                .ok_or_else(|| {
+                    invalid(format!(
+                        "node {index}: pending delay {} exceeds 15",
+                        tick.delay
+                    ))
+                })?;
+            let pending = PendingTick {
+                delay,
+                priority: tick.priority,
+            };
+            if node
+                .initial
+                .pending
+                .is_some_and(|existing| existing != pending)
+            {
                 return Err(invalid(format!(
                     "node {index}: distinct pending ticks cannot be represented"
                 )));
             }
-            state.delay = delay;
-            state.priority = priority;
+            node.initial.pending = Some(pending);
         }
         for id in netlist.ids() {
-            if netlist.node(id).state.pending_tick && nodes[id.index()].initial.delay == 0 {
+            if netlist.node(id).state.pending_tick && nodes[id.index()].initial.pending.is_none() {
                 return Err(invalid(format!(
                     "node {}: marked pending without a pending tick",
                     id.index()
@@ -104,7 +115,7 @@ fn kind(node_type: &NodeType) -> Option<Kind> {
                 BlockComparatorMode::Compare => ComparatorMode::Compare,
                 BlockComparatorMode::Subtract => ComparatorMode::Subtract,
             },
-            far_input: far_input.map(SignalStrength::get),
+            far_input,
             facing_diode,
         },
         NodeType::Lamp => Kind::Lamp,
@@ -113,22 +124,4 @@ fn kind(node_type: &NodeType) -> Option<Kind> {
         NodeType::Constant => Kind::Constant,
         NodeType::NoteBlock { .. } => return None,
     })
-}
-
-const PRIORITIES: [TickPriority; 4] = [
-    TickPriority::Highest,
-    TickPriority::Higher,
-    TickPriority::High,
-    TickPriority::Normal,
-];
-
-fn priority_index(priority: TickPriority) -> u8 {
-    PRIORITIES
-        .iter()
-        .position(|&candidate| candidate == priority)
-        .unwrap() as u8
-}
-
-pub(crate) fn priority(index: u8) -> TickPriority {
-    PRIORITIES[usize::from(index)]
 }

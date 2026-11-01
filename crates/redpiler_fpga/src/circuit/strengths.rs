@@ -1,58 +1,51 @@
-use super::{Circuit, ComparatorMode, Kind, Link};
+use super::{Circuit, ComparatorMode, Kind, Link, StrengthSet};
+use mchprs_redpiler::compile_graph::SignalStrength;
 use std::collections::VecDeque;
 
-const OFF: u16 = 1;
-const ON: u16 = 1 << 15;
-
-fn attenuate(strengths: u16, attenuation: u8) -> u16 {
-    (0..16)
-        .filter(|strength| strengths & (1 << strength) != 0)
-        .fold(0, |attenuated, strength: u8| {
-            attenuated | 1 << strength.saturating_sub(attenuation)
-        })
-}
-
-fn strongest(links: &[Link], strengths: &[u16]) -> u16 {
+fn strongest(links: &[Link], strengths: &[StrengthSet]) -> StrengthSet {
     let sets: Vec<_> = links
         .iter()
-        .map(|link| attenuate(strengths[link.source], link.attenuation))
+        .map(|link| strengths[link.source].attenuated(link.attenuation))
         .collect();
-    let Some(floor) = sets.iter().map(|set| set.trailing_zeros()).max() else {
-        return OFF;
+    let Some(floor) = sets.iter().filter_map(|set| set.minimum()).max() else {
+        return StrengthSet::OFF;
     };
-    sets.iter().fold(0, |union, set| union | set) & !((1 << floor) - 1)
+    sets.iter()
+        .fold(StrengthSet::default(), |union, &set| union | set)
+        .at_least(floor)
 }
 
-fn comparator(mode: ComparatorMode, far_input: Option<u8>, rear: u16, side: u16) -> u16 {
-    let rear = match far_input {
-        Some(far) => {
-            let below_full = if rear & !ON != 0 { 1 << far } else { 0 };
-            below_full | rear & ON
-        }
-        None => rear,
-    };
-    let mut outputs = 0;
-    for rear_strength in (0..16).filter(|strength| rear & (1 << strength) != 0) {
-        for side_strength in (0..16).filter(|strength| side & (1 << strength) != 0) {
-            let output = if rear_strength < side_strength {
-                0
-            } else if mode == ComparatorMode::Subtract {
-                rear_strength - side_strength
-            } else {
-                rear_strength
-            };
-            outputs |= 1 << output;
-        }
+fn comparator(
+    mode: ComparatorMode,
+    far_input: Option<SignalStrength>,
+    rear: StrengthSet,
+    side: StrengthSet,
+) -> StrengthSet {
+    rear.iter()
+        .flat_map(|rear| {
+            side.iter()
+                .map(move |side| mode.output(far_input, rear, side))
+        })
+        .collect()
+}
+
+fn binary(on: bool, off: bool) -> StrengthSet {
+    let mut outputs = StrengthSet::default();
+    if off {
+        outputs |= StrengthSet::OFF;
+    }
+    if on {
+        outputs |= StrengthSet::ON;
     }
     outputs
 }
 
 impl Circuit {
-    pub(crate) fn output_strengths(&self) -> Vec<u16> {
-        let mut strengths: Vec<u16> = self
+    pub(crate) fn output_strengths(&self) -> Vec<StrengthSet> {
+        let mut strengths: Vec<_> = self
             .nodes
             .iter()
-            .map(|node| 1 << node.initial.strength)
+            .map(|node| StrengthSet::only(node.initial.strength))
             .collect();
         let mut consumers = vec![Vec::new(); self.nodes.len()];
         for (index, node) in self.nodes.iter().enumerate() {
@@ -79,16 +72,15 @@ impl Circuit {
         strengths
     }
 
-    fn reachable_outputs(&self, index: usize, strengths: &[u16]) -> u16 {
+    fn reachable_outputs(&self, index: usize, strengths: &[StrengthSet]) -> StrengthSet {
         let node = &self.nodes[index];
         let input = strongest(&node.inputs, strengths);
-        let can_be_on = input & !OFF != 0;
-        let can_be_off = input & OFF != 0;
-        let pending = node.kind.is_timed() && node.initial.delay != 0;
-        let binary = |on: bool, off: bool| (if off { OFF } else { 0 }) | (if on { ON } else { 0 });
+        let can_be_on = input.maximum().is_some_and(|strength| !strength.is_zero());
+        let can_be_off = input.contains(SignalStrength::Zero);
+        let pending = node.initial.pending.is_some();
         match node.kind {
-            Kind::Constant => 0,
-            Kind::Lever | Kind::Button | Kind::PressurePlate => OFF | ON,
+            Kind::Constant => StrengthSet::default(),
+            Kind::Lever | Kind::Button | Kind::PressurePlate => StrengthSet::OFF | StrengthSet::ON,
             Kind::Torch => binary(can_be_off, can_be_on),
             Kind::Lamp | Kind::Trapdoor => binary(can_be_on, can_be_off),
             Kind::Repeater { .. } => binary(can_be_on || pending, can_be_off || pending),

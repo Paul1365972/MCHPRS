@@ -55,20 +55,13 @@ fn validate_kind(kind: Kind) -> Result<(), String> {
         Kind::Repeater { delay, .. } if !(1..=4).contains(&delay) => {
             Err(format!("repeater delay {delay} is not 1..4"))
         }
-        Kind::Comparator {
-            far_input: Some(strength),
-            ..
-        } if strength > 15 => Err(format!("comparator far input {strength} exceeds 15")),
         _ => Ok(()),
     }
 }
 
 fn validate_reachable_state(node: &Node) -> Result<(), String> {
     let state = node.initial;
-    if state.strength > 15 {
-        return Err(format!("strength {} exceeds 15", state.strength));
-    }
-    if node.kind.has_boolean_power() && !matches!(state.strength, 0 | 15) {
+    if node.kind.has_boolean_power() && !matches!(state.strength.get(), 0 | 15) {
         return Err(format!(
             "{:?} cannot have strength {}",
             node.kind, state.strength
@@ -78,25 +71,25 @@ fn validate_reachable_state(node: &Node) -> Result<(), String> {
     if state.locked && !(matches!(node.kind, Kind::Repeater { .. }) && has_sides) {
         return Err("only a repeater with side inputs can be locked".to_owned());
     }
-    if state.delay == 0 {
+    let Some(pending) = state.pending else {
         return Ok(());
-    }
+    };
     let delay = node
         .kind
         .delay()
         .ok_or_else(|| format!("{:?} cannot have a pending tick", node.kind))?;
-    if state.delay > delay {
+    if pending.delay > delay {
         return Err(format!(
             "pending delay {} exceeds the delay {delay} of {:?}",
-            state.delay, node.kind
+            pending.delay, node.kind
         ));
     }
-    let scheduled = node.kind.priority(state.is_powered()) == Some(state.priority)
-        || node.kind.has_pulse_countdown() && state.priority == PULSE_PRIORITY;
+    let scheduled = node.kind.priority(state.is_powered()) == Some(pending.priority)
+        || node.kind.has_pulse_countdown() && pending.priority == PULSE_PRIORITY;
     if !scheduled {
         return Err(format!(
-            "{:?} never schedules a tick at priority {}",
-            node.kind, state.priority
+            "{:?} never schedules a tick at priority {:?}",
+            node.kind, pending.priority
         ));
     }
     Ok(())

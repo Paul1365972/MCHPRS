@@ -1,8 +1,12 @@
+use crate::circuit::PendingTick;
+use mchprs_world::TickPriority;
+use std::num::NonZeroU8;
+
 #[derive(Clone, Copy)]
 struct Timer {
     deadline: u128,
     position: Option<usize>,
-    priority: u8,
+    priority: TickPriority,
 }
 
 pub(super) struct Timers {
@@ -18,10 +22,11 @@ impl Timers {
         }
     }
 
-    pub(super) fn remaining(&self, index: usize, ticks: u64) -> Option<(u8, u8)> {
-        self.pending[index].map(|timer| {
-            let delay = (timer.deadline - u128::from(ticks)) as u8;
-            (delay, if delay != 0 { timer.priority } else { 0 })
+    pub(super) fn remaining(&self, index: usize, ticks: u64) -> Option<PendingTick> {
+        let timer = self.pending[index]?;
+        Some(PendingTick {
+            delay: NonZeroU8::new((timer.deadline - u128::from(ticks)) as u8)?,
+            priority: timer.priority,
         })
     }
 
@@ -43,7 +48,7 @@ impl Timers {
         for index in self.queue[deadline as usize & 15].drain(..) {
             let timer = self.pending[index].as_mut().unwrap();
             timer.position = None;
-            phases[usize::from(timer.priority)].push(index);
+            phases[timer.priority as usize].push(index);
         }
     }
 
@@ -51,7 +56,7 @@ impl Timers {
         self.pending[index] = None;
     }
 
-    pub(super) fn schedule(&mut self, index: usize, deadline: u128, priority: u8) {
+    pub(super) fn schedule(&mut self, index: usize, deadline: u128, priority: TickPriority) {
         if let Some(Timer {
             deadline: previous,
             position: Some(position),

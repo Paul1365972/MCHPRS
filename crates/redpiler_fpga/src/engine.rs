@@ -1,4 +1,4 @@
-use crate::circuit::{priority, Circuit, Kind, State};
+use crate::circuit::{Circuit, Kind, State};
 use mchprs_redpiler::compile_graph::{NodeState, SignalStrength};
 use mchprs_redpiler::{Engine, EngineError, Input, NodeChanges, NodeId, PendingTick};
 use std::io;
@@ -51,7 +51,7 @@ impl<S: Simulator> PhaseEngine<S> {
         changes.states.push((
             NodeId::new(node),
             NodeState {
-                power: SignalStrength::try_from(state.strength).expect("strengths are 0..=15"),
+                power: state.strength,
                 repeater_locked: state.locked,
                 pending_tick: false,
             },
@@ -59,7 +59,7 @@ impl<S: Simulator> PhaseEngine<S> {
     }
 }
 
-fn shown(state: State) -> (bool, u8) {
+fn shown(state: State) -> (bool, SignalStrength) {
     (state.locked, state.strength)
 }
 
@@ -120,11 +120,11 @@ impl<S: Simulator> Engine for PhaseEngine<S> {
         let mut changes = NodeChanges::default();
         let mut pending_ticks = Vec::new();
         for (node, state) in states.into_iter().enumerate() {
-            if state.delay != 0 {
+            if let Some(pending) = state.pending {
                 pending_ticks.push(PendingTick {
                     node: NodeId::new(node),
-                    delay: u32::from(state.delay),
-                    priority: priority(state.priority),
+                    delay: u32::from(pending.delay.get()),
+                    priority: pending.priority,
                 });
             }
             self.report(node, state, &mut changes);

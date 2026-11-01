@@ -1,4 +1,5 @@
-use crate::circuit::{Circuit, Kind};
+use crate::circuit::{Circuit, Kind, StrengthSet};
+use mchprs_redpiler::compile_graph::SignalStrength;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Field {
@@ -22,7 +23,7 @@ impl Field {
 
 pub(crate) struct Registers<'a> {
     pub(crate) circuit: &'a Circuit,
-    strengths: Vec<u16>,
+    strengths: Vec<StrengthSet>,
 }
 
 impl<'a> Registers<'a> {
@@ -33,25 +34,22 @@ impl<'a> Registers<'a> {
         }
     }
 
-    pub(crate) fn strengths(&self, index: usize) -> u16 {
+    pub(crate) fn strengths(&self, index: usize) -> StrengthSet {
         self.strengths[index]
     }
 
-    pub(crate) fn literal(&self, index: usize) -> Option<u8> {
-        let strengths = self.strengths(index);
-        (strengths.count_ones() == 1).then(|| strengths.trailing_zeros() as u8)
+    pub(crate) fn literal(&self, index: usize) -> Option<SignalStrength> {
+        self.strengths(index).single()
     }
 
-    pub(crate) fn two_level(&self, index: usize) -> Option<(u8, u8)> {
+    pub(crate) fn two_level(&self, index: usize) -> Option<(SignalStrength, SignalStrength)> {
         let strengths = self.strengths(index);
-        (matches!(self.circuit.nodes[index].kind, Kind::Comparator { .. })
-            && strengths.count_ones() == 2)
-            .then(|| {
-                (
-                    strengths.trailing_zeros() as u8,
-                    15 - strengths.leading_zeros() as u8,
-                )
-            })
+        if !matches!(self.circuit.nodes[index].kind, Kind::Comparator { .. })
+            || strengths.len() != 2
+        {
+            return None;
+        }
+        Some((strengths.minimum()?, strengths.maximum()?))
     }
 
     pub(crate) fn is_lockable(&self, index: usize) -> bool {
@@ -78,9 +76,9 @@ impl<'a> Registers<'a> {
             fields.push(Field::Locked);
         }
         if let Some(delay) = kind.delay() {
-            fields.push(Field::Countdown(delay));
+            fields.push(Field::Countdown(delay.get()));
             if kind.has_pulse_countdown() {
-                fields.push(Field::PulseCountdown(delay));
+                fields.push(Field::PulseCountdown(delay.get()));
             }
         }
         fields

@@ -1,7 +1,7 @@
 mod compile;
 mod process;
 
-use crate::circuit::{Circuit, Kind, Snapshot, State};
+use crate::circuit::{Circuit, Snapshot, State};
 use crate::engine::Simulator;
 use crate::readback::Readback;
 use compile::SIMULATOR;
@@ -98,7 +98,7 @@ impl VerilatorEngine {
             inputs: circuit
                 .nodes()
                 .iter()
-                .map(|node| matches!(node.kind, Kind::Lever | Kind::Button | Kind::PressurePlate))
+                .map(|node| node.kind.is_input())
                 .collect(),
             readback,
             node_count,

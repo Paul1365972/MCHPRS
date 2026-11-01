@@ -1,15 +1,38 @@
 mod lower;
+mod strength_set;
 mod strengths;
 mod validate;
 
-pub(crate) use lower::priority;
+pub(crate) use strength_set::StrengthSet;
 
+use mchprs_redpiler::compile_graph::SignalStrength;
+use mchprs_world::TickPriority;
 use std::io;
+use std::num::NonZeroU8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComparatorMode {
     Compare,
     Subtract,
+}
+
+impl ComparatorMode {
+    pub(crate) fn output(
+        self,
+        far_input: Option<SignalStrength>,
+        rear: SignalStrength,
+        side: SignalStrength,
+    ) -> SignalStrength {
+        let rear = match far_input {
+            Some(far_input) if rear != SignalStrength::Fifteen => far_input,
+            _ => rear,
+        };
+        match self {
+            ComparatorMode::Compare if rear >= side => rear,
+            ComparatorMode::Compare => SignalStrength::Zero,
+            ComparatorMode::Subtract => rear.saturating_sub(side.get()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,7 +47,7 @@ pub enum Kind {
     },
     Comparator {
         mode: ComparatorMode,
-        far_input: Option<u8>,
+        far_input: Option<SignalStrength>,
         facing_diode: bool,
     },
     Lamp,
@@ -33,13 +56,16 @@ pub enum Kind {
     Constant,
 }
 
+const LAMP_DELAY: NonZeroU8 = NonZeroU8::new(2).unwrap();
+const BUTTON_DELAY: NonZeroU8 = NonZeroU8::new(10).unwrap();
+
 impl Kind {
-    pub(crate) fn delay(self) -> Option<u8> {
+    pub(crate) fn delay(self) -> Option<NonZeroU8> {
         match self {
-            Kind::Button => Some(10),
-            Kind::Torch | Kind::Comparator { .. } => Some(1),
-            Kind::Repeater { delay, .. } => Some(delay),
-            Kind::Lamp => Some(2),
+            Kind::Button => Some(BUTTON_DELAY),
+            Kind::Torch | Kind::Comparator { .. } => Some(NonZeroU8::MIN),
+            Kind::Repeater { delay, .. } => NonZeroU8::new(delay),
+            Kind::Lamp => Some(LAMP_DELAY),
             _ => None,
         }
     }
@@ -51,16 +77,35 @@ impl Kind {
     /// A repeater that does not face a diode schedules High when it will turn on and Higher when
     /// it will turn off, and its output only changes when it fires, so its pending priority
     /// follows its output.
-    pub(crate) fn priority(self, powered: bool) -> Option<u8> {
+    pub(crate) fn priority(self, powered: bool) -> Option<TickPriority> {
         match self {
-            Kind::Button | Kind::Torch | Kind::Lamp => Some(3),
-            Kind::Comparator { facing_diode, .. } => Some(if facing_diode { 2 } else { 3 }),
+            Kind::Button | Kind::Torch | Kind::Lamp => Some(TickPriority::Normal),
+            Kind::Comparator { facing_diode, .. } => Some(if facing_diode {
+                TickPriority::High
+            } else {
+                TickPriority::Normal
+            }),
             Kind::Repeater {
                 facing_diode: true, ..
-            } => Some(0),
-            Kind::Repeater { .. } => Some(if powered { 1 } else { 2 }),
+            } => Some(TickPriority::Highest),
+            Kind::Repeater { .. } => Some(if powered {
+                TickPriority::Higher
+            } else {
+                TickPriority::High
+            }),
             _ => None,
         }
+    }
+
+    pub(crate) fn scheduled_tick(self, powered: bool) -> Option<PendingTick> {
+        Some(PendingTick {
+            delay: self.delay()?,
+            priority: self.priority(powered)?,
+        })
+    }
+
+    pub(crate) fn is_input(self) -> bool {
+        matches!(self, Kind::Lever | Kind::Button | Kind::PressurePlate)
     }
 
     pub(crate) fn has_pulse_countdown(self) -> bool {
@@ -108,30 +153,52 @@ pub(crate) struct Snapshot {
     pub states: Vec<State>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PendingTick {
+    pub(crate) delay: NonZeroU8,
+    pub(crate) priority: TickPriority,
+}
+
+pub(crate) const PULSE_PRIORITY: TickPriority = TickPriority::Higher;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct State {
-    pub strength: u8,
+    pub strength: SignalStrength,
     pub locked: bool,
-    pub delay: u8,
-    pub priority: u8,
+    pub pending: Option<PendingTick>,
 }
 
 impl State {
     pub fn is_powered(self) -> bool {
-        self.strength != 0
+        !self.strength.is_zero()
     }
 
     pub(crate) fn set_powered(&mut self, powered: bool) {
-        self.strength = if powered { 15 } else { 0 };
+        self.strength = powered.into();
     }
 }
-
-pub(crate) const PULSE_PRIORITY: u8 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Link {
     pub source: usize,
     pub attenuation: u8,
+}
+
+impl Link {
+    pub(crate) fn initial_strength(self, nodes: &[Node]) -> SignalStrength {
+        nodes[self.source]
+            .initial
+            .strength
+            .saturating_sub(self.attenuation)
+    }
+}
+
+pub(crate) fn initial_input_strength(nodes: &[Node], links: &[Link]) -> SignalStrength {
+    links
+        .iter()
+        .map(|link| link.initial_strength(nodes))
+        .max()
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Debug)]
@@ -208,7 +275,7 @@ impl Circuit {
                 } => [
                     5,
                     u8::from(mode == ComparatorMode::Subtract),
-                    far_input.unwrap_or(16),
+                    far_input.map_or(16, SignalStrength::get),
                     u8::from(facing_diode),
                 ],
                 Kind::Lamp => [6, 0, 0, 0],
@@ -219,10 +286,10 @@ impl Circuit {
             feed(&tag);
             let initial = node.initial;
             feed(&[
-                initial.strength,
+                initial.strength.get(),
                 u8::from(initial.locked),
-                initial.delay,
-                initial.priority,
+                initial.pending.map_or(0, |pending| pending.delay.get()),
+                initial.pending.map_or(0, |pending| pending.priority as u8),
             ]);
             feed(&[u8::from(node.is_input), u8::from(node.is_output)]);
             for links in [&node.inputs, &node.sides] {

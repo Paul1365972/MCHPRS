@@ -1,9 +1,10 @@
+use mchprs_redpiler::compile_graph::SignalStrength;
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Expression {
     Bit(bool),
-    Strength(u8),
+    Strength(SignalStrength),
     Signal(usize),
     Nonzero(Box<Expression>),
     Above(Box<Expression>, u8),
@@ -60,7 +61,7 @@ impl Expression {
 
     pub(super) fn maximum(terms: &[Self]) -> Self {
         match terms {
-            [] => Self::Strength(0),
+            [] => Self::Strength(SignalStrength::Zero),
             [term] => term.clone(),
             terms => {
                 let (left, right) = terms.split_at(terms.len() / 2);

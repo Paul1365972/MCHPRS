@@ -4,10 +4,11 @@ mod timers;
 
 pub(crate) use settle::settled_initial_state;
 
-use crate::circuit::{Circuit, Kind, Snapshot, State};
+use crate::circuit::{Circuit, Kind, PendingTick, Snapshot, State, PULSE_PRIORITY};
 use crate::engine::Simulator;
 use aggregate::Aggregate;
-use settle::{comparator, settle_node, Schedule};
+use mchprs_redpiler::compile_graph::SignalStrength;
+use settle::settle_node;
 use std::io;
 use timers::Timers;
 
@@ -25,7 +26,7 @@ pub(crate) struct Reference {
     aggregates: Vec<[Aggregate; 2]>,
     timers: Timers,
     phases: [Vec<usize>; 4],
-    strength_changes: Vec<(usize, u8, u8)>,
+    strength_changes: Vec<(usize, SignalStrength, SignalStrength)>,
     affected: Vec<usize>,
     affected_flags: Vec<bool>,
     ticks: u64,
@@ -47,28 +48,17 @@ impl Reference {
             ticks: 0,
         };
         for (index, node) in circuit.nodes().iter().enumerate() {
-            if node.kind.is_timed() {
-                engine.states[index].delay = 0;
-                engine.states[index].priority = 0;
-                if node.initial.delay != 0 {
-                    engine.schedule(index, node.initial.delay, node.initial.priority);
-                }
-            } else if matches!(
-                node.kind,
-                Kind::Lever | Kind::PressurePlate | Kind::Trapdoor
-            ) {
-                engine.states[index].delay = 0;
-                engine.states[index].priority = 0;
+            engine.states[index].pending = None;
+            if let Some(pending) = node.initial.pending {
+                engine.schedule(index, pending);
             }
             if !node.kind.observes_inputs() {
                 continue;
             }
             for (side, links) in [(false, &node.inputs), (true, &node.sides)] {
                 for link in links {
-                    let strength = engine.states[link.source]
-                        .strength
-                        .saturating_sub(link.attenuation);
-                    engine.aggregates[index][usize::from(side)].insert(strength);
+                    engine.aggregates[index][usize::from(side)]
+                        .insert(link.initial_strength(circuit.nodes()));
                     if link.attenuation < 15 {
                         engine.consumers[link.source].push(Consumer {
                             target: index,
@@ -92,7 +82,9 @@ impl Reference {
             Kind::Button => {
                 if value && !state.is_powered() {
                     state.set_powered(true);
-                    self.schedule(index, 10, 3);
+                    if let Some(tick) = kind.scheduled_tick(true) {
+                        self.schedule(index, tick);
+                    }
                 }
             }
             _ => {
@@ -133,9 +125,8 @@ impl Reference {
 
     fn state(&self, index: usize) -> State {
         let mut state = self.states[index];
-        if let Some((delay, priority)) = self.timers.remaining(index, self.ticks) {
-            state.delay = delay;
-            state.priority = priority;
+        if let Some(pending) = self.timers.remaining(index, self.ticks) {
+            state.pending = Some(pending);
         }
         state
     }
@@ -149,9 +140,9 @@ impl Reference {
         }
     }
 
-    fn schedule(&mut self, index: usize, delay: u8, priority: u8) {
-        let deadline = u128::from(self.ticks) + u128::from(delay);
-        self.timers.schedule(index, deadline, priority);
+    fn schedule(&mut self, index: usize, tick: PendingTick) {
+        let deadline = u128::from(self.ticks) + u128::from(tick.delay.get());
+        self.timers.schedule(index, deadline, tick.priority);
     }
 
     fn commit(&mut self, index: usize, state: State) {
@@ -167,23 +158,30 @@ impl Reference {
         let input = self.aggregates[index][0].maximum();
         let side = self.aggregates[index][1].maximum();
         let mut state = self.states[index];
-        match self.kinds[index] {
-            Kind::Repeater { delay, .. } if !state.locked => {
-                if state.is_powered() && input == 0 {
+        let kind = self.kinds[index];
+        match kind {
+            Kind::Repeater { .. } if !state.locked => {
+                if state.is_powered() && input.is_zero() {
                     state.set_powered(false);
                 } else if !state.is_powered() {
                     state.set_powered(true);
-                    if input == 0 {
-                        self.schedule(index, delay, 1);
+                    if input.is_zero()
+                        && let Some(delay) = kind.delay()
+                    {
+                        let pulse = PendingTick {
+                            delay,
+                            priority: PULSE_PRIORITY,
+                        };
+                        self.schedule(index, pulse);
                     }
                 }
             }
-            Kind::Torch if state.is_powered() != (input == 0) => state.set_powered(input == 0),
+            Kind::Torch => state.set_powered(input.is_zero()),
             Kind::Comparator {
                 mode, far_input, ..
-            } => state.strength = comparator(mode, far_input, input, side),
-            Kind::Lamp if state.is_powered() && input == 0 => state.set_powered(false),
-            Kind::Button if state.is_powered() => state.set_powered(false),
+            } => state.strength = mode.output(far_input, input, side),
+            Kind::Lamp if input.is_zero() => state.set_powered(false),
+            Kind::Button => state.set_powered(false),
             _ => {}
         }
         self.commit(index, state);
@@ -211,10 +209,10 @@ impl Reference {
             let input = self.aggregates[index][0].maximum();
             let side = self.aggregates[index][1].maximum();
             let pending = self.timers.is_pending(index);
-            let (state, schedule) =
+            let (state, tick) =
                 settle_node(self.kinds[index], self.states[index], input, side, pending);
-            if let Some(Schedule { delay, priority }) = schedule {
-                self.schedule(index, delay, priority);
+            if let Some(tick) = tick {
+                self.schedule(index, tick);
             }
             self.commit(index, state);
         }

@@ -1,13 +1,15 @@
-use crate::circuit::{Circuit, Kind, State, PULSE_PRIORITY};
+use crate::circuit::{Circuit, Kind, PendingTick, State, PULSE_PRIORITY};
 use crate::registers::{readback_bytes, Field, Registers};
+use mchprs_redpiler::compile_graph::SignalStrength;
 use std::io;
+use std::num::NonZeroU8;
 
 struct NodeReadback {
     kind: Kind,
     initial: State,
     fields: Vec<Field>,
-    literal: Option<u8>,
-    two_level: Option<(u8, u8)>,
+    literal: Option<SignalStrength>,
+    two_level: Option<(SignalStrength, SignalStrength)>,
 }
 
 pub(crate) struct Readback {
@@ -83,8 +85,7 @@ impl Readback {
     fn decode_node(&self, index: usize, bits: &mut Bits) -> io::Result<State> {
         let node = &self.nodes[index];
         let mut state = State {
-            delay: 0,
-            priority: 0,
+            pending: None,
             ..node.initial
         };
         let mut countdowns = Vec::new();
@@ -96,7 +97,10 @@ impl Readback {
                     let (low, high) = node.two_level.expect("a high bit means two levels");
                     state.strength = if value != 0 { high } else { low };
                 }
-                Field::Strength => state.strength = value as u8,
+                Field::Strength => {
+                    state.strength =
+                        SignalStrength::try_from(value).expect("a strength field has four bits");
+                }
                 Field::Locked => state.locked = value != 0,
                 Field::Countdown(_) => countdowns.push((value, None)),
                 Field::PulseCountdown(_) => countdowns.push((value, Some(PULSE_PRIORITY))),
@@ -109,15 +113,17 @@ impl Readback {
         match countdowns[..] {
             [] => {}
             [(value, priority)] if value.count_ones() == 1 => {
-                state.delay = value.trailing_zeros() as u8 + 1;
-                state.priority = priority
-                    .or(node.kind.priority(state.is_powered()))
-                    .expect("a countdown means a timed node");
+                state.pending = Some(PendingTick {
+                    delay: NonZeroU8::MIN.saturating_add(value.trailing_zeros() as u8),
+                    priority: priority
+                        .or(node.kind.priority(state.is_powered()))
+                        .expect("a countdown means a timed node"),
+                });
             }
             _ => {
                 return Err(invalid(format!(
                     "node {index}: countdowns {countdowns:?} hold more than one pending tick"
-                )))
+                )));
             }
         }
         Ok(state)
