@@ -1,3 +1,4 @@
+use crate::OVERWORLD_MIN_Y;
 use anyhow::Result;
 use fastnbt::{LongArray, Value};
 use flate2::write::ZlibEncoder;
@@ -62,7 +63,7 @@ fn serialize_chunk(chunk_x: i32, chunk_z: i32, chunk: ChunkData) -> Result<Vec<u
         ("DataVersion".to_owned(), Value::Int(MC_DATA_VERSION)),
         ("xPos".to_owned(), Value::Int(chunk_x)),
         ("zPos".to_owned(), Value::Int(chunk_z)),
-        ("yPos".to_owned(), Value::Int(0)),
+        ("yPos".to_owned(), Value::Int(OVERWORLD_MIN_Y >> 4)),
         (
             "Status".to_owned(),
             Value::String("minecraft:full".to_owned()),
@@ -74,8 +75,8 @@ fn serialize_chunk(chunk_x: i32, chunk_z: i32, chunk: ChunkData) -> Result<Vec<u
     for (pos, block_entity) in &chunk.block_entities {
         let pos = BlockPos {
             x: pos.x + chunk_x * 16,
+            y: pos.y + OVERWORLD_MIN_Y,
             z: pos.z + chunk_z * 16,
-            ..*pos
         };
         let mut block_entity_nbt = block_entity.to_nbt(false).unwrap();
         block_entity_nbt.insert("x".to_owned(), Value::Int(pos.x));
@@ -86,7 +87,7 @@ fn serialize_chunk(chunk_x: i32, chunk_z: i32, chunk: ChunkData) -> Result<Vec<u
     nbt.insert("block_entities".to_owned(), Value::List(block_entities));
 
     let mut sections = Vec::new();
-    for (section_y, section) in chunk.sections.iter().enumerate() {
+    for (section_y, section) in (OVERWORLD_MIN_Y >> 4..).zip(&chunk.sections) {
         let mut section_nbt = HashMap::new();
         section_nbt.insert("Y".to_string(), Value::Byte(section_y as i8));
         let block_states = if section.block_count() != 0 {
@@ -106,11 +107,8 @@ fn serialize_chunk(chunk_x: i32, chunk_z: i32, chunk: ChunkData) -> Result<Vec<u
     let mut encoder = ZlibEncoder::new(vec![0, 0, 0, 0, 2], Compression::default());
     fastnbt::to_writer(&mut encoder, &nbt)?;
     let mut data = encoder.finish()?;
-    let len = data.len() - 5;
-    data[0] = ((len >> 24) & 0xFF) as u8;
-    data[1] = ((len >> 16) & 0xFF) as u8;
-    data[2] = ((len >> 8) & 0xFF) as u8;
-    data[3] = (len & 0xFF) as u8;
+    let length = u32::try_from(data.len() - 4)?;
+    data[..4].copy_from_slice(&length.to_be_bytes());
     Ok(data)
 }
 
