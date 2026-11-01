@@ -17,7 +17,7 @@ include.workspace = true
 mchprs_commands = { path = "../commands" }
 mchprs_proc_macros = { path = "../proc_macros" }
 mchprs_save_data = { path = "../save_data" }
-mchprs_blocks = { path = "../blocks" }
+mchprs_blocks = { path = "../blocks", features = ["nbt"] }
 mchprs_world = { path = "../world", features = ["networking"] }
 mchprs_network = { path = "../network" }
 mchprs_redpiler = { path = "../redpiler" }

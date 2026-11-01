@@ -1,8 +1,9 @@
 use crate::config::CONFIG;
+use crate::item_stack::ItemStack;
 use crate::player::Player;
 use crate::plot::{PlotWorld, PLOT_BLOCK_HEIGHT};
 use mchprs_blocks::block_entities::BlockEntity;
-use mchprs_blocks::items::{Item, ItemStack};
+use mchprs_blocks::items::Item;
 use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
