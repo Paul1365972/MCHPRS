@@ -202,18 +202,19 @@ impl<'a> Writer<'a> {
             self.output,
             "
 module circuit_system #(parameter CLOCKS_PER_BIT = 100)(
-    input wire clock, serial_receive,
-    output wire serial_transmit, busy,
+    input wire clock, serial_receive, clear_fault,
+    output wire serial_transmit, ticking, waiting,
     output wire [63:0] tick_count,
-    output wire fault
+    output wire [2:0] fault_code
 );
     protocol_controller #(
         .NODE_COUNT({node_count}), .OUTPUT_COUNT({output_count}),
         .STATE_BYTES({state_bytes}), .OUTPUT_BYTES({output_bytes}),
         .CIRCUIT_ID(64'h{identity:016x}), .CLOCKS_PER_BIT(CLOCKS_PER_BIT)
     ) controller (
-        .clock(clock), .serial_receive(serial_receive), .serial_transmit(serial_transmit),
-        .busy(busy), .tick_count(tick_count), .fault(fault)
+        .clock(clock), .serial_receive(serial_receive), .clear_fault(clear_fault),
+        .serial_transmit(serial_transmit), .ticking(ticking), .waiting(waiting),
+        .tick_count(tick_count), .fault_code(fault_code)
     );
 endmodule"
         )

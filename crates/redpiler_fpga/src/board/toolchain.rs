@@ -157,7 +157,10 @@ fn place_and_route(
     netlist: &Path,
     progress: &dyn Fn(Stage),
 ) -> Result<PathBuf, ToolchainError> {
-    let constraints = directory.join(rtl::LIBRARY_DIRECTORY).join("basys3.xdc");
+    let constraints = directory
+        .join(rtl::LIBRARY_DIRECTORY)
+        .join("board")
+        .join("basys3.xdc");
     let assembly = directory.join("circuit.fasm");
     progress(Stage::PlaceAndRoute);
     run(

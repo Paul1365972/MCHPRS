@@ -8,10 +8,12 @@ module protocol_controller #(
 ) (
     input wire clock,
     input wire serial_receive,
+    input wire clear_fault,
     output wire serial_transmit,
-    output wire busy,
+    output wire ticking,
+    output wire waiting,
     output wire [63:0] tick_count,
-    output wire fault
+    output wire [2:0] fault_code
 );
     wire [7:0] receive_data, transmit_data;
     wire receive_ready, receive_error, transmit_start, transmit_busy;
@@ -32,7 +34,8 @@ module protocol_controller #(
         .receive_data(receive_data), .receive_ready(receive_ready),
         .receive_error(receive_error), .receive_accept(),
         .transmit_data(transmit_data), .transmit_start(transmit_start),
-        .transmit_busy(transmit_busy), .busy(busy),
-        .tick_count(tick_count), .fault(fault)
+        .transmit_busy(transmit_busy), .clear_fault(clear_fault),
+        .ticking(ticking), .waiting(waiting),
+        .tick_count(tick_count), .fault_code(fault_code)
     );
 endmodule

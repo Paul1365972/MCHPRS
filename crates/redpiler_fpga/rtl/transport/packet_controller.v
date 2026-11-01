@@ -14,13 +14,17 @@ module packet_controller #(
     output reg [7:0] transmit_data = 0,
     output reg transmit_start = 0,
     input wire transmit_busy,
-    output wire busy,
+    input wire clear_fault,
+    output wire ticking,
+    output wire waiting,
     output wire [63:0] tick_count,
-    output reg fault = 0
+    output reg [2:0] fault_code = 0
 );
     localparam FIND_FIRST = 0, FIND_SECOND = 1, RECEIVE = 2,
         VALIDATE = 3, BOUNDARY = 4, DISPATCH = 5, WAIT_COMPLETE = 6,
         CAPTURE = 7, TRANSMIT = 8, TRANSMIT_ACCEPT = 9, TRANSMIT_COMPLETE = 10;
+    localparam [2:0] FRAMING_FAULT = 1, CHECKSUM_FAULT = 2, VERSION_FAULT = 3, OPCODE_FAULT = 4,
+        INPUT_FAULT = 5, TICK_LIMIT_FAULT = 6, PHASE_FAULT = 7;
     localparam [31:0] RESPONSE_NODE_COUNT = NODE_COUNT;
     localparam [31:0] RESPONSE_OUTPUT_COUNT = OUTPUT_COUNT;
     localparam READBACK_BYTES = STATE_BYTES + OUTPUT_BYTES;
@@ -55,7 +59,8 @@ module packet_controller #(
     wire autonomous_allowed = phase <= VALIDATE || (phase >= TRANSMIT && !snapshot_hold);
     wire run = autonomous && autonomous_allowed;
 
-    assign busy = engine_busy || phase >= VALIDATE;
+    assign ticking = engine_busy;
+    assign waiting = autonomous && tick_count == tick_limit;
 
     assign receive_accept = phase <= RECEIVE;
     compiled_circuit circuit (
@@ -78,6 +83,11 @@ module packet_controller #(
         end
     endfunction
 
+    task report_fault(input [2:0] code);
+        if (fault_code == 0)
+            fault_code <= code;
+    endtask
+
     reg [7:0] response_byte;
     always @* begin
         if (response_position == 0)
@@ -97,8 +107,10 @@ module packet_controller #(
     always @(posedge clock) begin
         set_input <= 0;
         transmit_start <= 0;
+        if (clear_fault)
+            fault_code <= 0;
         if (receive_error)
-            fault <= 1;
+            report_fault(FRAMING_FAULT);
         if (receive_error && phase <= RECEIVE) begin
             phase <= FIND_FIRST;
         end else begin
@@ -127,8 +139,11 @@ module packet_controller #(
                     request_position <= request_position + 1;
                 end
                 VALIDATE: begin
-                    if (request_crc != received_crc || request[95:80] != 1) begin
-                        fault <= 1;
+                    if (request_crc != received_crc) begin
+                        report_fault(CHECKSUM_FAULT);
+                        phase <= FIND_FIRST;
+                    end else if (request[95:80] != 1) begin
+                        report_fault(VERSION_FAULT);
                         phase <= FIND_FIRST;
                     end else begin
                         phase <= BOUNDARY;
@@ -145,7 +160,7 @@ module packet_controller #(
                             autonomous <= 0;
                         end else begin
                             response_opcode <= 8'hff;
-                            fault <= 1;
+                            report_fault(OPCODE_FAULT);
                         end
                         4: autonomous <= 0;
                         2: if (request_argument[31:0] < RESPONSE_NODE_COUNT && request_argument[63:33] == 0) begin
@@ -154,7 +169,7 @@ module packet_controller #(
                             phase <= WAIT_COMPLETE;
                         end else begin
                             response_opcode <= 8'hff;
-                            fault <= 1;
+                            report_fault(INPUT_FAULT);
                         end
                         7, 9: begin end
                         8: if (request_argument >= tick_count) begin
@@ -162,11 +177,11 @@ module packet_controller #(
                             tick_limit <= request_argument;
                         end else begin
                             response_opcode <= 8'hff;
-                            fault <= 1;
+                            report_fault(TICK_LIMIT_FAULT);
                         end
                         default: begin
                             response_opcode <= 8'hff;
-                            fault <= 1;
+                            report_fault(OPCODE_FAULT);
                         end
                     endcase
                 end
@@ -199,7 +214,7 @@ module packet_controller #(
                     end
                 end
                 default: begin
-                    fault <= 1;
+                    report_fault(PHASE_FAULT);
                     phase <= FIND_FIRST;
                 end
             endcase
