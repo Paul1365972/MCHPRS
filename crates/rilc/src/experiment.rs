@@ -99,14 +99,9 @@ impl Loaded {
 
     pub fn compile(&self) -> Compiled {
         let started = Instant::now();
-        let max = BlockPos::new(
-            self.world.x_size * 16 - 1,
-            self.world.y_size * 16 - 1,
-            self.world.z_size * 16 - 1,
-        );
         let netlist = mchprs_redpiler::compile(
             &self.world,
-            (BlockPos::zero(), max),
+            self.world.corners(),
             &self.world.to_be_ticked,
             &self.options,
             &CompileProgress::default(),
@@ -150,13 +145,16 @@ fn world(mut plot: PlotData, [origin_x, origin_z]: [i32; 2]) -> Result<TestWorld
         .enumerate()
         .map(|(index, chunk)| chunk.load(index as i32 / width, index as i32 % width))
         .collect();
-    Ok(TestWorld {
+    let mut world = TestWorld {
         chunks,
         to_be_ticked: plot.pending_ticks,
         x_size: width,
         y_size: height,
         z_size: width,
-    })
+    };
+    let (first_pos, second_pos) = world.corners();
+    mchprs_redstone::update_region(&mut world, first_pos, second_pos);
+    Ok(world)
 }
 
 #[cfg(feature = "fpga")]

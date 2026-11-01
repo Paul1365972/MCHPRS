@@ -10,7 +10,7 @@ pub mod wire;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, LeverFace, RedstoneWire};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
-use mchprs_world::{TickPriority, World};
+use mchprs_world::{for_each_block_mut_optimized, TickPriority, World};
 
 pub fn bool_to_ss(b: bool) -> u8 {
     match b {
@@ -199,6 +199,13 @@ fn diode_get_input_strength(world: &impl World, pos: BlockPos, facing: BlockDire
         power = wire.power;
     }
     power
+}
+
+pub fn update_region(world: &mut impl World, first_pos: BlockPos, second_pos: BlockPos) {
+    for_each_block_mut_optimized(world, first_pos, second_pos, |world, pos| {
+        let block = world.get_block(pos);
+        update(block, world, pos);
+    });
 }
 
 pub fn update(block: Block, world: &mut impl World, pos: BlockPos) {

@@ -2145,6 +2145,7 @@ dependencies = [
  "mchprs_blocks",
  "mchprs_redpiler",
  "mchprs_redpiler_fpga",
+ "mchprs_redstone",
  "mchprs_save_data",
  "mchprs_schematic",
  "mchprs_world",

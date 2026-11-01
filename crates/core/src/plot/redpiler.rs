@@ -3,7 +3,7 @@ use super::Plot;
 use crate::player::PacketSender;
 use mchprs_redpiler::backend::direct;
 use mchprs_redpiler::{Backend, Batch, CompileProgress, CompilerOptions, Netlist};
-use mchprs_world::{for_each_block_mut_optimized, TickEntry, TickRate, World};
+use mchprs_world::{TickEntry, TickRate, World};
 use std::thread;
 use std::time::{Duration, Instant};
 use tracing::{debug, error};
@@ -30,6 +30,8 @@ impl Plot {
             .set_redpiler_options(&self.players, &options);
 
         let bounds = self.world.get_corners();
+        mchprs_redstone::update_region(&mut self.world, bounds.0, bounds.1);
+        self.world.flush_block_changes();
         let progress = CompileProgress::default();
         let started = thread::scope(|s| {
             let handle = s.spawn(|| {
@@ -99,10 +101,7 @@ impl Plot {
 
         if redpiler.options.update {
             let (first_pos, second_pos) = self.world.get_corners();
-            for_each_block_mut_optimized(&mut self.world, first_pos, second_pos, |world, pos| {
-                let block = world.get_block(pos);
-                mchprs_redstone::update(block, world, pos);
-            });
+            mchprs_redstone::update_region(&mut self.world, first_pos, second_pos);
         }
 
         self.show_redpiler_stopped();

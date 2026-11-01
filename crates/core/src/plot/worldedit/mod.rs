@@ -13,7 +13,7 @@ use mchprs_network::packets::clientbound::{CCommandsNode, CDeclareCommandsNodePa
 use mchprs_schematic::{create_clipboard, WorldEditClipboard};
 use mchprs_utils::map;
 use mchprs_world::storage::PalettedBitBuffer;
-use mchprs_world::{for_each_block_mut_optimized, World};
+use mchprs_world::World;
 use rand::RngExt;
 use regex::Regex;
 use std::collections::HashMap;
@@ -1061,13 +1061,6 @@ fn expand_selection(player: &mut Player, amount: BlockPos, contract: bool) {
     if Some(p2) != player.second_position {
         player.worldedit_set_second_position(p2);
     }
-}
-
-fn update(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {
-    for_each_block_mut_optimized(plot, first_pos, second_pos, |plot, pos| {
-        let block = plot.get_block(pos);
-        mchprs_redstone::update(block, plot, pos);
-    });
 }
 
 pub fn add_command_completions(nodes: &mut Vec<CCommandsNode>) {

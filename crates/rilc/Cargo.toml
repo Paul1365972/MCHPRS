@@ -24,6 +24,7 @@ sha2 = { workspace = true }
 toml = { workspace = true }
 mchprs_blocks = { path = "../blocks" }
 mchprs_world = { path = "../world", features = ["testing"] }
+mchprs_redstone = { path = "../redstone" }
 mchprs_schematic = { path = "../schematic" }
 line-index = { workspace = true }
 clap = { workspace = true }

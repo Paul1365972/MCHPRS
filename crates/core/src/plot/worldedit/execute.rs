@@ -238,7 +238,7 @@ pub(super) fn execute_paste(ctx: CommandExecuteContext<'_>) {
         capture_undo(ctx.plot, ctx.player, first_pos, second_pos);
         paste_clipboard(ctx.plot, cb, pos, ctx.has_flag('a'));
         if ctx.has_flag('u') {
-            update(ctx.plot, first_pos, second_pos);
+            mchprs_redstone::update_region(ctx.plot, first_pos, second_pos);
         }
         if ctx.has_flag('s') {
             ctx.player.worldedit_set_first_position(first_pos);
@@ -1013,7 +1013,7 @@ pub(super) fn execute_update(ctx: CommandExecuteContext<'_>) {
         return;
     };
 
-    update(ctx.plot, first_pos, second_pos);
+    mchprs_redstone::update_region(ctx.plot, first_pos, second_pos);
 
     ctx.player.send_worldedit_message(&format!(
         "Your selection was updated successfully. ({:?})",

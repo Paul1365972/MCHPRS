@@ -89,6 +89,8 @@ Once the netlist has been created, it is handed to a backend, which is responsib
 
 ## The Lifecycle
 
+Before compiling, the server, `rilc` and the tests update every block in the bounds with `mchprs_redstone::update_region`, the same update `//update` sends, so a compiled circuit never starts with a component that disagrees with its inputs and has no tick pending; backends may rely on that.
+
 `compile(world, bounds, ticks, options, progress)` runs the passes on a frozen world and returns a `Netlist`, an immutable node array indexed by `NodeId` with each node's input and output `Link`s. `CompileProgress` names the pass or backend stage currently running, and the plot's keep alive loop shows it on the scoreboard. `--backend=NAME` selects the backend; the server resolves the name and starts it on the compile thread, so a slow or failing start, such as building an FPGA bitstream, keeps players connected and reaches them as a chat message.
 
 The plot holds a `Backend`:

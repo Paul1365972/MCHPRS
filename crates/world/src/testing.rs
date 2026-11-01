@@ -32,6 +32,15 @@ impl TestWorld {
         }
     }
 
+    pub fn corners(&self) -> (BlockPos, BlockPos) {
+        let far = BlockPos::new(
+            self.x_size * 16 - 1,
+            self.y_size * 16 - 1,
+            self.z_size * 16 - 1,
+        );
+        (BlockPos::new(0, 0, 0), far)
+    }
+
     fn get_chunk_index_for_chunk(&self, chunk_x: i32, chunk_z: i32) -> usize {
         (chunk_x * self.z_size + chunk_z).unsigned_abs() as usize
     }

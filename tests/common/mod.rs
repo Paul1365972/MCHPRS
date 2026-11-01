@@ -27,12 +27,14 @@ pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn En
         optimize,
         ..Default::default()
     };
-    let max_x = world.x_size * 16 - 1;
-    let max_y = world.y_size * 16 - 1;
-    let max_z = world.z_size * 16 - 1;
-    let bounds = (BlockPos::new(0, 0, 0), BlockPos::new(max_x, max_y, max_z));
     let progress = CompileProgress::default();
-    let netlist = mchprs_redpiler::compile(world, bounds, &world.to_be_ticked, &options, &progress);
+    let netlist = mchprs_redpiler::compile(
+        world,
+        world.corners(),
+        &world.to_be_ticked,
+        &options,
+        &progress,
+    );
     let block_map = BlockMap::new(&netlist);
     let pending_ticks = block_map.map_ticks(&world.to_be_ticked);
     let target = match backend {
@@ -63,7 +65,9 @@ pub struct BackendRunner {
 }
 
 impl BackendRunner {
-    pub fn new(world: TestWorld, backend: TestBackend) -> BackendRunner {
+    pub fn new(mut world: TestWorld, backend: TestBackend) -> BackendRunner {
+        let (first_pos, second_pos) = world.corners();
+        mchprs_redstone::update_region(&mut world, first_pos, second_pos);
         let description = match backend {
             TestBackend::Redstone => "the base redstone implementation",
             TestBackend::Direct { optimize: false } => "the direct backend",
