@@ -13,6 +13,7 @@ use crate::config::CONFIG;
 use crate::interaction;
 use crate::interaction::UseOnBlockContext;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
+#[cfg(feature = "whitelist")]
 use crate::profile::PlayerProfile;
 use crate::server::{BroadcastMessage, Message, PrivMessage};
 use crate::utils::HyphenatedUUID;
@@ -44,7 +45,6 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
-use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 
 /// The width of a plot (2^n)
@@ -100,7 +100,6 @@ pub struct Plot {
     pub auto_redpiler: bool,
 
     owner: Option<u128>,
-    async_rt: Runtime,
     scoreboard: Scoreboard,
 }
 
@@ -820,48 +819,46 @@ impl Plot {
         self.locked_players.remove(&entity_id)
     }
 
+    #[cfg(feature = "whitelist")]
     pub fn whitelist_add(&self, username: String, packet_sender: PlayerPacketSender) {
         if !CONFIG.whitelist {
             packet_sender.send_error_message("Whitelist is not enabled!");
             return;
         }
         let sender = self.message_sender.clone();
-        self.async_rt.spawn(async move {
-            match PlayerProfile::lookup_by_username(&username).await {
-                Ok(profile) => {
-                    let _ = sender.send(Message::WhitelistAdd(
-                        profile.uuid.0,
-                        profile.username,
-                        packet_sender,
-                    ));
-                }
-                Err(error) => {
-                    warn!("Failed to look up profile for {username:?}: {error}");
-                    packet_sender.send_error_message(
-                        "Unable to look up that player. Check the name and try again.",
-                    );
-                }
+        thread::spawn(move || match PlayerProfile::lookup_by_username(&username) {
+            Ok(profile) => {
+                let _ = sender.send(Message::WhitelistAdd(
+                    profile.uuid.0,
+                    profile.username,
+                    packet_sender,
+                ));
+            }
+            Err(error) => {
+                warn!("Failed to look up profile for {username:?}: {error}");
+                packet_sender.send_error_message(
+                    "Unable to look up that player. Check the name and try again.",
+                );
             }
         });
     }
 
+    #[cfg(feature = "whitelist")]
     pub fn whitelist_remove(&self, username: String, packet_sender: PlayerPacketSender) {
         if !CONFIG.whitelist {
             packet_sender.send_error_message("Whitelist is not enabled!");
             return;
         }
         let sender = self.message_sender.clone();
-        self.async_rt.spawn(async move {
-            match PlayerProfile::lookup_by_username(&username).await {
-                Ok(profile) => {
-                    let _ = sender.send(Message::WhitelistRemove(profile.uuid.0, packet_sender));
-                }
-                Err(error) => {
-                    warn!("Failed to look up profile for {username:?}: {error}");
-                    packet_sender.send_error_message(
-                        "Unable to look up that player. Check the name and try again.",
-                    );
-                }
+        thread::spawn(move || match PlayerProfile::lookup_by_username(&username) {
+            Ok(profile) => {
+                let _ = sender.send(Message::WhitelistRemove(profile.uuid.0, packet_sender));
+            }
+            Err(error) => {
+                warn!("Failed to look up profile for {username:?}: {error}");
+                packet_sender.send_error_message(
+                    "Unable to look up that player. Check the name and try again.",
+                );
             }
         });
     }
@@ -1206,10 +1203,6 @@ impl Plot {
         self.remove_oob_players();
     }
 
-    fn create_async_rt() -> Runtime {
-        Runtime::new().unwrap()
-    }
-
     fn generate_chunk(layers: i32, x: i32, z: i32) -> Chunk {
         let mut chunk = Chunk::empty(x, z, PLOT_SECTIONS);
 
@@ -1305,7 +1298,6 @@ impl Plot {
             redpiler: None,
             timings: TimingsMonitor::new(tps),
             owner: database::get_plot_owner(x, z).map(|s| s.parse::<HyphenatedUUID>().unwrap().0),
-            async_rt: Plot::create_async_rt(),
             scoreboard: Default::default(),
             world,
         }
@@ -1362,8 +1354,6 @@ impl Plot {
     }
 
     fn run(&mut self, initial_player: Option<Player>) {
-        let _guard = self.async_rt.enter();
-
         if let Some(player) = initial_player {
             self.enter_plot(player);
         }

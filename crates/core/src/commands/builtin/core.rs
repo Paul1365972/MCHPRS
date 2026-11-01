@@ -201,6 +201,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
             }),
     );
 
+    #[cfg(feature = "whitelist")]
     registry.register(
         Command::new("whitelist")
             .subcommand(

@@ -1,14 +1,14 @@
 # Build stage
 FROM rust:alpine AS builder
 
-RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static
+RUN apk add --no-cache musl-dev
 
 WORKDIR /app/
 COPY ./src/ ./src/
 COPY ./crates/ ./crates/
 COPY ./mc_data/ ./mc_data/
 COPY ./Cargo.toml ./Cargo.lock ./rust-toolchain.toml ./
-RUN cargo build --locked --release
+RUN cargo build --locked --release --all-features
 
 # Runtime stage
 FROM scratch

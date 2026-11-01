@@ -18,12 +18,8 @@
             inherit system overlays;
           };
           rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-          nativeBuildInputs = with pkgs; [
-            rustToolchain pkg-config
-          ];
-          buildInputs = with pkgs; [
-            openssl
-          ];
+          nativeBuildInputs = [ rustToolchain ];
+          buildInputs = [ ];
         in
         with pkgs;
         {
