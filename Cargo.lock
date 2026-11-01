@@ -2061,9 +2061,11 @@ dependencies = [
  "line-index",
  "mchprs_blocks",
  "mchprs_redpiler",
+ "mchprs_redpiler_direct",
  "mchprs_ril",
  "mchprs_schematic",
  "owo-colors",
+ "rustc-hash",
  "tracing-subscriber",
 ]
 
