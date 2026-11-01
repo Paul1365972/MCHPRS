@@ -1,7 +1,9 @@
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode, LeverFace, Repeater};
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::backend::direct::DirectEngine;
-use mchprs_redpiler::{BlockMap, CompileProgress, CompilerOptions, Engine, Input, Reporting};
+use mchprs_redpiler::{
+    BlockMap, CompileProgress, CompilerInput, CompilerOptions, Engine, Input, Reporting,
+};
 use mchprs_redpiler_fpga::Target;
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
@@ -28,13 +30,12 @@ pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn En
         ..Default::default()
     };
     let progress = CompileProgress::default();
-    let netlist = mchprs_redpiler::compile(
+    let input = CompilerInput {
         world,
-        world.corners(),
-        &world.to_be_ticked,
-        &options,
-        &progress,
-    );
+        bounds: world.corners(),
+        ticks: &world.to_be_ticked,
+    };
+    let netlist = mchprs_redpiler::compile(&input, &options, &progress);
     let block_map = BlockMap::new(&netlist);
     let pending_ticks = block_map.map_ticks(&world.to_be_ticked);
     let target = match backend {

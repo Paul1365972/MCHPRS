@@ -120,23 +120,16 @@ pub struct CompilerInput<'w, W: World> {
 }
 
 pub fn compile<W: World>(
-    world: &W,
-    bounds: (BlockPos, BlockPos),
-    ticks: &[TickEntry],
+    input: &CompilerInput<W>,
     options: &CompilerOptions,
     progress: &CompileProgress,
 ) -> Netlist {
     debug!("Starting compile");
     let start = Instant::now();
 
-    let input = CompilerInput {
-        world,
-        bounds,
-        ticks,
-    };
     let registry = PassRegistry::default();
     let pass_pipeline = passes::build_pass_pipeline::<W>(&registry, options);
-    let graph = pass_pipeline.run_passes(options, &input, CompileGraph::default(), progress);
+    let graph = pass_pipeline.run_passes(options, input, CompileGraph::default(), progress);
 
     let netlist = Netlist::from(graph);
     info!("Compile completed in {:?}", start.elapsed());

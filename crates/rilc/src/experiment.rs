@@ -1,8 +1,8 @@
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::backend::direct::DirectEngine;
 use mchprs_redpiler::{
-    BlockMap, CompileProgress, CompilerOptions, Engine, Input, Netlist, NodeId, PendingTick,
-    Reporting,
+    BlockMap, CompileProgress, CompilerInput, CompilerOptions, Engine, Input, Netlist, NodeId,
+    PendingTick, Reporting,
 };
 use mchprs_save_data::plot_data::PlotData;
 use mchprs_world::testing::TestWorld;
@@ -100,13 +100,12 @@ impl Loaded {
 
     pub fn compile(&self) -> Compiled {
         let started = Instant::now();
-        let netlist = mchprs_redpiler::compile(
-            &self.world,
-            self.world.corners(),
-            &self.world.to_be_ticked,
-            &self.options,
-            &CompileProgress::default(),
-        );
+        let input = CompilerInput {
+            world: &self.world,
+            bounds: self.world.corners(),
+            ticks: &self.world.to_be_ticked,
+        };
+        let netlist = mchprs_redpiler::compile(&input, &self.options, &CompileProgress::default());
         let block_map = BlockMap::new(&netlist);
         let pending_ticks = block_map.map_ticks(&self.world.to_be_ticked);
         Compiled {

@@ -2,7 +2,9 @@ use super::scoreboard::RedpilerState;
 use super::Plot;
 use crate::player::PacketSender;
 use mchprs_redpiler::backend::direct;
-use mchprs_redpiler::{BackendFailure, Batch, CompileProgress, CompilerOptions, Netlist, Worker};
+use mchprs_redpiler::{
+    BackendFailure, Batch, CompileProgress, CompilerInput, CompilerOptions, Netlist, Worker,
+};
 use mchprs_world::{TickEntry, TickRate, World};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -35,10 +37,13 @@ impl Plot {
         let progress = CompileProgress::default();
         let started = thread::scope(|s| {
             let handle = s.spawn(|| {
-                let ticks = &self.world.to_be_ticked;
-                let netlist =
-                    mchprs_redpiler::compile(&self.world, bounds, ticks, &options, &progress);
-                start_backend(&netlist, ticks, &options, &progress)
+                let input = CompilerInput {
+                    world: &self.world,
+                    bounds,
+                    ticks: &self.world.to_be_ticked,
+                };
+                let netlist = mchprs_redpiler::compile(&input, &options, &progress);
+                start_backend(&netlist, input.ticks, &options, &progress)
             });
             let mut shown = None;
             while !handle.is_finished() {
