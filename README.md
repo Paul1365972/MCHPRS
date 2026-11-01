@@ -15,7 +15,6 @@ MCHPRS has made it possible to run programs such as [a limited form of Minecraft
 - [Table of Contents](#table-of-contents)
 - [Building](#building)
 - [Configuration](#configuration)
-    - [LuckPerms](#luckperms)
 - [Usage](#usage)
     - [General Commands](#general-commands)
     - [Plot Ownership](#plot-ownership)
@@ -69,26 +68,6 @@ enabled = true
 # This is the secret contained within `forwarding-secret-file` from your velocity config,
 # NOT the path to the file.
 secret = "<secret>"
-```
-
-### LuckPerms
-
-MCHPRS has basic support for LuckPerms with MySQL or MariaDB remote database storage. This implementation has no commands or interface and would have to be managed through LuckPerms running on a proxy (`/lpb`) or other server (`/lp`)
-
-To use LuckPerms, append this to your `Config.toml`:
-
-```toml
-[luckperms]
-# Define the address for the database.
-host = "localhost"
-# The name of the database the LuckPerms data is in.
-db_name = "minecraft"
-# Credentials for the database.
-username = "minecraft"
-password = "minecraft"
-# The name of the server, used for server specific permissions.
-# See: https://luckperms.net/wiki/Context
-server_context = "global"
 ```
 
 ## Usage

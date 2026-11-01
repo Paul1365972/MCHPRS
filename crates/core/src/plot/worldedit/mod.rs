@@ -42,26 +42,6 @@ pub fn execute_command(
         return false;
     };
 
-    let wea = player.has_permission("plots.worldedit.bypass");
-    if !wea {
-        if let Some(owner) = plot.owner {
-            if owner != player.uuid {
-                // tried to worldedit on plot that wasn't theirs
-                player.send_no_permission_message();
-                return true;
-            }
-        } else {
-            // tried to worldedit on unclaimed plot
-            player.send_no_permission_message();
-            return true;
-        }
-    }
-
-    if !command.permission_node.is_empty() && !player.has_permission(command.permission_node) {
-        player.send_no_permission_message();
-        return true;
-    }
-
     if command.requires_positions {
         let plot_x = plot.world.x;
         let plot_z = plot.world.z;
@@ -429,7 +409,6 @@ struct WorldeditCommand {
     requires_clipboard: bool,
     execute_fn: fn(CommandExecuteContext<'_>),
     description: &'static str,
-    permission_node: &'static str,
     mutates_world: bool,
     normal_completions: bool,
 }
@@ -443,7 +422,6 @@ impl Default for WorldeditCommand {
             description: "",
             requires_clipboard: false,
             requires_positions: false,
-            permission_node: "",
             mutates_world: true,
             normal_completions: true,
         }
@@ -458,7 +436,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             arguments: &[
                 argument!("distance", UnsignedInteger, "Distance to go upwards")
             ],
-            permission_node: "worldedit.navigation.up",
             ..Default::default()
         },
         "ascend" => WorldeditCommand {
@@ -467,7 +444,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             arguments: &[
                 argument!("levels", UnsignedInteger, "# of levels to ascend")
             ],
-            permission_node: "worldedit.navigation.ascend",
             mutates_world: false,
             ..Default::default()
         },
@@ -477,35 +453,30 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             arguments: &[
                 argument!("levels", UnsignedInteger, "# of levels to descend")
             ],
-            permission_node: "worldedit.navigation.descend",
             mutates_world: false,
             ..Default::default()
         },
         "/pos1" => WorldeditCommand {
             execute_fn: execute_pos1,
             description: "Set position 1",
-            permission_node: "worldedit.selection.pos",
             mutates_world: false,
             ..Default::default()
         },
         "/pos2" => WorldeditCommand {
             execute_fn: execute_pos2,
             description: "Set position 2",
-            permission_node: "worldedit.selection.pos",
             mutates_world: false,
             ..Default::default()
         },
         "/hpos1" => WorldeditCommand {
             execute_fn: execute_hpos1,
             description: "Set position 1 to targeted block",
-            permission_node: "worldedit.selection.hpos",
             mutates_world: false,
             ..Default::default()
         },
         "/hpos2" => WorldeditCommand {
             execute_fn: execute_hpos2,
             description: "Set position 2 to targeted block",
-            permission_node: "worldedit.selection.hpos",
             mutates_world: false,
             ..Default::default()
         },
@@ -522,7 +493,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             requires_positions: true,
             execute_fn: execute_set,
             description: "Sets all the blocks in the region",
-            permission_node: "worldedit.region.stack",
             ..Default::default()
         },
         "/replace" => WorldeditCommand {
@@ -533,14 +503,12 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             requires_positions: true,
             execute_fn: execute_replace,
             description: "Replace all blocks in a selection with another",
-            permission_node: "worldedit.region.replace",
             ..Default::default()
         },
         "/copy" => WorldeditCommand {
             requires_positions: true,
             execute_fn: execute_copy,
             description: "Copy the selection to the clipboard",
-            permission_node: "worldedit.clipboard.copy",
             mutates_world: false,
             ..Default::default()
         },
@@ -548,7 +516,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             requires_positions: true,
             execute_fn: execute_cut,
             description: "Cut the selection to the clipboard",
-            permission_node: "worldedit.clipboard.cut",
             ..Default::default()
         },
         "/paste" => WorldeditCommand {
@@ -560,19 +527,16 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
                 flag!('u', None, "Also update all affected blocks"),
                 flag!('s', None, "Select the volume of the pasted in schematic"),
             ],
-            permission_node: "worldedit.clipboard.paste",
             ..Default::default()
         },
         "/undo" => WorldeditCommand {
             execute_fn: execute_undo,
             description: "Undoes the last action (from history)",
-            permission_node: "worldedit.history.undo",
             ..Default::default()
         },
         "/redo" => WorldeditCommand {
             execute_fn: execute_redo,
             description: "Redoes the last action (from history)",
-            permission_node: "worldedit.history.redo",
             ..Default::default()
         },
         "/stack" => WorldeditCommand {
@@ -586,7 +550,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             flags: &[
                 flag!('a', None, "Ignore air blocks")
             ],
-            permission_node: "worldedit.region.stack",
             ..Default::default()
         },
         "/move" => WorldeditCommand {
@@ -601,7 +564,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
                 flag!('a', None, "Ignore air blocks"),
                 flag!('s', None, "Shift the selection to the target location")
             ],
-            permission_node: "worldedit.region.move",
             ..Default::default()
         },
         "/count" => WorldeditCommand {
@@ -611,7 +573,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             requires_positions: true,
             execute_fn: execute_count,
             description: "Counts the number of blocks matching a mask",
-            permission_node: "worldedit.analysis.count",
             mutates_world: false,
             ..Default::default()
         },
@@ -621,7 +582,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             ],
             execute_fn: execute_load,
             description: "Loads a schematic file into the clipboard",
-            permission_node: "worldedit.clipboard.load",
             mutates_world: false,
             normal_completions: false,
             ..Default::default()
@@ -633,7 +593,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             requires_clipboard: true,
             execute_fn: execute_save,
             description: "Save a schematic file from the clipboard",
-            permission_node: "worldedit.clipboard.save",
             mutates_world: false,
             ..Default::default()
         },
@@ -645,7 +604,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             requires_positions: true,
             execute_fn: execute_expand,
             description: "Expand the selection area",
-            permission_node: "worldedit.selection.expand",
             mutates_world: false,
             ..Default::default()
         },
@@ -657,7 +615,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             requires_positions: true,
             execute_fn: execute_contract,
             description: "Contract the selection area",
-            permission_node: "worldedit.selection.contract",
             mutates_world: false,
             ..Default::default()
         },
@@ -669,7 +626,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             requires_positions: true,
             execute_fn: execute_shift,
             description: "Shift the selection area",
-            permission_node: "worldedit.selection.shift",
             mutates_world: false,
             ..Default::default()
         },
@@ -706,13 +662,11 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             ],
             execute_fn: execute_rstack,
             description: "Like //stack but allows the stacked copies to overlap, supports more directions, and more flags",
-            permission_node: "redstonetools.rstack",
             ..Default::default()
         },
         "/update" => WorldeditCommand {
             execute_fn: execute_update,
             description: "Updates all blocks in the selection",
-            permission_node: "mchprs.we.update",
             requires_positions: false,
             flags: &[
                 flag!('p', None, "Update the entire plot"),
@@ -725,14 +679,12 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             ],
             execute_fn: execute_help,
             description: "Displays help for WorldEdit commands",
-            permission_node: "worldedit.help",
             mutates_world: false,
             ..Default::default()
         },
         "/wand" => WorldeditCommand {
            execute_fn: execute_wand,
            description: "Gives a WorldEdit wand",
-           permission_node: "worldedit.wand",
             mutates_world: false,
            ..Default::default()
         },
@@ -743,7 +695,6 @@ static COMMANDS: LazyLock<HashMap<&'static str, WorldeditCommand>> = LazyLock::n
             ],
            execute_fn: execute_replace_container,
            description: "Replaces all container types in the selection",
-           permission_node: "mchprs.we.replacecontainer",
            requires_positions: true,
            ..Default::default()
         }

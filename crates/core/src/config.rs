@@ -1,4 +1,3 @@
-use crate::permissions::PermissionsConfig;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::{fs, sync::LazyLock};
@@ -45,6 +44,9 @@ macro_rules! gen_config {
             fn load(config_file: &str) -> ServerConfig {
                 let str = fs::read_to_string("Config.toml").unwrap_or_default();
                 let mut doc = str.parse::<DocumentMut>().unwrap();
+                if doc.contains_key("luckperms") {
+                    panic!("{config_file} has a [luckperms] table, but LuckPerms support was removed, so every player could edit every plot and run every command. Remove the table to start the server");
+                }
 
                 $(
                     <$type as ConfigSerializeDefault>::fix_config($default, stringify!($name), &mut doc);
@@ -70,7 +72,6 @@ gen_config! {
     view_distance: i64 = 8,
     whitelist: bool = false,
     schemati: bool = false,
-    luckperms: Option<PermissionsConfig> = None,
     block_in_hitbox: bool = true,
     auto_redpiler: bool = false,
     velocity: Option<VelocityConfig> = None
