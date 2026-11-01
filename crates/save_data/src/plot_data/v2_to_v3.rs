@@ -17,12 +17,12 @@ struct WorldSendRateV2(u32);
 pub struct PlotDataV2 {
     tps: TpsV2,
     world_send_rate: WorldSendRateV2,
-    chunk_data: Vec<ChunkData>,
+    chunk_data: Vec<ChunkData<'static>>,
     pending_ticks: Vec<TickEntry>,
 }
 
 impl PlotDataV2 {
-    pub fn upgrade(self) -> PlotData {
+    pub fn upgrade(self) -> PlotData<'static> {
         let tps = match self.tps {
             TpsV2::Limited(val) => Tps::Limited(val as f32),
             TpsV2::Unlimited => Tps::Unlimited,
