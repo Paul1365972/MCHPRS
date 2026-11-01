@@ -1,20 +1,21 @@
-use crate::compile_graph::{CompileGraph, CompileNode, NodeIdx, NodeState, NodeType};
-use crate::CompilerOptions;
+use crate::graph::{Graph, Node, NodeIdx, NodeKind, NodeState};
+use crate::ports::Observed;
+use crate::CompileOptions;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
-use mchprs_redstone::{self, comparator, noteblock, wire};
+use mchprs_redstone::{self, comparator, noteblock};
 use rustc_hash::FxHashMap;
 use smallvec::smallvec;
 
 pub fn add_nodes(
-    graph: &mut CompileGraph,
+    graph: &mut Graph,
     world: &impl BlockView,
     region: Region,
-    options: &CompilerOptions,
+    options: &CompileOptions,
 ) -> FxHashMap<BlockPos, NodeIdx> {
     let mut nodes_by_position = FxHashMap::default();
     for pos in world
@@ -30,35 +31,27 @@ pub fn add_nodes(
 }
 
 fn add_node(
-    graph: &mut CompileGraph,
+    graph: &mut Graph,
     world: &impl BlockView,
     pos: BlockPos,
-    options: &CompilerOptions,
+    options: &CompileOptions,
 ) -> Option<NodeIdx> {
     let block = world.block(pos);
-    let (ty, state) = identify_block(block, pos, world)?;
-
-    let is_input = ty.is_normally_input();
-    let is_output = ty.is_normally_output()
-        || matches!(
-            block,
-            Block::RedstoneWire(wire) if
-                options.wire_dot_out && wire::is_dot(wire) ||
-                options.illegal_states_out && wire::is_illegal(wire) ||
-                options.wire_cross_out && wire::is_cross(wire)
-        );
-
-    if options.optimize && ty == NodeType::Wire && !(is_input | is_output) {
+    let (kind, state) = identify_block(block, pos, world)?;
+    let port = options.ports.role(pos, block, &kind);
+    if kind == NodeKind::Wire
+        && port.is_none()
+        && options.observed != Observed::Everything
+        && options.optimize
+    {
         return None;
     }
-
-    Some(graph.add_node(CompileNode {
-        ty,
+    Some(graph.add_node(Node {
+        kind,
         block: smallvec![(pos, block.get_id())],
         name: None,
         state,
-        is_input,
-        is_output,
+        port,
     }))
 }
 
@@ -66,13 +59,13 @@ fn identify_block(
     block: Block,
     pos: BlockPos,
     world: &impl BlockView,
-) -> Option<(NodeType, NodeState)> {
+) -> Option<(NodeKind, NodeState)> {
     if let Some(powered) = block.clone().get_pressure_plate_powered() {
-        return Some((NodeType::PressurePlate, NodeState::from_powered(*powered)));
+        return Some((NodeKind::PressurePlate, NodeState::from_powered(*powered)));
     }
-    let (ty, state) = match block {
+    let (kind, state) = match block {
         Block::Repeater(repeater) => (
-            NodeType::Repeater {
+            NodeKind::Repeater {
                 delay: repeater.delay,
                 prioritized: mchprs_redstone::diode_should_be_prioritized(
                     world,
@@ -83,7 +76,7 @@ fn identify_block(
             NodeState::repeater(repeater.powered, repeater.locked),
         ),
         Block::Comparator(comparator) => (
-            NodeType::Comparator {
+            NodeKind::Comparator {
                 mode: comparator.mode,
                 far_input: comparator::get_far_input(world, pos, comparator.facing).map(|power| {
                     SignalStrength::try_from(power).expect("invalid comparator far input")
@@ -100,40 +93,40 @@ fn identify_block(
             }),
         ),
         Block::RedstoneTorch { lit, .. } | Block::RedstoneWallTorch { lit, .. } => {
-            (NodeType::Torch, NodeState::from_powered(lit))
+            (NodeKind::Torch, NodeState::from_powered(lit))
         }
         Block::RedstoneWire(wire) => (
-            NodeType::Wire,
+            NodeKind::Wire,
             NodeState::from_power(
                 SignalStrength::try_from(wire.power).expect("invalid wire power"),
             ),
         ),
-        Block::StoneButton { powered, .. } => (NodeType::Button, NodeState::from_powered(powered)),
-        Block::RedstoneLamp { lit } => (NodeType::Lamp, NodeState::from_powered(lit)),
-        Block::Lever { powered, .. } => (NodeType::Lever, NodeState::from_powered(powered)),
+        Block::StoneButton { powered, .. } => (NodeKind::Button, NodeState::from_powered(powered)),
+        Block::RedstoneLamp { lit } => (NodeKind::Lamp, NodeState::from_powered(lit)),
+        Block::Lever { powered, .. } => (NodeKind::Lever, NodeState::from_powered(powered)),
         Block::IronTrapdoor { powered, .. } => {
-            (NodeType::Trapdoor, NodeState::from_powered(powered))
+            (NodeKind::Trapdoor, NodeState::from_powered(powered))
         }
         Block::RedstoneBlock => (
-            NodeType::Constant,
+            NodeKind::Constant,
             NodeState::from_power(SignalStrength::Fifteen),
         ),
         Block::NoteBlock { note, powered, .. } if noteblock::is_noteblock_unblocked(world, pos) => {
             let instrument = noteblock::get_noteblock_instrument(world, pos);
             (
-                NodeType::NoteBlock { instrument, note },
+                NodeKind::NoteBlock { instrument, note },
                 NodeState::from_powered(powered),
             )
         }
         _ => {
             let power = comparator::analog_output(block, world, pos)?;
             (
-                NodeType::Constant,
+                NodeKind::Constant,
                 NodeState::from_power(
                     SignalStrength::try_from(power).expect("invalid comparator override"),
                 ),
             )
         }
     };
-    Some((ty, state))
+    Some((kind, state))
 }

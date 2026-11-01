@@ -1,10 +1,9 @@
-use crate::extract_schematic;
+use crate::{extract_schematic, run_pipeline};
 use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
 use mchprs_redpiler::ril::ast::Global;
 use mchprs_redpiler::ril::dump_graph;
-use mchprs_redpiler::{CompilerOptions, TaskMonitor};
+use mchprs_redpiler::CompilerOptions;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::{fs, process};
 
 pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &CompilerOptions) {
@@ -25,7 +24,7 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
             Some(pipeline) => pipeline,
             None => process::exit(1),
         },
-        None => build_pass_pipeline(&registry, options),
+        None => build_pass_pipeline(&registry, &options.compile_options()),
     };
 
     let mut result = String::new();
@@ -33,7 +32,7 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
         let graph = match global {
             Global::Circuit(circuit) => module.get_graph(circuit),
             Global::Schematic(schematic) => {
-                match extract_schematic(input_path, &schematic.path, options) {
+                match extract_schematic(input_path, &schematic.path, &options.compile_options()) {
                     Some(graph) => graph,
                     None => process::exit(1),
                 }
@@ -45,8 +44,7 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &Compi
             Global::BackendCircuit(_) => todo!("backend circuit compilation"),
         };
 
-        let monitor = Arc::new(TaskMonitor::default());
-        let result_graph = pass_pipeline.run_passes(options, graph, monitor);
+        let result_graph = run_pipeline(&pass_pipeline, graph, options.print_after_all);
         result.push('\n');
         dump_graph(&mut result, &result_graph, name).unwrap();
         result.push('\n');

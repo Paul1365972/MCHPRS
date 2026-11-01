@@ -1,25 +1,21 @@
 mod analysis;
 mod opt;
 
+use crate::graph::Graph;
+use crate::ports::Observed;
+use crate::CompileOptions;
 use rustc_hash::{FxHashMap, FxHashSet};
-
-use crate::ril::DumpGraph;
-
-use super::compile_graph::CompileGraph;
-use super::task_monitor::TaskMonitor;
-use super::CompilerOptions;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Instant;
-use tracing::{debug, trace};
+use std::ops::ControlFlow;
+use tracing::trace;
 
 use analysis::*;
 use opt::*;
 
 pub fn build_pass_pipeline<'p>(
     registry: &'p PassRegistry,
-    options: &CompilerOptions,
+    options: &CompileOptions,
 ) -> PassPipeline<'p> {
     let mut builder = PassPipelineBuilder::new(registry);
 
@@ -32,7 +28,7 @@ pub fn build_pass_pipeline<'p>(
         if options.reorder {
             builder.add_pass::<coalesce::Coalesce>();
         }
-        if options.io_only {
+        if options.observed == Observed::Ports {
             builder.add_pass::<prune_orphans::PruneOrphans>();
         }
     }
@@ -176,45 +172,32 @@ pub struct PassPipeline<'p> {
 }
 
 impl PassPipeline<'_> {
+    pub fn len(&self) -> usize {
+        self.passes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.passes.is_empty()
+    }
+
+    /// Runs every pass in order, then calls `after_each`, which can stop the pipeline.
     pub fn run_passes(
         &self,
-        options: &CompilerOptions,
-        mut graph: CompileGraph,
-        monitor: Arc<TaskMonitor>,
-    ) -> CompileGraph {
-        // Add one for the backend compile step
-        monitor.set_max_progress(self.passes.len() + 1);
-
+        graph: &mut Graph,
+        after_each: &mut dyn FnMut(&dyn Pass, &Graph) -> ControlFlow<()>,
+    ) -> ControlFlow<()> {
         let mut analysis_infos = AnalysisInfos::default();
-
         for &pass in &self.passes {
-            if monitor.cancelled() {
-                return graph;
-            }
-
             trace!("Running pass: {}", pass.debug_name());
-            monitor.set_message(pass.status_message().to_string());
-            let start = Instant::now();
-
-            pass.run_pass(&mut graph, &mut analysis_infos);
-
-            trace!("Completed pass in {:?}", start.elapsed());
-            trace!("node_count: {}", graph.node_count());
-            trace!("edge_count: {}", graph.edge_count());
-            monitor.inc_progress();
-
-            if options.print_after_all {
-                debug!("Printing circuit after pass: {}", pass.debug_name());
-                graph.dump();
-            }
+            pass.run_pass(graph, &mut analysis_infos);
+            trace!(
+                "{} nodes and {} links remain",
+                graph.node_count(),
+                graph.edge_count()
+            );
+            after_each(pass, graph)?;
         }
-
-        if options.print_before_backend {
-            debug!("Printing circuit before backend compile:");
-            graph.dump();
-        }
-
-        graph
+        ControlFlow::Continue(())
     }
 }
 
@@ -240,7 +223,7 @@ impl AnalysisUsage {
 }
 
 pub trait Pass: 'static {
-    fn run_pass(&self, graph: &mut CompileGraph, analysis_infos: &mut AnalysisInfos);
+    fn run_pass(&self, graph: &mut Graph, analysis_infos: &mut AnalysisInfos);
 
     /// This name should only be use for debugging purposes,
     /// it is not a valid identifier of the pass.

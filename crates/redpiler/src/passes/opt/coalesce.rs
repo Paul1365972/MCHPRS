@@ -3,10 +3,9 @@
 //! Merges nodes with the same type, initial state and input links, except inputs, nodes with a
 //! pending tick and nodes whose inputs could change between their ticks.
 
-use crate::compile_graph::{
-    CompileGraph, CompileLink, Direction, LinkType, NodeIdx, NodeState, NodeType,
-};
+use crate::graph::{Direction, Graph, Link, LinkKind, NodeIdx, NodeKind, NodeState};
 use crate::passes::{AnalysisInfos, Pass};
+use crate::ports::Role;
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use tracing::trace;
@@ -14,7 +13,7 @@ use tracing::trace;
 pub struct Coalesce;
 
 impl Pass for Coalesce {
-    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
+    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
         let node_count = graph.node_count();
         let mut candidates: Vec<NodeIdx> = graph.node_indices().collect();
         while !candidates.is_empty() {
@@ -34,10 +33,13 @@ impl Pass for Coalesce {
 }
 
 /// Merges identical candidates and returns the nodes they merged into
-fn merge_identical(graph: &mut CompileGraph, candidates: Vec<NodeIdx>) -> Vec<NodeIdx> {
+fn merge_identical(graph: &mut Graph, candidates: Vec<NodeIdx>) -> Vec<NodeIdx> {
     let mut groups: FxHashMap<Signature, Vec<NodeIdx>> = FxHashMap::default();
     for node in candidates {
-        if !graph.contains_node(node) || graph[node].is_input || graph[node].state.pending_tick {
+        if !graph.contains_node(node)
+            || graph[node].is_input()
+            || graph[node].state.pending_tick.is_some()
+        {
             continue;
         }
         let signature = signature(graph, node);
@@ -62,7 +64,7 @@ fn merge_identical(graph: &mut CompileGraph, candidates: Vec<NodeIdx>) -> Vec<No
 
 /// The nodes these sources feed: every node whose inputs changed with them, and every node that
 /// could now have the same inputs as one of those
-fn targets(graph: &CompileGraph, mut sources: Vec<NodeIdx>) -> Vec<NodeIdx> {
+fn targets(graph: &Graph, mut sources: Vec<NodeIdx>) -> Vec<NodeIdx> {
     sources.sort_unstable();
     sources.dedup();
     let mut queued = FxHashSet::default();
@@ -75,41 +77,41 @@ fn targets(graph: &CompileGraph, mut sources: Vec<NodeIdx>) -> Vec<NodeIdx> {
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct Signature {
-    ty: NodeType,
+    kind: NodeKind,
     state: NodeState,
-    is_output: bool,
-    inputs: SmallVec<[(NodeIdx, LinkType, u8); 4]>,
+    port: Option<Role>,
+    inputs: SmallVec<[(NodeIdx, LinkKind, u8); 4]>,
 }
 
-fn signature(graph: &CompileGraph, idx: NodeIdx) -> Signature {
+fn signature(graph: &Graph, idx: NodeIdx) -> Signature {
     let node = &graph[idx];
     let mut inputs: SmallVec<_> = graph
         .edges(idx, Direction::Incoming)
         .map(|edge| {
             let link = edge.weight();
             let carries_binary_signal = link.weight < 15
-                && node.ty.is_binary_reader()
-                && graph[edge.source()].ty.is_binary_source();
+                && node.kind.is_binary_reader()
+                && graph[edge.source()].kind.is_binary_source();
             let weight = if carries_binary_signal {
                 0
             } else {
                 link.weight
             };
-            (edge.source(), link.ty, weight)
+            (edge.source(), link.kind, weight)
         })
         .collect();
     inputs.sort_unstable();
-    inputs.dedup_by_key(|&mut (source, ty, _)| (source, ty));
+    inputs.dedup_by_key(|&mut (source, kind, _)| (source, kind));
     Signature {
-        ty: node.ty.clone(),
+        kind: node.kind.clone(),
         state: node.state.clone(),
-        is_output: node.is_output,
+        port: node.port,
         inputs,
     }
 }
 
 /// An input updated by another input can tick between two identical nodes and change in between
-fn inputs_are_stable(graph: &CompileGraph, signature: &Signature, node: NodeIdx) -> bool {
+fn inputs_are_stable(graph: &Graph, signature: &Signature, node: NodeIdx) -> bool {
     let is_input = |idx| signature.inputs.iter().any(|&(source, ..)| source == idx);
     !is_input(node)
         && signature
@@ -118,7 +120,7 @@ fn inputs_are_stable(graph: &CompileGraph, signature: &Signature, node: NodeIdx)
             .all(|&(source, ..)| !graph.neighbors(source, Direction::Incoming).any(is_input))
 }
 
-fn take_outgoing_links(graph: &mut CompileGraph, node: NodeIdx) -> Vec<(NodeIdx, CompileLink)> {
+fn take_outgoing_links(graph: &mut Graph, node: NodeIdx) -> Vec<(NodeIdx, Link)> {
     let mut links = Vec::new();
     let mut outgoing = graph.neighbors(node, Direction::Outgoing).detach();
     while let Some((edge_idx, target)) = outgoing.next(graph) {

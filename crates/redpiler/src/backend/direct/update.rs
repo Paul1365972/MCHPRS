@@ -1,6 +1,6 @@
 use mchprs_redstone::tick_queue::TickPriority;
 
-use super::node::{NodeId, NodeType};
+use super::node::{NodeId, NodeKind};
 use super::*;
 
 #[inline(always)]
@@ -12,8 +12,8 @@ pub(super) fn update_node(
 ) {
     let node = &mut nodes[node_id];
 
-    match node.ty {
-        NodeType::Repeater { delay, prioritized } => {
+    match node.kind {
+        NodeKind::Repeater { delay, prioritized } => {
             let should_be_locked = node.side_inputs.is_powered();
             if should_be_locked != node.repeater_locked {
                 node.set_repeater_locked(should_be_locked);
@@ -34,7 +34,7 @@ pub(super) fn update_node(
                 schedule_tick(scheduler, node_id, node, delay as usize, priority);
             }
         }
-        NodeType::Torch => {
+        NodeKind::Torch => {
             if node.pending_tick {
                 return;
             }
@@ -43,7 +43,7 @@ pub(super) fn update_node(
                 schedule_tick(scheduler, node_id, node, 1, TickPriority::Normal);
             }
         }
-        NodeType::Comparator {
+        NodeKind::Comparator {
             mode,
             far_input,
             prioritized,
@@ -61,7 +61,7 @@ pub(super) fn update_node(
                 schedule_tick(scheduler, node_id, node, 1, priority);
             }
         }
-        NodeType::Lamp => {
+        NodeKind::Lamp => {
             let should_be_lit = node.default_inputs.is_powered();
             let lit = node.is_powered();
             if lit && !should_be_lit && !node.pending_tick {
@@ -70,19 +70,19 @@ pub(super) fn update_node(
                 node.set_powered(true);
             }
         }
-        NodeType::Trapdoor => {
+        NodeKind::Trapdoor => {
             let should_be_powered = node.default_inputs.is_powered();
             if node.is_powered() != should_be_powered {
                 node.set_powered(should_be_powered);
             }
         }
-        NodeType::Wire => {
+        NodeKind::Wire => {
             let input_power = node.default_inputs.power();
             if node.power != input_power {
                 node.set_power(input_power);
             }
         }
-        NodeType::NoteBlock { noteblock_id } => {
+        NodeKind::NoteBlock { noteblock_id } => {
             let should_be_powered = node.default_inputs.is_powered();
             if node.is_powered() != should_be_powered {
                 node.set_powered(should_be_powered);

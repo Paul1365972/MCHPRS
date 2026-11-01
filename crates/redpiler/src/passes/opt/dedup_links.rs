@@ -5,13 +5,13 @@
 //! For example, if two nodes are connected with two links of weights 13 and 15, the link with
 //! weight 15 is removed.
 
-use crate::compile_graph::{CompileGraph, Direction, NodeIdx};
+use crate::graph::{Direction, Graph, NodeIdx};
 use crate::passes::{AnalysisInfos, Pass};
 
 pub struct DedupLinks;
 
 impl Pass for DedupLinks {
-    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
+    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
         for i in 0..graph.node_bound() {
             let idx = NodeIdx::new(i);
             if !graph.contains_node(idx) {
@@ -28,7 +28,7 @@ impl Pass for DedupLinks {
                     let other_link = other_edge.weight();
                     if other_edge.id() != edge_idx
                         && other_edge.source() == source_idx
-                        && other_link.ty == link.ty
+                        && other_link.kind == link.kind
                         && other_link.weight <= link.weight
                     {
                         should_remove = true;

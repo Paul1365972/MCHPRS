@@ -1,13 +1,12 @@
 use crate::backend::direct::node::ForwardLinks;
-use crate::compile_graph::{CompileGraph, Direction, LinkType, NodeIdx};
+use crate::graph::{Direction, Graph, LinkKind, NodeIdx};
 use crate::{CompilerOptions, TaskMonitor};
 use mchprs_blocks::blocks::Block;
-use mchprs_redstone::tick_queue::TickEntry;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tracing::trace;
 
-use super::node::{ForwardLink, Node, NodeId, NodeInput, NodeType, Nodes};
+use super::node::{ForwardLink, Node, NodeId, NodeInput, NodeKind, Nodes};
 use super::{DirectBackend, NoteBlockInfo};
 
 #[derive(Debug, Default)]
@@ -19,7 +18,7 @@ struct FinalGraphStats {
 }
 
 fn compile_node(
-    graph: &CompileGraph,
+    graph: &Graph,
     node_idx: NodeIdx,
     io_only: bool,
     nodes_map: &FxHashMap<NodeIdx, usize>,
@@ -29,24 +28,24 @@ fn compile_node(
 ) -> Node {
     let node = &graph[node_idx];
 
-    let input_powers = |ty| {
+    let input_powers = |kind| {
         graph
             .edges(node_idx, Direction::Incoming)
-            .filter(move |edge| edge.weight().ty == ty)
+            .filter(move |edge| edge.weight().kind == kind)
             .map(|edge| {
                 let link = edge.weight();
                 graph[edge.source()].state.power.saturating_sub(link.weight)
             })
     };
-    let default_inputs = input_powers(LinkType::Default)
+    let default_inputs = input_powers(LinkKind::Default)
         .inspect(|_| stats.default_link_count += 1)
         .collect::<NodeInput>();
-    let side_inputs = input_powers(LinkType::Side)
+    let side_inputs = input_powers(LinkKind::Side)
         .inspect(|_| stats.side_link_count += 1)
         .collect::<NodeInput>();
 
-    use crate::compile_graph::NodeType as CNodeType;
-    let fwd_link_range = if node.ty != CNodeType::Constant {
+    use crate::graph::NodeKind as GraphNodeKind;
+    let fwd_link_range = if node.kind != GraphNodeKind::Constant {
         let new_links = graph
             .edges(node_idx, Direction::Outgoing)
             .map(|edge| unsafe {
@@ -57,7 +56,7 @@ fn compile_node(
                 let target_id = NodeId::from_index(idx);
 
                 let link = edge.weight();
-                ForwardLink::new(target_id, link.ty == LinkType::Side, link.weight)
+                ForwardLink::new(target_id, link.kind == LinkKind::Side, link.weight)
             });
         forward_links.extend(new_links)
     } else {
@@ -65,29 +64,29 @@ fn compile_node(
     };
     stats.update_link_count += fwd_link_range.len();
 
-    let ty = match &node.ty {
-        CNodeType::Repeater { delay, prioritized } => NodeType::Repeater {
+    let kind = match &node.kind {
+        GraphNodeKind::Repeater { delay, prioritized } => NodeKind::Repeater {
             delay: *delay,
             prioritized: *prioritized,
         },
-        CNodeType::Torch => NodeType::Torch,
-        CNodeType::Comparator {
+        GraphNodeKind::Torch => NodeKind::Torch,
+        GraphNodeKind::Comparator {
             mode,
             far_input,
             prioritized,
-        } => NodeType::Comparator {
+        } => NodeKind::Comparator {
             mode: *mode,
             far_input: *far_input,
             prioritized: *prioritized,
         },
-        CNodeType::Lamp => NodeType::Lamp,
-        CNodeType::Button => NodeType::Button,
-        CNodeType::Lever => NodeType::Lever,
-        CNodeType::PressurePlate => NodeType::PressurePlate,
-        CNodeType::Trapdoor => NodeType::Trapdoor,
-        CNodeType::Wire => NodeType::Wire,
-        CNodeType::Constant => NodeType::Constant,
-        CNodeType::NoteBlock { instrument, note } => {
+        GraphNodeKind::Lamp => NodeKind::Lamp,
+        GraphNodeKind::Button => NodeKind::Button,
+        GraphNodeKind::Lever => NodeKind::Lever,
+        GraphNodeKind::PressurePlate => NodeKind::PressurePlate,
+        GraphNodeKind::Trapdoor => NodeKind::Trapdoor,
+        GraphNodeKind::Wire => NodeKind::Wire,
+        GraphNodeKind::Constant => NodeKind::Constant,
+        GraphNodeKind::NoteBlock { instrument, note } => {
             let noteblock_id = noteblock_info.len().try_into().unwrap();
             noteblock_info.push(NoteBlockInfo {
                 positions: node.block.iter().copied().map(|(pos, _)| pos).collect(),
@@ -95,12 +94,12 @@ fn compile_node(
                 note: *note,
                 pending: false,
             });
-            NodeType::NoteBlock { noteblock_id }
+            NodeKind::NoteBlock { noteblock_id }
         }
     };
 
     Node {
-        ty,
+        kind,
         default_inputs,
         side_inputs,
         fwd_link_range,
@@ -108,14 +107,13 @@ fn compile_node(
         repeater_locked: node.state.repeater_locked,
         changed: false,
         pending_tick: false,
-        visible: !io_only || node.is_input || node.is_output,
+        visible: !io_only || node.port.is_some(),
     }
 }
 
 pub fn compile(
     backend: &mut DirectBackend,
-    graph: CompileGraph,
-    ticks: Vec<TickEntry>,
+    graph: Graph,
     options: &CompilerOptions,
     _monitor: Arc<TaskMonitor>,
 ) {
@@ -164,14 +162,18 @@ pub fn compile(
         }
     }
 
-    // Schedule backend ticks
-    for entry in ticks {
-        if let Some(node) = backend.pos_map.get(&entry.pos) {
-            backend
-                .scheduler
-                .schedule_tick(*node, entry.ticks_left as usize, entry.priority);
-            backend.nodes[*node].pending_tick = true;
-        }
+    let mut queued: Vec<_> = graph
+        .all_node_weights()
+        .enumerate()
+        .filter_map(|(index, node)| Some((index, node.state.pending_tick?)))
+        .collect();
+    queued.sort_by_key(|(_, queued)| queued.order);
+    for (index, queued) in queued {
+        let node = backend.nodes.get(index);
+        backend
+            .scheduler
+            .schedule_tick(node, queued.tick.delay as usize, queued.tick.priority);
+        backend.nodes[node].pending_tick = true;
     }
 
     // Dot file output

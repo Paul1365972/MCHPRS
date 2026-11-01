@@ -1,10 +1,10 @@
-use crate::compile_graph::CompileGraph;
+use crate::graph::Graph;
 use crate::passes::{AnalysisInfos, Pass};
 
 pub struct ClampWeights;
 
 impl Pass for ClampWeights {
-    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
+    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
         graph.retain_edges(|g, edge| g[edge].weight < 15);
     }
 

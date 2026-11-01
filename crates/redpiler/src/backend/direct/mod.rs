@@ -1,4 +1,4 @@
-//! The direct backend does not do code generation and operates on the `CompileNode` graph directly
+//! The direct backend does not do code generation and operates on the `Node` graph directly
 
 mod compile;
 mod node;
@@ -7,16 +7,16 @@ mod update;
 
 use super::JITBackend;
 use crate::backend::direct::node::ForwardLinks;
-use crate::compile_graph::CompileGraph;
+use crate::graph::Graph;
 use crate::task_monitor::TaskMonitor;
 use crate::{block_powered_mut, CompilerOptions};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, ComparatorMode, Instrument};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
-use mchprs_redstone::tick_queue::{TickEntry, TickPriority};
+use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_redstone::RedstoneWorld;
-use node::{Node, NodeId, NodeType, Nodes};
+use node::{Node, NodeId, NodeKind, Nodes};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::fmt::Write;
@@ -188,8 +188,8 @@ impl JITBackend for DirectBackend {
     fn on_use_block(&mut self, pos: BlockPos) {
         let node_id = self.pos_map[&pos];
         let node = &mut self.nodes[node_id];
-        match node.ty {
-            NodeType::Button => {
+        match node.kind {
+            NodeKind::Button => {
                 if node.is_powered() {
                     return;
                 }
@@ -198,22 +198,22 @@ impl JITBackend for DirectBackend {
                 }
                 self.set_power_and_propagate(node_id, SignalStrength::Fifteen);
             }
-            NodeType::Lever => {
+            NodeKind::Lever => {
                 let power = (!node.is_powered()).into();
                 self.set_power_and_propagate(node_id, power);
             }
-            _ => warn!("Tried to use a {:?} redpiler node", node.ty),
+            _ => warn!("Tried to use a {:?} redpiler node", node.kind),
         }
     }
 
     fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
         let node_id = self.pos_map[&pos];
         let node = &self.nodes[node_id];
-        match node.ty {
-            NodeType::PressurePlate => {
+        match node.kind {
+            NodeKind::PressurePlate => {
                 self.set_power_and_propagate(node_id, powered.into());
             }
-            _ => warn!("Tried to set pressure plate state for a {:?}", node.ty),
+            _ => warn!("Tried to set pressure plate state for a {:?}", node.kind),
         }
     }
 
@@ -223,7 +223,7 @@ impl JITBackend for DirectBackend {
         for queue in &queues.0 {
             for &node_id in queue {
                 let node = &mut self.nodes[node_id];
-                if matches!(node.ty, NodeType::Lamp) {
+                if matches!(node.kind, NodeKind::Lamp) {
                     node.pending_tick = false;
                 }
             }
@@ -256,14 +256,8 @@ impl JITBackend for DirectBackend {
         self.play_pending_notes(world);
     }
 
-    fn compile(
-        &mut self,
-        graph: CompileGraph,
-        ticks: Vec<TickEntry>,
-        options: &CompilerOptions,
-        monitor: Arc<TaskMonitor>,
-    ) {
-        compile::compile(self, graph, ticks, options, monitor);
+    fn compile(&mut self, graph: Graph, options: &CompilerOptions, monitor: Arc<TaskMonitor>) {
+        compile::compile(self, graph, options, monitor);
     }
 
     fn has_pending_ticks(&self) -> bool {
@@ -336,27 +330,27 @@ impl fmt::Display for DirectBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "digraph {{")?;
         for (id, node) in self.nodes.inner().iter().enumerate() {
-            if matches!(node.ty, NodeType::Wire) {
+            if matches!(node.kind, NodeKind::Wire) {
                 continue;
             }
-            let label = match node.ty {
-                NodeType::Repeater { delay, .. } => format!("Repeater({})", delay),
-                NodeType::Torch => "Torch".to_string(),
-                NodeType::Comparator { mode, .. } => format!(
+            let label = match node.kind {
+                NodeKind::Repeater { delay, .. } => format!("Repeater({})", delay),
+                NodeKind::Torch => "Torch".to_string(),
+                NodeKind::Comparator { mode, .. } => format!(
                     "Comparator({})",
                     match mode {
                         ComparatorMode::Compare => "Cmp",
                         ComparatorMode::Subtract => "Sub",
                     }
                 ),
-                NodeType::Lamp => "Lamp".to_string(),
-                NodeType::Button => "Button".to_string(),
-                NodeType::Lever => "Lever".to_string(),
-                NodeType::PressurePlate => "PressurePlate".to_string(),
-                NodeType::Trapdoor => "Trapdoor".to_string(),
-                NodeType::Wire => "Wire".to_string(),
-                NodeType::Constant => format!("Constant({})", node.power),
-                NodeType::NoteBlock { .. } => "NoteBlock".to_string(),
+                NodeKind::Lamp => "Lamp".to_string(),
+                NodeKind::Button => "Button".to_string(),
+                NodeKind::Lever => "Lever".to_string(),
+                NodeKind::PressurePlate => "PressurePlate".to_string(),
+                NodeKind::Trapdoor => "Trapdoor".to_string(),
+                NodeKind::Wire => "Wire".to_string(),
+                NodeKind::Constant => format!("Constant({})", node.power),
+                NodeKind::NoteBlock { .. } => "NoteBlock".to_string(),
             };
             let pos = if !self.blocks[id].is_empty() {
                 let mut string = String::new();

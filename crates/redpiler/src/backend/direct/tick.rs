@@ -7,12 +7,12 @@ impl DirectBackend {
     pub fn tick_node(&mut self, node_id: NodeId) {
         let node = &mut self.nodes[node_id];
         // Lamps clear their pending tick when it is collected, see `DirectBackend::tick`
-        if !matches!(node.ty, NodeType::Lamp) {
+        if !matches!(node.kind, NodeKind::Lamp) {
             node.pending_tick = false;
         }
 
-        match node.ty {
-            NodeType::Repeater { delay, .. } => {
+        match node.kind {
+            NodeKind::Repeater { delay, .. } => {
                 if node.repeater_locked {
                     return;
                 }
@@ -33,13 +33,13 @@ impl DirectBackend {
                     self.set_power_and_propagate(node_id, SignalStrength::Fifteen);
                 }
             }
-            NodeType::Torch => {
+            NodeKind::Torch => {
                 let should_be_powered = !node.default_inputs.is_powered();
                 if node.is_powered() != should_be_powered {
                     self.set_power_and_propagate(node_id, should_be_powered.into());
                 }
             }
-            NodeType::Comparator {
+            NodeKind::Comparator {
                 mode, far_input, ..
             } => {
                 let power = comparator_output_power(node, mode, far_input);
@@ -47,13 +47,13 @@ impl DirectBackend {
                     self.set_power_and_propagate(node_id, power);
                 }
             }
-            NodeType::Lamp => {
+            NodeKind::Lamp => {
                 let should_be_lit = node.default_inputs.is_powered();
                 if node.is_powered() && !should_be_lit {
                     node.set_powered(false);
                 }
             }
-            NodeType::Button if node.is_powered() => {
+            NodeKind::Button if node.is_powered() => {
                 self.set_power_and_propagate(node_id, SignalStrength::Zero);
             }
             _ => {} //unreachable!("Node {:?} should not be ticked!", node.ty),

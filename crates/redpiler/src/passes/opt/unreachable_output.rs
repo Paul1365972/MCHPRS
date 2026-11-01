@@ -3,14 +3,14 @@
 //! This pass uses the output of [`SSSetAnalysis`] pass to find links that can be removed because the
 //! output ss of a node is never higher than the weight of the link.
 
-use crate::compile_graph::{CompileGraph, Direction, NodeIdx};
+use crate::graph::{Direction, Graph, NodeIdx};
 use crate::passes::analysis::ss_set_analysis::{SSSetAnalysis, SSSetInfo};
 use crate::passes::{AnalysisInfos, AnalysisUsage, Pass};
 
 pub struct UnreachableOutput;
 
 impl Pass for UnreachableOutput {
-    fn run_pass(&self, graph: &mut CompileGraph, analysis_infos: &mut AnalysisInfos) {
+    fn run_pass(&self, graph: &mut Graph, analysis_infos: &mut AnalysisInfos) {
         let set_info: &SSSetInfo = analysis_infos.get_analysis().unwrap();
 
         for i in 0..graph.node_bound() {
