@@ -5,58 +5,62 @@ use crate::commands::error::{CommandResult, RuntimeError};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::PlotCoordinates;
 use crate::player::PlayerPos;
-use crate::plot::{database, Plot};
+#[cfg(feature = "claims")]
+use crate::plot::database;
+use crate::plot::Plot;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
+    let plot = Command::new("plot").alias("p");
+    #[cfg(feature = "claims")]
+    let plot = plot
+        .subcommand(Command::new("info").alias("i").executes(exec_info))
+        .subcommand(Command::new("claim").alias("c").executes(exec_claim))
+        .subcommand(Command::new("auto").alias("a").executes(exec_auto))
+        .subcommand(
+            Command::new("visit")
+                .alias("v")
+                .arg("username", ArgumentType::Word)
+                .optional("index", ArgumentType::integer(1, 999))
+                .executes(exec_visit),
+        );
     registry.register(
-        Command::new("plot")
-            .alias("p")
-            .subcommand(Command::new("info").alias("i").executes(exec_info))
-            .subcommand(Command::new("claim").alias("c").executes(exec_claim))
-            .subcommand(Command::new("auto").alias("a").executes(exec_auto))
-            .subcommand(Command::new("middle").executes(|ctx| {
-                let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
-                teleport_to_plot(ctx, plot_x, plot_z)?;
-                ctx.reply("Teleported to plot middle.")
-            }))
-            .subcommand(
-                Command::new("visit")
-                    .alias("v")
-                    .arg("username", ArgumentType::Word)
-                    .optional("index", ArgumentType::integer(1, 999))
-                    .executes(exec_visit),
-            )
-            .subcommand(
-                Command::new("teleport")
-                    .alias("tp")
-                    .arg("location", ArgumentType::PlotPos)
-                    .executes(|ctx| {
-                        let location: PlotCoordinates = ctx.arg("location")?;
-                        let current_plot_pos = ctx.player()?.pos.plot_pos();
-                        let (plot_x, plot_z) = location.resolve(current_plot_pos)?;
-                        teleport_to_plot(ctx, plot_x, plot_z)?;
-                        ctx.reply(&format!("Teleported to plot ({plot_x}, {plot_z})."))
-                    }),
-            )
-            .subcommand(Command::new("lock").executes(exec_lock))
-            .subcommand(Command::new("unlock").executes(|ctx| {
-                let entity_id = ctx.player()?.entity_id;
-                if ctx.plot_mut().remove_locked_player(entity_id) {
-                    ctx.reply("You are now unlocked.")
-                } else {
-                    ctx.reply("You are not locked to this plot.")
-                }
-            }))
-            .subcommand(Command::new("select").alias("sel").executes(|ctx| {
-                let region = ctx.plot().world.region();
-                let player = ctx.player_mut()?;
-                player.worldedit_set_first_pos(region.min());
-                player.worldedit_set_second_pos(region.max());
-                Ok(())
-            })),
+        plot.subcommand(Command::new("middle").executes(|ctx| {
+            let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
+            teleport_to_plot(ctx, plot_x, plot_z)?;
+            ctx.reply("Teleported to plot middle.")
+        }))
+        .subcommand(
+            Command::new("teleport")
+                .alias("tp")
+                .arg("location", ArgumentType::PlotPos)
+                .executes(|ctx| {
+                    let location: PlotCoordinates = ctx.arg("location")?;
+                    let current_plot_pos = ctx.player()?.pos.plot_pos();
+                    let (plot_x, plot_z) = location.resolve(current_plot_pos)?;
+                    teleport_to_plot(ctx, plot_x, plot_z)?;
+                    ctx.reply(&format!("Teleported to plot ({plot_x}, {plot_z})."))
+                }),
+        )
+        .subcommand(Command::new("lock").executes(exec_lock))
+        .subcommand(Command::new("unlock").executes(|ctx| {
+            let entity_id = ctx.player()?.entity_id;
+            if ctx.plot_mut().remove_locked_player(entity_id) {
+                ctx.reply("You are now unlocked.")
+            } else {
+                ctx.reply("You are not locked to this plot.")
+            }
+        }))
+        .subcommand(Command::new("select").alias("sel").executes(|ctx| {
+            let region = ctx.plot().world.region();
+            let player = ctx.player_mut()?;
+            player.worldedit_set_first_pos(region.min());
+            player.worldedit_set_second_pos(region.max());
+            Ok(())
+        })),
     );
 }
 
+#[cfg(feature = "claims")]
 fn exec_info(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
     if let Some(owner) = database::get_plot_owner(plot_x, plot_z) {
@@ -67,6 +71,7 @@ fn exec_info(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     }
 }
 
+#[cfg(feature = "claims")]
 fn exec_claim(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
     if database::is_claimed(plot_x, plot_z).unwrap() {
@@ -78,6 +83,7 @@ fn exec_claim(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     }
 }
 
+#[cfg(feature = "claims")]
 fn exec_auto(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let mut plot = (0, 0);
     while database::is_claimed(plot.0, plot.1).unwrap() {
@@ -88,6 +94,7 @@ fn exec_auto(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     Ok(())
 }
 
+#[cfg(feature = "claims")]
 fn exec_visit(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let username: &str = ctx.arg("username")?;
     let index = ctx.arg_opt::<i32>("index")?;

@@ -3,7 +3,9 @@ use crate::commands::value::PlayerTarget;
 use crate::commands::COMMAND_REGISTRY;
 use crate::config::CONFIG;
 use crate::player::{Gamemode, PacketSender, Player};
-use crate::plot::{self, database, Plot, PLOT_BLOCK_HEIGHT};
+#[cfg(feature = "claims")]
+use crate::plot::database;
+use crate::plot::{Plot, PLOT_BLOCK_HEIGHT};
 use crate::utils;
 #[cfg(feature = "whitelist")]
 use crate::utils::HyphenatedUUID;
@@ -37,6 +39,8 @@ use std::fs;
 use std::io::Cursor;
 #[cfg(feature = "whitelist")]
 use std::io::{self, Write as _};
+#[cfg(not(feature = "claims"))]
+use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
@@ -164,7 +168,12 @@ impl MinecraftServer {
         fs::create_dir_all("./world/plots").unwrap();
         fs::create_dir_all("./schems").unwrap();
 
-        plot::database::init();
+        #[cfg(not(feature = "claims"))]
+        if Path::new("./world/plots.db").exists() {
+            panic!("world/plots.db holds plot claims, but this build has no claims feature. Build with `--features claims` to keep them, or delete the file");
+        }
+        #[cfg(feature = "claims")]
+        database::init();
 
         let bind_addr = CONFIG.bind_address.clone();
 
@@ -551,6 +560,7 @@ impl MinecraftServer {
                     gamemode: player.gamemode,
                     properties: player.properties.clone(),
                 };
+                #[cfg(feature = "claims")]
                 database::ensure_user(&format!("{:032x}", player.uuid), &player.username);
                 self.broadcaster
                     .broadcast(BroadcastMessage::PlayerJoinedInfo(player_join_info));

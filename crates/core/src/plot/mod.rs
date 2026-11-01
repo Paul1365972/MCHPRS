@@ -1,4 +1,5 @@
 mod data;
+#[cfg(feature = "claims")]
 pub mod database;
 mod monitor;
 mod packet_handlers;
@@ -35,6 +36,7 @@ use mchprs_world::storage::Chunk;
 use monitor::TimingsMonitor;
 use rustc_hash::FxHashMap;
 use scoreboard::RedpilerState;
+#[cfg(feature = "claims")]
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -888,6 +890,7 @@ impl Plot {
         Plot::chunk_in_plot_bounds(plot_x, plot_z, x >> 4, z >> 4)
     }
 
+    #[cfg(feature = "claims")]
     pub fn claim_plot(&mut self, plot_x: i32, plot_z: i32, player_idx: usize) {
         let uuid = self.players[player_idx].uuid;
         database::claim_plot(plot_x, plot_z, &format!("{:032x}", uuid));
@@ -905,6 +908,7 @@ impl Plot {
         )
     }
 
+    #[cfg(feature = "claims")]
     pub fn get_next_plot(plot_x: i32, plot_z: i32) -> (i32, i32) {
         let x = plot_x.abs();
         let z = plot_z.abs();

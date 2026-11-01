@@ -33,7 +33,7 @@ bus = { workspace = true }
 ctrlc = { workspace = true, features = ["termination"] }
 tracing = { workspace = true }
 rand = { workspace = true }
-rusqlite = { workspace = true, features=["bundled"] }
+rusqlite = { workspace = true, features = ["bundled"], optional = true }
 anyhow = { workspace = true }
 toml_edit = { workspace = true }
 ureq = { workspace = true, features = ["json"], optional = true }
@@ -45,4 +45,5 @@ sha2 = { workspace = true }
 thiserror = { workspace = true }
 
 [features]
+claims = ["dep:rusqlite"]
 whitelist = ["dep:ureq"]
