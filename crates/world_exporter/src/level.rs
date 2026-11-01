@@ -1,4 +1,7 @@
 use anyhow::Result;
+use fastnbt::SerOpts;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use mchprs_blocks::{MC_DATA_VERSION, MC_VERSION};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -268,11 +271,12 @@ pub fn write_level_dat(level_name: &str, output_path: &Path) -> Result<()> {
             snapshot: false,
         },
     };
-    nbt::to_gzip_writer(
-        &mut level_dat_file,
+    let mut encoder = GzEncoder::new(&mut level_dat_file, Compression::default());
+    fastnbt::to_writer_with_opts(
+        &mut encoder,
         &LevelRoot { data: level_dat },
-        Some("Data"),
-    )
-    .unwrap();
+        SerOpts::new().root_name("Data"),
+    )?;
+    encoder.finish()?;
     Ok(())
 }

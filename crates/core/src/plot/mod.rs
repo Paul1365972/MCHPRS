@@ -260,7 +260,7 @@ impl BlockStore for PlotWorld {
                 z: pos.z,
                 // For now the only nbt we send to the client is sign data
                 ty: block_entity.ty(),
-                nbt: nbt.content,
+                nbt,
             };
             self.pending_block_entities.insert(pos, block_entity_data);
         } else {

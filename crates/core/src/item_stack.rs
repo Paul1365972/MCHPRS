@@ -1,13 +1,15 @@
+use fastnbt::Value;
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::items::Item;
 use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_network::NBTCompound;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct ItemStack {
     pub item_type: Item,
     pub count: u8,
-    pub nbt: Option<nbt::Blob>,
+    pub nbt: Option<NBTCompound>,
 }
 
 impl ItemStack {
@@ -21,32 +23,29 @@ impl ItemStack {
 
         let items_needed = container_ty.items_needed_for_signal_strength(ss);
 
-        let list = nbt::Value::List({
+        let list = Value::List({
             let mut items = Vec::new();
             for (slot, items_added) in (0..items_needed).step_by(64).enumerate() {
                 let count = (items_needed - items_added).min(64);
-                items.push(nbt::Value::Compound(HashMap::from([
-                    ("Count".to_owned(), nbt::Value::Byte(count as i8)),
+                items.push(Value::Compound(HashMap::from([
+                    ("Count".to_owned(), Value::Byte(count as i8)),
                     (
                         "id".to_owned(),
-                        nbt::Value::String("minecraft:redstone".to_owned()),
+                        Value::String("minecraft:redstone".to_owned()),
                     ),
-                    ("Slot".to_owned(), nbt::Value::Byte(slot as i8)),
+                    ("Slot".to_owned(), Value::Byte(slot as i8)),
                 ])));
             }
             items
         });
 
-        let nbt = nbt::Blob::with_content(HashMap::from([(
+        let nbt = NBTCompound::from([(
             "BlockEntityTag".to_owned(),
-            nbt::Value::Compound(HashMap::from([
+            Value::Compound(HashMap::from([
                 ("Items".to_owned(), list),
-                (
-                    "Id".to_owned(),
-                    nbt::Value::String(container_ty.to_string()),
-                ),
+                ("Id".to_owned(), Value::String(container_ty.to_string())),
             ])),
-        )]));
+        )]);
 
         ItemStack {
             item_type: item,

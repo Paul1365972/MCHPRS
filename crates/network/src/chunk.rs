@@ -3,6 +3,8 @@ use crate::packets::clientbound::{
     CUpdateSectionBlocksRecord, ClientBoundPacket,
 };
 use crate::packets::{PacketEncoder, PalettedContainer};
+use crate::NBTCompound;
+use fastnbt::{LongArray, Value};
 use mchprs_world::storage::{BitBuffer, Chunk, ChunkSection};
 
 pub fn encode_chunk(chunk: &Chunk) -> PacketEncoder {
@@ -18,12 +20,11 @@ pub fn encode_chunk(chunk: &Chunk) -> PacketEncoder {
     }
 
     let chunk_sections = chunk.sections.iter().map(encode_section).collect();
-    let mut heightmaps = nbt::Map::new();
     let heightmap_longs: Vec<i64> = heightmap_buffer.longs().iter().map(|x| *x as i64).collect();
-    heightmaps.insert(
-        "MOTION_BLOCKING".to_string(),
-        nbt::Value::LongArray(heightmap_longs),
-    );
+    let heightmaps = NBTCompound::from([(
+        "MOTION_BLOCKING".to_owned(),
+        Value::LongArray(LongArray::new(heightmap_longs)),
+    )]);
     let mut block_entities = Vec::new();
     for (pos, block_entity) in &chunk.block_entities {
         if let Some(nbt) = block_entity.to_nbt(true) {
@@ -31,7 +32,7 @@ pub fn encode_chunk(chunk: &Chunk) -> PacketEncoder {
                 x: pos.x as i8,
                 z: pos.z as i8,
                 y: pos.y as i16,
-                data: nbt.content,
+                data: nbt,
                 ty: block_entity.ty(),
             })
         }
@@ -65,7 +66,7 @@ pub fn encode_empty_chunk(x: i32, z: i32, section_count: usize) -> PacketEncoder
             .collect(),
         chunk_x: x,
         chunk_z: z,
-        heightmaps: nbt::Map::new(),
+        heightmaps: NBTCompound::new(),
         block_entities: vec![],
     }
     .encode()

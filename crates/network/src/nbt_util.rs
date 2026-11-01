@@ -1,6 +1,7 @@
 use serde::Serialize;
+use std::collections::HashMap;
 
-pub type NBTCompound = nbt::Map<String, nbt::Value>;
+pub type NBTCompound = HashMap<String, fastnbt::Value>;
 
 #[derive(Serialize, Clone)]
 struct NBTMapEntry<T: Serialize> {
