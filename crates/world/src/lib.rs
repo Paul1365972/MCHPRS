@@ -9,10 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::mem;
 use storage::Chunk;
 
-pub const MC_VERSION: &str = "1.20.4";
-pub const MC_DATA_VERSION: i32 = 3700;
-pub const PROTOCOL_VERSION: i32 = 765;
-
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TickPriority {
     Highest = 0,

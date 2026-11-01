@@ -7,14 +7,15 @@ use crate::{
         registry::CommandRegistry,
         value::Direction,
     },
-    worldedit::{clear_area, update},
+    worldedit::{clear_area, create_clipboard, paste_clipboard, update},
 };
 use mchprs_blocks::{
+    block_store::{BlockStore, BlockView},
+    block_volume::BlockVolume,
     blocks::{Block, FlipDirection, RotateAmt},
+    region::Region,
     BlockFacing, BlockPos,
 };
-use mchprs_schematic::{create_clipboard, paste_clipboard, WorldEditClipboard};
-use mchprs_world::storage::PalettedBitBuffer;
 use std::time::Instant;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
@@ -86,16 +87,13 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
                 let start_time = Instant::now();
                 let clipboard = ctx.get_clipboard()?;
-                let (size_x, size_y, size_z) =
-                    (clipboard.size_x, clipboard.size_y, clipboard.size_z);
+                let size = clipboard_size(clipboard);
 
                 let flip_pos = |mut pos: BlockPos| {
                     match direction {
-                        BlockFacing::East | BlockFacing::West => pos.x = size_x as i32 - 1 - pos.x,
-                        BlockFacing::North | BlockFacing::South => {
-                            pos.z = size_z as i32 - 1 - pos.z
-                        }
-                        BlockFacing::Up | BlockFacing::Down => pos.y = size_y as i32 - 1 - pos.y,
+                        BlockFacing::East | BlockFacing::West => pos.x = size.x - 1 - pos.x,
+                        BlockFacing::North | BlockFacing::South => pos.z = size.z - 1 - pos.z,
+                        BlockFacing::Up | BlockFacing::Down => pos.y = size.y - 1 - pos.y,
                     }
                     pos
                 };
@@ -105,8 +103,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     _ => {}
                 };
 
-                let flipped =
-                    transform_clipboard(clipboard, (size_x, size_y, size_z), flip_pos, flip_block);
+                let flipped = transform_clipboard(clipboard, size, flip_pos, flip_block);
                 ctx.set_clipboard(flipped)?;
                 ctx.worldedit_message(&format!(
                     "The clipboard copy has been flipped. ({:?})",
@@ -141,37 +138,35 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                 };
 
                 let clipboard = ctx.get_clipboard()?;
-                let (size_x, size_y, size_z) =
-                    (clipboard.size_x, clipboard.size_y, clipboard.size_z);
-                let (n_size_x, n_size_z) = match rotate_amt {
-                    RotateAmt::Rotate90 | RotateAmt::Rotate270 => (size_z, size_x),
-                    _ => (size_x, size_z),
+                let size = clipboard_size(clipboard);
+                let rotated_size = match rotate_amt {
+                    RotateAmt::Rotate90 | RotateAmt::Rotate270 => {
+                        BlockPos::new(size.z, size.y, size.x)
+                    }
+                    RotateAmt::Rotate180 => size,
                 };
 
                 let rotate_pos = |pos: BlockPos| match rotate_amt {
                     RotateAmt::Rotate90 => BlockPos {
-                        x: n_size_x as i32 - 1 - pos.z,
+                        x: rotated_size.x - 1 - pos.z,
                         y: pos.y,
                         z: pos.x,
                     },
                     RotateAmt::Rotate180 => BlockPos {
-                        x: n_size_x as i32 - 1 - pos.x,
+                        x: rotated_size.x - 1 - pos.x,
                         y: pos.y,
-                        z: n_size_z as i32 - 1 - pos.z,
+                        z: rotated_size.z - 1 - pos.z,
                     },
                     RotateAmt::Rotate270 => BlockPos {
                         x: pos.z,
                         y: pos.y,
-                        z: n_size_z as i32 - 1 - pos.x,
+                        z: rotated_size.z - 1 - pos.x,
                     },
                 };
 
-                let rotated = transform_clipboard(
-                    clipboard,
-                    (n_size_x, size_y, n_size_z),
-                    rotate_pos,
-                    |block| block.rotate(rotate_amt),
-                );
+                let rotated = transform_clipboard(clipboard, rotated_size, rotate_pos, |block| {
+                    block.rotate(rotate_amt)
+                });
                 ctx.set_clipboard(rotated)?;
                 ctx.worldedit_message(&format!(
                     "The clipboard copy has been rotated. ({:?})",
@@ -190,14 +185,8 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let start_time = Instant::now();
 
     let pos = ctx.player()?.pos.block_pos();
-    let clipboard = ctx.get_clipboard()?;
-    let paste_min = pos - BlockPos::new(clipboard.offset_x, clipboard.offset_y, clipboard.offset_z);
-    let paste_max = paste_min
-        + BlockPos::new(
-            clipboard.size_x as i32 - 1,
-            clipboard.size_y as i32 - 1,
-            clipboard.size_z as i32 - 1,
-        );
+    let paste_region = ctx.get_clipboard()?.region().translated(pos);
+    let (paste_min, paste_max) = (paste_region.min(), paste_region.max());
     let select = |ctx: &mut ExecutionContext<'_>| -> CommandResult<()> {
         let player = ctx.player_mut()?;
         player.worldedit_set_first_pos(paste_min);
@@ -228,48 +217,32 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     ctx.worldedit_message(&format!("{} ({:?})", message, start_time.elapsed()))
 }
 
+fn clipboard_size(clipboard: &BlockVolume) -> BlockPos {
+    let region = clipboard.region();
+    region.max() - region.min() + BlockPos::new(1, 1, 1)
+}
+
 fn transform_clipboard(
-    clipboard: &WorldEditClipboard,
-    new_size: (u32, u32, u32),
+    clipboard: &BlockVolume,
+    new_size: BlockPos,
     map_pos: impl Fn(BlockPos) -> BlockPos,
     map_block: impl Fn(&mut Block),
-) -> WorldEditClipboard {
-    let (size_x, size_y, size_z) = (clipboard.size_x, clipboard.size_y, clipboard.size_z);
-    let (n_size_x, n_size_y, n_size_z) = new_size;
-    let volume = size_x * size_y * size_z;
-    let mut data = PalettedBitBuffer::new(volume as usize, 9);
+) -> BlockVolume {
+    let region = clipboard.region();
+    let min = BlockPos::zero() - map_pos(BlockPos::zero() - region.min());
+    let mut transformed =
+        BlockVolume::empty(Region::new(min, min + new_size - BlockPos::new(1, 1, 1)));
 
-    for y in 0..size_y {
-        for z in 0..size_z {
-            for x in 0..size_x {
-                let i = y * size_x * size_z + z * size_x + x;
-                let n = map_pos(BlockPos::new(x as i32, y as i32, z as i32));
-                let n_i = n.y as u32 * n_size_x * n_size_z + n.z as u32 * n_size_x + n.x as u32;
-
-                let mut block = Block::from_id(clipboard.data.get_entry(i as usize));
-                map_block(&mut block);
-                data.set_entry(n_i as usize, block.get_id());
-            }
-        }
+    for pos in region.positions() {
+        let mut block = clipboard.block(pos);
+        map_block(&mut block);
+        transformed.set_block(min + map_pos(pos - region.min()), block);
     }
-
-    let offset = map_pos(BlockPos::new(
-        clipboard.offset_x,
-        clipboard.offset_y,
-        clipboard.offset_z,
-    ));
-    WorldEditClipboard {
-        offset_x: offset.x,
-        offset_y: offset.y,
-        offset_z: offset.z,
-        size_x: n_size_x,
-        size_y: n_size_y,
-        size_z: n_size_z,
-        data,
-        block_entities: clipboard
-            .block_entities
-            .iter()
-            .map(|(pos, e)| (map_pos(*pos), e.clone()))
-            .collect(),
+    for (pos, block_entity) in clipboard.block_entities() {
+        transformed.set_block_entity(
+            min + map_pos(pos - region.min()),
+            Some(block_entity.clone()),
+        );
     }
+    transformed
 }
