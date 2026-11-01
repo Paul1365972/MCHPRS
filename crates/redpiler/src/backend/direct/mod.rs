@@ -1,27 +1,28 @@
-//! The direct backend does not do code generation and operates on the `CompileNode` graph directly
+//! The direct backend does not do code generation and interprets the netlist directly
 
 mod compile;
 mod node;
 mod tick;
 mod update;
 
-use super::JITBackend;
 use crate::backend::direct::node::ForwardLinks;
-use crate::compile_graph::{CompileGraph, SignalStrength};
-use crate::task_monitor::TaskMonitor;
-use crate::{block_powered_mut, CompilerOptions};
-use mchprs_blocks::block_entities::BlockEntity;
-use mchprs_blocks::blocks::{Block, ComparatorMode, Instrument};
-use mchprs_blocks::BlockPos;
-use mchprs_redstone::noteblock;
-use mchprs_world::{TickEntry, TickPriority, World};
-use node::{Node, NodeId, NodeType, Nodes};
-use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
-use std::fmt::Write;
-use std::sync::Arc;
-use std::{fmt, mem};
-use tracing::{debug, warn};
+use crate::block_map::BlockMap;
+use crate::compile_graph::SignalStrength;
+use crate::engine::{Engine, EngineError, Input, NodeChanges, PendingTick};
+use crate::netlist::{Netlist, NodeId};
+use crate::worker::Worker;
+use mchprs_blocks::blocks::ComparatorMode;
+use mchprs_world::{TickEntry, TickPriority};
+use node::{Node, NodeType, Nodes};
+use std::mem;
+use std::time::Instant;
+
+pub fn start(netlist: &Netlist, ticks: &[TickEntry], io_only: bool) -> Worker {
+    let block_map = BlockMap::new(netlist);
+    let pending_ticks = block_map.map_ticks(ticks);
+    let engine = DirectEngine::new(netlist, io_only, pending_ticks);
+    Worker::start(block_map, Box::new(engine))
+}
 
 #[derive(Default, Clone)]
 struct Queues([Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
@@ -48,7 +49,8 @@ impl TickScheduler {
     const NUM_PRIORITIES: usize = 4;
     const NUM_QUEUES: usize = 16;
 
-    fn reset<W: World>(&mut self, world: &mut W, blocks: &[impl AsRef<[(BlockPos, Block)]>]) {
+    fn pending_ticks(&self) -> Vec<PendingTick> {
+        let mut pending = Vec::new();
         for (idx, queues) in self.queues_deque.iter().enumerate() {
             let delay = if self.pos >= idx {
                 idx + Self::NUM_QUEUES
@@ -56,23 +58,16 @@ impl TickScheduler {
                 idx
             } - self.pos;
             for (entries, priority) in queues.0.iter().zip(Self::priorities()) {
-                for node in entries {
-                    let node_blocks = blocks[node.index()].as_ref();
-                    if node_blocks.is_empty() {
-                        warn!("Cannot schedule tick for node {:?} because block information is missing", node);
-                        continue;
-                    };
-                    for (pos, _) in node_blocks.iter().copied() {
-                        world.schedule_tick(pos, delay as u32, priority);
-                    }
+                for &node in entries {
+                    pending.push(PendingTick {
+                        node,
+                        delay: delay as u32,
+                        priority,
+                    });
                 }
             }
         }
-        for queues in self.queues_deque.iter_mut() {
-            for queue in queues.0.iter_mut() {
-                queue.clear();
-            }
-        }
+        pending
     }
 
     fn schedule_tick(&mut self, node: NodeId, delay: usize, priority: TickPriority) {
@@ -96,45 +91,37 @@ impl TickScheduler {
             TickPriority::Normal,
         ]
     }
-
-    fn has_pending_ticks(&self) -> bool {
-        for queues in &self.queues_deque {
-            for queue in &queues.0 {
-                if !queue.is_empty() {
-                    return true;
-                }
-            }
-        }
-        false
-    }
 }
 
-struct NoteBlockInfo {
-    positions: SmallVec<[BlockPos; 1]>,
-    instrument: Instrument,
-    note: u8,
-    pending: bool,
-}
-
-#[derive(Default)]
-pub struct DirectBackend {
+pub struct DirectEngine {
     nodes: Nodes,
     forward_links: ForwardLinks,
-    blocks: Vec<SmallVec<[(BlockPos, Block); 1]>>,
-    pos_map: FxHashMap<BlockPos, NodeId>,
     scheduler: TickScheduler,
-    noteblock_info: Vec<NoteBlockInfo>,
+    notes: Vec<NodeId>,
+    work: usize,
+    changed_since_take: bool,
 }
 
-impl DirectBackend {
-    fn play_pending_notes<W: World>(&mut self, world: &mut W) {
-        for info in &mut self.noteblock_info {
-            if mem::take(&mut info.pending) {
-                for pos in info.positions.iter().copied() {
-                    noteblock::play_note(world, pos, info.instrument, info.note);
-                }
-            }
-        }
+impl DirectEngine {
+    const WORK_PER_TIME_CHECK: usize = 20_000;
+
+    pub fn new(netlist: &Netlist, io_only: bool, pending_ticks: Vec<PendingTick>) -> DirectEngine {
+        compile::compile(netlist, io_only, pending_ticks)
+    }
+
+    fn node(&self, node_id: NodeId) -> &Node {
+        &self.nodes.inner()[node_id.index()]
+    }
+
+    fn tick(&mut self) {
+        let mut queues = self.scheduler.queues_this_tick();
+        let mut work = 1;
+        queues.drain_each(|node_id| {
+            work += 1;
+            self.tick_node(node_id);
+        });
+        self.work += work;
+        self.scheduler.end_tick(queues);
     }
 
     fn set_power_and_propagate(&mut self, node_id: NodeId, power: SignalStrength) {
@@ -165,7 +152,7 @@ impl DirectBackend {
 
             update::update_node(
                 &mut self.scheduler,
-                &mut self.noteblock_info,
+                &mut self.notes,
                 &mut self.nodes,
                 update,
             );
@@ -173,119 +160,84 @@ impl DirectBackend {
     }
 }
 
-impl JITBackend for DirectBackend {
-    fn inspect(&mut self, pos: BlockPos) {
-        let Some(node_id) = self.pos_map.get(&pos) else {
-            debug!("could not find node at pos {}", pos);
-            return;
-        };
-
-        debug!("Node {:?}: {:#?}", node_id, self.nodes[*node_id]);
-    }
-
-    fn reset<W: World>(&mut self, world: &mut W) {
-        for (i, node) in self.nodes.inner().iter().enumerate() {
-            if node.changed {
-                write_blocks(world, &mut self.blocks[i], node);
+impl Engine for DirectEngine {
+    fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> Result<u64, EngineError> {
+        let mut remaining = max_ticks;
+        self.work = 0;
+        while remaining != 0 {
+            self.tick();
+            remaining -= 1;
+            if self.work >= Self::WORK_PER_TIME_CHECK {
+                self.work = 0;
+                if Instant::now() >= deadline {
+                    break;
+                }
             }
         }
-        self.play_pending_notes(world);
-        self.scheduler.reset(world, &self.blocks);
-        self.nodes = Nodes::default();
-        self.blocks.clear();
-        self.forward_links.clear();
-        self.pos_map.clear();
-        self.noteblock_info.clear();
+        let completed = max_ticks - remaining;
+        self.changed_since_take |= completed != 0;
+        Ok(completed)
     }
 
-    fn on_use_block(&mut self, pos: BlockPos) {
-        let node_id = self.pos_map[&pos];
-        let node = &self.nodes[node_id];
-        match node.ty {
-            NodeType::Button => {
+    fn input(&mut self, node_id: NodeId, input: Input) -> Result<(), EngineError> {
+        self.changed_since_take = true;
+        let node = self.node(node_id);
+        match (input, &node.ty) {
+            (Input::Interact, NodeType::Button) => {
                 if node.is_powered() {
-                    return;
+                    return Ok(());
                 }
                 self.scheduler
                     .schedule_tick(node_id, 10, TickPriority::Normal);
                 self.set_power_and_propagate(node_id, SignalStrength::Fifteen);
             }
-            NodeType::Lever => {
+            (Input::Interact, NodeType::Lever) => {
                 self.set_power_and_propagate(node_id, (!node.is_powered()).into());
             }
-            _ => warn!("Tried to use a {:?} redpiler node", node.ty),
-        }
-    }
-
-    fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
-        let node_id = self.pos_map[&pos];
-        let node = &self.nodes[node_id];
-        match node.ty {
-            NodeType::PressurePlate => {
-                self.set_power_and_propagate(node_id, powered.into());
+            (Input::PressurePlate { powered }, NodeType::PressurePlate) => {
+                if node.is_powered() != powered {
+                    self.set_power_and_propagate(node_id, powered.into());
+                }
             }
-            _ => warn!("Tried to set pressure plate state for a {:?}", node.ty),
+            _ => unreachable!(
+                "node {node_id:?} is a {:?}, which does not accept {input:?}",
+                node.ty
+            ),
         }
+        Ok(())
     }
 
-    fn tick(&mut self) {
-        let mut queues = self.scheduler.queues_this_tick();
-
-        queues.drain_each(|node_id| {
-            self.tick_node(node_id);
-        });
-
-        self.scheduler.end_tick(queues);
-    }
-
-    fn flush<W: World>(&mut self, world: &mut W) {
-        for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
+    fn take_changes(&mut self) -> Result<NodeChanges, EngineError> {
+        let mut changes = NodeChanges::default();
+        if !mem::take(&mut self.changed_since_take) {
+            return Ok(changes);
+        }
+        for (index, node) in self.nodes.inner_mut().iter_mut().enumerate() {
             if node.changed && node.visible {
                 node.changed = false;
-                write_blocks(world, &mut self.blocks[i], node);
+                changes.states.push((NodeId::new(index), node.state()));
             }
         }
-        self.play_pending_notes(world);
+        changes.notes = mem::take(&mut self.notes);
+        Ok(changes)
     }
 
-    fn compile(
-        &mut self,
-        graph: CompileGraph,
-        ticks: Vec<TickEntry>,
-        options: &CompilerOptions,
-        monitor: Arc<TaskMonitor>,
-    ) {
-        compile::compile(self, graph, ticks, options, monitor);
-    }
-
-    fn has_pending_ticks(&self) -> bool {
-        self.scheduler.has_pending_ticks()
-    }
-}
-
-fn write_blocks<W: World>(world: &mut W, blocks: &mut [(BlockPos, Block)], node: &Node) {
-    for (pos, block) in blocks {
-        if let Some(powered) = block_powered_mut(block) {
-            *powered = node.is_powered()
-        }
-        if let Block::IronTrapdoor { open, .. } = block {
-            *open = node.is_powered();
-        }
-        if let Block::RedstoneWire(wire) = block {
-            wire.power = node.power.get()
+    fn snapshot(&mut self) -> Result<(NodeChanges, Vec<PendingTick>), EngineError> {
+        self.changed_since_take = false;
+        let states = self
+            .nodes
+            .inner_mut()
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(index, node)| {
+                mem::take(&mut node.changed).then(|| (NodeId::new(index), node.state()))
+            })
+            .collect();
+        let changes = NodeChanges {
+            states,
+            notes: mem::take(&mut self.notes),
         };
-        if let Block::Repeater(repeater) = block {
-            repeater.locked = node.repeater_locked;
-        }
-        world.set_block(*pos, *block);
-        if matches!(block, Block::Comparator(_)) {
-            world.set_block_entity(
-                *pos,
-                BlockEntity::Comparator {
-                    output_strength: node.power.get(),
-                },
-            );
-        }
+        Ok((changes, self.scheduler.pending_ticks()))
     }
 }
 
@@ -321,59 +273,5 @@ fn comparator_output_power(
         }
     } else {
         SignalStrength::Zero
-    }
-}
-
-impl fmt::Display for DirectBackend {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "digraph {{")?;
-        for (id, node) in self.nodes.inner().iter().enumerate() {
-            if matches!(node.ty, NodeType::Wire) {
-                continue;
-            }
-            let label = match node.ty {
-                NodeType::Repeater { delay, .. } => format!("Repeater({})", delay),
-                NodeType::Torch => "Torch".to_string(),
-                NodeType::Comparator { mode, .. } => format!(
-                    "Comparator({})",
-                    match mode {
-                        ComparatorMode::Compare => "Cmp",
-                        ComparatorMode::Subtract => "Sub",
-                    }
-                ),
-                NodeType::Lamp => "Lamp".to_string(),
-                NodeType::Button => "Button".to_string(),
-                NodeType::Lever => "Lever".to_string(),
-                NodeType::PressurePlate => "PressurePlate".to_string(),
-                NodeType::Trapdoor => "Trapdoor".to_string(),
-                NodeType::Wire => "Wire".to_string(),
-                NodeType::Constant => format!("Constant({})", node.power),
-                NodeType::NoteBlock { .. } => "NoteBlock".to_string(),
-            };
-            let pos = if !self.blocks[id].is_empty() {
-                let mut string = String::new();
-                for (idx, (pos, _)) in self.blocks[id].iter().enumerate() {
-                    if idx != 0 {
-                        write!(&mut string, "; ")?;
-                    }
-                    write!(&mut string, "{}, {}, {}", pos.x, pos.y, pos.z)?;
-                }
-                string
-            } else {
-                "No Pos".to_string()
-            };
-            writeln!(f, "    n{} [ label = \"{}\\n({})\" ];", id, label, pos)?;
-            for link in self.forward_links.get(&node.fwd_link_range) {
-                let out_index = link.node().index();
-                let weight = link.weight();
-                let color = if link.side() { ",color=\"blue\"" } else { "" };
-                writeln!(
-                    f,
-                    "    n{} -> n{} [ label = \"{}\"{} ];",
-                    id, out_index, weight, color
-                )?;
-            }
-        }
-        writeln!(f, "}}")
     }
 }

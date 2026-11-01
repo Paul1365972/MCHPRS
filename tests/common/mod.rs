@@ -1,104 +1,124 @@
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode, LeverFace, Repeater};
 use mchprs_blocks::{BlockDirection, BlockPos};
-use mchprs_redpiler::{BackendVariant, Compiler, CompilerOptions};
+use mchprs_redpiler::backend::direct::DirectEngine;
+use mchprs_redpiler::{BlockMap, CompileProgress, CompilerOptions, Engine, Input};
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
 use mchprs_world::World;
-
-struct RedpilerInstance {
-    options: CompilerOptions,
-    compiler: Compiler,
-}
-
-impl RedpilerInstance {
-    fn new(world: &TestWorld, variant: BackendVariant, optimize: bool) -> RedpilerInstance {
-        let options = CompilerOptions {
-            backend_variant: variant,
-            optimize,
-            ..Default::default()
-        };
-        let mut compiler = Compiler::default();
-        let max_x = world.x_size * 16 - 1;
-        let max_y = world.y_size * 16 - 1;
-        let max_z = world.z_size * 16 - 1;
-        let bounds = (BlockPos::new(0, 0, 0), BlockPos::new(max_x, max_y, max_z));
-        let monitor = Default::default();
-        let ticks = world.to_be_ticked.clone();
-        compiler.compile(world, bounds, options.clone(), ticks, monitor);
-        RedpilerInstance { options, compiler }
-    }
-}
+use std::time::{Duration, Instant};
 
 #[derive(Copy, Clone)]
 pub enum TestBackend {
     Redstone,
-    Redpiler {
-        variant: BackendVariant,
-        optimize: bool,
+    Direct { optimize: bool },
+}
+
+pub fn compile(world: &TestWorld, backend: TestBackend) -> (BlockMap, Box<dyn Engine>) {
+    let optimize = match backend {
+        TestBackend::Redstone => unreachable!("the base redstone implementation is not compiled"),
+        TestBackend::Direct { optimize } => optimize,
+    };
+    let options = CompilerOptions {
+        optimize,
+        ..Default::default()
+    };
+    let max_x = world.x_size * 16 - 1;
+    let max_y = world.y_size * 16 - 1;
+    let max_z = world.z_size * 16 - 1;
+    let bounds = (BlockPos::new(0, 0, 0), BlockPos::new(max_x, max_y, max_z));
+    let progress = CompileProgress::default();
+    let netlist = mchprs_redpiler::compile(world, bounds, &world.to_be_ticked, &options, &progress);
+    let block_map = BlockMap::new(&netlist);
+    let pending_ticks = block_map.map_ticks(&world.to_be_ticked);
+    let engine = DirectEngine::new(&netlist, options.io_only, pending_ticks);
+    (block_map, Box::new(engine))
+}
+
+enum Runner {
+    Redstone,
+    Compiled {
+        block_map: BlockMap,
+        engine: Box<dyn Engine>,
     },
 }
 
 pub struct BackendRunner {
     world: TestWorld,
-    redpiler: Option<RedpilerInstance>,
+    runner: Runner,
+    description: &'static str,
 }
 
 impl BackendRunner {
     pub fn new(world: TestWorld, backend: TestBackend) -> BackendRunner {
-        match backend {
-            TestBackend::Redstone => BackendRunner {
-                world,
-                redpiler: None,
-            },
-            TestBackend::Redpiler { variant, optimize } => BackendRunner {
-                redpiler: Some(RedpilerInstance::new(&world, variant, optimize)),
-                world,
-            },
+        let description = match backend {
+            TestBackend::Redstone => "the base redstone implementation",
+            TestBackend::Direct { optimize: false } => "the direct backend",
+            TestBackend::Direct { optimize: true } => "the optimized direct backend",
+        };
+        let runner = match backend {
+            TestBackend::Redstone => Runner::Redstone,
+            _ => {
+                let (block_map, engine) = compile(&world, backend);
+                Runner::Compiled { block_map, engine }
+            }
+        };
+        BackendRunner {
+            world,
+            runner,
+            description,
         }
     }
 
     pub fn tick(&mut self) {
-        if let Some(redpiler) = &mut self.redpiler {
-            redpiler.compiler.tick();
-            redpiler.compiler.flush(&mut self.world);
-            return;
-        }
-
-        self.world
-            .to_be_ticked
-            .sort_by_key(|e| (e.ticks_left, e.tick_priority));
-        for pending in &mut self.world.to_be_ticked {
-            pending.ticks_left = pending.ticks_left.saturating_sub(1);
-        }
-        while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
-            let entry = self.world.to_be_ticked.remove(0);
-            mchprs_redstone::tick(self.world.get_block(entry.pos), &mut self.world, entry.pos);
+        match &mut self.runner {
+            Runner::Compiled { block_map, engine } => {
+                engine
+                    .run_ticks(1, Instant::now() + Duration::from_secs(10))
+                    .unwrap();
+                block_map
+                    .translate(&engine.take_changes().unwrap())
+                    .apply(&mut self.world);
+            }
+            Runner::Redstone => {
+                self.world
+                    .to_be_ticked
+                    .sort_by_key(|e| (e.ticks_left, e.tick_priority));
+                for pending in &mut self.world.to_be_ticked {
+                    pending.ticks_left = pending.ticks_left.saturating_sub(1);
+                }
+                while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
+                    let entry = self.world.to_be_ticked.remove(0);
+                    mchprs_redstone::tick(
+                        self.world.get_block(entry.pos),
+                        &mut self.world,
+                        entry.pos,
+                    );
+                }
+            }
         }
     }
 
     pub fn use_block(&mut self, pos: BlockPos) {
-        if let Some(redpiler) = &mut self.redpiler {
-            redpiler.compiler.on_use_block(pos);
-            redpiler.compiler.flush(&mut self.world);
-            return;
+        match &mut self.runner {
+            Runner::Compiled { block_map, engine } => {
+                let node = block_map.node_at(pos).expect("no node at pos");
+                engine.input(node, Input::Interact).unwrap();
+                block_map
+                    .translate(&engine.take_changes().unwrap())
+                    .apply(&mut self.world);
+            }
+            Runner::Redstone => {
+                mchprs_redstone::on_use(self.world.get_block(pos), &mut self.world, pos);
+            }
         }
-        mchprs_redstone::on_use(self.world.get_block(pos), &mut self.world, pos);
     }
 
     pub fn check_block_powered(&self, pos: BlockPos, powered: bool) {
-        if let Some(redpiler) = &self.redpiler {
-            assert_eq!(
-                is_block_powered(self.world.get_block(pos)),
-                Some(powered),
-                "when testing on redpiler options: {:#?}",
-                redpiler.options
-            );
-            return;
-        }
         assert_eq!(
             is_block_powered(self.world.get_block(pos)),
             Some(powered),
-            "when testing with the base redstone implementation"
+            "when testing with {}",
+            self.description
         );
     }
 
@@ -134,19 +154,9 @@ macro_rules! test_all_backends {
             #[test]
             fn [< $name _redstone >]() { $name(TestBackend::Redstone) }
             #[test]
-            fn [< $name _rp_direct >]() {
-                $name(TestBackend::Redpiler {
-                    variant: ::mchprs_redpiler::BackendVariant::Direct,
-                    optimize: false,
-                })
-            }
+            fn [< $name _rp_direct >]() { $name(TestBackend::Direct { optimize: false }) }
             #[test]
-            fn [< $name _rp_direct_optimized >]() {
-                $name(TestBackend::Redpiler {
-                    variant: ::mchprs_redpiler::BackendVariant::Direct,
-                    optimize: true,
-                })
-            }
+            fn [< $name _rp_direct_optimized >]() { $name(TestBackend::Direct { optimize: true }) }
         }
     };
 }

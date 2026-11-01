@@ -146,7 +146,9 @@ pub fn execute_command(
         }
     }
     if command.mutates_world {
-        plot.reset_redpiler();
+        plot.stop_redpiler();
+    } else {
+        plot.pull_snapshot();
     }
     let ctx = CommandExecuteContext {
         plot: &mut plot.world,

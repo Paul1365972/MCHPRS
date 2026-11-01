@@ -3,28 +3,29 @@ use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
-use mchprs_redpiler::CompilerOptions;
+use mchprs_redpiler::{CompilerOptions, PassStatus};
 use mchprs_text::{ColorCode, TextComponent, TextComponentBuilder};
 
 #[derive(PartialEq, Eq, Default, Clone, Copy)]
 pub enum RedpilerState {
     #[default]
     Stopped,
-    Compiling,
+    Compiling(Option<PassStatus>),
     Running,
 }
 
 impl RedpilerState {
     fn to_str(self) -> TextComponent {
         let (text, color) = match self {
-            RedpilerState::Stopped => ("Stopped", ColorCode::LightPurple.into()),
-            RedpilerState::Compiling => ("Compiling", ColorCode::Yellow.into()),
-            RedpilerState::Running => ("Running", ColorCode::Green.into()),
+            RedpilerState::Stopped => ("Stopped".to_owned(), ColorCode::LightPurple.into()),
+            RedpilerState::Compiling(None) => ("Compiling".to_owned(), ColorCode::Yellow.into()),
+            RedpilerState::Compiling(Some(pass)) => (
+                format!("Compiling {}/{}: {}", pass.index + 1, pass.count, pass.name),
+                ColorCode::Yellow.into(),
+            ),
+            RedpilerState::Running => ("Running".to_owned(), ColorCode::Green.into()),
         };
-        TextComponentBuilder::new(text.into())
-            .color(color)
-            .bold()
-            .finish()
+        TextComponentBuilder::new(text).color(color).bold().finish()
     }
 }
 
@@ -74,8 +75,13 @@ impl Scoreboard {
 
     fn set_lines(&mut self, players: &[Player], lines: Vec<ScoreboardLine>) {
         for line in 0..self.current_state.len() {
-            let removal_packet = self.make_removal_packet(line).encode();
-            players.iter().for_each(|p| p.send_packet(&removal_packet));
+            let kept = lines
+                .iter()
+                .any(|new| new.entity_name == self.current_state[line].entity_name);
+            if !kept {
+                let removal_packet = self.make_removal_packet(line).encode();
+                players.iter().for_each(|p| p.send_packet(&removal_packet));
+            }
         }
 
         self.current_state = lines;
@@ -90,8 +96,10 @@ impl Scoreboard {
         if line == self.current_state.len() {
             self.current_state.push(text);
         } else {
-            let removal_packet = self.make_removal_packet(line).encode();
-            players.iter().for_each(|p| p.send_packet(&removal_packet));
+            if self.current_state[line].entity_name != text.entity_name {
+                let removal_packet = self.make_removal_packet(line).encode();
+                players.iter().for_each(|p| p.send_packet(&removal_packet));
+            }
 
             self.current_state[line] = text;
         }
@@ -143,26 +151,29 @@ impl Scoreboard {
         let mut new_lines = vec![self.current_state[0].clone()];
 
         let mut flags = Vec::new();
+        if let Some(backend) = &options.backend {
+            flags.push(("backend", format!("- {backend} backend")));
+        }
         if options.optimize {
-            flags.push(("o", "- optimize"));
+            flags.push(("o", "- optimize".to_owned()));
         }
         if options.export {
-            flags.push(("e", "- export"));
+            flags.push(("e", "- export".to_owned()));
         }
         if options.io_only {
-            flags.push(("i", "- io only"));
+            flags.push(("i", "- io only".to_owned()));
         }
         if options.update {
-            flags.push(("u", "- update"));
+            flags.push(("u", "- update".to_owned()));
         }
         if options.wire_dot_out {
-            flags.push(("d", "- wire dot out"));
+            flags.push(("d", "- wire dot out".to_owned()));
         }
         if options.illegal_states_out {
-            flags.push(("l", "- illegal states out"));
+            flags.push(("l", "- illegal states out".to_owned()));
         }
         if options.wire_cross_out {
-            flags.push(("c", "- wire cross out"));
+            flags.push(("c", "- wire cross out".to_owned()));
         }
 
         if !flags.is_empty() {
@@ -175,7 +186,7 @@ impl Scoreboard {
             new_lines.extend(flags.iter().map(|flag| {
                 ScoreboardLine::new(
                     format!("flag_{}", flag.0),
-                    TextComponentBuilder::new(flag.1.to_string())
+                    TextComponentBuilder::new(flag.1.clone())
                         .color_code(ColorCode::Aqua)
                         .finish(),
                 )

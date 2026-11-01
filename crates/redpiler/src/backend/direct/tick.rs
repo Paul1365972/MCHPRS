@@ -1,7 +1,6 @@
-use super::node::NodeId;
 use super::*;
 
-impl DirectBackend {
+impl DirectEngine {
     // Benchmarks show that `tick_node` getting inlined into `tick` causes worse perf.
     #[inline(never)]
     pub fn tick_node(&mut self, node_id: NodeId) {

@@ -74,6 +74,7 @@ impl From<HandshakingConn> for PlayerConn {
         PlayerConn {
             client: conn.client,
             alive: true,
+            deferred_packets: Vec::new(),
         }
     }
 }
@@ -81,6 +82,7 @@ impl From<HandshakingConn> for PlayerConn {
 pub struct PlayerConn {
     client: NetworkClient,
     alive: bool,
+    deferred_packets: Vec<Box<dyn ServerBoundPacket>>,
 }
 
 impl PlayerConn {
@@ -89,7 +91,21 @@ impl PlayerConn {
     }
 
     pub fn receive_packets(&mut self) -> Vec<Box<dyn ServerBoundPacket>> {
-        self.client.receive_packets(&mut self.alive)
+        let mut packets = std::mem::take(&mut self.deferred_packets);
+        packets.extend(self.client.receive_packets(&mut self.alive));
+        packets
+    }
+
+    pub fn poll_keep_alive(&mut self) -> bool {
+        let mut received = false;
+        for packet in self.client.receive_packets(&mut self.alive) {
+            if packet.is_keep_alive() {
+                received = true;
+            } else {
+                self.deferred_packets.push(packet);
+            }
+        }
+        received
     }
 
     pub fn alive(&self) -> bool {

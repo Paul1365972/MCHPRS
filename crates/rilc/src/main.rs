@@ -173,14 +173,13 @@ fn main() -> ExitCode {
                 export,
                 io_only,
                 update: false,
-                export_dot_graph: false,
                 wire_dot_out,
                 illegal_states_out,
                 wire_cross_out,
                 print_after_all,
                 print_before_backend: false,
-                backend_variant: Default::default(),
                 passes,
+                backend: None,
             };
             compile::compile(&input_path, &output_path, &options);
         }

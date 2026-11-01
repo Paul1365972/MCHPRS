@@ -1,12 +1,12 @@
 use mchprs_world::TickPriority;
 
-use super::node::{NodeId, NodeType};
+use super::node::NodeType;
 use super::*;
 
 #[inline(always)]
 pub(super) fn update_node(
     scheduler: &mut TickScheduler,
-    noteblock_info: &mut [NoteBlockInfo],
+    notes: &mut Vec<NodeId>,
     nodes: &mut Nodes,
     node_id: NodeId,
 ) {
@@ -85,12 +85,12 @@ pub(super) fn update_node(
                 node.set_power(input_power);
             }
         }
-        NodeType::NoteBlock { noteblock_id } => {
+        NodeType::NoteBlock => {
             let should_be_powered = node.default_inputs.is_powered();
             if node.is_powered() != should_be_powered {
                 node.set_powered(should_be_powered);
                 if should_be_powered {
-                    noteblock_info[noteblock_id as usize].pending = true;
+                    notes.push(node_id);
                 }
             }
         }

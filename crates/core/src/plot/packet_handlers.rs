@@ -240,7 +240,7 @@ impl ServerBoundPacketHandler for Plot {
             };
             self.players[other_player].client.send_packet(&packet);
         }
-        self.on_player_move(player, old, new);
+        self.on_player_move(player, old);
     }
 
     fn handle_set_player_position_and_rotation(
@@ -301,13 +301,14 @@ impl ServerBoundPacketHandler for Plot {
                 .client
                 .send_packet(&entity_head_look);
         }
-        self.on_player_move(player, old, new);
+        self.on_player_move(player, old);
     }
 
     fn handle_player_rotation(&mut self, player_rotation: SPlayerRotation, player: usize) {
         self.players[player].yaw = player_rotation.yaw;
         self.players[player].pitch = player_rotation.pitch;
         self.players[player].on_ground = player_rotation.on_ground;
+        self.on_player_move(player, self.players[player].pos);
         let rotation_packet = CEntityRotation {
             entity_id: self.players[player].entity_id as i32,
             yaw: player_rotation.yaw,
@@ -335,6 +336,7 @@ impl ServerBoundPacketHandler for Plot {
 
     fn handle_set_player_on_ground(&mut self, player_movement: SSetPlayerOnGround, player: usize) {
         self.players[player].on_ground = player_movement.on_ground;
+        self.on_player_move(player, self.players[player].pos);
     }
 
     fn handle_player_action(&mut self, player_action: SPlayerAction, player: usize) {

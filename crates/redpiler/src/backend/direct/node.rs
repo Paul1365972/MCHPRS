@@ -1,40 +1,18 @@
-use crate::compile_graph::SignalStrength;
+use crate::compile_graph::{NodeState, SignalStrength};
+use crate::netlist::NodeId;
 use mchprs_blocks::blocks::ComparatorMode;
 use std::num::NonZeroU128;
 use std::ops::{Index, IndexMut};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct NodeId(u32);
-
-impl NodeId {
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-
-    /// Safety: index must be within bounds of nodes array
-    pub unsafe fn from_index(index: usize) -> NodeId {
-        NodeId(index as u32)
-    }
-}
-
-// This is Pretty Bad:tm: because one can create a NodeId using another instance of Nodes,
-// but at least some type system protection is better than none.
-#[derive(Default)]
+// Only NodeIds from this backend's own forward links and tick queues are indexed
+// unchecked; the trait entry points index checked.
 pub struct Nodes {
-    pub nodes: Box<[Node]>,
+    nodes: Box<[Node]>,
 }
 
 impl Nodes {
     pub fn new(nodes: Box<[Node]>) -> Nodes {
         Nodes { nodes }
-    }
-
-    pub fn get(&self, idx: usize) -> NodeId {
-        if self.nodes.get(idx).is_some() {
-            NodeId(idx as u32)
-        } else {
-            panic!("node index out of bounds: {}", idx)
-        }
     }
 
     pub fn inner(&self) -> &[Node] {
@@ -49,15 +27,14 @@ impl Nodes {
 impl Index<NodeId> for Nodes {
     type Output = Node;
 
-    // The index here MUST have been created by this instance, otherwise scary things will happen !
     fn index(&self, index: NodeId) -> &Self::Output {
-        unsafe { self.nodes.get_unchecked(index.0 as usize) }
+        unsafe { self.nodes.get_unchecked(index.index()) }
     }
 }
 
 impl IndexMut<NodeId> for Nodes {
     fn index_mut(&mut self, index: NodeId) -> &mut Self::Output {
-        unsafe { self.nodes.get_unchecked_mut(index.0 as usize) }
+        unsafe { self.nodes.get_unchecked_mut(index.index()) }
     }
 }
 
@@ -76,10 +53,7 @@ impl ForwardLink {
     }
 
     pub fn node(self) -> NodeId {
-        unsafe {
-            // safety: ForwardLink is constructed using a NodeId
-            NodeId::from_index((self.data >> 5) as usize)
-        }
+        NodeId::from_raw(self.data >> 5)
     }
 
     pub fn side(self) -> bool {
@@ -129,11 +103,6 @@ impl ForwardLinks {
         // Safety: there's only one instance of ForwardLinks in the backend
         unsafe { self.links.get_unchecked(range.0.clone()) }
     }
-
-    /// After this point, all existing `ForwardLinkRange`s are invalidated.
-    pub fn clear(&mut self) {
-        self.links.clear();
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -155,9 +124,7 @@ pub enum NodeType {
     Trapdoor,
     Wire,
     Constant,
-    NoteBlock {
-        noteblock_id: u16,
-    },
+    NoteBlock,
 }
 
 #[repr(align(16))]
@@ -229,6 +196,14 @@ pub struct Node {
 }
 
 impl Node {
+    pub fn state(&self) -> NodeState {
+        NodeState {
+            power: self.power,
+            repeater_locked: self.repeater_locked,
+            pending_tick: false,
+        }
+    }
+
     pub fn is_powered(&self) -> bool {
         !self.power.is_zero()
     }

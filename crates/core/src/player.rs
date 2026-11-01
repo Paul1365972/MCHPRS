@@ -326,6 +326,9 @@ impl Player {
 
     /// Manages keep alives and packet reading. Return true if the view position should be updated.
     pub fn update(&mut self) -> bool {
+        if self.client.poll_keep_alive() {
+            self.last_keep_alive_received = Instant::now();
+        }
         if self.last_keep_alive_received.elapsed().as_secs() > 30 {
             self.kick("Timed out.".into());
         }

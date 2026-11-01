@@ -51,6 +51,10 @@ pub trait ServerBoundPacketHandler {
 }
 
 pub trait ServerBoundPacket: Send + std::fmt::Debug {
+    fn is_keep_alive(&self) -> bool {
+        false
+    }
+
     fn decode<T: PacketDecoderExt>(reader: &mut T) -> DecodeResult<Self>
     where
         Self: Sized;
@@ -383,6 +387,10 @@ pub struct SKeepAlive {
 }
 
 impl ServerBoundPacket for SKeepAlive {
+    fn is_keep_alive(&self) -> bool {
+        true
+    }
+
     fn decode<T: PacketDecoderExt>(decoder: &mut T) -> DecodeResult<Self> {
         Ok(SKeepAlive {
             id: decoder.read_long()?,
