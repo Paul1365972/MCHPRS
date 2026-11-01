@@ -5,9 +5,7 @@ use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
-use regex::Regex;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::LazyLock;
 use tracing::warn;
 
 type Compound = nbt::Map<String, nbt::Value>;
@@ -196,17 +194,34 @@ fn read_block_container(
 }
 
 fn parse_block(state: &str) -> Result<Option<Block>, SchematicError> {
-    static BLOCK_STATE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"^([a-z0-9_.-]+:)?([a-z0-9_./-]+)(?:\[([a-z0-9_=,.-]*)\])?$").unwrap()
-    });
     let invalid = || malformed(format!("invalid block state {state}"));
-    let captures = BLOCK_STATE_PATTERN.captures(state).ok_or_else(invalid)?;
-    let namespace = captures.get(1).map_or("minecraft:", |value| value.as_str());
-    let path = captures.get(2).ok_or_else(invalid)?.as_str();
-    let block_name = format!("{namespace}{path}");
+    let (identifier, property_list) = match state.split_once('[') {
+        Some((identifier, rest)) => (identifier, rest.strip_suffix(']').ok_or_else(invalid)?),
+        None => (state, ""),
+    };
+    let (namespace, path) = identifier
+        .split_once(':')
+        .unwrap_or(("minecraft", identifier));
+    let made_of = |text: &str, extra: &[u8]| {
+        text.bytes().all(|byte| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || b"_.-".contains(&byte)
+                || extra.contains(&byte)
+        })
+    };
+    if namespace.is_empty()
+        || path.is_empty()
+        || !made_of(namespace, b"")
+        || !made_of(path, b"/")
+        || !made_of(property_list, b"=,")
+    {
+        return Err(invalid());
+    }
+    let block_name = format!("{namespace}:{path}");
     let mut properties = HashMap::new();
-    if let Some(properties_match) = captures.get(3).filter(|value| !value.as_str().is_empty()) {
-        for property in properties_match.as_str().split(',') {
+    if !property_list.is_empty() {
+        for property in property_list.split(',') {
             let (name, value) = property.split_once('=').ok_or_else(invalid)?;
             if name.is_empty()
                 || !name
