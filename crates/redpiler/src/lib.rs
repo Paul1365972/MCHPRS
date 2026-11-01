@@ -252,14 +252,6 @@ impl Compiler {
         self.backend().flush(world, io_only);
     }
 
-    pub fn inspect(&mut self, pos: BlockPos) {
-        if let Some(backend) = &mut self.backend {
-            backend.inspect(pos);
-        } else {
-            debug!("cannot inspect when backend is not running");
-        }
-    }
-
     pub fn has_pending_ticks(&mut self) -> bool {
         self.backend().has_pending_ticks()
     }

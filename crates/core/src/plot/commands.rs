@@ -172,21 +172,6 @@ impl Plot {
 
                 debug!("Compile took {:?}", start_time.elapsed());
             }
-            "inspect" | "i" => {
-                let player = &self.players[player];
-                let pos = worldedit::ray_trace_block(
-                    &self.world,
-                    player.pos,
-                    player.pitch as f64,
-                    player.yaw as f64,
-                    10.0,
-                );
-                let Some(pos) = pos else {
-                    player.send_error_message("Trace failed");
-                    return;
-                };
-                self.redpiler.inspect(pos);
-            }
             "reset" | "r" => {
                 self.reset_redpiler();
                 self.publish_world();
@@ -319,16 +304,6 @@ impl Plot {
                     ticks,
                     start_time.elapsed()
                 ));
-            }
-            "toggleautorp" => {
-                self.auto_redpiler = !self.auto_redpiler;
-                if self.auto_redpiler {
-                    self.players[player]
-                        .send_system_message("Automatic redpiler compilation has been enabled.");
-                } else {
-                    self.players[player]
-                        .send_system_message("Automatic redpiler compilation has been disabled.");
-                }
             }
             "teleport" | "tp" => {
                 if args.len() == 3 {
@@ -546,7 +521,7 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
             Node {
                 flags: CommandFlags::ROOT.bits() as i8,
                 children: vec![
-                    1, 4, 5, 6, 8, 10, 11, 13, 18, 30, 34, 41, 43, 44, 45, 49, 51, 52,
+                    1, 4, 5, 6, 8, 10, 11, 13, 18, 30, 34, 41, 43, 44, 47, 49, 50,
                 ],
                 redirect_node: None,
                 name: None,
@@ -934,34 +909,25 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
                 parser: Some(Parser::String(0)),
                 suggestions_type: Some("minecraft:ask_server"),
             },
-            // 43: /toggleautorp
-            Node {
-                flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
-                children: vec![],
-                redirect_node: None,
-                name: Some("toggleautorp"),
-                parser: None,
-                suggestions_type: None,
-            },
-            // 44: /redpiler
+            // 43: /redpiler
             Node {
                 flags: CommandFlags::LITERAL.bits() as i8,
-                children: vec![46, 47, 48], // Children are compile, inspect, reset
+                children: vec![45, 46], // Children are compile, reset
                 redirect_node: None,
                 name: Some("redpiler"),
                 parser: None,
                 suggestions_type: None,
             },
-            // 45: /rp
+            // 44: /rp
             Node {
                 flags: (CommandFlags::REDIRECT | CommandFlags::LITERAL).bits() as i8,
                 children: vec![],
-                redirect_node: Some(44), // Redirect to /redpiler
+                redirect_node: Some(43), // Redirect to /redpiler
                 name: Some("rp"),
                 parser: None,
                 suggestions_type: None,
             },
-            // 46: /redpiler compile
+            // 45: /redpiler compile
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
                 children: vec![],
@@ -970,16 +936,7 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
                 parser: None,
                 suggestions_type: None,
             },
-            // 47: /redpiler inspect
-            Node {
-                flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
-                children: vec![],
-                redirect_node: None,
-                name: Some("inspect"),
-                parser: None,
-                suggestions_type: None,
-            },
-            // 48: /redpiler reset
+            // 46: /redpiler reset
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
                 children: vec![],
@@ -988,16 +945,16 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
                 parser: None,
                 suggestions_type: None,
             },
-            // 49: /worldsendrate
+            // 47: /worldsendrate
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
-                children: vec![50],
+                children: vec![48],
                 redirect_node: None,
                 name: Some("worldsendrate"),
                 parser: None,
                 suggestions_type: None,
             },
-            // 50: /worldsendrate [hertz]
+            // 48: /worldsendrate [hertz]
             Node {
                 flags: (CommandFlags::ARGUMENT | CommandFlags::EXECUTABLE).bits() as i8,
                 children: vec![],
@@ -1006,16 +963,16 @@ pub static DECLARE_COMMANDS: LazyLock<PacketEncoder> = LazyLock::new(|| {
                 parser: Some(Parser::Float(0.0, 1000.0)),
                 suggestions_type: None,
             },
-            // 51: /wsr
+            // 49: /wsr
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::REDIRECT).bits() as i8,
                 children: vec![],
-                redirect_node: Some(49),
+                redirect_node: Some(47),
                 name: Some("wsr"),
                 parser: None,
                 suggestions_type: None,
             },
-            // 52: /version
+            // 50: /version
             Node {
                 flags: (CommandFlags::LITERAL | CommandFlags::EXECUTABLE).bits() as i8,
                 children: vec![],
