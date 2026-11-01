@@ -1,9 +1,10 @@
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Repeater};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_world::{TickPriority, World};
 
 pub fn get_state_for_placement(
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     facing: BlockDirection,
 ) -> Repeater {
@@ -15,15 +16,15 @@ pub fn get_state_for_placement(
     }
 }
 
-fn should_be_locked(facing: BlockDirection, world: &impl World, pos: BlockPos) -> bool {
+fn should_be_locked(facing: BlockDirection, world: &impl BlockView, pos: BlockPos) -> bool {
     let right_side = get_power_on_side(world, pos, facing.rotate());
     let left_side = get_power_on_side(world, pos, facing.rotate_ccw());
     std::cmp::max(right_side, left_side) > 0
 }
 
-fn get_power_on_side(world: &impl World, pos: BlockPos, side: BlockDirection) -> u8 {
+fn get_power_on_side(world: &impl BlockView, pos: BlockPos, side: BlockDirection) -> u8 {
     let side_pos = pos.offset(side.block_face());
-    let side_block = world.get_block(side_pos);
+    let side_block = world.block(side_pos);
     if super::is_diode(side_block) {
         super::get_weak_power(side_block, world, side_pos, side.block_face(), false)
     } else {
@@ -33,11 +34,11 @@ fn get_power_on_side(world: &impl World, pos: BlockPos, side: BlockDirection) ->
 
 fn on_state_change(rep: Repeater, world: &mut impl World, pos: BlockPos) {
     let front_pos = pos.offset(rep.facing.opposite().block_face());
-    let front_block = world.get_block(front_pos);
+    let front_block = world.block(front_pos);
     super::update(front_block, world, front_pos);
     for direction in &BlockFace::values() {
         let neighbor_pos = front_pos.offset(*direction);
-        let block = world.get_block(neighbor_pos);
+        let block = world.block(neighbor_pos);
         super::update(block, world, neighbor_pos);
     }
 }
@@ -53,7 +54,7 @@ fn schedule_tick(rep: Repeater, world: &mut impl World, pos: BlockPos, should_be
     world.schedule_tick(pos, rep.delay as u32, priority);
 }
 
-fn should_be_powered(rep: Repeater, world: &impl World, pos: BlockPos) -> bool {
+fn should_be_powered(rep: Repeater, world: &impl BlockView, pos: BlockPos) -> bool {
     super::diode_get_input_strength(world, pos, rep.facing) > 0
 }
 

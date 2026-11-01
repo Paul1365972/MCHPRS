@@ -6,10 +6,11 @@ pub mod string_replacer;
 pub mod task_monitor;
 
 use backend::{BackendDispatcher, JITBackend};
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
-use mchprs_world::{for_each_block_mut_optimized, TickEntry, World};
+use mchprs_world::{TickEntry, World};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, trace, warn};
@@ -149,7 +150,7 @@ impl Compiler {
         self.backend = Some(backend);
     }
 
-    pub fn compile<W: World>(
+    pub fn compile<W: BlockView + 'static>(
         &mut self,
         world: &W,
         region: Region,
@@ -161,7 +162,7 @@ impl Compiler {
         let start = Instant::now();
 
         // A tick scheduled by a block that has since been replaced would never run
-        ticks.retain(|entry| entry.is_for(world.get_block(entry.pos)));
+        ticks.retain(|entry| entry.is_for(world.block(entry.pos)));
 
         let input = CompilerInput {
             world,
@@ -218,10 +219,14 @@ impl Compiler {
         }
 
         if self.options.update {
-            for_each_block_mut_optimized(world, region.min(), region.max(), |world, pos| {
-                let block = world.get_block(pos);
+            for pos in world
+                .occupied_regions(region)
+                .into_iter()
+                .flat_map(Region::positions)
+            {
+                let block = world.block(pos);
                 mchprs_redstone::update(block, world, pos);
-            });
+            }
         }
         self.options = Default::default();
     }
@@ -275,7 +280,7 @@ impl Compiler {
     }
 }
 
-pub struct CompilerInput<'w, W: World> {
+pub struct CompilerInput<'w, W: BlockView> {
     pub world: &'w W,
     pub region: Region,
     pub ticks: &'w [TickEntry],

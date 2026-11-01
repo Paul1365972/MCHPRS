@@ -2055,7 +2055,6 @@ dependencies = [
  "mchprs_blocks",
  "mchprs_redpiler",
  "mchprs_schematic",
- "mchprs_world",
  "owo-colors",
  "tracing-subscriber",
 ]

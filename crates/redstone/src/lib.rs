@@ -8,6 +8,7 @@ pub mod repeater;
 pub mod wire;
 
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, LeverFace, RedstoneWire, Repeater};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_world::{TickPriority, World};
@@ -53,7 +54,7 @@ pub fn provides_strong_power(block: Block, side: BlockFace) -> bool {
     }
 }
 
-fn get_output_power(block: Block, world: &impl World, pos: BlockPos) -> u8 {
+fn get_output_power(block: Block, world: &impl BlockView, pos: BlockPos) -> u8 {
     if let Some(powered) = block.clone().get_pressure_plate_powered() {
         return bool_to_ss(*powered);
     }
@@ -63,7 +64,7 @@ fn get_output_power(block: Block, world: &impl World, pos: BlockPos) -> u8 {
         Block::Lever { powered, .. }
         | Block::StoneButton { powered, .. }
         | Block::Repeater(Repeater { powered, .. }) => bool_to_ss(powered),
-        Block::Comparator(_) => match world.get_block_entity(pos) {
+        Block::Comparator(_) => match world.block_entity(pos) {
             Some(BlockEntity::Comparator { output_strength }) => output_strength.get(),
             _ => 0,
         },
@@ -73,7 +74,7 @@ fn get_output_power(block: Block, world: &impl World, pos: BlockPos) -> u8 {
 
 fn get_weak_power(
     block: Block,
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     side: BlockFace,
     dust_power: bool,
@@ -103,7 +104,7 @@ fn get_weak_power(
 
 fn get_strong_power(
     block: Block,
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     side: BlockFace,
     dust_power: bool,
@@ -115,10 +116,10 @@ fn get_strong_power(
     }
 }
 
-fn get_max_strong_power(world: &impl World, pos: BlockPos, dust_power: bool) -> u8 {
+fn get_max_strong_power(world: &impl BlockView, pos: BlockPos, dust_power: bool) -> u8 {
     let mut max_power = 0;
     for side in &BlockFace::values() {
-        let block = world.get_block(pos.offset(*side));
+        let block = world.block(pos.offset(*side));
         max_power = max_power.max(get_strong_power(
             block,
             world,
@@ -132,7 +133,7 @@ fn get_max_strong_power(world: &impl World, pos: BlockPos, dust_power: bool) -> 
 
 pub fn get_redstone_power(
     block: Block,
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     facing: BlockFace,
 ) -> u8 {
@@ -145,7 +146,7 @@ pub fn get_redstone_power(
 
 fn get_redstone_power_no_dust(
     block: Block,
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     facing: BlockFace,
 ) -> u8 {
@@ -156,19 +157,19 @@ fn get_redstone_power_no_dust(
     }
 }
 
-pub fn torch_should_be_off(world: &impl World, pos: BlockPos) -> bool {
+pub fn torch_should_be_off(world: &impl BlockView, pos: BlockPos) -> bool {
     let bottom_pos = pos.offset(BlockFace::Bottom);
-    let bottom_block = world.get_block(bottom_pos);
+    let bottom_block = world.block(bottom_pos);
     get_redstone_power(bottom_block, world, bottom_pos, BlockFace::Top) > 0
 }
 
 pub fn wall_torch_should_be_off(
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     direction: BlockDirection,
 ) -> bool {
     let wall_pos = pos.offset(direction.opposite().block_face());
-    let wall_block = world.get_block(wall_pos);
+    let wall_block = world.block(wall_pos);
     get_redstone_power(
         wall_block,
         world,
@@ -177,19 +178,19 @@ pub fn wall_torch_should_be_off(
     ) > 0
 }
 
-pub fn redstone_lamp_should_be_lit(world: &impl World, pos: BlockPos) -> bool {
+pub fn redstone_lamp_should_be_lit(world: &impl BlockView, pos: BlockPos) -> bool {
     for face in &BlockFace::values() {
         let neighbor_pos = pos.offset(*face);
-        if get_redstone_power(world.get_block(neighbor_pos), world, neighbor_pos, *face) > 0 {
+        if get_redstone_power(world.block(neighbor_pos), world, neighbor_pos, *face) > 0 {
             return true;
         }
     }
     false
 }
 
-fn diode_get_input_strength(world: &impl World, pos: BlockPos, facing: BlockDirection) -> u8 {
+fn diode_get_input_strength(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> u8 {
     let input_pos = pos.offset(facing.block_face());
-    let input_block = world.get_block(input_pos);
+    let input_block = world.block(input_pos);
     let mut power = get_redstone_power(input_block, world, input_pos, facing.block_face());
     if power == 0
         && let Block::RedstoneWire(wire) = input_block
@@ -200,12 +201,12 @@ fn diode_get_input_strength(world: &impl World, pos: BlockPos, facing: BlockDire
 }
 
 pub fn diode_should_be_prioritized(
-    world: &impl World,
+    world: &impl BlockView,
     pos: BlockPos,
     facing: BlockDirection,
 ) -> bool {
     let output_direction = facing.opposite();
-    match world.get_block(pos.offset(output_direction.block_face())) {
+    match world.block(pos.offset(output_direction.block_face())) {
         Block::Repeater(front_repeater) => front_repeater.facing != output_direction,
         Block::Comparator(front_comparator) => front_comparator.facing != output_direction,
         _ => false,
@@ -268,7 +269,7 @@ pub fn update(block: Block, world: &mut impl World, pos: BlockPos) {
             let should_be_powered = redstone_lamp_should_be_lit(world, pos);
             // We need to recheck if the live version of the block is powered,
             // because the supplied block is cached and could be outdated
-            let Block::NoteBlock { powered, .. } = world.get_block(pos) else {
+            let Block::NoteBlock { powered, .. } = world.block(pos) else {
                 unreachable!("Underlying block changed, this should never happen")
             };
             if powered != should_be_powered {
@@ -357,11 +358,11 @@ pub fn tick(block: Block, world: &mut impl World, pos: BlockPos) {
 pub fn update_wire_neighbors(world: &mut impl World, pos: BlockPos) {
     for direction in &BlockFace::values() {
         let neighbor_pos = pos.offset(*direction);
-        let block = world.get_block(neighbor_pos);
+        let block = world.block(neighbor_pos);
         update(block, world, neighbor_pos);
         for n_direction in &BlockFace::values() {
             let n_neighbor_pos = neighbor_pos.offset(*n_direction);
-            let block = world.get_block(n_neighbor_pos);
+            let block = world.block(n_neighbor_pos);
             update(block, world, n_neighbor_pos);
         }
     }
@@ -370,17 +371,17 @@ pub fn update_wire_neighbors(world: &mut impl World, pos: BlockPos) {
 pub fn update_surrounding_blocks(world: &mut impl World, pos: BlockPos) {
     for direction in &BlockFace::values() {
         let neighbor_pos = pos.offset(*direction);
-        let block = world.get_block(neighbor_pos);
+        let block = world.block(neighbor_pos);
         update(block, world, neighbor_pos);
 
         // Also update diagonal blocks
 
         let up_pos = neighbor_pos.offset(BlockFace::Top);
-        let up_block = world.get_block(up_pos);
+        let up_block = world.block(up_pos);
         update(up_block, world, up_pos);
 
         let down_pos = neighbor_pos.offset(BlockFace::Bottom);
-        let down_block = world.get_block(down_pos);
+        let down_block = world.block(down_pos);
         update(down_block, world, down_pos);
     }
 }

@@ -17,6 +17,7 @@ use crate::utils::HyphenatedUUID;
 use anyhow::Error;
 use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::items::Item;
 use mchprs_blocks::region::Region;
@@ -28,7 +29,9 @@ use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::{Compiler, CompilerOptions};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
 use mchprs_world::storage::Chunk;
-use mchprs_world::{has_tick_entry, schedule_tick_entry, TickEntry, TickPriority, World};
+use mchprs_world::{
+    has_tick_entry, occupied_regions, schedule_tick_entry, TickEntry, TickPriority, World,
+};
 use monitor::TimingsMonitor;
 use rustc_hash::FxHashMap;
 use scoreboard::RedpilerState;
@@ -108,10 +111,13 @@ pub struct PlotWorld {
 }
 
 impl PlotWorld {
-    fn get_chunk_index_for_chunk(&self, chunk_x: i32, chunk_z: i32) -> usize {
+    fn get_chunk_index_for_chunk(&self, chunk_x: i32, chunk_z: i32) -> Option<usize> {
         let local_x = chunk_x - self.x * PLOT_WIDTH;
         let local_z = chunk_z - self.z * PLOT_WIDTH;
-        (local_x * PLOT_WIDTH + local_z).unsigned_abs() as usize
+        if !(0..PLOT_WIDTH).contains(&local_x) || !(0..PLOT_WIDTH).contains(&local_z) {
+            return None;
+        }
+        Some((local_x * PLOT_WIDTH + local_z) as usize)
     }
 
     fn get_chunk_index_for_block(&self, block_x: i32, block_z: i32) -> Option<usize> {
@@ -134,11 +140,34 @@ impl PlotWorld {
             ),
         )
     }
+
+    pub fn chunk(&self, x: i32, z: i32) -> Option<&Chunk> {
+        self.chunks.get(self.get_chunk_index_for_chunk(x, z)?)
+    }
 }
 
-impl World for PlotWorld {
-    /// Sets a block in storage. Returns true if a block was changed.
-    fn set_block_raw(&mut self, pos: BlockPos, block: u32) -> bool {
+impl BlockView for PlotWorld {
+    fn block(&self, pos: BlockPos) -> Block {
+        let Some(chunk_index) = self.get_chunk_index_for_block(pos.x, pos.z) else {
+            return Block::Air;
+        };
+        let chunk = &self.chunks[chunk_index];
+        Block::from_id(chunk.get_block((pos.x & 0xF) as u32, pos.y as u32, (pos.z & 0xF) as u32))
+    }
+
+    fn block_entity(&self, pos: BlockPos) -> Option<&BlockEntity> {
+        let chunk_index = self.get_chunk_index_for_block(pos.x, pos.z)?;
+        let chunk = &self.chunks[chunk_index];
+        chunk.get_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF))
+    }
+
+    fn occupied_regions(&self, region: Region) -> Vec<Region> {
+        occupied_regions(region, |x, z| self.chunk(x, z))
+    }
+}
+
+impl BlockStore for PlotWorld {
+    fn set_block(&mut self, pos: BlockPos, block: Block) -> bool {
         let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
             Some(idx) => idx,
             None => return false,
@@ -154,37 +183,21 @@ impl World for PlotWorld {
             (pos.x & 0xF) as u32,
             pos.y as u32,
             (pos.z & 0xF) as u32,
-            block,
+            block.get_id(),
         )
     }
 
-    /// Returns the block state id of the block at `pos`
-    fn get_block_raw(&self, pos: BlockPos) -> u32 {
-        let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
-            Some(idx) => idx,
-            None => return 0,
+    fn set_block_entity(&mut self, pos: BlockPos, block_entity: Option<BlockEntity>) {
+        let Some(block_entity) = block_entity else {
+            self.pending_block_entities.remove(&pos);
+            let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
+                Some(idx) => idx,
+                None => return,
+            };
+            let chunk = &mut self.chunks[chunk_index];
+            chunk.delete_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF));
+            return;
         };
-        let chunk = &self.chunks[chunk_index];
-        chunk.get_block((pos.x & 0xF) as u32, pos.y as u32, (pos.z & 0xF) as u32)
-    }
-
-    fn delete_block_entity(&mut self, pos: BlockPos) {
-        self.pending_block_entities.remove(&pos);
-        let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
-            Some(idx) => idx,
-            None => return,
-        };
-        let chunk = &mut self.chunks[chunk_index];
-        chunk.delete_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF));
-    }
-
-    fn get_block_entity(&self, pos: BlockPos) -> Option<&BlockEntity> {
-        let chunk_index = self.get_chunk_index_for_block(pos.x, pos.z)?;
-        let chunk = &self.chunks[chunk_index];
-        chunk.get_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF))
-    }
-
-    fn set_block_entity(&mut self, pos: BlockPos, block_entity: BlockEntity) {
         if !(0..PLOT_BLOCK_HEIGHT).contains(&pos.y) {
             return;
         }
@@ -208,23 +221,16 @@ impl World for PlotWorld {
         let chunk = &mut self.chunks[chunk_index];
         chunk.set_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF), block_entity);
     }
+}
 
-    fn get_chunk(&self, x: i32, z: i32) -> Option<&Chunk> {
-        self.chunks.get(self.get_chunk_index_for_chunk(x, z))
-    }
-
-    fn get_chunk_mut(&mut self, x: i32, z: i32) -> Option<&mut Chunk> {
-        let chunk_idx = self.get_chunk_index_for_chunk(x, z);
-        self.chunks.get_mut(chunk_idx)
-    }
-
+impl World for PlotWorld {
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority) {
-        let block = self.get_block(pos);
+        let block = self.block(pos);
         schedule_tick_entry(&mut self.to_be_ticked, block, pos, delay, priority);
     }
 
     fn pending_tick_at(&mut self, pos: BlockPos) -> bool {
-        has_tick_entry(&self.to_be_ticked, self.get_block(pos), pos)
+        has_tick_entry(&self.to_be_ticked, self.block(pos), pos)
     }
 
     fn play_sound(
@@ -311,7 +317,7 @@ impl Plot {
         }
         while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
             let entry = self.world.to_be_ticked.remove(0);
-            let block = self.world.get_block(entry.pos);
+            let block = self.world.block(entry.pos);
             if entry.is_for(block) {
                 mchprs_redstone::tick(block, &mut self.world, entry.pos);
             }
@@ -322,7 +328,7 @@ impl Plot {
         self.publish_world();
         for pos in positions {
             let block_change = CBlockUpdate {
-                block_id: self.world.get_block_raw(*pos) as i32,
+                block_id: self.world.block(*pos).get_id() as i32,
                 x: pos.x,
                 y: pos.y,
                 z: pos.z,
@@ -345,7 +351,7 @@ impl Plot {
     fn on_player_move(&mut self, player_idx: usize, old: PlayerPos, new: PlayerPos) {
         self.release_pressure_plate(old.block_pos());
         let new_block = new.block_pos();
-        if let Some(false) = self.world.get_block(new_block).get_pressure_plate_powered()
+        if let Some(false) = self.world.block(new_block).get_pressure_plate_powered()
             && self.players[player_idx].on_ground
         {
             self.set_pressure_plate(new_block, true);
@@ -353,7 +359,7 @@ impl Plot {
     }
 
     fn release_pressure_plate(&mut self, pos: BlockPos) {
-        if let Some(true) = self.world.get_block(pos).get_pressure_plate_powered()
+        if let Some(true) = self.world.block(pos).get_pressure_plate_powered()
             && !self.are_players_on_block(pos)
         {
             self.set_pressure_plate(pos, false);
@@ -367,7 +373,7 @@ impl Plot {
             return;
         }
 
-        let mut block = self.world.get_block(pos);
+        let mut block = self.world.block(pos);
         if let Some(powered) = block.get_pressure_plate_powered() {
             *powered = new_powered;
             self.world.set_block(pos, block);
@@ -452,9 +458,10 @@ impl Plot {
                     .client
                     .send_packet(&Chunk::encode_empty_packet(chunk_x, chunk_z, PLOT_SECTIONS));
             } else {
-                let chunk_idx = self.world.get_chunk_index_for_chunk(chunk_x, chunk_z);
-                let chunk_data = self.world.chunks[chunk_idx].encode_packet();
-                self.players[player_idx].client.send_packet(&chunk_data);
+                if let Some(chunk) = self.world.chunk(chunk_x, chunk_z) {
+                    let chunk_data = chunk.encode_packet();
+                    self.players[player_idx].client.send_packet(&chunk_data);
+                }
             }
         }
     }
@@ -559,7 +566,7 @@ impl Plot {
         }
 
         if self.redpiler.is_active() {
-            let block = self.world.get_block(block_pos);
+            let block = self.world.block(block_pos);
             let lever_or_button = matches!(block, Block::Lever { .. } | Block::StoneButton { .. });
             if lever_or_button && !self.players[player].crouching {
                 self.redpiler.on_use_block(block_pos);
@@ -596,7 +603,7 @@ impl Plot {
             return;
         }
 
-        let block = self.world.get_block(block_pos);
+        let block = self.world.block(block_pos);
         if !self.players[player].crouching {
             interaction::on_use(
                 block,
@@ -610,7 +617,7 @@ impl Plot {
     }
 
     fn handle_player_digging(&mut self, block_pos: BlockPos, player: usize) {
-        let block = self.world.get_block(block_pos);
+        let block = self.world.block(block_pos);
 
         if !Plot::in_plot_bounds(self.world.x, self.world.z, block_pos.x, block_pos.z) {
             self.players[player].send_system_message("Can't break blocks outside of plot");

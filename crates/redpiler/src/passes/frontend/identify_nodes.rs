@@ -12,11 +12,12 @@ use crate::passes::{AnalysisInfos, Pass};
 use crate::{CompilerInput, CompilerOptions};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_redstone::{self, comparator, noteblock, wire};
-use mchprs_world::{for_each_block_optimized, World};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
 use smallvec::smallvec;
@@ -24,7 +25,7 @@ use tracing::warn;
 
 pub struct IdentifyNodes;
 
-impl<W: World> Pass<W> for IdentifyNodes {
+impl<W: BlockView> Pass<W> for IdentifyNodes {
     fn run_pass(
         &self,
         graph: &mut CompileGraph,
@@ -37,11 +38,13 @@ impl<W: World> Pass<W> for IdentifyNodes {
         let mut first_pass = FxHashMap::default();
         let mut second_pass = FxHashSet::default();
 
-        let region = input.region;
-
-        for_each_block_optimized(plot, region.min(), region.max(), |pos| {
+        for pos in plot
+            .occupied_regions(input.region)
+            .into_iter()
+            .flat_map(Region::positions)
+        {
             for_pos(graph, &mut first_pass, &mut second_pass, options, plot, pos);
-        });
+        }
 
         for tick in input.ticks {
             if let Some(&idx) = first_pass.get(&tick.pos) {
@@ -63,7 +66,7 @@ impl<W: World> Pass<W> for IdentifyNodes {
     }
 }
 
-fn for_pos<W: World>(
+fn for_pos<W: BlockView>(
     graph: &mut CompileGraph,
     first_pass: &mut FxHashMap<BlockPos, NodeIdx>,
     second_pass: &mut FxHashSet<BlockPos>,
@@ -71,8 +74,7 @@ fn for_pos<W: World>(
     world: &W,
     pos: BlockPos,
 ) {
-    let id = world.get_block_raw(pos);
-    let block = Block::from_id(id);
+    let block = world.block(pos);
 
     if block.is_sign() || block.is_wall_sign() {
         second_pass.insert(pos);
@@ -99,7 +101,7 @@ fn for_pos<W: World>(
 
     let node_idx = graph.add_node(CompileNode {
         ty,
-        block: smallvec![(pos, id)],
+        block: smallvec![(pos, block.get_id())],
         name: None,
         state,
 
@@ -110,7 +112,7 @@ fn for_pos<W: World>(
     first_pass.insert(pos, node_idx);
 }
 
-fn identify_block<W: World>(
+fn identify_block<W: BlockView>(
     block: Block,
     pos: BlockPos,
     world: &W,
@@ -143,9 +145,7 @@ fn identify_block<W: World>(
                 ),
             },
             NodeState::from_power(
-                if let Some(BlockEntity::Comparator { output_strength }) =
-                    world.get_block_entity(pos)
-                {
+                if let Some(BlockEntity::Comparator { output_strength }) = world.block_entity(pos) {
                     *output_strength
                 } else {
                     SignalStrength::Zero
@@ -195,15 +195,15 @@ fn identify_block<W: World>(
     Some((ty, state))
 }
 
-fn apply_annotations<W: World>(
+fn apply_annotations<W: BlockView>(
     graph: &mut CompileGraph,
     options: &CompilerOptions,
     first_pass: &FxHashMap<BlockPos, NodeIdx>,
     world: &W,
     pos: BlockPos,
 ) {
-    let block = world.get_block(pos);
-    let annotations = parse_sign_annotations(world.get_block_entity(pos));
+    let block = world.block(pos);
+    let annotations = parse_sign_annotations(world.block_entity(pos));
     if annotations.is_empty() {
         return;
     }

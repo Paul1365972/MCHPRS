@@ -4,8 +4,8 @@ use crate::compile_graph::{
 use crate::passes::{AnalysisInfos, AnalysisUsage, Pass};
 use crate::{CompilerInput, CompilerOptions};
 use itertools::Itertools;
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::ComparatorMode as CComparatorMode;
-use mchprs_world::World;
 use redpiler_graph::{
     serialize, BlockPos, ComparatorMode, Link, LinkType, Node, NodeState, NodeType,
 };
@@ -95,7 +95,7 @@ fn convert_node(
 
 pub struct ExportGraph;
 
-impl<W: World> Pass<W> for ExportGraph {
+impl<W: BlockView> Pass<W> for ExportGraph {
     fn run_pass(
         &self,
         graph: &mut CompileGraph,
