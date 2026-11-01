@@ -420,10 +420,7 @@ struct Schematic {
     data_version: i32,
 }
 
-pub fn save_schematic(path: &Path, clipboard: &WorldEditClipboard) -> Result<()> {
-    fs::create_dir_all(path.parent().unwrap())?;
-
-    let mut file = File::create(path)?;
+pub fn save_schematic(path: &Path, clipboard: &WorldEditClipboard, overwrite: bool) -> Result<()> {
     let size_x = clipboard.size_x;
     let size_y = clipboard.size_y;
     let size_z = clipboard.size_z;
@@ -508,13 +505,23 @@ pub fn save_schematic(path: &Path, clipboard: &WorldEditClipboard) -> Result<()>
         version: 2,
         data_version: MC_DATA_VERSION,
     };
-    let mut encoder = GzEncoder::new(&mut file, Compression::default());
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     fastnbt::to_writer_with_opts(
         &mut encoder,
         &schematic,
         SerOpts::new().root_name("Schematic"),
     )?;
-    encoder.finish()?.flush()?;
+    let encoded = encoder.finish()?;
+    if let Some(directory) = path.parent() {
+        fs::create_dir_all(directory)?;
+    }
+    File::options()
+        .write(true)
+        .create(true)
+        .create_new(!overwrite)
+        .truncate(overwrite)
+        .open(path)?
+        .write_all(&encoded)?;
 
     Ok(())
 }

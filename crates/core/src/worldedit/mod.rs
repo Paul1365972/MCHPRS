@@ -3,6 +3,7 @@ pub mod pattern;
 use crate::player::PlayerPos;
 use crate::plot::PlotWorld;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_schematic::WorldEditClipboard;
 use mchprs_world::{for_each_block_mut_optimized, World};
@@ -84,9 +85,7 @@ pub fn region_positions(
 }
 
 pub fn calculate_selection_volume(first_pos: BlockPos, second_pos: BlockPos) -> i32 {
-    let min = first_pos.min(second_pos);
-    let max = first_pos.max(second_pos);
-    (max.x - min.x + 1) * (max.y - min.y + 1) * (max.z - min.z + 1)
+    Region::new(first_pos, second_pos).volume() as i32
 }
 
 pub fn calculate_expanded_selection(

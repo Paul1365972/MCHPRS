@@ -221,6 +221,20 @@ impl Handle for Switch {
 }
 
 #[derive(Clone, Copy)]
+pub(super) struct OneOf<T, const N: usize>(pub(super) [(Flag, T); N]);
+
+impl<T: Copy, const N: usize> Handle for OneOf<T, N> {
+    type Value = Option<T>;
+
+    fn read(self, arguments: &Arguments) -> Option<T> {
+        self.0
+            .iter()
+            .find(|(flag, _)| arguments.flags.is_on(flag))
+            .map(|&(_, value)| value)
+    }
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct AllFlags;
 
 impl Handle for AllFlags {

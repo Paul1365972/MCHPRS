@@ -10,7 +10,7 @@ use mchprs_network::packets::clientbound::CDeclareCommandsNodeParser as Protocol
 use mchprs_syntax::expect::Expect;
 use mchprs_syntax::reader::{Reader, SyntaxError};
 
-pub(super) use coordinates::{PlotPositionParser, PositionParser};
+pub(super) use coordinates::{BlockPositionParser, PlotPositionParser, PositionParser};
 
 const DIRECTIONS: &[(&[&str], Direction)] = &[
     (&["me"], Direction::Me),

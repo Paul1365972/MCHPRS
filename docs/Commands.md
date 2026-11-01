@@ -41,7 +41,9 @@ MCHPRS implements a subset of [WorldEdit](https://worldedit.enginehub.org/en/lat
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `/up [<distance>]` | `/u` | Move up by the given number of blocks, 1 by default, and place glass under you. |
+| `/jumpto` | `/j` | Teleport onto the block you are looking at. |
+| `/unstuck` | `/!` | Move up to the nearest space of two air blocks. |
+| `/up [<distance>]` | `/u` | Move up by the given number of blocks, 1 by default, and place glass under you if there is air. `-f`/`--force-flight` enables flight instead of placing glass. `-g`/`--force-glass` places glass even with `-f`. |
 | `/ascend [<levels>]` | `/asc` | Teleport up by the given number of floors, 1 by default. |
 | `/descend [<levels>]` | `/desc` | Teleport down by the given number of floors, 1 by default. |
 
@@ -50,29 +52,32 @@ MCHPRS implements a subset of [WorldEdit](https://worldedit.enginehub.org/en/lat
 | Command | Alias | Description |
 | --- | --- | --- |
 | `//wand` | | Give yourself a wooden axe that sets the selection corners with left and right click. |
-| `//pos1` | `//1` | Set the first corner to your position. |
-| `//pos2` | `//2` | Set the second corner to your position. |
+| `//pos1 [<coordinates>]` | `//1` | Set the first corner to the coordinates, or to your position. |
+| `//pos2 [<coordinates>]` | `//2` | Set the second corner to the coordinates, or to your position. |
 | `//hpos1` | `//h1` | Set the first corner to the block you are looking at. |
 | `//hpos2` | `//h2` | Set the second corner to the block you are looking at. |
-| `//sel` |  | Clear the selection. |
-| `//expand [<amount>] [<direction>]` | `//e` | Grow the selection in the direction by `<amount>`. |
-| `//contract [<amount>] [<direction>]` | | Shrink the selection in the direction by `<amount>`. |
+| `//pos [<pos1> [<pos2>]]` | | Set one or both corners. Without arguments, set the first corner to your position. |
+| `//sel` | `/;`, `//desel`, `//deselect` | Clear the selection. |
+| `//expand [<amount>] [<reverseAmount>] [<direction>]` | `//e` | Grow the selection in the direction by `<amount>`, and in the opposite direction by `<reverseAmount>`. |
+| `//expand vert` | `//e vert` | Grow the selection to the full height of the world. |
+| `//contract [<amount>] [<reverseAmount>] [<direction>]` | | Shrink the selection by `<amount>` on the side opposite the direction, and by `<reverseAmount>` on the side of the direction. |
 | `//shift [<amount>] [<direction>]` | | Move the selection without moving its blocks. |
 
-`<amount>` defaults to 1.
+`<amount>` defaults to 1 and `<reverseAmount>` to 0.
 
 ### Region
 
 | Command | Alias | Description |
 | --- | --- | --- |
 | `//set <pattern>` | | Fill the selection with the pattern. |
-| `//replace [<mask>] <pattern>` |  | Replace the blocks that match the mask with the pattern. Without a mask, every block except air is replaced. |
+| `//replace [<mask>] <pattern>` | `//re`, `//rep` | Replace the blocks that match the mask with the pattern. Without a mask, every block except air is replaced. |
 | `//count <mask>` | | Count the blocks in the selection that match the mask. |
-| `//stack [<count>] [<direction>]` | `//s` | Repeat the selection `<count>` times in the direction. `-a`/`--ignore-air` skips air. |
-| `//rstack [<count>] [<direction>] [<offset>]` | `//rs` | Repeat the selection `<count>` times, each copy `<offset>` blocks from the previous one, 2 by default. Copies can overlap, air is skipped and the direction can be diagonal. `-w`/`--with-air` copies air. `-e`/`--expand-selection` selects all copies. |
+| `//distr` | | Show the count and share of each block in the selection. `-c`/`--clipboard` reads the clipboard instead. |
+| `//stack [<count>] [<direction>]` | `//s` | Repeat the selection `<count>` times in the direction. `-a`/`--ignore-air` skips air. `-s`/`--shift-selection` selects the last copy. |
+| `//rstack [<count>] [<direction>] [<offset>]` | `//rs` | Repeat the selection `<count>` times, each copy `<offset>` blocks from the previous one, 2 by default. Copies can overlap, air is skipped and the direction can be diagonal. `-w`/`--with-air` copies air. `-s`/`--shift-selection` selects the last copy. `-e`/`--expand-selection` selects all copies. |
 | `//move [<count>] [<direction>]` | | Move the selected blocks by `<count>` blocks and leave air behind. Blocks moved out of the plot are discarded. `-a`/`--ignore-air` skips air. `-s`/`--shift-selection` moves the selection with the blocks. |
 | `//update` | | Update every block in the selection. `-p`/`--plot` updates the entire plot. |
-| `//replacecontainer <from> <to>` | `//rc` | Replace containers of type `<from>` in the selection with `<to>` containers that give the same signal strength. A container whose strength `<to>` cannot produce is kept. |
+| `//replacecontainer [<from>] <to>` | `//rc` | Replace the barrels, furnaces and hoppers in the selection with containers of type `<to>` that give the same signal strength. `<from>` restricts the replacement to one type. A container whose strength `<to>` cannot produce is kept. |
 
 `<count>` defaults to 1.
 
@@ -82,11 +87,11 @@ MCHPRS implements a subset of [WorldEdit](https://worldedit.enginehub.org/en/lat
 | --- | --- | --- |
 | `//copy` | `//c` | Copy the selection to the clipboard. |
 | `//cut` | `//x` | Copy the selection to the clipboard and replace it with air. |
-| `//paste` | `//v` | Paste the clipboard relative to your position. `-a`/`--ignore-air` skips air. `-u`/`--update` updates the pasted blocks. `-s`/`--select-region` selects the pasted region. |
+| `//paste` | `//v` | Paste the clipboard relative to your position. `-a`/`--ignore-air` skips air. `-u`/`--update` updates the pasted blocks. `-s`/`--select-region` selects the pasted region. `-n`/`--no-paste` selects the region without pasting. |
 | `//flip [<direction>]` | `//f` | Mirror the clipboard along the direction. |
 | `//rotate <angle>` | `//r` | Rotate the clipboard around the vertical axis by a multiple of 90 degrees. |
-| `//undo` | `/undo` | Undo the last WorldEdit operation. |
-| `//redo` | `/redo` | Redo the last undone WorldEdit operation. |
+| `//undo [<times>]` | `/undo` | Undo the last WorldEdit operations, 1 by default. |
+| `//redo [<times>]` | `/redo` | Redo the last undone WorldEdit operations, 1 by default. |
 
 ### Schematics
 
@@ -94,8 +99,9 @@ MCHPRS implements a subset of [WorldEdit](https://worldedit.enginehub.org/en/lat
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `//schematic load <filename>` | `//load` | Load a Sponge version 2 or 3 schematic into the clipboard. |
-| `//schematic save <filename>` | `//save` | Save the clipboard as a Sponge version 2 schematic. |
+| `/schematic list` | `/schematic all`, `/schematic ls` | List the schematic files. |
+| `/schematic load <filename>` | `//load` | Load a Sponge version 2 or 3 schematic into the clipboard. |
+| `/schematic save <filename>` | `//save` | Save the clipboard as a Sponge version 2 schematic. `-f`/`--force-overwrite` overwrites an existing file. |
 
 Schematics are stored in `./schems/`, or in `./schems/<uuid>/` when [`schemati`](../README.md#configuration) is enabled.
 A file name consists of letters, digits, `_`, `-`, `.` and `+`, and ends in `.schem` or `.schematic`.
@@ -120,6 +126,7 @@ A server can define more aliases in [`Config.toml`](../README.md#command-aliases
 | --- | --- | --- |
 | `<direction>` | `me`, `left`/`l`, `right`/`r`, `up`/`u`, `down`/`d`, `north`/`n`, `south`/`s`, `east`/`e`, `west`/`w` | A fixed direction, or one relative to where you look. The default is `me`, the direction you face. |
 | `<direction>` of `//rstack` | `leftup`/`lu`, `northdown`/`nd` | Every `<direction>`, and each horizontal direction combined with `up` or `down`. |
+| `<position>`, `<coordinates>`, `<pos1>`, `<pos2>` | `10 64 -3`, `~ ~5 ~`, `^ ^ ^2` | Three coordinates: absolute, relative to your position with `~`, or to your left, up and forward with `^`. |
 | `<type>` | `barrel`, `furnace`, `hopper` | A container type. |
 | `<angle>` | `90`, `180`, `270`, `-90` | Degrees, a multiple of 90. |
 | `<pattern>` | `stone`, `minecraft:glass`, `repeater[delay=3]`, `stone,20%glass`, `^[powered=true]` | The blocks to place. |

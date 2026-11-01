@@ -11,6 +11,7 @@ use crate::item_stack::ItemStack;
 use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
 use crate::worldedit::{clear_area, region_positions, update as update_region};
+use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
 use mchprs_blocks::blocks::{Block, HopperFacing};
 use mchprs_blocks::items::Item;
@@ -19,8 +20,10 @@ use mchprs_network::packets::clientbound::ClientBoundPacket;
 use mchprs_schematic::{create_clipboard, paste_clipboard};
 use mchprs_syntax::flag::Flag;
 use mchprs_world::World;
+use rustc_hash::FxHashMap;
 use std::time::Instant;
 
+const CLIPBOARD: Flag = Flag::switch("clipboard", Some('c'), "Get distribution of clipboard");
 const IGNORE_AIR: Flag = Flag::switch("ignore-air", Some('a'), "Move without air blocks");
 const SHIFT_SELECTION: Flag = Flag::switch(
     "shift-selection",
@@ -37,7 +40,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         exec_set(ctx, None, &pattern)
     }));
 
-    let mut replace = Command::new("/replace");
+    let mut replace = Command::new("/replace").alias("/re").alias("/rep");
     let mask = replace.optional("mask", MaskParser);
     let pattern = replace.required("pattern", PatternParser);
     registry.register(replace.executes(move |ctx| {
@@ -63,6 +66,45 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             blocks_counted,
             start_time.elapsed()
         ))
+    }));
+
+    let mut distribution = Command::new("/distr");
+    let of_clipboard = distribution.flag(CLIPBOARD);
+    registry.register(distribution.executes(move |ctx| {
+        let start_time = Instant::now();
+        let mut block_counts = FxHashMap::default();
+
+        if ctx.get(of_clipboard) {
+            let clipboard = ctx.clipboard()?;
+            let volume = clipboard.size_x * clipboard.size_y * clipboard.size_z;
+            for i in 0..volume as usize {
+                let block = Block::from_id(clipboard.data.get_entry(i));
+                *block_counts.entry(block.get_name()).or_insert(0) += 1;
+            }
+        } else {
+            let (first_pos, second_pos) = ctx.selection()?;
+            let world = ctx.world();
+            for pos in region_positions(first_pos, second_pos) {
+                *block_counts
+                    .entry(world.get_block(pos).get_name())
+                    .or_insert(0) += 1;
+            }
+        }
+
+        let block_counts = block_counts
+            .into_iter()
+            .sorted_by_key(|(_, count)| *count)
+            .collect_vec();
+
+        let total_blocks: u32 = block_counts.iter().map(|(_, count)| *count).sum();
+        let mut result = format!("# total blocks: {total_blocks}\n");
+        for (name, count) in block_counts {
+            let percentage = (count as f64 / total_blocks as f64) * 100.0;
+            result.push_str(&format!("{count:>6} ({percentage:>5.2}%) {name}\n"));
+        }
+
+        result.push_str(&format!("({:?})", start_time.elapsed()));
+        ctx.worldedit_message(&result)
     }));
 
     let mut move_selection = Command::new("/move");
@@ -135,7 +177,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     }));
 
     let mut replace_container = Command::new("/replacecontainer").alias("/rc");
-    let from = replace_container.required("from", ContainerParser);
+    let from = replace_container.optional("from", ContainerParser);
     let to = replace_container.required("to", ContainerParser);
     registry.register(replace_container.executes(move |ctx| {
         let (from, to) = (ctx.get(from), ctx.get(to));
@@ -191,7 +233,7 @@ fn exec_set(
 
 fn exec_replace_container(
     ctx: &mut ExecutionContext<'_>,
-    from: ContainerType,
+    from: Option<ContainerType>,
     to: ContainerType,
 ) -> CommandResult<()> {
     let (first_pos, second_pos) = ctx.selection()?;
@@ -234,7 +276,7 @@ fn exec_replace_container(
             _ => (block_container, 0),
         };
 
-        if from != container {
+        if from.is_some_and(|from| from != container) {
             continue;
         }
 
