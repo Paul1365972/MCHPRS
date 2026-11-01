@@ -35,12 +35,12 @@ rand = { workspace = true }
 backtrace = { workspace = true }
 rusqlite = { workspace = true, features=["bundled"] }
 anyhow = { workspace = true }
+ureq = { workspace = true, features = ["json"] }
 toml_edit = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
-reqwest = { workspace = true, features = ["json"] }
 itertools = { workspace = true }
 bincode = { workspace = true }
 rustc-hash = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+

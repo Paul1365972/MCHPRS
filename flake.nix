@@ -18,18 +18,12 @@
             inherit system overlays;
           };
           rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-          nativeBuildInputs = with pkgs; [
-            rustToolchain pkg-config
-          ];
-          buildInputs = with pkgs; [
-            openssl
-          ];
+          nativeBuildInputs = [ rustToolchain ];
         in
         with pkgs;
         {
           devShells.default = mkShell {
-	          inherit buildInputs nativeBuildInputs;
-            LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
+	          inherit nativeBuildInputs;
           };
         }
       );
