@@ -1,5 +1,4 @@
 use super::compile::{CompileJob, Started};
-use super::scoreboard::RedpilerState;
 use super::Plot;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
@@ -34,9 +33,12 @@ pub struct Compiling {
 }
 
 pub struct Running {
+    pub(super) setup: BackendSetup,
     blocks: BlockMap,
     session: Box<dyn Session>,
     tick_rate: TickRate,
+    pub(super) behind: bool,
+    pub(super) advanced_ticks: u64,
 }
 
 impl Redpiler {
@@ -113,6 +115,7 @@ impl Plot {
                 let finished = compiling.job.finished();
                 if progressed {
                     trace!("Redpiler compile stage {:?}", compiling.stage());
+                    self.refresh_scoreboard();
                 }
                 match finished {
                     None => {}
@@ -155,10 +158,6 @@ impl Plot {
             "Redpiler didn't start because its compile thread couldn't start."
         })?;
         self.end_world_advance();
-        self.scoreboard
-            .set_redpiler_state(&self.players, RedpilerState::Compiling);
-        self.scoreboard
-            .set_redpiler_setup(&self.players, Some(&setup));
         self.redpiler = Redpiler::Compiling(Compiling {
             setup,
             job,
@@ -166,6 +165,7 @@ impl Plot {
             started: Instant::now(),
         });
         self.reset_timings();
+        self.refresh_scoreboard();
         Ok(())
     }
 
@@ -230,6 +230,8 @@ impl Plot {
             return;
         };
         running.blocks.apply(&update.changes, &mut self.world);
+        running.behind = update.behind;
+        running.advanced_ticks = update.advanced_ticks;
         self.record_ticks(&update);
         if update.driven || !update.advanced.is_empty() {
             self.publish_world();
@@ -238,6 +240,9 @@ impl Plot {
 
     fn record_ticks(&mut self, update: &Update) {
         self.tick_history.record(update.ticks);
+        if update.ticks > 0 {
+            self.tick_time = Some(update.ticking.div_f64(update.ticks as f64));
+        }
         for &advanced in &update.advanced {
             self.record_advance(advanced);
         }
@@ -267,17 +272,19 @@ impl Plot {
             compiling.started.elapsed()
         );
         let mut running = Running {
+            setup: compiling.setup,
             blocks,
             session,
             tick_rate: TickRate::Paused,
+            behind: false,
+            advanced_ticks: 0,
         };
         running.set_tick_rate(rate);
         self.redpiler = Redpiler::Running(running);
         debug!("{message}");
         self.broadcast(&message);
         self.reset_timings();
-        self.scoreboard
-            .set_redpiler_state(&self.players, RedpilerState::Running);
+        self.refresh_scoreboard();
     }
 
     fn fail_compile(&mut self, error: &anyhow::Error) {
@@ -330,8 +337,6 @@ impl Plot {
         self.release_advance();
         self.publish_world();
         self.reset_timings();
-        self.scoreboard
-            .set_redpiler_state(&self.players, RedpilerState::Stopped);
-        self.scoreboard.set_redpiler_setup(&self.players, None);
+        self.refresh_scoreboard();
     }
 }

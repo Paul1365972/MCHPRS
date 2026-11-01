@@ -35,6 +35,13 @@ impl Advance {
         }
     }
 
+    pub(super) fn progress(&self, advanced_ticks: u64) -> Progress {
+        Progress {
+            goal: self.goal,
+            ran: self.ran + advanced_ticks,
+        }
+    }
+
     fn reply(&self, reached: bool) {
         let elapsed = self.started.elapsed();
         let ran = self.ran;
@@ -52,6 +59,12 @@ impl Advance {
         };
         self.requester.send_system_message(&message);
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Progress {
+    pub goal: Goal,
+    pub ran: u64,
 }
 
 impl Plot {

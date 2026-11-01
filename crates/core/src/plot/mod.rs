@@ -11,7 +11,7 @@ mod tick_history;
 
 use self::advance::Advance;
 use self::redpiler::{tick_rate, Redpiler};
-use self::scoreboard::Scoreboard;
+use self::scoreboard::{PlotStatus, RedpilerStatus, Scoreboard};
 use self::send_schedule::SendSchedule;
 use self::tick_history::{TickHistory, TickRateReport};
 use crate::interaction;
@@ -70,6 +70,7 @@ pub const PLOT_BLOCK_HEIGHT: i32 = PLOT_SECTIONS as i32 * 16;
 pub const ERROR_REDPILER_ACTIVE: &str =
     "This plot cannot be changed while redpiler is active. To stop it, run /redpiler reset.";
 
+const SCOREBOARD_INTERVAL: Duration = Duration::from_millis(500);
 const UPDATE_INTERVAL: Duration = Duration::from_millis(50);
 
 pub struct Plot {
@@ -91,9 +92,11 @@ pub struct Plot {
     origin: Instant,
     pacer: Pacer,
     send_schedule: SendSchedule,
+    tick_time: Option<Duration>,
     tick_history: TickHistory,
     /// The last time a player was in this plot
     last_player_time: Instant,
+    last_scoreboard_time: Instant,
     /// When this is false, the update loop will end and the thread will stop.
     /// This will be set to false if no players are on the plot for a certain amount of time.
     running: bool,
@@ -363,6 +366,9 @@ impl Plot {
             self.tick();
             ran += 1;
         }
+        if ran > 0 {
+            self.tick_time = Some(start.elapsed().div_f64(ran as f64));
+        }
         if let Some(advanced) = self.pacer.ran(ran, settled, self.now()) {
             self.publish_world();
             self.record_advance(advanced);
@@ -478,6 +484,7 @@ impl Plot {
         self.world
             .packet_senders
             .insert(player.entity_id, PlayerPacketSender::new(&player.client));
+        self.refresh_scoreboard();
         self.scoreboard.add_player(&player);
         let to = player.standing_on();
         self.players.push(player);
@@ -692,6 +699,7 @@ impl Plot {
     /// call this function so we don't try to catch up on the ticks it held up.
     fn reset_timings(&mut self) {
         self.pacer.skip_overdue(self.now());
+        self.tick_time = None;
     }
 
     pub fn publish_world(&mut self) {
@@ -732,6 +740,53 @@ impl Plot {
             .flatten()
             .map(|due| self.origin + due)
             .fold(now + UPDATE_INTERVAL, Instant::min)
+    }
+
+    fn plot_status(&self) -> PlotStatus {
+        let (redpiler, advanced_ticks, running_behind) = match &self.redpiler {
+            Redpiler::Stopped => (
+                RedpilerStatus::Stopped,
+                self.pacer.advanced_ticks(),
+                self.pacer.is_behind(),
+            ),
+            Redpiler::Compiling(compiling) => (
+                RedpilerStatus::Compiling {
+                    setup: compiling.setup.clone(),
+                    stage: compiling.stage(),
+                },
+                0,
+                false,
+            ),
+            Redpiler::Running(running) => (
+                RedpilerStatus::Running {
+                    setup: running.setup.clone(),
+                },
+                running.advanced_ticks,
+                running.behind,
+            ),
+        };
+        let compiling = self.is_compiling_redpiler();
+        PlotStatus {
+            redpiler,
+            advance: self
+                .advance
+                .as_ref()
+                .map(|advance| advance.progress(advanced_ticks)),
+            tps: self
+                .tick_history
+                .recent_rate(Instant::now())
+                .filter(|_| !compiling),
+            tps_target: self.tps,
+            tick_time: self.tick_time.filter(|_| !compiling),
+            world_send_rate: self.world.world_send_rate,
+            running_behind,
+        }
+    }
+
+    fn refresh_scoreboard(&mut self) {
+        let status = self.plot_status();
+        self.scoreboard.show(&self.players, &status);
+        self.last_scoreboard_time = Instant::now();
     }
 
     pub fn send_message(&self, message: Message) {
@@ -1093,6 +1148,10 @@ impl Plot {
             if self.send_schedule.is_due(self.now()) {
                 self.publish_world();
             }
+
+            if self.last_scoreboard_time.elapsed() >= SCOREBOARD_INTERVAL {
+                self.refresh_scoreboard();
+            }
         } else {
             self.pacer.skip_overdue(self.now());
             self.tick_history.restart(Instant::now());
@@ -1165,9 +1224,11 @@ impl Plot {
         let now = Instant::now();
         Plot {
             last_player_time: now,
+            last_scoreboard_time: now,
             origin: now,
             pacer: Pacer::new(tick_rate(tps), Duration::ZERO),
             send_schedule: SendSchedule::new(plot_data.world_send_rate, Duration::ZERO),
+            tick_time: None,
             message_receiver: channels.broadcasts,
             message_sender: channels.server,
             priv_message_receiver: channels.private,
@@ -1179,7 +1240,7 @@ impl Plot {
             redpiler: Redpiler::Stopped,
             advance: None,
             tick_history: TickHistory::new(now),
-            scoreboard: Default::default(),
+            scoreboard: Scoreboard::new(x, z),
             shared,
             world,
         }

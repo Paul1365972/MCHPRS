@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 const SAMPLE_LENGTH: Duration = Duration::from_millis(500);
+const RECENT_LENGTH: Duration = Duration::from_secs(2);
 const HISTORY_LENGTH: Duration = Duration::from_secs(15 * 60);
 
 struct Sample {
@@ -80,6 +81,10 @@ impl TickHistory {
     pub fn restart(&mut self, now: Instant) {
         self.sample_start = now;
         self.sample_ticks = 0;
+    }
+
+    pub fn recent_rate(&self, now: Instant) -> Option<f64> {
+        self.measure(now, RECENT_LENGTH).rate()
     }
 
     pub fn report(&self, now: Instant) -> Option<TickRateReport> {
