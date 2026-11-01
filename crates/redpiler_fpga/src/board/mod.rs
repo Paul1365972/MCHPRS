@@ -1,10 +1,10 @@
 mod device;
 mod toolchain;
 
-use self::device::{Command, Device};
 use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
 use crate::readback::Readback;
+use device::{Command, Device};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -3,12 +3,12 @@ mod inputs;
 mod instance;
 mod node_modules;
 
-use self::expression::signal_name;
-use self::instance::Instance;
-use self::node_modules::NodeModules;
 use crate::circuit::Circuit;
 use crate::registers::{readback_bytes, Registers};
+use expression::signal_name;
 use include_dir::{include_dir, Dir};
+use instance::Instance;
+use node_modules::NodeModules;
 use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::{fs, io, path::Path};

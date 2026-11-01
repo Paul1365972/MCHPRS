@@ -1,11 +1,11 @@
-mod build;
+mod compile;
 mod process;
 
-use self::build::SIMULATOR;
-use self::process::Process;
 use crate::circuit::{Circuit, Kind, Snapshot, State};
 use crate::engine::Simulator;
 use crate::readback::Readback;
+use compile::SIMULATOR;
+use process::Process;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
 use std::path::PathBuf;
@@ -55,7 +55,7 @@ impl VerilatorEngine {
         let readback = Readback::new(circuit);
         let node_count = circuit.nodes().len();
         let state_bytes = readback.bytes(0..node_count);
-        let directory = build::cached_simulator(circuit, state_bytes, progress)?;
+        let directory = compile::cached_simulator(circuit, state_bytes, progress)?;
         progress("Starting Verilator circuit");
         let log = directory.join("verilator-runtime.log");
         let mut process = Process::spawn(

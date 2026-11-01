@@ -3,6 +3,7 @@ mod strengths;
 mod validate;
 
 pub(crate) use lower::priority;
+
 use std::io;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

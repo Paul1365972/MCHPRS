@@ -2,12 +2,14 @@ mod aggregate;
 mod settle;
 mod timers;
 
-use self::aggregate::Aggregate;
-use self::settle::{comparator, settle_node, Schedule};
-use self::timers::Timers;
+pub(crate) use settle::settled_initial_state;
+
 use crate::circuit::{Circuit, Kind, Snapshot, State};
 use crate::engine::Simulator;
+use aggregate::Aggregate;
+use settle::{comparator, settle_node, Schedule};
 use std::io;
+use timers::Timers;
 
 #[derive(Clone, Copy)]
 struct Consumer {
@@ -15,8 +17,6 @@ struct Consumer {
     attenuation: u8,
     side: bool,
 }
-
-pub(crate) use self::settle::settled_initial_state;
 
 pub(crate) struct Reference {
     kinds: Vec<Kind>,
