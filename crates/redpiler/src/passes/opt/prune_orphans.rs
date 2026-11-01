@@ -5,20 +5,12 @@
 
 use crate::compile_graph::{CompileGraph, Direction};
 use crate::passes::{AnalysisInfos, Pass};
-use crate::{CompilerInput, CompilerOptions};
 use itertools::Itertools;
-use mchprs_blocks::block_store::BlockView;
 
 pub struct PruneOrphans;
 
-impl<W: BlockView> Pass<W> for PruneOrphans {
-    fn run_pass(
-        &self,
-        graph: &mut CompileGraph,
-        _: &CompilerOptions,
-        _: &CompilerInput<'_, W>,
-        _: &mut AnalysisInfos,
-    ) {
+impl Pass for PruneOrphans {
+    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
         // We start searching from output nodes and nodes with pending ticks
         let mut worklist = graph
             .node_indices()

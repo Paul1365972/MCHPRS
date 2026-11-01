@@ -7,19 +7,11 @@
 
 use crate::compile_graph::{CompileGraph, Direction, NodeIdx};
 use crate::passes::{AnalysisInfos, Pass};
-use crate::{CompilerInput, CompilerOptions};
-use mchprs_blocks::block_store::BlockView;
 
 pub struct DedupLinks;
 
-impl<W: BlockView> Pass<W> for DedupLinks {
-    fn run_pass(
-        &self,
-        graph: &mut CompileGraph,
-        _: &CompilerOptions,
-        _: &CompilerInput<'_, W>,
-        _: &mut AnalysisInfos,
-    ) {
+impl Pass for DedupLinks {
+    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
         for i in 0..graph.node_bound() {
             let idx = NodeIdx::new(i);
             if !graph.contains_node(idx) {

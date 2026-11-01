@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use line_index::{LineIndex, TextSize};
-use mchprs_blocks::block_volume::BlockVolume;
-use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::{
+    compile_graph::CompileGraph,
+    extract::extract,
     passes::{PassPipeline, PassPipelineBuilder, PassRegistry},
     ril::RILModule,
     CompilerOptions,
@@ -69,27 +69,30 @@ enum Command {
     Version,
 }
 
-fn load_world(ril_file_path: &Path, schem_path: &Option<String>) -> Option<(BlockVolume, Region)> {
-    Some(if let Some(schem_path) = schem_path {
-        let schem_path = ril_file_path.parent().unwrap().join(schem_path);
-        let Some(schematic) = fs::read(&schem_path)
-            .ok()
-            .and_then(|bytes| mchprs_schematic::read::read(&bytes).ok())
-        else {
-            eprintln!("error: failed to load schematic at path: {:?}", schem_path);
-            return None;
-        };
-        for (name, count) in &schematic.unknown_blocks {
-            eprintln!("warning: {count} block(s) of unknown or invalid state {name} were replaced with air");
-        }
-        let origin = schematic.volume.region().min();
-        let volume = schematic.volume.translated(BlockPos::zero() - origin);
-        let region = volume.region();
-        (volume, region)
-    } else {
-        let region = Region::new(BlockPos::zero(), BlockPos::zero());
-        (BlockVolume::empty(region), region)
-    })
+fn extract_schematic(
+    ril_file_path: &Path,
+    schematic_path: &str,
+    options: &CompilerOptions,
+) -> Option<CompileGraph> {
+    let schematic_path = ril_file_path.parent().unwrap().join(schematic_path);
+    let Some(schematic) = fs::read(&schematic_path)
+        .ok()
+        .and_then(|bytes| mchprs_schematic::read::read(&bytes).ok())
+    else {
+        eprintln!(
+            "error: failed to load schematic at path: {:?}",
+            schematic_path
+        );
+        return None;
+    };
+    for (name, count) in &schematic.unknown_blocks {
+        eprintln!(
+            "warning: replaced {count} block(s) of unknown or invalid state `{name}` with air"
+        );
+    }
+    let origin = schematic.volume.region().min();
+    let volume = schematic.volume.translated(BlockPos::zero() - origin);
+    Some(extract(&volume, volume.region(), &[], options))
 }
 
 fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
@@ -113,10 +116,7 @@ fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
     }
 }
 
-fn parse_pass_pipeline<'p>(
-    registry: &'p PassRegistry<BlockVolume>,
-    passes: &str,
-) -> Option<PassPipeline<'p, BlockVolume>> {
+fn parse_pass_pipeline<'p>(registry: &'p PassRegistry, passes: &str) -> Option<PassPipeline<'p>> {
     let mut builder = PassPipelineBuilder::new(registry);
     for driver_key in passes.split(',') {
         if !builder.add_pass_by_driver_key(driver_key) {

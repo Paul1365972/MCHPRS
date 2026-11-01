@@ -180,9 +180,7 @@ impl Block {
             RotateAmt::Rotate180 => 2,
             RotateAmt::Rotate270 => 3,
         };
-        let Some(rotation) = self.sign_rotation_mut() else {
-            unreachable!()
-        };
+        let rotation = self.sign_rotation_mut();
         *rotation = (*rotation + 4 * quarter_turns) % 16;
     }
 
@@ -190,9 +188,7 @@ impl Block {
         if let Block::RedstoneWire(wire) = self {
             return wire.flip(dir);
         }
-        let Some(rotation) = self.sign_rotation_mut() else {
-            unreachable!()
-        };
+        let rotation = self.sign_rotation_mut();
         let mirror = match dir {
             FlipDirection::FlipX => 16,
             FlipDirection::FlipZ => 24,
@@ -201,12 +197,8 @@ impl Block {
     }
 
     /// Sixteenths of a turn clockwise from south
-    pub fn get_sign_rotation(mut self) -> Option<u8> {
-        self.sign_rotation_mut().copied()
-    }
-
-    fn sign_rotation_mut(&mut self) -> Option<&mut u8> {
-        Some(match self {
+    fn sign_rotation_mut(&mut self) -> &mut u8 {
+        match self {
             Block::OakSign { rotation, .. }
             | Block::SpruceSign { rotation, .. }
             | Block::BirchSign { rotation, .. }
@@ -218,8 +210,8 @@ impl Block {
             | Block::BambooSign { rotation, .. }
             | Block::CherrySign { rotation, .. }
             | Block::MangroveSign { rotation, .. } => rotation,
-            _ => return None,
-        })
+            _ => unreachable!(),
+        }
     }
 
     pub fn get_wall_sign_facing(self) -> Option<BlockDirection> {
