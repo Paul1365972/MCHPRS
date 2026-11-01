@@ -472,9 +472,7 @@ impl MinecraftServer {
         let username = login_start.name;
         clients[client_idx].username = Some(username.clone());
 
-        if let Some(velocity_config) = &CONFIG.velocity
-            && velocity_config.enabled
-        {
+        if CONFIG.velocity.enabled {
             let message_id = rand::random();
             clients[client_idx].forwarding_message_id = Some(message_id);
             let plugin_message = CLoginPluginRequest {
@@ -906,7 +904,7 @@ impl ServerBoundPacketHandler for MinecraftServer {
             }
         };
 
-        let secret = CONFIG.velocity.as_ref().unwrap().secret.as_bytes();
+        let secret = CONFIG.velocity.secret.as_bytes();
         let mut mac = <Hmac<Sha256>>::new_from_slice(secret).unwrap();
         mac.update(&packet.data[32..]);
         if mac.verify_slice(&packet.data[..32]).is_err() {
