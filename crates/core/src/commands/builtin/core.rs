@@ -23,7 +23,7 @@ use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_network::PlayerPacketSender;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use std::time::Instant;
-use tracing::{debug, warn};
+use tracing::warn;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
     registry.register(
@@ -156,16 +156,6 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                 ))
             }),
     );
-
-    registry.register(Command::new("toggleautorp").executes(|ctx| {
-        let plot = ctx.plot_mut();
-        plot.auto_redpiler = !plot.auto_redpiler;
-        if plot.auto_redpiler {
-            ctx.reply("Automatic redpiler compilation has been enabled.")
-        } else {
-            ctx.reply("Automatic redpiler compilation has been disabled.")
-        }
-    }));
 
     registry.register(
         Command::new("worldsendrate")
@@ -363,28 +353,6 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                 ))
                 .executes(|ctx| exec_redpiler_compile(ctx, EngineKind::default())),
             )
-            .subcommand(Command::new("inspect").alias("i").executes(|ctx| {
-                let pos = ctx.target_block(10.0)?;
-                let circuit = ctx
-                    .plot_mut()
-                    .redpiler
-                    .as_ref()
-                    .and_then(|redpiler| redpiler.circuit.clone());
-                let Some(circuit) = circuit else {
-                    return ctx.reply("Redpiler is not running.");
-                };
-                match circuit.node_at(pos) {
-                    Some(node) => debug!(
-                        "Node {}: {:#?}\ninputs: {:?}\noutputs: {:?}",
-                        node.index(),
-                        circuit.node(node),
-                        circuit.inputs(node),
-                        circuit.outputs(node)
-                    ),
-                    None => debug!("There is no node at {pos}"),
-                }
-                Ok(())
-            }))
             .subcommand(Command::new("export").alias("e").executes(|ctx| {
                 let circuit = ctx
                     .plot_mut()
