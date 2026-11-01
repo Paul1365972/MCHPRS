@@ -1261,7 +1261,9 @@ dependencies = [
  "byteorder",
  "flate2",
  "hematite-nbt",
+ "mchprs_blocks",
  "mchprs_proc_macros",
+ "mchprs_world",
  "regex",
  "serde",
  "serde_json",
@@ -1337,9 +1339,7 @@ dependencies = [
 name = "mchprs_world"
 version = "0.5.2-dev"
 dependencies = [
- "hematite-nbt",
  "mchprs_blocks",
- "mchprs_network",
  "rustc-hash",
 ]
 

@@ -10,6 +10,7 @@ use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
+use mchprs_network::chunk::encode_chunk;
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
@@ -114,7 +115,7 @@ pub fn clear_area(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPo
     for chunk_x in (start_pos.x >> 4)..=(end_pos.x >> 4) {
         for chunk_z in (start_pos.z >> 4)..=(end_pos.z >> 4) {
             if let Some(chunk) = plot.chunk(chunk_x, chunk_z) {
-                let chunk_data = chunk.encode_packet();
+                let chunk_data = encode_chunk(chunk);
                 for packet_sender in plot.packet_senders.values() {
                     packet_sender.send_packet(&chunk_data);
                 }

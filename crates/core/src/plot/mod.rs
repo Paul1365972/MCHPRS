@@ -21,6 +21,7 @@ use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::items::Item;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFace, BlockPos};
+use mchprs_network::chunk::{encode_block_changes, encode_chunk, encode_empty_chunk};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
@@ -173,14 +174,10 @@ impl PlotWorld {
     }
 
     pub fn flush_block_changes(&mut self) {
-        for packet in self.chunks.iter_mut().flat_map(|c| c.multi_blocks()) {
-            let encoded = packet.encode();
+        for packet in self.chunks.iter_mut().flat_map(encode_block_changes) {
             for packet_sender in self.packet_senders.values() {
-                packet_sender.send_packet(&encoded);
+                packet_sender.send_packet(&packet);
             }
-        }
-        for chunk in &mut self.chunks {
-            chunk.reset_multi_blocks();
         }
         for (_, block_entity) in self.pending_block_entities.drain() {
             let encoded = block_entity.encode();
@@ -470,10 +467,10 @@ impl Plot {
             if !Plot::chunk_in_plot_bounds(self.world.x, self.world.z, chunk_x, chunk_z) {
                 self.players[player_idx]
                     .client
-                    .send_packet(&Chunk::encode_empty_packet(chunk_x, chunk_z, PLOT_SECTIONS));
+                    .send_packet(&encode_empty_chunk(chunk_x, chunk_z, PLOT_SECTIONS));
             } else {
                 if let Some(chunk) = self.world.chunk(chunk_x, chunk_z) {
-                    let chunk_data = chunk.encode_packet();
+                    let chunk_data = encode_chunk(chunk);
                     self.players[player_idx].client.send_packet(&chunk_data);
                 }
             }
