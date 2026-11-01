@@ -50,12 +50,8 @@ impl TickScheduler {
     const NUM_QUEUES: usize = 16;
 
     fn reset<W: World>(&mut self, world: &mut W, blocks: &[impl AsRef<[(BlockPos, Block)]>]) {
-        for (idx, queues) in self.queues_deque.iter().enumerate() {
-            let delay = if self.pos >= idx {
-                idx + Self::NUM_QUEUES
-            } else {
-                idx
-            } - self.pos;
+        for delay in 1..=Self::NUM_QUEUES {
+            let queues = &self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES];
             for (entries, priority) in queues.0.iter().zip(Self::priorities()) {
                 for node in entries {
                     let node_blocks = blocks[node.index()].as_ref();
@@ -201,18 +197,20 @@ impl JITBackend for DirectBackend {
 
     fn on_use_block(&mut self, pos: BlockPos) {
         let node_id = self.pos_map[&pos];
-        let node = &self.nodes[node_id];
+        let node = &mut self.nodes[node_id];
         match node.ty {
             NodeType::Button => {
                 if node.is_powered() {
                     return;
                 }
-                self.scheduler
-                    .schedule_tick(node_id, 10, TickPriority::Normal);
+                if !node.pending_tick {
+                    schedule_tick(&mut self.scheduler, node_id, node, 10, TickPriority::Normal);
+                }
                 self.set_power_and_propagate(node_id, SignalStrength::Fifteen);
             }
             NodeType::Lever => {
-                self.set_power_and_propagate(node_id, (!node.is_powered()).into());
+                let power = (!node.is_powered()).into();
+                self.set_power_and_propagate(node_id, power);
             }
             _ => warn!("Tried to use a {:?} redpiler node", node.ty),
         }
@@ -231,6 +229,15 @@ impl JITBackend for DirectBackend {
 
     fn tick(&mut self) {
         let mut queues = self.scheduler.queues_this_tick();
+        // Like vanilla, a Lamp may schedule a new tick before its tick in this tick has run
+        for queue in &queues.0 {
+            for &node_id in queue {
+                let node = &mut self.nodes[node_id];
+                if matches!(node.ty, NodeType::Lamp) {
+                    node.pending_tick = false;
+                }
+            }
+        }
 
         queues.drain_each(|node_id| {
             self.tick_node(node_id);

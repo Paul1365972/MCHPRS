@@ -124,7 +124,7 @@ Unlike in vanilla, Torches never burn out.
 
 ### Lamp
 
-When a Lamp is updated, it checks if the Lamp should be lit. If a Lamp should be lit but currently is not, then the Lamp state is changed (this is instant). If the Lamp should *not* be lit, but currently is, then a tick is scheduled with delay 2 and priority `Normal`.
+When a Lamp is updated, it checks if the Lamp should be lit. If a Lamp should be lit but currently is not, then the Lamp state is changed (this is instant). If the Lamp should *not* be lit, but currently is, and no tick is scheduled at its node for a later tick, then a tick is scheduled with delay 2 and priority `Normal`.
 
 When a Lamp is ticked, it checks if the Lamp should be lit. If it should not be bit, but currently is, then the state of the Lamp is changed.
 
@@ -142,7 +142,7 @@ A tick is never scheduled at a Wire node, therefore a Wire is never ticked.
 
 ## Button
 
-When a button is pressed and it is not powered, its state is changed to powered and any nodes that may be affected by this change is updated.
+When a button is pressed and it is not powered, its state is changed to powered and any nodes that may be affected by this change is updated. Unless a tick is already scheduled at its node, a tick is scheduled with delay 10 and priority `Normal`.
 
 When a Button is ticked and it is currently powered, its state is changed to unpowered and any nodes that may be affected by this change is updated.
 
