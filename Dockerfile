@@ -1,8 +1,6 @@
 # Build stage
 FROM lukemathwalker/cargo-chef:latest-rust-alpine AS chef
 
-RUN apk add --no-cache openssl-dev openssl-libs-static
-
 WORKDIR /app/
 
 FROM chef AS planner
