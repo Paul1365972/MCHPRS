@@ -30,7 +30,6 @@ Flags such as `-a` go after all other arguments.
 | `/radvance <ticks>` | `/radv` | Advance the plot by the given number of redstone ticks as fast as possible. While Redpiler runs, inputs wait for the advance, and stopping Redpiler cancels it. |
 | `/stop` | None | Stop the server. |
 | `/gamemode (creative \| spectator)` | `1` (creative), `3` (spectator), `/gmc`, `/gmsp` | Change your game mode. |
-| `/toggleautorp` | None | Toggle automatic Redpiler compilation for the current plot. |
 | `/worldsendrate [<hertz>]` | `/wsr` | Show or set how often the plot sends block updates to players (0–1000, fractional; `0` disables periodic sends; default 60 Hz). |
 | `/container <type> <power>` | None | Give yourself a barrel, furnace, or hopper filled to produce the specified comparator signal strength (0–15). |
 | `/whitelist add <username>` | None | Add a player to the whitelist. Needs the [`whitelist` feature](../README.md#features). |
@@ -141,7 +140,6 @@ Placing or breaking blocks stops Redpiler and returns the plot to normal redston
 | Command | Alias | Description |
 | --- | --- | --- |
 | `/redpiler compile [direct]` | `/rp c` | Compile the current plot for accelerated redstone simulation, on the Direct engine. |
-| `/redpiler inspect` | `/rp i` | Show the compiled node for the block you are looking at in the server's debug log. |
 | `/redpiler export` | `/rp e` | Write the compiled circuit to `redpiler-p<x>,<z>.circuit` in the server directory, for use by `rilc` and other tools. |
 | `/redpiler reset` | `/rp r` | Stop Redpiler, or cancel a compile, and return to normal redstone ticking. Flags: `-r`/`--restore` (return every component to its state at compile time), `-u`/`--update` (update every block in the plot afterwards). |
 

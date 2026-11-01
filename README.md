@@ -60,7 +60,6 @@ The following options are available at the toplevel (under no header):
 | `whitelist` | Whether or not the whitelist (in `whitelist.json`) should be enabled. Requires the [`whitelist` feature](#features) | `false` |
 | `schemati` | Mimic the verification and directory layout used by the Open Redstone Engineers [Schemati plugin](https://github.com/OpenRedstoneEngineers/Schemati) | `false` |
 | `block_in_hitbox` | Allow placing blocks inside of players (hitbox logic is simplified) | `true` |
-| `auto_redpiler` | Use redpiler automatically | `false` |
 
 To change the plot size edit the constants defined in [plot/mod.rs](./crates/core/src/plot/mod.rs).
 

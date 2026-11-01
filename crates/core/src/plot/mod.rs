@@ -7,7 +7,7 @@ pub mod redpiler;
 mod scoreboard;
 
 use self::data::sleep_time_for_tps;
-use self::redpiler::{send_rate, tick_rate, Advance, EngineKind, Redpiler};
+use self::redpiler::{send_rate, tick_rate, Advance, Redpiler};
 use self::scoreboard::{PlotStatus, RedpilerStatus, Scoreboard};
 use crate::commands::COMMAND_REGISTRY;
 use crate::config::CONFIG;
@@ -101,7 +101,6 @@ pub struct Plot {
     running: bool,
     /// If true, the plot will remain running even if no players are on for a long time.
     always_running: bool,
-    pub auto_redpiler: bool,
 
     scoreboard: Scoreboard,
 }
@@ -1183,13 +1182,6 @@ impl Plot {
                 self.tick_time = Some(self.last_update_time.elapsed() / ticks_completed);
             }
 
-            if self.auto_redpiler
-                && self.redpiler.is_none()
-                && (self.tps == Tps::Unlimited || self.timings.is_running_behind())
-            {
-                self.start_redpiler(Default::default(), EngineKind::default());
-            }
-
             let now = Instant::now();
             let time_since_last_world_send = now - self.last_world_send_time;
             if time_since_last_world_send > world_send_interval {
@@ -1308,7 +1300,6 @@ impl Plot {
             players: Vec::new(),
             locked_players: HashSet::new(),
             running: true,
-            auto_redpiler: CONFIG.auto_redpiler,
             tps,
             always_running,
             redpiler: None,

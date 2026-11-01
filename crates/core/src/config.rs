@@ -17,7 +17,6 @@ pub struct ServerConfig {
     pub whitelist: bool,
     pub schemati: bool,
     pub block_in_hitbox: bool,
-    pub auto_redpiler: bool,
     pub velocity: VelocityConfig,
     pub command_aliases: HashMap<String, String>,
 }
@@ -33,7 +32,6 @@ impl Default for ServerConfig {
             whitelist: false,
             schemati: false,
             block_in_hitbox: true,
-            auto_redpiler: false,
             velocity: VelocityConfig::default(),
             command_aliases: HashMap::new(),
         }
