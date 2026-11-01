@@ -17,7 +17,6 @@ include.workspace = true
 [dependencies]
 mchprs_blocks = { path = "../blocks" }
 mchprs_save_data = { path = "../save_data" }
-mchprs_utils = { path = "../utils" }
 mchprs_world = { path = "../world" }
 serde = { workspace = true }
 hematite-nbt = { workspace = true }

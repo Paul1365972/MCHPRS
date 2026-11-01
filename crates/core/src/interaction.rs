@@ -7,7 +7,6 @@ use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
 use mchprs_redstone as redstone;
-use mchprs_utils::nbt_unwrap_val;
 use mchprs_world::World;
 
 pub fn on_use(
@@ -263,9 +262,12 @@ pub fn get_state_for_placement(
 }
 
 fn read_block_entity_tag(nbt: &nbt::Blob, block_id: &str) -> Option<BlockEntity> {
-    let compound = nbt_unwrap_val!(nbt.get("BlockEntityTag")?, nbt::Value::Compound);
+    let Some(nbt::Value::Compound(compound)) = nbt.get("BlockEntityTag") else {
+        return None;
+    };
     let id = match compound.get("Id").or_else(|| compound.get("id")) {
-        Some(id) => nbt_unwrap_val!(id, nbt::Value::String),
+        Some(nbt::Value::String(id)) => id,
+        Some(_) => return None,
         None => block_id,
     };
     BlockEntity::from_nbt(id, compound)
