@@ -1,5 +1,4 @@
-use super::{argument::ClientArgument, node::Policy, registry::CommandRegistry};
-use crate::player::Player;
+use super::{argument::ClientArgument, registry::CommandRegistry};
 use mchprs_commands::graph::NodeKind;
 use mchprs_commands::reader::Span;
 use mchprs_commands::suggestion::{Suggestion, Suggestions, SuggestionsBuilder};
@@ -29,12 +28,7 @@ struct SuggestionRequest {
 }
 
 impl CommandRegistry {
-    pub fn suggestions(
-        &self,
-        text: &str,
-        transaction_id: i32,
-        player: &Player,
-    ) -> CommandSuggestions {
+    pub fn suggestions(&self, text: &str, transaction_id: i32) -> CommandSuggestions {
         let mut result = CommandSuggestions {
             text: text.to_owned(),
             transaction_id,
@@ -44,11 +38,10 @@ impl CommandRegistry {
         let Some(input) = text.strip_prefix('/') else {
             return result;
         };
-        let allowed = |policy: &Policy| policy.allows(player);
         let Some((command, _)) = input.split_once(' ') else {
             let mut builder =
                 SuggestionsBuilder::new(input, Span::new(0, input.len()), &mut result.suggestions);
-            builder.suggest_matching(self.visible_commands(&allowed).map(|(name, _)| name));
+            builder.suggest_matching(self.visible_commands().map(|(name, _)| name));
             return result;
         };
 
@@ -58,7 +51,7 @@ impl CommandRegistry {
             .expanded_cursor(input.len())
             .unwrap_or(expansion.text.len());
         let prefix = &expansion.text[..cursor];
-        for target in self.graph.suggestion_targets(prefix, allowed) {
+        for target in self.graph.suggestion_targets(prefix) {
             let node = self.graph.node(target.node);
             let server_only = custom_alias
                 || target.path.iter().any(|&id| {

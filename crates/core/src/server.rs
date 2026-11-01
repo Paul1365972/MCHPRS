@@ -7,7 +7,6 @@ use crate::{
         COMMAND_REGISTRY,
     },
     config::CONFIG,
-    permissions,
     player::{Gamemode, PacketSender, Player},
     plot::{self, database, Plot, PLOT_BLOCK_HEIGHT},
     utils,
@@ -205,10 +204,6 @@ impl MinecraftServer {
                 serde_json::from_slice(&content).expect("Invalid whitelist.json")
             }
         });
-
-        if let Some(permissions_config) = &CONFIG.luckperms {
-            permissions::init(permissions_config.clone()).unwrap();
-        }
 
         // Create server struct
         let mut server = MinecraftServer {
@@ -439,7 +434,7 @@ impl MinecraftServer {
 
         player
             .client
-            .send_packet(&COMMAND_REGISTRY.declare_commands_packet(&player));
+            .send_packet(&COMMAND_REGISTRY.declare_commands_packet());
 
         let time_update = UpdateTime {
             world_age: 0,

@@ -23,8 +23,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/stack")
             .alias("/s")
-            .permission("worldedit.region.stack")
-            .require_plot_ownership()
             .optional("count", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::Direction)
             .flag('a', "ignore-air", "Stack without air blocks")
@@ -52,8 +50,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/rstack")
             .alias("/rs")
-            .permission("redstonetools.rstack")
-            .require_plot_ownership()
             .optional("count", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::DirectionWithDiagonals)
             .optional("offset", ArgumentType::integer(1, 1000))

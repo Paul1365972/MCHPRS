@@ -29,11 +29,7 @@ impl ServerBoundPacketHandler for Plot {
         packet: SCommandSuggestionsRequest,
         player_idx: usize,
     ) {
-        let mut suggestions = COMMAND_REGISTRY.suggestions(
-            &packet.text,
-            packet.transaction_id,
-            &self.players[player_idx],
-        );
+        let mut suggestions = COMMAND_REGISTRY.suggestions(&packet.text, packet.transaction_id);
         if suggestions.needs(SuggestionSource::SchematicFiles) {
             let names = schematic_names(self.players[player_idx].uuid).unwrap_or_else(|error| {
                 warn!("Unable to complete schematic filenames: {error}");
@@ -404,7 +400,7 @@ impl ServerBoundPacketHandler for Plot {
         self.players[player].selected_slot = held_item_change.slot as u32;
     }
 
-    fn handle_update_sign(&mut self, packet: SUpdateSign, player: usize) {
+    fn handle_update_sign(&mut self, packet: SUpdateSign, _player: usize) {
         let pos = BlockPos::new(packet.x, packet.y, packet.z);
         if !Plot::in_plot_bounds(self.world.x, self.world.z, pos.x, pos.z)
             || !(0..PLOT_BLOCK_HEIGHT).contains(&pos.y)
@@ -412,7 +408,7 @@ impl ServerBoundPacketHandler for Plot {
             return;
         }
         let block = self.world.block(pos);
-        if !(block.is_sign() || block.is_wall_sign()) || !self.can_interact_with_plot(player) {
+        if !(block.is_sign() || block.is_wall_sign()) {
             return;
         }
         let mut rows = packet

@@ -42,8 +42,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("up")
             .alias("u")
-            .permission("worldedit.navigation.up")
-            .require_plot_ownership()
             .optional("distance", ArgumentType::integer(1, 100))
             .flag('f', "force-flight", "Force using flight to keep you still")
             .flag('g', "force-glass", "Force using glass to keep you still")
@@ -116,8 +114,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("ascend")
             .alias("asc")
-            .permission("worldedit.navigation.ascend")
-            .require_plot_ownership()
             .optional("levels", ArgumentType::integer(1, 100))
             .executes(|ctx| {
                 let y = ctx.player()?.pos.block_pos().y;
@@ -133,8 +129,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("descend")
             .alias("desc")
-            .permission("worldedit.navigation.descend")
-            .require_plot_ownership()
             .optional("levels", ArgumentType::integer(1, 100))
             .executes(|ctx| {
                 let y = ctx.player()?.pos.block_pos().y;

@@ -15,8 +15,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/undo")
             .alias("undo")
-            .permission("worldedit.history.undo")
-            .require_plot_ownership()
             .optional("times", ArgumentType::integer(1, 100))
             .executes(|ctx| exec_history(ctx, true)),
     );
@@ -24,8 +22,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/redo")
             .alias("redo")
-            .permission("worldedit.history.redo")
-            .require_plot_ownership()
             .optional("times", ArgumentType::integer(1, 100))
             .executes(|ctx| exec_history(ctx, false)),
     );

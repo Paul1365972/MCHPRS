@@ -1,8 +1,8 @@
 use crate::{
     commands::{
         context::ExecutionContext,
-        error::{CommandError, InternalError, RuntimeError},
-        node::{Executor, Policy},
+        error::{CommandError, InternalError},
+        node::Executor,
         registry::CommandRegistry,
         value::Value,
     },
@@ -15,26 +15,16 @@ use mchprs_commands::reader::SyntaxError;
 pub(super) struct Invocation {
     pub executor: Executor,
     pub arguments: Vec<ParsedArgument<Value>>,
-    pub requires_plot_ownership: bool,
 }
 
 impl CommandRegistry {
-    pub(super) fn dispatch(
-        &self,
-        input: &str,
-        allowed: impl Fn(&Policy) -> bool,
-    ) -> Result<Invocation, SyntaxError> {
+    pub(super) fn dispatch(&self, input: &str) -> Result<Invocation, SyntaxError> {
         let expansion = self.expand(input);
-        let parsed = self.graph.parse(&expansion.text, allowed);
+        let parsed = self.graph.parse(&expansion.text);
         if let Some(mut error) = parsed.error(&expansion.text) {
             error.cursor = expansion.original_cursor(error.cursor);
             return Err(error);
         }
-        let requires_plot_ownership = parsed
-            .context
-            .path()
-            .iter()
-            .any(|&id| self.graph.node(id).metadata.requires_plot_ownership);
         let context = parsed.context.into_terminal();
         let executor = context
             .executor
@@ -43,7 +33,6 @@ impl CommandRegistry {
         Ok(Invocation {
             executor,
             arguments: context.arguments,
-            requires_plot_ownership,
         })
     }
 
@@ -60,20 +49,13 @@ impl CommandRegistry {
             .players
             .get(player_idx)
             .ok_or(InternalError::InvalidPlayerIndex { index: player_idx })?;
-        let invocation = match self.dispatch(input, |policy| policy.allows(player)) {
+        let invocation = match self.dispatch(input) {
             Ok(invocation) => invocation,
             Err(error) => {
                 player.send_error_message(&error.contextual(input));
                 return Ok(());
             }
         };
-        if invocation.requires_plot_ownership
-            && !player.has_permission("plots.worldedit.bypass")
-            && plot.owner() != Some(player.uuid)
-        {
-            player.send_error_message(&RuntimeError::PlotOwnershipRequired.to_string());
-            return Ok(());
-        }
         let mut context = ExecutionContext::new(plot, player_idx, &invocation.arguments);
         let result = (invocation.executor)(&mut context);
         let mutated_world = context.mutated_world();

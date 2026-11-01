@@ -59,8 +59,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/set")
-            .permission("worldedit.region.set")
-            .require_plot_ownership()
             .arg("pattern", ArgumentType::Pattern)
             .executes(|ctx| {
                 let pattern = ctx.arg("pattern")?;
@@ -72,8 +70,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         Command::new("/replace")
             .alias("/re")
             .alias("/rep")
-            .permission("worldedit.region.replace")
-            .require_plot_ownership()
             .arg("maskOrPattern", ArgumentType::Replacement)
             .optional("pattern", ArgumentType::Pattern)
             .executes(|ctx| {
@@ -96,8 +92,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/count")
-            .permission("worldedit.analysis.count")
-            .require_plot_ownership()
             .arg("mask", ArgumentType::Mask)
             .executes(|ctx| {
                 let mask: &WorldEditMask = ctx.arg("mask")?;
@@ -119,7 +113,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/distr")
-            .require_plot_ownership()
             .flag('c', "clipboard", "Get distribution of clipboard")
             .executes(|ctx| {
                 let start_time = Instant::now();
@@ -159,8 +152,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/move")
-            .permission("worldedit.region.move")
-            .require_plot_ownership()
             .optional("count", ArgumentType::integer(1, 1000))
             .optional("direction", ArgumentType::Direction)
             .flag('a', "ignore-air", "Move without air blocks")
@@ -216,8 +207,6 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
     registry.register(
         Command::new("/update")
-            .permission("mchprs.we.update")
-            .require_plot_ownership()
             .flag('p', "plot", "Update the entire plot")
             .executes(|ctx| {
                 if ctx.flag("plot") {
@@ -235,43 +224,36 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("/replacecontainer")
             .alias("/rc")
-            .permission("mchprs.we.replacecontainer")
-            .require_plot_ownership()
             .arg("fromOrTo", ArgumentType::ContainerType)
             .optional("to", ArgumentType::ContainerType)
             .executes(exec_replacecontainer),
     );
 
-    registry.register(
-        Command::new("/wand")
-            .permission("worldedit.wand")
-            .require_plot_ownership()
-            .executes(|ctx| {
-                let item = ItemStack {
-                    count: 1,
-                    item_type: Item::WoodenAxe,
-                    nbt: None,
-                };
-                let player = ctx.player_mut()?;
-                let slot = 36 + player.selected_slot;
-                player.set_inventory_slot(slot, Some(item.clone()));
+    registry.register(Command::new("/wand").executes(|ctx| {
+        let item = ItemStack {
+            count: 1,
+            item_type: Item::WoodenAxe,
+            nbt: None,
+        };
+        let player = ctx.player_mut()?;
+        let slot = 36 + player.selected_slot;
+        player.set_inventory_slot(slot, Some(item.clone()));
 
-                let entity_equipment = CSetEquipment {
-                    entity_id: player.entity_id as i32,
-                    equipment: vec![CSetEquipmentEquipment {
-                        slot: 0,
-                        item: Some(utils::encode_slot_data(&item)),
-                    }],
-                }
-                .encode();
+        let entity_equipment = CSetEquipment {
+            entity_id: player.entity_id as i32,
+            equipment: vec![CSetEquipmentEquipment {
+                slot: 0,
+                item: Some(utils::encode_slot_data(&item)),
+            }],
+        }
+        .encode();
 
-                for packet_sender in ctx.world().packet_senders.values() {
-                    packet_sender.send_packet(&entity_equipment);
-                }
+        for packet_sender in ctx.world().packet_senders.values() {
+            packet_sender.send_packet(&entity_equipment);
+        }
 
-                ctx.worldedit_message("Wand item given.")
-            }),
-    );
+        ctx.worldedit_message("Wand item given.")
+    }));
 }
 
 fn exec_replacecontainer(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {

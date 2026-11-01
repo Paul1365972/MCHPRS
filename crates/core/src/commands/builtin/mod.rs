@@ -3,7 +3,7 @@ mod worldedit;
 
 use crate::commands::{
     argument::ArgumentType, context::ExecutionContext, define::Command, error::CommandResult,
-    help::generate_help, node::Policy, registry::CommandRegistry, COMMAND_REGISTRY,
+    help::generate_help, registry::CommandRegistry, COMMAND_REGISTRY,
 };
 use mchprs_commands::graph::NodeKind;
 
@@ -17,8 +17,6 @@ pub fn register_commands(registry: &mut CommandRegistry) {
     );
     registry.register(
         Command::new("/help")
-            .permission("worldedit.help")
-            .require_plot_ownership()
             .optional("command", ArgumentType::GreedyString)
             .executes(exec_help),
     );
@@ -27,11 +25,9 @@ pub fn register_commands(registry: &mut CommandRegistry) {
 fn exec_help(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let command: String = ctx.arg_or("command", String::new())?;
     let registry = &*COMMAND_REGISTRY;
-    let player = ctx.player()?;
-    let allowed = |policy: &Policy| policy.allows(player);
     if command.is_empty() {
         let mut names: Vec<_> = registry
-            .visible_commands(&allowed)
+            .visible_commands()
             .map(|(name, _)| format!("/{name}"))
             .collect();
         names.sort();
@@ -44,7 +40,7 @@ fn exec_help(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
         .unwrap_or_else(|| format!("/{command}"));
     for candidate in [command.as_str(), alternate.as_str()] {
         let expanded = registry.expand(candidate);
-        let parsed = registry.graph.parse(&expanded.text, allowed);
+        let parsed = registry.graph.parse(&expanded.text);
         let path = parsed.context.path();
         let literals: Vec<_> = path
             .iter()
@@ -52,7 +48,7 @@ fn exec_help(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
             .take_while(|&id| matches!(registry.graph.node(id).kind, NodeKind::Literal(_)))
             .collect();
         if !literals.is_empty() {
-            let help = generate_help(registry, &literals, &allowed);
+            let help = generate_help(registry, &literals);
             if help.usages.is_empty() {
                 continue;
             }
