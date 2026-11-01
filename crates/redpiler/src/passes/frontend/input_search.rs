@@ -214,21 +214,19 @@ impl<'a, W: World> InputSearchState<'a, W> {
                 }
 
                 if side.is_horizontal() {
-                    if !up_block.is_solid() && !neighbor.is_transparent() {
-                        let neighbor_up_pos = neighbor_pos.offset(BlockFace::Top);
-                        if is_wire(self.block_lookup_cache.get_block(neighbor_up_pos))
-                            && !has_been_discovered(&discovered, neighbor_up_pos)
-                        {
-                            discovered.push((neighbor_up_pos, distance + 1));
-                        }
-                    }
-
                     if !neighbor.is_solid() {
                         let neighbor_down_pos = neighbor_pos.offset(BlockFace::Bottom);
                         if is_wire(self.block_lookup_cache.get_block(neighbor_down_pos))
                             && !has_been_discovered(&discovered, neighbor_down_pos)
                         {
                             discovered.push((neighbor_down_pos, distance + 1));
+                        }
+                    } else if !up_block.is_solid() && !neighbor.is_transparent() {
+                        let neighbor_up_pos = neighbor_pos.offset(BlockFace::Top);
+                        if is_wire(self.block_lookup_cache.get_block(neighbor_up_pos))
+                            && !has_been_discovered(&discovered, neighbor_up_pos)
+                        {
+                            discovered.push((neighbor_up_pos, distance + 1));
                         }
                     }
                 }
