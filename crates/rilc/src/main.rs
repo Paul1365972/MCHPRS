@@ -2,11 +2,11 @@ use clap::{Parser, Subcommand};
 use line_index::{LineIndex, TextSize};
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::{
+    compile::CompileOptions,
     extract::extract,
     graph::Graph,
     passes::{PassPipeline, PassPipelineBuilder, PassRegistry},
-    ril::{DumpGraph, RILModule},
-    CompileOptions, CompilerOptions,
+    ril::{DumpGraph, RILModule, RilOptions},
 };
 use std::fs;
 use std::ops::ControlFlow;
@@ -45,9 +45,6 @@ enum Command {
         /// Let optimizations reorder updates within a tick
         #[arg(long, short)]
         reorder: bool,
-        /// Export the graph to a binary format. See the [`redpiler_graph`] crate.
-        #[arg(long, short)]
-        export: bool,
         /// Only flush lamp, button, lever, pressure plate, or trapdoor updates.
         #[arg(long, short)]
         io_only: bool,
@@ -172,7 +169,6 @@ fn main() -> ExitCode {
             output_path,
             optimize,
             reorder,
-            export,
             io_only,
             wire_dot_out,
             illegal_states_out,
@@ -180,19 +176,14 @@ fn main() -> ExitCode {
             print_after_all,
             passes,
         } => {
-            let options = CompilerOptions {
+            let options = RilOptions {
                 optimize,
                 reorder,
-                export,
                 io_only,
-                update: false,
-                export_dot_graph: false,
                 wire_dot_out,
                 illegal_states_out,
                 wire_cross_out,
                 print_after_all,
-                print_before_backend: false,
-                backend_variant: Default::default(),
                 passes,
             };
             compile::compile(&input_path, &output_path, &options);

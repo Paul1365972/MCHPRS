@@ -1,0 +1,175 @@
+use crate::circuit::{Circuit, NodeId};
+use crate::engine::{Changes, Snapshot};
+use crate::graph::{NodeKind, NodeState, PendingTick};
+use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::blocks::{Block, Instrument};
+use mchprs_blocks::BlockPos;
+use mchprs_redstone::tick_queue::TickEntry;
+use mchprs_redstone::RedstoneWorld;
+use smallvec::SmallVec;
+
+type NodeBlocks = SmallVec<[(BlockPos, Block); 1]>;
+
+#[derive(Debug, Clone, Default)]
+pub struct BlockChanges {
+    pub blocks: Vec<(BlockPos, Block)>,
+    pub block_entities: Vec<(BlockPos, BlockEntity)>,
+    pub notes: Vec<(BlockPos, Instrument, u8)>,
+}
+
+impl BlockChanges {
+    pub fn is_empty(&self) -> bool {
+        self.blocks.is_empty() && self.block_entities.is_empty() && self.notes.is_empty()
+    }
+
+    pub fn apply(&self, world: &mut impl RedstoneWorld) {
+        for &(position, block) in &self.blocks {
+            world.set_block(position, block);
+        }
+        for (position, block_entity) in &self.block_entities {
+            world.set_block_entity(*position, Some(block_entity.clone()));
+        }
+        for &(position, instrument, note) in &self.notes {
+            world.play_note(position, instrument, note);
+        }
+    }
+}
+
+pub struct BlockMap {
+    blocks: Box<[NodeBlocks]>,
+    states: Box<[NodeState]>,
+    dirty: Box<[bool]>,
+    dirty_nodes: Vec<NodeId>,
+    played: Box<[bool]>,
+    notes: Vec<NodeId>,
+}
+
+impl BlockMap {
+    pub fn new(circuit: &Circuit) -> BlockMap {
+        BlockMap {
+            blocks: circuit
+                .ids()
+                .map(|id| {
+                    let blocks = circuit.node(id).blocks.iter();
+                    let blocks = blocks.map(|&(position, id)| (position, Block::from_id(id)));
+                    blocks.collect()
+                })
+                .collect(),
+            states: circuit.ids().map(|id| circuit.node(id).state).collect(),
+            dirty: vec![false; circuit.len()].into_boxed_slice(),
+            dirty_nodes: Vec::new(),
+            played: vec![false; circuit.len()].into_boxed_slice(),
+            notes: Vec::new(),
+        }
+    }
+
+    pub fn state(&self, node: NodeId) -> NodeState {
+        self.states[node.index()]
+    }
+
+    pub fn record(&mut self, changes: Changes) {
+        for (node, state) in changes.states {
+            self.set_state(node, state);
+        }
+        for (node, _) in changes.notes {
+            if !self.played[node.index()] {
+                self.played[node.index()] = true;
+                self.notes.push(node);
+            }
+        }
+    }
+
+    pub fn record_snapshot(&mut self, snapshot: &Snapshot) {
+        for (index, &state) in snapshot.states.iter().enumerate() {
+            self.set_state(NodeId::new(index), state);
+        }
+    }
+
+    /// Compares blocks rather than states, since a block can disagree with its node at compile
+    /// time, like a comparator whose block entity holds a strength its block doesn't show.
+    fn set_state(&mut self, node: NodeId, state: NodeState) {
+        let index = node.index();
+        let strength_changed = self.states[index].power != state.power;
+        self.states[index] = state;
+        let mut changed = false;
+        for (_, block) in &mut self.blocks[index] {
+            let previous = *block;
+            apply_state(block, state);
+            changed |=
+                *block != previous || strength_changed && matches!(block, Block::Comparator(_));
+        }
+        if changed && !self.dirty[index] {
+            self.dirty[index] = true;
+            self.dirty_nodes.push(node);
+        }
+    }
+
+    pub fn take_changes(&mut self, circuit: &Circuit) -> BlockChanges {
+        let mut changes = BlockChanges::default();
+        for node in self.dirty_nodes.drain(..) {
+            self.dirty[node.index()] = false;
+            let output_strength = self.states[node.index()].power;
+            for &(position, block) in &self.blocks[node.index()] {
+                changes.blocks.push((position, block));
+                if matches!(block, Block::Comparator(_)) {
+                    changes
+                        .block_entities
+                        .push((position, BlockEntity::Comparator { output_strength }));
+                }
+            }
+        }
+        for node in self.notes.drain(..) {
+            self.played[node.index()] = false;
+            let NodeKind::NoteBlock { instrument, note } = circuit.node(node).kind else {
+                panic!(
+                    "node {} played a note but is not a note block",
+                    node.index()
+                );
+            };
+            for &(position, _) in &self.blocks[node.index()] {
+                changes.notes.push((position, instrument, note));
+            }
+        }
+        changes
+    }
+
+    pub fn tick_entries(&self, pending_ticks: &[(NodeId, PendingTick)]) -> Vec<TickEntry> {
+        pending_ticks
+            .iter()
+            .flat_map(|&(node, tick)| {
+                self.blocks[node.index()]
+                    .iter()
+                    .map(move |&(position, block)| {
+                        TickEntry::new(position, tick.delay, tick.priority, block)
+                    })
+            })
+            .collect()
+    }
+}
+
+fn apply_state(block: &mut Block, state: NodeState) {
+    if let Some(powered) = powered_mut(block) {
+        *powered = state.is_powered();
+    }
+    match block {
+        Block::IronTrapdoor { open, .. } => *open = state.is_powered(),
+        Block::RedstoneWire(wire) => wire.power = state.power.get(),
+        Block::Repeater(repeater) => repeater.locked = state.repeater_locked,
+        _ => {}
+    }
+}
+
+fn powered_mut(block: &mut Block) -> Option<&mut bool> {
+    Some(match block {
+        Block::Comparator(comparator) => &mut comparator.powered,
+        Block::RedstoneTorch { lit } => lit,
+        Block::RedstoneWallTorch { lit, .. } => lit,
+        Block::Repeater(repeater) => &mut repeater.powered,
+        Block::Lever { powered, .. } => powered,
+        Block::StoneButton { powered, .. } => powered,
+        Block::RedstoneLamp { lit } => lit,
+        Block::IronTrapdoor { powered, .. } => powered,
+        Block::NoteBlock { powered, .. } => powered,
+        _ => return block.get_pressure_plate_powered(),
+    })
+}

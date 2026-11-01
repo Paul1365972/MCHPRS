@@ -346,6 +346,11 @@ impl<Node, Edge, Idx: IdxT> StableGraph<Node, Edge, Idx> {
         self.nodes.iter().filter_map(|node| node.value.as_ref())
     }
 
+    /// Takes the node weights in index order, the order of [`Self::node_indices`].
+    pub fn into_node_weights(self) -> impl Iterator<Item = Node> {
+        self.nodes.into_iter().filter_map(|node| node.value)
+    }
+
     pub fn all_edges(&self) -> impl Iterator<Item = EdgeRef<'_, Edge, Idx>> {
         self.edges.iter().enumerate().filter_map(|(idx, edge)| {
             edge.def.as_ref().map(|def| EdgeRef {

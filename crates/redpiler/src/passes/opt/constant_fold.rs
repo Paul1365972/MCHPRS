@@ -1,4 +1,4 @@
-use crate::graph::{Direction, Graph, NodeIdx, NodeKind, NodeState};
+use crate::graph::{Direction, Graph, NodeIdx, NodeKind};
 use crate::passes::{AnalysisInfos, Pass};
 use tracing::trace;
 
@@ -24,7 +24,7 @@ impl Pass for ConstantFold {
 fn fold_node(graph: &mut Graph, idx: NodeIdx) -> bool {
     let node = &graph[idx];
     if node.is_input()
-        || node.state.pending_tick.is_some()
+        || node.pending_tick.is_some()
         || !matches!(
             node.kind,
             NodeKind::Comparator { .. } | NodeKind::Repeater { .. } | NodeKind::Torch
@@ -40,7 +40,6 @@ fn fold_node(graph: &mut Graph, idx: NodeIdx) -> bool {
     }
 
     graph[idx].kind = NodeKind::Constant;
-    graph[idx].state = NodeState::from_power(graph[idx].state.power);
 
     let mut incoming = graph.neighbors(idx, Direction::Incoming).detach();
     while let Some(edge) = incoming.next_edge(graph) {

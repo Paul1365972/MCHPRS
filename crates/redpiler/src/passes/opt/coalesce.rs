@@ -25,7 +25,7 @@ impl Pass for Coalesce {
             if !graph.contains_node(node) {
                 continue;
             }
-            if graph[node].is_input() || graph[node].state.pending_tick.is_some() {
+            if graph[node].is_input() || graph[node].pending_tick.is_some() {
                 continue;
             }
 
@@ -46,7 +46,7 @@ impl Pass for Coalesce {
                 }
             }
             let mut removed = graph.remove_node(node).unwrap();
-            graph[into].block.append(&mut removed.block);
+            graph[into].blocks.append(&mut removed.blocks);
             num_coalesced += 1;
         }
         trace!("Coalesced {} nodes", num_coalesced);
@@ -66,6 +66,7 @@ struct Signature {
     kind: NodeKind,
     state: NodeState,
     port: Option<Role>,
+    observed: bool,
     inputs: SmallVec<[(NodeIdx, LinkKind, u8); 4]>,
 }
 
@@ -90,8 +91,9 @@ fn signature(graph: &Graph, idx: NodeIdx) -> Signature {
     inputs.dedup_by_key(|&mut (source, kind, _)| (source, kind));
     Signature {
         kind: node.kind.clone(),
-        state: node.state.clone(),
+        state: node.state,
         port: node.port,
+        observed: node.observed,
         inputs,
     }
 }
