@@ -7,8 +7,6 @@ use crate::compile_graph::{
     CompileGraph, CompileLink, Direction, LinkType, NodeIdx, NodeState, NodeType,
 };
 use crate::passes::{AnalysisInfos, Pass};
-use crate::{CompilerInput, CompilerOptions};
-use mchprs_blocks::block_store::BlockView;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::collections::VecDeque;
@@ -16,14 +14,8 @@ use tracing::trace;
 
 pub struct Coalesce;
 
-impl<W: BlockView> Pass<W> for Coalesce {
-    fn run_pass(
-        &self,
-        graph: &mut CompileGraph,
-        _: &CompilerOptions,
-        _: &CompilerInput<'_, W>,
-        _: &mut AnalysisInfos,
-    ) {
+impl Pass for Coalesce {
+    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
         // Signatures of nodes whose inputs changed name a removed node, so they never match again.
         let mut nodes_by_signature = FxHashMap::default();
         let mut queue: VecDeque<NodeIdx> = graph.node_indices().collect();

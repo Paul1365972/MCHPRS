@@ -6,19 +6,11 @@
 use crate::compile_graph::{CompileGraph, Direction, NodeIdx};
 use crate::passes::analysis::ss_set_analysis::{SSSetAnalysis, SSSetInfo};
 use crate::passes::{AnalysisInfos, AnalysisUsage, Pass};
-use crate::{CompilerInput, CompilerOptions};
-use mchprs_blocks::block_store::BlockView;
 
 pub struct UnreachableOutput;
 
-impl<W: BlockView> Pass<W> for UnreachableOutput {
-    fn run_pass(
-        &self,
-        graph: &mut CompileGraph,
-        _: &CompilerOptions,
-        _: &CompilerInput<'_, W>,
-        analysis_infos: &mut AnalysisInfos,
-    ) {
+impl Pass for UnreachableOutput {
+    fn run_pass(&self, graph: &mut CompileGraph, analysis_infos: &mut AnalysisInfos) {
         let set_info: &SSSetInfo = analysis_infos.get_analysis().unwrap();
 
         for i in 0..graph.node_bound() {
@@ -40,7 +32,7 @@ impl<W: BlockView> Pass<W> for UnreachableOutput {
     }
 
     fn analysis_usage(&self, au: &mut AnalysisUsage) {
-        au.set_required::<SSSetAnalysis, W>();
+        au.set_required::<SSSetAnalysis>();
     }
 
     fn status_message(&self) -> &'static str {

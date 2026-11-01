@@ -557,7 +557,6 @@ impl RILModule {
                 block: Default::default(),
                 is_input: component.node_ty.is_normally_input(),
                 is_output: component.node_ty.is_normally_output(),
-                annotations: Default::default(),
             });
             name_map.insert(component.name.clone(), node_idx);
         }

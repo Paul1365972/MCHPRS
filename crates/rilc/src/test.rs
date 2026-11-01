@@ -3,7 +3,7 @@ use mchprs_redpiler::{
     passes::{build_pass_pipeline, PassRegistry},
     ril::{self, RILModule, RILTest},
     string_replacer::StringReplacer,
-    CompilerInput, TaskMonitor,
+    TaskMonitor,
 };
 use owo_colors::OwoColorize as _;
 use std::{
@@ -51,14 +51,14 @@ fn run_test(
     update: bool,
     test_src: &mut StringReplacer,
 ) -> TestOutcome {
-    let Some((world, region)) = crate::load_world(test_path, &test.schematic_path) else {
-        return TestOutcome::Failed;
-    };
-
-    let input = CompilerInput {
-        world: &world,
-        region,
-        ticks: &[],
+    let graph = match &test.schematic_path {
+        Some(schematic_path) => {
+            match crate::extract_schematic(test_path, schematic_path, &test.options) {
+                Some(graph) => graph,
+                None => return TestOutcome::Failed,
+            }
+        }
+        None => test.graph,
     };
 
     let registry = PassRegistry::default();
@@ -70,7 +70,7 @@ fn run_test(
         None => build_pass_pipeline(&registry, &test.options),
     };
     let monitor = Arc::new(TaskMonitor::default());
-    let result_graph = pass_pipeline.run_passes(&test.options, &input, test.graph, monitor);
+    let result_graph = pass_pipeline.run_passes(&test.options, graph, monitor);
     let test_path = match test_root {
         Some(test_root) => test_path.strip_prefix(test_root).unwrap(),
         None => test_path,

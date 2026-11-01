@@ -1,19 +1,11 @@
 use crate::compile_graph::{CompileGraph, Direction, NodeIdx, NodeState, NodeType};
 use crate::passes::{AnalysisInfos, Pass};
-use crate::{CompilerInput, CompilerOptions};
-use mchprs_blocks::block_store::BlockView;
 use tracing::trace;
 
 pub struct ConstantFold;
 
-impl<W: BlockView> Pass<W> for ConstantFold {
-    fn run_pass(
-        &self,
-        graph: &mut CompileGraph,
-        _: &CompilerOptions,
-        _: &CompilerInput<'_, W>,
-        _: &mut AnalysisInfos,
-    ) {
+impl Pass for ConstantFold {
+    fn run_pass(&self, graph: &mut CompileGraph, _: &mut AnalysisInfos) {
         let num_folded = fold(graph);
         trace!("Fold iteration: {} nodes", num_folded);
     }

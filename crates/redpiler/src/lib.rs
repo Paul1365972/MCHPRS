@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod compile_graph;
+pub mod extract;
 pub mod passes;
 pub mod ril;
 pub mod string_replacer;
@@ -18,7 +19,7 @@ use tracing::{debug, error, trace, warn};
 
 pub use task_monitor::TaskMonitor;
 
-use crate::{compile_graph::CompileGraph, passes::PassRegistry};
+use crate::passes::PassRegistry;
 
 fn block_powered_mut(block: &mut Block) -> Option<&mut bool> {
     Some(match block {
@@ -165,15 +166,11 @@ impl Compiler {
         // A tick scheduled by a block that has since been replaced would never run
         ticks.retain(|entry| entry.is_for(world.block(entry.position)));
 
-        let input = CompilerInput {
-            world,
-            region,
-            ticks: &ticks,
-        };
+        monitor.set_message("Extracting circuit".to_string());
+        let graph = extract::extract(world, region, &ticks, &options);
         let registry = PassRegistry::default();
-        let pass_pipeline = passes::build_pass_pipeline::<W>(&registry, &options);
-        let graph =
-            pass_pipeline.run_passes(&options, &input, CompileGraph::default(), monitor.clone());
+        let pass_pipeline = passes::build_pass_pipeline(&registry, &options);
+        let graph = pass_pipeline.run_passes(&options, graph, monitor.clone());
 
         if monitor.cancelled() {
             return;
@@ -279,12 +276,6 @@ impl Compiler {
     pub fn has_pending_ticks(&mut self) -> bool {
         self.backend().has_pending_ticks()
     }
-}
-
-pub struct CompilerInput<'w, W: BlockView> {
-    pub world: &'w W,
-    pub region: Region,
-    pub ticks: &'w [TickEntry],
 }
 
 #[cfg(test)]
