@@ -285,9 +285,9 @@ fn write_blocks<W: World>(world: &mut W, blocks: &mut [(BlockPos, Block)], node:
         if matches!(block, Block::Comparator(_)) {
             world.set_block_entity(
                 *pos,
-                BlockEntity::Comparator {
+                Some(BlockEntity::Comparator {
                     output_strength: node.power,
-                },
+                }),
             );
         }
     }

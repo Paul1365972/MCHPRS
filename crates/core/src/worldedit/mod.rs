@@ -10,7 +10,7 @@ use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
-use mchprs_world::{for_each_block_mut_optimized, World};
+use mchprs_world::World;
 use rustc_hash::FxHashMap;
 
 #[derive(Clone, Debug)]
@@ -44,7 +44,7 @@ pub fn ray_trace_block(
 
     while current_distance < max_distance {
         let block_pos = pos.block_pos();
-        let block = world.get_block(block_pos);
+        let block = world.block(block_pos);
 
         if !matches!(block, Block::Air) {
             return Some(block_pos);
@@ -68,10 +68,10 @@ pub fn create_clipboard(
     let region = Region::new(first_pos, second_pos);
     let mut clipboard = BlockVolume::empty(region);
     for pos in region.positions() {
-        let block = world.get_block(pos);
+        let block = world.block(pos);
         clipboard.set_block(pos, block);
         if block.has_block_entity()
-            && let Some(block_entity) = world.get_block_entity(pos)
+            && let Some(block_entity) = world.block_entity(pos)
         {
             clipboard.set_block_entity(pos, Some(block_entity.clone()));
         }
@@ -96,21 +96,25 @@ pub fn paste_clipboard(
     world.flush_block_changes();
 
     for (pos, block_entity) in clipboard.block_entities() {
-        world.set_block_entity(pos + at, block_entity.clone());
+        world.set_block_entity(pos + at, Some(block_entity.clone()));
     }
 }
 
 pub fn clear_area(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {
-    for_each_block_mut_optimized(plot, first_pos, second_pos, |world, pos| {
-        world.set_block_raw(pos, 0);
-    });
+    for pos in plot
+        .occupied_regions(Region::new(first_pos, second_pos))
+        .into_iter()
+        .flat_map(Region::positions)
+    {
+        plot.set_block(pos, Block::Air);
+    }
 
     let start_pos = first_pos.min(second_pos);
     let end_pos = first_pos.max(second_pos);
     // Send modified chunks
     for chunk_x in (start_pos.x >> 4)..=(end_pos.x >> 4) {
         for chunk_z in (start_pos.z >> 4)..=(end_pos.z >> 4) {
-            if let Some(chunk) = plot.get_chunk(chunk_x, chunk_z) {
+            if let Some(chunk) = plot.chunk(chunk_x, chunk_z) {
                 let chunk_data = chunk.encode_packet();
                 for packet_sender in plot.packet_senders.values() {
                     packet_sender.send_packet(&chunk_data);
@@ -167,10 +171,14 @@ pub fn calculate_expanded_selection(
 }
 
 pub fn update(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {
-    for_each_block_mut_optimized(plot, first_pos, second_pos, |plot, pos| {
-        let block = plot.get_block(pos);
+    for pos in plot
+        .occupied_regions(Region::new(first_pos, second_pos))
+        .into_iter()
+        .flat_map(Region::positions)
+    {
+        let block = plot.block(pos);
         mchprs_redstone::update(block, plot, pos);
-    });
+    }
 }
 
 fn split_top_level_commas(input: &str) -> Vec<&str> {

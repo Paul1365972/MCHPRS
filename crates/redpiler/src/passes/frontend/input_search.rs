@@ -6,15 +6,15 @@
 use crate::compile_graph::{CompileGraph, CompileLink, Direction, LinkType, NodeIdx, NodeType};
 use crate::passes::{AnalysisInfos, Pass};
 use crate::{CompilerInput, CompilerOptions};
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_redstone::{self, comparator, provides_strong_power, provides_weak_power, wire};
-use mchprs_world::World;
 use rustc_hash::FxHashMap;
 
 pub struct InputSearch;
 
-impl<W: World> Pass<W> for InputSearch {
+impl<W: BlockView> Pass<W> for InputSearch {
     fn run_pass(
         &self,
         graph: &mut CompileGraph,
@@ -60,14 +60,14 @@ fn type_order(ty: &NodeType) -> u8 {
 
 /// Querying blocks from the world may be expensive, so we save recently
 /// queried blocks in a cache to reduce the number of times we query the world.
-struct BlockLookupCache<'world, W: World> {
+struct BlockLookupCache<'world, W: BlockView> {
     world: &'world W,
     // It's not really that complex
     #[allow(clippy::type_complexity)]
     cache: [[[Option<(Block, BlockPos)>; 16]; 16]; 16],
 }
 
-impl<'world, W: World> BlockLookupCache<'world, W> {
+impl<'world, W: BlockView> BlockLookupCache<'world, W> {
     pub fn new(world: &'world W) -> Self {
         Self {
             world,
@@ -75,7 +75,7 @@ impl<'world, W: World> BlockLookupCache<'world, W> {
         }
     }
 
-    fn get_block(&mut self, pos: BlockPos) -> Block {
+    fn block(&mut self, pos: BlockPos) -> Block {
         let cache_x = pos.x as usize % 16;
         let cache_y = pos.y as usize % 16;
         let cache_z = pos.z as usize % 16;
@@ -83,7 +83,7 @@ impl<'world, W: World> BlockLookupCache<'world, W> {
         match cache_entry {
             Some((block, block_pos)) if *block_pos == pos => *block,
             _ => {
-                let block = self.world.get_block(pos);
+                let block = self.world.block(pos);
                 *cache_entry = Some((block, pos));
                 block
             }
@@ -91,14 +91,14 @@ impl<'world, W: World> BlockLookupCache<'world, W> {
     }
 }
 
-struct InputSearchState<'a, W: World> {
+struct InputSearchState<'a, W: BlockView> {
     world: &'a W,
     graph: &'a mut CompileGraph,
     pos_map: FxHashMap<BlockPos, NodeIdx>,
     block_lookup_cache: BlockLookupCache<'a, W>,
 }
 
-impl<'a, W: World> InputSearchState<'a, W> {
+impl<'a, W: BlockView> InputSearchState<'a, W> {
     fn new(world: &'a W, graph: &'a mut CompileGraph) -> InputSearchState<'a, W> {
         let mut pos_map = FxHashMap::default();
         for id in graph.node_indices() {
@@ -130,7 +130,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
         if block.is_solid() {
             for side in &BlockFace::values() {
                 let pos = pos.offset(*side);
-                let block = self.block_lookup_cache.get_block(pos);
+                let block = self.block_lookup_cache.block(pos);
                 if provides_strong_power(block, *side) {
                     self.graph.add_edge(
                         self.pos_map[&pos],
@@ -216,11 +216,11 @@ impl<'a, W: World> InputSearchState<'a, W> {
 
             // The block above the wire. If it's solid, we can't connect up diagonally
             let up_pos = pos.offset(BlockFace::Top);
-            let up_block = self.block_lookup_cache.get_block(up_pos);
+            let up_block = self.block_lookup_cache.block(up_pos);
 
             for side in &BlockFace::values() {
                 let neighbor_pos = pos.offset(*side);
-                let neighbor = self.block_lookup_cache.get_block(neighbor_pos);
+                let neighbor = self.block_lookup_cache.block(neighbor_pos);
 
                 self.get_redstone_links(
                     neighbor,
@@ -239,14 +239,14 @@ impl<'a, W: World> InputSearchState<'a, W> {
                 if side.is_horizontal() {
                     if !neighbor.is_solid() {
                         let neighbor_down_pos = neighbor_pos.offset(BlockFace::Bottom);
-                        if is_wire(self.block_lookup_cache.get_block(neighbor_down_pos))
+                        if is_wire(self.block_lookup_cache.block(neighbor_down_pos))
                             && !has_been_discovered(&discovered, neighbor_down_pos)
                         {
                             discovered.push((neighbor_down_pos, distance + 1));
                         }
                     } else if !up_block.is_solid() && !neighbor.is_transparent() {
                         let neighbor_up_pos = neighbor_pos.offset(BlockFace::Top);
-                        if is_wire(self.block_lookup_cache.get_block(neighbor_up_pos))
+                        if is_wire(self.block_lookup_cache.block(neighbor_up_pos))
                             && !has_been_discovered(&discovered, neighbor_up_pos)
                         {
                             discovered.push((neighbor_up_pos, distance + 1));
@@ -259,7 +259,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
 
     fn search_diode_inputs(&mut self, id: NodeIdx, pos: BlockPos, facing: BlockDirection) {
         let input_pos = pos.offset(facing.block_face());
-        let input_block = self.block_lookup_cache.get_block(input_pos);
+        let input_block = self.block_lookup_cache.block(input_pos);
         self.get_redstone_links(
             input_block,
             facing.block_face(),
@@ -273,7 +273,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
 
     fn search_repeater_side(&mut self, id: NodeIdx, pos: BlockPos, side: BlockDirection) {
         let side_pos = pos.offset(side.block_face());
-        let side_block = self.block_lookup_cache.get_block(side_pos);
+        let side_block = self.block_lookup_cache.block(side_pos);
         if mchprs_redstone::is_diode(side_block)
             && provides_weak_power(side_block, side.block_face())
         {
@@ -284,7 +284,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
 
     fn search_comparator_side(&mut self, id: NodeIdx, pos: BlockPos, side: BlockDirection) {
         let side_pos = pos.offset(side.block_face());
-        let side_block = self.block_lookup_cache.get_block(side_pos);
+        let side_block = self.block_lookup_cache.block(side_pos);
         if (mchprs_redstone::is_diode(side_block)
             && provides_weak_power(side_block, side.block_face()))
             || matches!(side_block, Block::RedstoneBlock)
@@ -300,7 +300,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
         match Block::from_id(block_id) {
             Block::RedstoneTorch { .. } => {
                 let bottom_pos = pos.offset(BlockFace::Bottom);
-                let bottom_block = self.block_lookup_cache.get_block(bottom_pos);
+                let bottom_block = self.block_lookup_cache.block(bottom_pos);
                 self.get_redstone_links(
                     bottom_block,
                     BlockFace::Top,
@@ -313,7 +313,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
             }
             Block::RedstoneWallTorch { facing, .. } => {
                 let wall_pos = pos.offset(facing.opposite().block_face());
-                let wall_block = self.block_lookup_cache.get_block(wall_pos);
+                let wall_block = self.block_lookup_cache.block(wall_pos);
                 self.get_redstone_links(
                     wall_block,
                     facing.opposite().block_face(),
@@ -331,7 +331,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
                 self.search_comparator_side(id, pos, facing.rotate_ccw());
 
                 let input_pos = pos.offset(facing.block_face());
-                let input_block = self.block_lookup_cache.get_block(input_pos);
+                let input_block = self.block_lookup_cache.block(input_pos);
                 if comparator::analog_output(input_block, self.world, input_pos).is_some() {
                     self.graph
                         .add_edge(self.pos_map[&input_pos], id, CompileLink::default(0));
@@ -352,7 +352,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
             Block::RedstoneLamp { .. } | Block::IronTrapdoor { .. } | Block::NoteBlock { .. } => {
                 for face in &BlockFace::values() {
                     let neighbor_pos = pos.offset(*face);
-                    let neighbor_block = self.block_lookup_cache.get_block(neighbor_pos);
+                    let neighbor_block = self.block_lookup_cache.block(neighbor_pos);
                     self.get_redstone_links(
                         neighbor_block,
                         *face,

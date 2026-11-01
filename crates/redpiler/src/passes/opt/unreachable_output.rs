@@ -7,11 +7,11 @@ use crate::compile_graph::{CompileGraph, Direction, NodeIdx};
 use crate::passes::analysis::ss_set_analysis::{SSSetAnalysis, SSSetInfo};
 use crate::passes::{AnalysisInfos, AnalysisUsage, Pass};
 use crate::{CompilerInput, CompilerOptions};
-use mchprs_world::World;
+use mchprs_blocks::block_store::BlockView;
 
 pub struct UnreachableOutput;
 
-impl<W: World> Pass<W> for UnreachableOutput {
+impl<W: BlockView> Pass<W> for UnreachableOutput {
     fn run_pass(
         &self,
         graph: &mut CompileGraph,

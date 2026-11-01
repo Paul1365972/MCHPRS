@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use line_index::{LineIndex, TextSize};
-use mchprs_blocks::block_store::BlockView;
+use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::{
@@ -8,8 +8,6 @@ use mchprs_redpiler::{
     ril::RILModule,
     CompilerOptions,
 };
-use mchprs_world::testing::TestWorld;
-use mchprs_world::World;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -71,7 +69,7 @@ enum Command {
     Version,
 }
 
-fn load_world(ril_file_path: &Path, schem_path: &Option<String>) -> Option<(TestWorld, Region)> {
+fn load_world(ril_file_path: &Path, schem_path: &Option<String>) -> Option<(BlockVolume, Region)> {
     Some(if let Some(schem_path) = schem_path {
         let schem_path = ril_file_path.parent().unwrap().join(schem_path);
         let Some(schematic) = fs::read(&schem_path)
@@ -87,26 +85,10 @@ fn load_world(ril_file_path: &Path, schem_path: &Option<String>) -> Option<(Test
         let origin = schematic.volume.region().min();
         let volume = schematic.volume.translated(BlockPos::zero() - origin);
         let region = volume.region();
-
-        let chunks = |max: i32| (max as u32 + 1).div_ceil(16) as i32;
-        let mut world = TestWorld::new(
-            chunks(region.max().x),
-            chunks(region.max().y),
-            chunks(region.max().z),
-        );
-        for pos in region.positions() {
-            world.set_block(pos, volume.block(pos));
-        }
-        for (pos, block_entity) in volume.block_entities() {
-            world.set_block_entity(pos, block_entity.clone());
-        }
-
-        (world, region)
+        (volume, region)
     } else {
-        (
-            TestWorld::new(1, 1, 1),
-            Region::new(BlockPos::zero(), BlockPos::zero()),
-        )
+        let region = Region::new(BlockPos::zero(), BlockPos::zero());
+        (BlockVolume::empty(region), region)
     })
 }
 
@@ -132,9 +114,9 @@ fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
 }
 
 fn parse_pass_pipeline<'p>(
-    registry: &'p PassRegistry<TestWorld>,
+    registry: &'p PassRegistry<BlockVolume>,
     passes: &str,
-) -> Option<PassPipeline<'p, TestWorld>> {
+) -> Option<PassPipeline<'p, BlockVolume>> {
     let mut builder = PassPipelineBuilder::new(registry);
     for driver_key in passes.split(',') {
         if !builder.add_pass_by_driver_key(driver_key) {

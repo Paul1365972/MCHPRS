@@ -1,12 +1,12 @@
 use crate::compile_graph::{CompileGraph, Direction, NodeIdx, NodeState, NodeType};
 use crate::passes::{AnalysisInfos, Pass};
 use crate::{CompilerInput, CompilerOptions};
-use mchprs_world::World;
+use mchprs_blocks::block_store::BlockView;
 use tracing::trace;
 
 pub struct ConstantFold;
 
-impl<W: World> Pass<W> for ConstantFold {
+impl<W: BlockView> Pass<W> for ConstantFold {
     fn run_pass(
         &self,
         graph: &mut CompileGraph,

@@ -12,14 +12,13 @@ use crate::worldedit::pattern::WorldEditPattern;
 use crate::worldedit::{clear_area, create_clipboard, paste_clipboard, update};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
-use mchprs_blocks::block_store::BlockView;
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::{Block, HopperFacing};
 use mchprs_blocks::items::Item;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
-use mchprs_world::World;
 use rustc_hash::FxHashMap;
 use std::time::Instant;
 
@@ -87,9 +86,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     let (first_pos, second_pos) = ctx.selection()?;
                     let world = ctx.world();
                     for pos in Region::new(first_pos, second_pos).positions() {
-                        *block_counts
-                            .entry(world.get_block(pos).get_name())
-                            .or_insert(0) += 1;
+                        *block_counts.entry(world.block(pos).get_name()).or_insert(0) += 1;
                     }
                 }
 
@@ -266,14 +263,14 @@ fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
 
     let world = ctx.world_mut();
     for pos in Region::new(first_pos, second_pos).positions() {
-        let block_ty = match world.get_block(pos) {
+        let block_ty = match world.block(pos) {
             Block::Furnace { .. } => ContainerType::Furnace,
             Block::Barrel { .. } => ContainerType::Barrel,
             Block::Hopper { .. } => ContainerType::Hopper,
             _ => continue,
         };
 
-        let (current_ty, ss) = match world.get_block_entity(pos) {
+        let (current_ty, ss) = match world.block_entity(pos) {
             Some(BlockEntity::Container {
                 comparator_override,
                 ty,
@@ -303,7 +300,7 @@ fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
             inventory,
             ty: to,
         };
-        world.set_block_entity(pos, new_entity);
+        world.set_block_entity(pos, Some(new_entity));
         world.set_block(pos, new_block);
     }
 

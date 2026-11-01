@@ -2,6 +2,7 @@
 //! the accelorator created by theosib. For more information, see:
 //! https://bugs.mojang.com/browse/MC-81098.
 
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, RedstoneWire};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_world::World;
@@ -39,10 +40,10 @@ struct UpdateNode {
 }
 
 impl UpdateNode {
-    fn new(world: &impl World, pos: BlockPos) -> UpdateNode {
+    fn new(world: &impl BlockView, pos: BlockPos) -> UpdateNode {
         UpdateNode {
             pos,
-            state: world.get_block(pos),
+            state: world.block(pos),
             visited: false,
             neighbors: None,
             xbias: 0,

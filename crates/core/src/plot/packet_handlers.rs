@@ -7,11 +7,11 @@ use crate::player::{PacketSender, PlayerPos, SkinParts};
 use crate::server::Message;
 use crate::utils;
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::items::Item;
 use mchprs_blocks::BlockPos;
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::*;
-use mchprs_world::World;
 use serde_json::json;
 use std::sync::mpsc;
 use std::time::Instant;
@@ -416,7 +416,7 @@ impl ServerBoundPacketHandler for Plot {
         {
             return;
         }
-        let block = self.world.get_block(pos);
+        let block = self.world.block(pos);
         if !(block.is_sign() || block.is_wall_sign()) {
             return;
         }
@@ -430,7 +430,7 @@ impl ServerBoundPacketHandler for Plot {
             rows.next().unwrap(),
             rows.next().unwrap(),
         ];
-        let mut block_entity = match self.world.get_block_entity(pos) {
+        let mut block_entity = match self.world.block_entity(pos) {
             Some(BlockEntity::Sign(sign)) => sign.as_ref().clone(),
             _ => Default::default(),
         };
@@ -440,7 +440,7 @@ impl ServerBoundPacketHandler for Plot {
             block_entity.back_rows = rows;
         }
         self.world
-            .set_block_entity(pos, BlockEntity::Sign(Box::new(block_entity)));
+            .set_block_entity(pos, Some(BlockEntity::Sign(Box::new(block_entity))));
         self.publish_world();
     }
 }

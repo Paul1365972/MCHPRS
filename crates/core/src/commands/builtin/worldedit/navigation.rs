@@ -5,9 +5,9 @@ use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
 use crate::player::PlayerPos;
 use crate::plot::PLOT_BLOCK_HEIGHT;
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
-use mchprs_world::World;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(Command::new("jumpto").alias("j").executes(|ctx| {
@@ -48,7 +48,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                 if force_glass || !force_flight {
                     let block_pos = new_pos.block_pos();
                     let platform_pos = BlockPos::new(block_pos.x, block_pos.y - 1, block_pos.z);
-                    if matches!(ctx.world().get_block(platform_pos), Block::Air) {
+                    if matches!(ctx.world().block(platform_pos), Block::Air) {
                         ctx.world_mut().set_block(platform_pos, Block::Glass);
                     }
                 }
@@ -109,9 +109,9 @@ fn exec_floors(
         let pos = BlockPos::new(player_pos.x, y, player_pos.z);
         let high_pos = BlockPos::new(player_pos.x, y + 1, player_pos.z);
 
-        if world.get_block(floor_pos) != Block::Air
-            && world.get_block(pos) == Block::Air
-            && world.get_block(high_pos) == Block::Air
+        if world.block(floor_pos) != Block::Air
+            && world.block(pos) == Block::Air
+            && world.block(high_pos) == Block::Air
         {
             player_y = y;
             remaining -= 1;
@@ -128,8 +128,8 @@ fn exec_floors(
     ctx.worldedit_message(&format!("{verb} {} levels", levels - remaining))
 }
 
-fn free_spot_above(world: &impl World, pos: BlockPos) -> PlayerPos {
-    let is_air = |y| world.get_block(BlockPos::new(pos.x, y, pos.z)) == Block::Air;
+fn free_spot_above(world: &impl BlockView, pos: BlockPos) -> PlayerPos {
+    let is_air = |y| world.block(BlockPos::new(pos.x, y, pos.z)) == Block::Air;
     let y = (pos.y..PLOT_BLOCK_HEIGHT)
         .find(|&y| is_air(y) && is_air(y + 1))
         .unwrap_or(pos.y.max(PLOT_BLOCK_HEIGHT));

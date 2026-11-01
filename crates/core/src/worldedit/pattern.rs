@@ -27,7 +27,7 @@ impl WorldEditPattern {
 
     pub fn place(&self, world: &mut impl World, pos: BlockPos) -> bool {
         let block = self.select().pick(world, pos);
-        world.set_block_raw(pos, block.get_id())
+        world.set_block(pos, block)
     }
 
     fn select(&self) -> &BlockPattern {
@@ -100,7 +100,7 @@ impl BlockPattern {
         match self {
             Self::Fixed(block) => *block,
             Self::TypeApplying { block, states } => {
-                let existing = world.get_block(pos);
+                let existing = world.block(pos);
                 let mut block = block.unwrap_or(existing);
                 let existing_props = existing.properties();
                 let mut props: HashMap<&str, &str> = existing_props

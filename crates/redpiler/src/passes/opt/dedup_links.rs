@@ -8,11 +8,11 @@
 use crate::compile_graph::{CompileGraph, Direction, NodeIdx};
 use crate::passes::{AnalysisInfos, Pass};
 use crate::{CompilerInput, CompilerOptions};
-use mchprs_world::World;
+use mchprs_blocks::block_store::BlockView;
 
 pub struct DedupLinks;
 
-impl<W: World> Pass<W> for DedupLinks {
+impl<W: BlockView> Pass<W> for DedupLinks {
     fn run_pass(
         &self,
         graph: &mut CompileGraph,

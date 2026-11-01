@@ -2,8 +2,9 @@ pub mod storage;
 #[cfg(feature = "testing")]
 pub mod testing;
 
-use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::BlockStore;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use serde::{Deserialize, Serialize};
 use std::mem;
@@ -61,53 +62,12 @@ pub fn has_tick_entry(ticks: &[TickEntry], block: Block, pos: BlockPos) -> bool 
     ticks.iter().any(|e| e.pos == pos && e.is_for(block))
 }
 
-pub trait World: 'static {
-    /// Returns the block located at `pos`
-    fn get_block(&self, pos: BlockPos) -> Block {
-        Block::from_id(self.get_block_raw(pos))
-    }
-
-    /// Returns the block state id of the block at `pos`
-    fn get_block_raw(&self, pos: BlockPos) -> u32;
-
-    /// Sets the block at `pos`.
-    /// This function may have side effects such as sending update block packets to the player.
-    /// Returns true if the block was changed.
-    fn set_block(&mut self, pos: BlockPos, block: Block) -> bool {
-        let block_id = Block::get_id(block);
-        self.set_block_raw(pos, block_id)
-    }
-
-    /// Sets a block in storage without any other side effects. Returns true if a block was changed.
-    fn set_block_raw(&mut self, pos: BlockPos, block: u32) -> bool;
-
-    /// Removes a block entity at `pos` if it exists.
-    fn delete_block_entity(&mut self, pos: BlockPos);
-
-    /// Returns a reference to the block entity at `pos` if it exists.
-    /// Returns None if there is no block entity at `pos`.
-    fn get_block_entity(&self, pos: BlockPos) -> Option<&BlockEntity>;
-
-    /// Sets the block entity at `pos`, overwriting any other block entity that was there prior.
-    fn set_block_entity(&mut self, pos: BlockPos, block_entity: BlockEntity);
-
-    /// Returns an immutable reference to the chunk at `x` and `z` chunk coordinates.
-    /// Returns None if the chunk does not exist in this world.
-    fn get_chunk(&self, x: i32, z: i32) -> Option<&Chunk>;
-
-    /// Returns a mutable reference to the chunk at `x` and `z` chunk coordinates.
-    /// Returns None if the chunk does not exist in this world.
-    fn get_chunk_mut(&mut self, x: i32, z: i32) -> Option<&mut Chunk>;
-
+pub trait World: BlockStore + 'static {
     /// Schedules a tick in the world with `delay` and `pritority`, unless already scheduled
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority);
 
     /// Returns true if the block at `pos` has a tick scheduled or due but not run yet
     fn pending_tick_at(&mut self, pos: BlockPos) -> bool;
-
-    fn is_cursed(&self) -> bool {
-        false
-    }
 
     #[allow(unused_variables)]
     fn play_sound(
@@ -133,6 +93,11 @@ struct ChunkSectionIdx {
 impl ChunkSectionIdx {
     fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
+    }
+
+    fn region(self) -> Region {
+        let min = BlockPos::new(self.x * 16, self.y * 16, self.z * 16);
+        Region::new(min, min + BlockPos::new(15, 15, 15))
     }
 }
 
@@ -173,81 +138,18 @@ fn chunk_section_idxs_between(
         .flat_map(move |(x, z)| (start_y..=end_y).map(move |y| ChunkSectionIdx::new(x, y, z)))
 }
 
-/// Returns an iterator over the block positions contained in the given chunk section
-/// and within the bounding box defined by the two block positions.
-fn block_pos_in_chunk_section_between(
-    fst: BlockPos,
-    snd: BlockPos,
-    chunk_section_idx: ChunkSectionIdx,
-) -> impl Iterator<Item = BlockPos> {
-    // for each coordinate, we start at either the lowest coordinate of the bounding
-    // blocks or at the chunk boundary if the chunk is contained in the bounding box
-    // and correspondingly end at the highest coordinate of the bounding blocks or at the
-    // chunk boundary if the chunk is contained in the bounding box
-    let start_x = i32::min(fst.x, snd.x).max(chunk_section_idx.x * 16);
-    let end_x = i32::max(fst.x, snd.x).min(chunk_section_idx.x * 16 + 15);
-
-    let start_y = i32::min(fst.y, snd.y).max(chunk_section_idx.y * 16);
-    let end_y = i32::max(fst.y, snd.y).min(chunk_section_idx.y * 16 + 15);
-
-    let start_z = i32::min(fst.z, snd.z).max(chunk_section_idx.z * 16);
-    let end_z = i32::max(fst.z, snd.z).min(chunk_section_idx.z * 16 + 15);
-
-    (start_x..=end_x)
-        .flat_map(move |x| (start_y..=end_y).map(move |y| (x, y)))
-        .flat_map(move |(x, y)| (start_z..=end_z).map(move |z| BlockPos::new(x, y, z)))
-}
-
-/// Executes the given function for each block excluding most air blocks
-pub fn for_each_block_optimized<F, W: World>(
-    world: &W,
-    first_pos: BlockPos,
-    second_pos: BlockPos,
-    mut f: F,
-) where
-    F: FnMut(BlockPos),
-{
-    // Iterate over chunks
-    for chunk_section_idx in chunk_section_idxs_between(first_pos, second_pos) {
-        let chunk = world
-            .get_chunk(chunk_section_idx.x, chunk_section_idx.z)
-            .unwrap();
-        if chunk.sections[chunk_section_idx.y as usize].block_count() == 0 {
-            // only air, skip section
-            continue;
-        }
-        for block_pos in
-            block_pos_in_chunk_section_between(first_pos, second_pos, chunk_section_idx)
-        {
-            f(block_pos);
-        }
-    }
-}
-
-/// Executes the given function for each block excluding most air blocks
-pub fn for_each_block_mut_optimized<F, W: World>(
-    world: &mut W,
-    first_pos: BlockPos,
-    second_pos: BlockPos,
-    mut f: F,
-) where
-    F: FnMut(&mut W, BlockPos),
-{
-    // Iterate over chunks
-    for chunk_section_idx in chunk_section_idxs_between(first_pos, second_pos) {
-        let chunk = world
-            .get_chunk(chunk_section_idx.x, chunk_section_idx.z)
-            .unwrap();
-        if chunk.sections[chunk_section_idx.y as usize].block_count() == 0 {
-            // only air, skip section
-            continue;
-        }
-        for block_pos in
-            block_pos_in_chunk_section_between(first_pos, second_pos, chunk_section_idx)
-        {
-            f(world, block_pos);
-        }
-    }
+pub fn occupied_regions<'a>(
+    region: Region,
+    chunk_at: impl Fn(i32, i32) -> Option<&'a Chunk>,
+) -> Vec<Region> {
+    chunk_section_idxs_between(region.min(), region.max())
+        .filter(|idx| {
+            chunk_at(idx.x, idx.z)
+                .and_then(|chunk| chunk.sections.get(usize::try_from(idx.y).ok()?))
+                .is_some_and(|section| section.block_count() > 0)
+        })
+        .filter_map(|idx| idx.region().intersection(region))
+        .collect()
 }
 
 #[cfg(test)]
@@ -256,7 +158,43 @@ mod test {
 
     use super::*;
 
-    struct TestWorld(Vec<Chunk>);
+    fn positions_in_section(
+        fst: BlockPos,
+        snd: BlockPos,
+        chunk_section_idx: ChunkSectionIdx,
+    ) -> Vec<BlockPos> {
+        chunk_section_idx
+            .region()
+            .intersection(Region::new(fst, snd))
+            .into_iter()
+            .flat_map(Region::positions)
+            .collect()
+    }
+
+    fn visit_occupied(chunks: &[Chunk], fst: BlockPos, snd: BlockPos) -> HashMap<BlockPos, usize> {
+        let chunk_at = |x, z| chunks.iter().find(|chunk| chunk.x == x && chunk.z == z);
+        let mut visited = HashMap::new();
+        for pos in occupied_regions(Region::new(fst, snd), chunk_at)
+            .into_iter()
+            .flat_map(Region::positions)
+        {
+            *visited.entry(pos).or_insert(0) += 1;
+        }
+        visited
+    }
+
+    fn set_block(chunks: &mut [Chunk], pos: BlockPos, block: u32) {
+        let chunk = chunks
+            .iter_mut()
+            .find(|chunk| chunk.x == pos.x.div_euclid(16) && chunk.z == pos.z.div_euclid(16))
+            .unwrap();
+        chunk.set_block(
+            pos.x.rem_euclid(16) as u32,
+            pos.y as u32,
+            pos.z.rem_euclid(16) as u32,
+            block,
+        );
+    }
 
     #[test]
     fn test_chunk_section_idxs_between_simple() {
@@ -351,12 +289,11 @@ mod test {
     }
 
     #[test]
-    fn test_block_pos_in_chunk_section_between_contained() {
+    fn test_positions_in_section_contained() {
         let fst = BlockPos::new(0, 0, 0);
         let snd = BlockPos::new(64, 64, 64);
         let chunk_section_idx = ChunkSectionIdx::new(1, 1, 1);
-        let mut result =
-            block_pos_in_chunk_section_between(fst, snd, chunk_section_idx).collect::<Vec<_>>();
+        let mut result = positions_in_section(fst, snd, chunk_section_idx);
         result.sort_by_key(|pos| (pos.x, pos.y, pos.z));
         let mut expected = (16..=31)
             .flat_map(|x| (16..=31).map(move |y| (x, y)))
@@ -367,22 +304,20 @@ mod test {
     }
 
     #[test]
-    fn test_block_pos_in_chunk_section_between_nonintersecting() {
+    fn test_positions_in_section_nonintersecting() {
         let fst = BlockPos::new(0, 0, 0);
         let snd = BlockPos::new(64, 64, 64);
         let chunk_section_idx = ChunkSectionIdx::new(-2, 2, -2);
-        let result =
-            block_pos_in_chunk_section_between(fst, snd, chunk_section_idx).collect::<Vec<_>>();
+        let result = positions_in_section(fst, snd, chunk_section_idx);
         assert!(result.is_empty());
     }
 
     #[test]
-    fn test_block_pos_in_chunk_section_between_partial_intersection() {
+    fn test_positions_in_section_partial_intersection() {
         let fst = BlockPos::new(-3, 20, 17);
         let snd = BlockPos::new(20, 34, -10);
         let chunk_section_idx = ChunkSectionIdx::new(-1, 2, 1);
-        let mut result =
-            block_pos_in_chunk_section_between(fst, snd, chunk_section_idx).collect::<Vec<_>>();
+        let mut result = positions_in_section(fst, snd, chunk_section_idx);
         result.sort_by_key(|pos| (pos.x, pos.y, pos.z));
         let expected = vec![
             BlockPos::new(-3, 32, 16),
@@ -407,48 +342,42 @@ mod test {
         assert_eq!(result, expected);
     }
 
-    fn record_visit(visited: &mut HashMap<BlockPos, usize>, pos: BlockPos) {
-        *visited.entry(pos).or_insert(0) += 1;
-    }
-
     #[test]
-    fn test_for_each_block_optimized_empty() {
-        let world = TestWorld(vec![
+    fn test_occupied_regions_empty() {
+        let chunks = vec![
             Chunk::empty(0, 0, 2),
             Chunk::empty(0, 1, 2),
             Chunk::empty(1, 0, 2),
             Chunk::empty(1, 1, 2),
-        ]);
+        ];
         let fst = BlockPos::new(0, 0, 0);
         let snd = BlockPos::new(31, 31, 31);
-        let mut visited = HashMap::new();
-        for_each_block_optimized(&world, fst, snd, |pos| record_visit(&mut visited, pos));
+        let visited = visit_occupied(&chunks, fst, snd);
         assert!(visited.is_empty());
     }
 
     #[test]
-    fn test_for_each_block_optimized_partial() {
-        let mut world = TestWorld(vec![
+    fn test_occupied_regions_partial() {
+        let mut chunks = vec![
             Chunk::empty(0, -1, 8),
             Chunk::empty(0, 0, 8),
             Chunk::empty(0, 1, 8),
             Chunk::empty(1, -1, 8),
             Chunk::empty(1, 0, 8),
             Chunk::empty(1, 1, 8),
-        ]);
+        ];
         let pos = BlockPos::new(12, 45, 2);
-        world.set_block_raw(pos, 3);
+        set_block(&mut chunks, pos, 3);
         let fst = BlockPos::new(0, 0, -10);
         let snd = BlockPos::new(31, 60, 15);
-        let mut visited = HashMap::new();
-        for_each_block_optimized(&world, fst, snd, |pos| record_visit(&mut visited, pos));
+        let visited = visit_occupied(&chunks, fst, snd);
         assert_eq!(visited.get(&pos), Some(&1));
         assert_eq!(visited.len(), 16 * 16 * 16, "should visit a single section");
     }
 
     #[test]
-    fn test_for_each_block_optimized_partial_not_included() {
-        let mut world = TestWorld(vec![
+    fn test_occupied_regions_partial_not_included() {
+        let mut chunks = vec![
             Chunk::empty(0, -1, 8),
             Chunk::empty(0, 0, 8),
             Chunk::empty(0, 1, 8),
@@ -457,13 +386,12 @@ mod test {
             Chunk::empty(1, 0, 8),
             Chunk::empty(1, 1, 8),
             Chunk::empty(1, 2, 8),
-        ]);
+        ];
         let pos = BlockPos::new(12, 45, 2);
-        world.set_block_raw(pos, 3);
+        set_block(&mut chunks, pos, 3);
         let fst = BlockPos::new(0, 0, 4);
         let snd = BlockPos::new(31, 60, 31);
-        let mut visited = HashMap::new();
-        for_each_block_optimized(&world, fst, snd, |pos| record_visit(&mut visited, pos));
+        let visited = visit_occupied(&chunks, fst, snd);
         assert_eq!(
             visited.get(&pos),
             None,
@@ -474,53 +402,5 @@ mod test {
             16 * 16 * 12,
             "should visit the part of the non-empty section that's in bounds"
         );
-    }
-
-    // mock World implementation for tests in this module,
-    // we don't need most of the methods
-    impl World for TestWorld {
-        fn get_block_raw(&self, _pos: BlockPos) -> u32 {
-            unimplemented!()
-        }
-
-        fn set_block_raw(&mut self, pos: BlockPos, block: u32) -> bool {
-            let chunk = self
-                .get_chunk_mut(pos.x.div_euclid(16), pos.z.div_euclid(16))
-                .unwrap();
-            chunk.set_block(
-                pos.x.rem_euclid(16) as u32,
-                pos.y as u32,
-                pos.z.rem_euclid(16) as u32,
-                block,
-            )
-        }
-
-        fn delete_block_entity(&mut self, _pos: BlockPos) {
-            unimplemented!()
-        }
-
-        fn get_block_entity(&self, _pos: BlockPos) -> Option<&BlockEntity> {
-            unimplemented!()
-        }
-
-        fn set_block_entity(&mut self, _pos: BlockPos, _block_entity: BlockEntity) {
-            unimplemented!()
-        }
-
-        fn get_chunk(&self, x: i32, z: i32) -> Option<&Chunk> {
-            self.0.iter().find(|c| c.x == x && c.z == z)
-        }
-
-        fn get_chunk_mut(&mut self, x: i32, z: i32) -> Option<&mut Chunk> {
-            self.0.iter_mut().find(|c| c.x == x && c.z == z)
-        }
-
-        fn schedule_tick(&mut self, _pos: BlockPos, _delay: u32, _priority: TickPriority) {
-            unimplemented!()
-        }
-
-        fn pending_tick_at(&mut self, _pos: BlockPos) -> bool {
-            unimplemented!()
-        }
     }
 }

@@ -107,20 +107,20 @@ impl MaskPredicate {
     fn matches(&self, world: &impl World, pos: BlockPos) -> bool {
         match self {
             Self::Blocks(matchers) => {
-                let block = world.get_block(pos);
+                let block = world.block(pos);
                 matchers.iter().any(|matcher| matcher.matches(block))
             }
-            Self::Existing => world.get_block(pos) != Block::Air,
-            Self::Solid => is_movement_blocker(world.get_block(pos)),
+            Self::Existing => world.block(pos) != Block::Air,
+            Self::Solid => is_movement_blocker(world.block(pos)),
             Self::Surface => {
-                world.get_block(pos) != Block::Air
+                world.block(pos) != Block::Air
                     && BlockFace::values()
                         .into_iter()
-                        .any(|face| world.get_block(pos.offset(face)) == Block::Air)
+                        .any(|face| world.block(pos.offset(face)) == Block::Air)
             }
             Self::RandomNoise(chance) => rand::rng().random::<f32>() < *chance,
             Self::BlockStates { lenient, states } => {
-                let props = world.get_block(pos).properties();
+                let props = world.block(pos).properties();
                 states
                     .iter()
                     .all(|(name, expected)| match props.get(name.as_str()) {

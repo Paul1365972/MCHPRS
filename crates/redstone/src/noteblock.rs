@@ -1,13 +1,14 @@
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_world::World;
 
-pub fn is_noteblock_unblocked(world: &impl World, pos: BlockPos) -> bool {
-    matches!(world.get_block(pos.offset(BlockFace::Top)), Block::Air)
+pub fn is_noteblock_unblocked(world: &impl BlockView, pos: BlockPos) -> bool {
+    matches!(world.block(pos.offset(BlockFace::Top)), Block::Air)
 }
 
-pub fn get_noteblock_instrument(world: &impl World, pos: BlockPos) -> Instrument {
-    Instrument::from_block_below(world.get_block(pos.offset(BlockFace::Bottom)))
+pub fn get_noteblock_instrument(world: &impl BlockView, pos: BlockPos) -> Instrument {
+    Instrument::from_block_below(world.block(pos.offset(BlockFace::Bottom)))
 }
 
 pub fn play_note(world: &mut impl World, pos: BlockPos, instrument: Instrument, note: u8) {
