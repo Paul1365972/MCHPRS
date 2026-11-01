@@ -1,8 +1,8 @@
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::backend::direct::DirectEngine;
 use mchprs_redpiler::{
-    BlockMap, CompileProgress, CompilerInput, CompilerOptions, Engine, Input, Netlist, NodeId,
-    PendingTick, Reporting,
+    BlockMap, CompileProgress, CompilerInput, CompilerOptions, Engine, HostPaced, Input, Netlist,
+    NodeId, PendingTick, Reporting,
 };
 use mchprs_save_data::plot_data::PlotData;
 use mchprs_world::testing::TestWorld;
@@ -234,11 +234,11 @@ impl Stages {
 impl Compiled {
     pub fn engine(&mut self, backend: &str, reporting: Reporting) -> Result<Box<dyn Engine>> {
         if backend == "direct" {
-            return Ok(Box::new(DirectEngine::new(
+            return Ok(Box::new(HostPaced::new(DirectEngine::new(
                 &self.netlist,
                 reporting,
                 &self.pending_ticks,
-            )));
+            ))));
         }
         #[cfg(feature = "fpga")]
         if let Ok(target) = backend.parse::<mchprs_redpiler_fpga::Target>() {
@@ -344,10 +344,7 @@ impl<'e> Schedule<'e> {
 }
 
 fn run_until(engine: &mut dyn Engine, ticks: u64) -> Result<()> {
-    let mut remaining = ticks;
-    while remaining != 0 {
-        remaining -= engine.run_ticks(remaining, Instant::now() + Duration::from_secs(1))?;
-    }
+    engine.advance(ticks)?;
     Ok(())
 }
 

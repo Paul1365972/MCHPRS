@@ -109,10 +109,26 @@ impl Worker {
 
 It speaks block positions and receives `Batch`es: blocks, block entities, note sounds, the ticks completed since the last batch and the ticks still owed from a `Ticks(n)` rate. A `Snapshot` is a complete `Batch` plus the pending ticks as `TickEntry`s. Each backend is started by one function that returns a `Worker`, for the direct backend `backend::direct::start(netlist, ticks, reporting)`. Threads or hardware behind it are invisible to the plot.
 
-A backend implements `Engine`, the synchronous node level trait, and `Worker::start(block_map, engine)` runs it in five millisecond slices, paced by a `TickSchedule` and published by a `SendSchedule`. `BlockMap` translates between positions and node ids and remembers the last state it reported for every node. Tests, benchmarks and `rilc` call `Engine` directly. Engines may live outside this crate; `mchprs_redpiler_fpga` provides the phase reference, Verilator and FPGA board engines.
+A backend implements `Engine`, the node level trait, and `Worker::start(block_map, engine)` drives it on its own thread in five millisecond slices: it forwards the tick and send rates, calls `run` while the engine asks to resume, and publishes changes by a `SendSchedule`. An engine paces its own ticks by the tick rate, so hardware can run without the host in its loop. Engines that run ticks only when asked implement `SteppedEngine` instead, and `HostPaced` paces them with a `TickSchedule`. `BlockMap` translates between positions and node ids and remembers the last state it reported for every node. Tests, benchmarks and `rilc` call `Engine` directly and step exactly with `advance`. Engines may live outside this crate; `mchprs_redpiler_fpga` provides the phase reference, Verilator and FPGA board engines.
 
 ```rust
 pub trait Engine: Send {
+    fn set_tick_rate(&mut self, rate: TickRate) -> Result<(), EngineError>;
+    fn set_send_rate(&mut self, rate: SendRate) -> Result<(), EngineError>;
+    fn run(&mut self, deadline: Instant) -> Result<Progress, EngineError>;
+    fn input(&mut self, node: NodeId, input: Input) -> Result<(), EngineError>;
+    fn take_changes(&mut self) -> Result<NodeChanges, EngineError>;
+    fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError>;
+    fn advance(&mut self, ticks: u64) -> Result<(), EngineError>;
+}
+
+pub struct Progress {
+    pub ticks_completed: u64,
+    pub ticks_owed: u64,
+    pub resume: Resume, // Now, After(Duration) or OnRequest
+}
+
+pub trait SteppedEngine: Send {
     fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> Result<u64, EngineError>;
     fn input(&mut self, node: NodeId, input: Input) -> Result<(), EngineError>;
     fn take_changes(&mut self) -> Result<NodeChanges, EngineError>;

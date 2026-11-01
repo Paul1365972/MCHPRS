@@ -1,8 +1,8 @@
 use crate::circuit::{Circuit, Kind, State};
 use mchprs_redpiler::compile_graph::SignalStrength;
 use mchprs_redpiler::{
-    Engine, EngineError, EngineSnapshot, Input, NodeChanges, NodeId, NodeOutput, PendingTick,
-    Reporting,
+    EngineError, EngineSnapshot, Input, NodeChanges, NodeId, NodeOutput, PendingTick, Reporting,
+    SteppedEngine,
 };
 use std::error::Error;
 use std::mem;
@@ -91,7 +91,7 @@ fn appearance(state: State) -> (bool, SignalStrength) {
     (state.locked, state.strength)
 }
 
-impl<S: Simulator> Engine for PhaseEngine<S> {
+impl<S: Simulator> SteppedEngine for PhaseEngine<S> {
     fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> Result<u64, EngineError> {
         let mut completed = 0;
         while completed < max_ticks {

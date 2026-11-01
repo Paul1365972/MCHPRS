@@ -1,8 +1,8 @@
 use crate::backend::{BackendFailure, Batch, Snapshot};
 use crate::block_map::BlockMap;
-use crate::engine::{Engine, EngineError, Input, NodeChanges};
+use crate::engine::{Engine, EngineError, Input, NodeChanges, Resume};
 use mchprs_blocks::BlockPos;
-use mchprs_world::{SendRate, SendSchedule, Step, TickRate, TickSchedule};
+use mchprs_world::{SendRate, SendSchedule, TickRate};
 use std::ops::ControlFlow;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
@@ -137,10 +137,11 @@ fn proceed<T>(result: Result<T, EngineError>) -> ControlFlow<Exit, T> {
 struct WorkerThread {
     engine: Box<dyn Engine>,
     block_map: BlockMap,
-    tick_schedule: TickSchedule,
     send_schedule: SendSchedule,
+    resume: Resume,
     tick_rate_version: u64,
     ticks_completed: u64,
+    ticks_owed: u64,
     owed_ticks_finished: bool,
     publish_pending: bool,
     requests: Receiver<Request>,
@@ -158,10 +159,11 @@ impl WorkerThread {
         WorkerThread {
             engine,
             block_map,
-            tick_schedule: TickSchedule::new(now),
             send_schedule: SendSchedule::new(SendRate::Never, now),
+            resume: Resume::OnRequest,
             tick_rate_version: 0,
             ticks_completed: 0,
+            ticks_owed: 0,
             owed_ticks_finished: false,
             publish_pending: false,
             requests,
@@ -186,15 +188,16 @@ impl WorkerThread {
             self.handle(request)?;
         }
         let now = Instant::now();
-        let request = match self.tick_schedule.next(now) {
-            Step::Run(due) => {
-                self.run_slice(due, now)?;
-                None
+        let wait = match self.resume {
+            Resume::Now => {
+                self.run_slice(now)?;
+                return self.publish_if_due(Instant::now());
             }
-            Step::WaitFor(wait) => self.wait_for_request(Some(wait), now)?,
-            Step::Idle => self.wait_for_request(None, now)?,
+            Resume::After(wait) => Some(wait),
+            Resume::OnRequest => None,
         };
-        if let Some(request) = request {
+        self.resume = Resume::Now;
+        if let Some(request) = self.wait_for_request(wait, now)? {
             self.handle(request)?;
         }
         self.publish_if_due(Instant::now())
@@ -228,24 +231,28 @@ impl WorkerThread {
         }
     }
 
-    fn run_slice(&mut self, due: u64, now: Instant) -> ControlFlow<Exit> {
-        let completed = proceed(self.engine.run_ticks(due, now + RUN_SLICE))?;
-        let owed = self.tick_schedule.ticks_owed();
-        self.tick_schedule.complete(completed);
-        self.ticks_completed += completed;
-        self.owed_ticks_finished |= owed != 0 && self.tick_schedule.ticks_owed() == 0;
-        self.publish_pending |= completed != 0;
+    fn run_slice(&mut self, now: Instant) -> ControlFlow<Exit> {
+        let progress = proceed(self.engine.run(now + RUN_SLICE))?;
+        self.ticks_completed += progress.ticks_completed;
+        self.owed_ticks_finished |= self.ticks_owed != 0 && progress.ticks_owed == 0;
+        self.ticks_owed = progress.ticks_owed;
+        self.publish_pending |= progress.ticks_completed != 0;
+        self.resume = progress.resume;
         ControlFlow::Continue(())
     }
 
     fn handle(&mut self, request: Request) -> ControlFlow<Exit> {
         match request {
             Request::SetTickRate(rate) => {
-                self.tick_schedule.set_rate(rate, Instant::now());
+                proceed(self.engine.set_tick_rate(rate))?;
+                self.ticks_owed = rate.ticks_owed();
                 self.tick_rate_version += 1;
                 self.publish_pending = true;
             }
-            Request::SetSendRate(rate) => self.send_schedule.set_rate(rate),
+            Request::SetSendRate(rate) => {
+                proceed(self.engine.set_send_rate(rate))?;
+                self.send_schedule.set_rate(rate);
+            }
             Request::Input(pos, input) => match self.block_map.node_accepting(pos, input) {
                 Some(node) => {
                     proceed(self.engine.input(node, input))?;
@@ -299,7 +306,7 @@ impl WorkerThread {
     fn take_batch(&mut self, changes: &NodeChanges) -> Batch {
         let mut batch = self.block_map.translate(changes);
         batch.ticks_completed = std::mem::take(&mut self.ticks_completed);
-        batch.ticks_owed = self.tick_schedule.ticks_owed();
+        batch.ticks_owed = self.ticks_owed;
         self.owed_ticks_finished = false;
         self.publish_pending = false;
         batch

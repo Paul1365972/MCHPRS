@@ -9,7 +9,8 @@ use crate::backend::direct::node::ForwardLinks;
 use crate::block_map::BlockMap;
 use crate::compile_graph::SignalStrength;
 use crate::engine::{
-    Engine, EngineError, EngineSnapshot, Input, NodeChanges, PendingTick, Reporting,
+    EngineError, EngineSnapshot, HostPaced, Input, NodeChanges, PendingTick, Reporting,
+    SteppedEngine,
 };
 use crate::netlist::{Netlist, NodeId};
 use crate::worker::Worker;
@@ -23,7 +24,7 @@ pub fn start(netlist: &Netlist, ticks: &[TickEntry], reporting: Reporting) -> Wo
     let block_map = BlockMap::new(netlist);
     let pending_ticks = block_map.pending_ticks(ticks);
     let engine = DirectEngine::new(netlist, reporting, &pending_ticks);
-    Worker::start(block_map, Box::new(engine))
+    Worker::start(block_map, Box::new(HostPaced::new(engine)))
 }
 
 #[derive(Default, Clone)]
@@ -176,7 +177,7 @@ impl DirectEngine {
     }
 }
 
-impl Engine for DirectEngine {
+impl SteppedEngine for DirectEngine {
     fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> Result<u64, EngineError> {
         let mut remaining = max_ticks;
         let mut work = 0;

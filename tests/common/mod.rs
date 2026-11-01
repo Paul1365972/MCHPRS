@@ -1,13 +1,14 @@
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode, LeverFace, Repeater};
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::backend::direct::DirectEngine;
-use mchprs_redpiler::{BlockMap, CompileProgress, CompilerInput, CompilerOptions, Engine, Input};
+use mchprs_redpiler::{
+    BlockMap, CompileProgress, CompilerInput, CompilerOptions, Engine, HostPaced, Input,
+};
 use mchprs_redpiler_fpga::Target;
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
 use mchprs_world::World;
 use std::fmt::{self, Display, Formatter};
-use std::time::{Duration, Instant};
 
 #[derive(Copy, Clone)]
 pub enum TestBackend {
@@ -54,7 +55,7 @@ pub fn compile(
     let target = match engine {
         TestEngine::Direct => {
             let engine = DirectEngine::new(&netlist, options.reporting, &pending_ticks);
-            return (block_map, Box::new(engine));
+            return (block_map, Box::new(HostPaced::new(engine)));
         }
         TestEngine::Phase => Target::Phase,
         TestEngine::Verilator => Target::Verilator,
@@ -109,9 +110,7 @@ impl BackendRunner {
     pub fn tick(&mut self) {
         match &mut self.runner {
             Runner::Compiled { block_map, engine } => {
-                engine
-                    .run_ticks(1, Instant::now() + Duration::from_secs(10))
-                    .unwrap();
+                engine.advance(1).unwrap();
                 block_map
                     .translate(&engine.take_changes().unwrap())
                     .apply(&mut self.world);

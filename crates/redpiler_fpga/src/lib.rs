@@ -18,8 +18,8 @@ use board::Board;
 use circuit::Circuit;
 use engine::PhaseEngine;
 use mchprs_redpiler::{
-    BlockMap, CompileProgress, Engine, EngineError, Netlist, PassStatus, PendingTick, Reporting,
-    Worker,
+    BlockMap, CompileProgress, Engine, EngineError, HostPaced, Netlist, PassStatus, PendingTick,
+    Reporting, Worker,
 };
 use mchprs_world::TickEntry;
 use reference::Reference;
@@ -128,21 +128,21 @@ pub fn prepare(
     report(Stage::LowerCircuit);
     let circuit = Circuit::lower(netlist, pending_ticks)?;
     let engine: Box<dyn Engine> = match target {
-        Target::Phase => Box::new(PhaseEngine::new(
+        Target::Phase => Box::new(HostPaced::new(PhaseEngine::new(
             Reference::new(&circuit),
             &circuit,
             reporting,
-        )),
-        Target::Verilator => Box::new(PhaseEngine::new(
+        ))),
+        Target::Verilator => Box::new(HostPaced::new(PhaseEngine::new(
             Verilator::compile(&circuit, reporting, &report)?,
             &circuit,
             reporting,
-        )),
-        Target::Fpga => Box::new(PhaseEngine::new(
+        ))),
+        Target::Fpga => Box::new(HostPaced::new(PhaseEngine::new(
             Board::program(&circuit, reporting, &report)?,
             &circuit,
             reporting,
-        )),
+        ))),
     };
     progress.set(None);
     Ok(engine)

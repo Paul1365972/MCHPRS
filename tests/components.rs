@@ -3,9 +3,8 @@ use common::*;
 
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockDirection;
-use mchprs_redpiler::{CompilerOptions, Engine, Input, NodeId, Reporting};
+use mchprs_redpiler::{CompilerOptions, Input, NodeId, Reporting};
 use mchprs_world::{testing::TestWorld, TickPriority, World};
-use std::time::{Duration, Instant};
 
 test_all_backends!(lever_on_off);
 fn lever_on_off(backend: TestBackend) {
@@ -220,12 +219,6 @@ fn pending_repeater_pulses_without_input(backend: TestBackend) {
     runner.check_block_powered(trapdoor_pos, false);
 }
 
-fn run_ticks(engine: &mut dyn Engine, ticks: u64) {
-    engine
-        .run_ticks(ticks, Instant::now() + Duration::from_secs(10))
-        .unwrap();
-}
-
 fn snapshots_cover_the_reported_blocks(engine_kind: TestEngine) {
     let lever_pos = pos(0, 2, 0);
     let repeater_pos = pos(1, 1, 0);
@@ -248,14 +241,14 @@ fn snapshots_cover_the_reported_blocks(engine_kind: TestEngine) {
         let every_block = reporting.snapshots_every_block();
 
         engine.input(node(lever_pos), Input::Interact).unwrap();
-        run_ticks(engine.as_mut(), 1);
+        engine.advance(1).unwrap();
         let pending_ticks = engine.snapshot().unwrap().pending_ticks;
         let repeater_pending = pending_ticks
             .iter()
             .any(|tick| tick.node == node(repeater_pos));
         assert_eq!(repeater_pending, every_block, "{reporting:?}");
 
-        run_ticks(engine.as_mut(), 2);
+        engine.advance(2).unwrap();
         let changes = engine.snapshot().unwrap().changes;
         let changed: Vec<NodeId> = changes.outputs.iter().map(|&(node, _)| node).collect();
         assert!(changed.contains(&node(trapdoor_pos)), "{reporting:?}");
