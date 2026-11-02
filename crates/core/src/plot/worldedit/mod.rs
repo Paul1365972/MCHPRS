@@ -148,6 +148,7 @@ pub fn execute_command(
     if command.mutates_world {
         plot.reset_redpiler();
     }
+    let from = plot.players[player_idx].standing_on();
     let ctx = CommandExecuteContext {
         plot: &mut plot.world,
         player: &mut plot.players[player_idx],
@@ -155,6 +156,7 @@ pub fn execute_command(
         flags: ctx_flags,
     };
     (command.execute_fn)(ctx);
+    plot.step(from, plot.players[player_idx].standing_on());
     if command.mutates_world {
         plot.publish_world();
     }

@@ -87,7 +87,7 @@ impl Plot {
             }
             "middle" => {
                 let center = Plot::get_center(plot_x, plot_z);
-                self.players[player].teleport(PlayerPos::new(center.0, 64.0, center.1));
+                self.teleport_player(player, PlayerPos::new(center.0, 64.0, center.1));
             }
             "visit" | "v" => {
                 if !(1..=2).contains(&args.len()) {
@@ -111,7 +111,7 @@ impl Plot {
                 if !plots.is_empty() {
                     if let Some(&(plot_x, plot_z)) = plots.get(idx) {
                         let center = Plot::get_center(plot_x, plot_z);
-                        self.players[player].teleport(PlayerPos::new(center.0, 64.0, center.1));
+                        self.teleport_player(player, PlayerPos::new(center.0, 64.0, center.1));
                     } else {
                         self.players[player]
                             .send_system_message(&format!("Plot range (1, {}).", plots.len()));
@@ -143,7 +143,7 @@ impl Plot {
                 }
 
                 let center = Plot::get_center(new_plot_x, new_plot_z);
-                self.players[player].teleport(PlayerPos::new(center.0, 64.0, center.1));
+                self.teleport_player(player, PlayerPos::new(center.0, 64.0, center.1));
             }
             "lock" => {
                 if self.locked_players.insert(self.players[player].entity_id) {
@@ -375,7 +375,7 @@ impl Plot {
                     }
                     self.players[player]
                         .send_system_message(&format!("Teleporting to ({}, {}, {})", x, y, z));
-                    self.players[player].teleport(PlayerPos::new(x, y, z));
+                    self.teleport_player(player, PlayerPos::new(x, y, z));
                 } else if args.len() == 1 {
                     self.players[player]
                         .send_system_message(&format!("Teleporting to {}", args[0]));
