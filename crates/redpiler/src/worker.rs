@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use tracing::{error, warn};
 
 const RUN_SLICE: Duration = Duration::from_millis(5);
+const PROGRESS_RATE: SendRate = SendRate::PerSecond(10.0);
 
 enum Request {
     SetTickRate(TickRate),
@@ -138,6 +139,7 @@ struct WorkerThread {
     engine: Box<dyn Engine>,
     block_map: BlockMap,
     send_schedule: SendSchedule,
+    progress_schedule: SendSchedule,
     resume: Resume,
     tick_rate_version: u64,
     ticks_completed: u64,
@@ -160,6 +162,7 @@ impl WorkerThread {
             engine,
             block_map,
             send_schedule: SendSchedule::new(SendRate::Never, now),
+            progress_schedule: SendSchedule::new(PROGRESS_RATE, now),
             resume: Resume::OnRequest,
             tick_rate_version: 0,
             ticks_completed: 0,
@@ -220,7 +223,11 @@ impl WorkerThread {
             .publish_pending
             .then(|| self.send_schedule.until_send(now))
             .flatten();
-        let received = match [until_tick, until_send].into_iter().flatten().min() {
+        let until_progress = (self.ticks_completed != 0)
+            .then(|| self.progress_schedule.until_send(now))
+            .flatten();
+        let waits = [until_tick, until_send, until_progress];
+        let received = match waits.into_iter().flatten().min() {
             Some(wait) => self.requests.recv_timeout(wait),
             None => self.requests.recv().map_err(RecvTimeoutError::from),
         };
@@ -278,13 +285,23 @@ impl WorkerThread {
     }
 
     fn publish_if_due(&mut self, now: Instant) -> ControlFlow<Exit> {
-        let due = self.owed_ticks_finished || self.send_schedule.is_due(now);
-        if !self.publish_pending || !due {
+        let changes_due =
+            self.publish_pending && (self.owed_ticks_finished || self.send_schedule.is_due(now));
+        let progress_due = self.ticks_completed != 0 && self.progress_schedule.is_due(now);
+        let batch = if changes_due {
+            let changes = proceed(self.engine.take_changes())?;
+            self.send_schedule.record_send(now);
+            self.take_batch(&changes)
+        } else if progress_due {
+            Batch {
+                ticks_completed: std::mem::take(&mut self.ticks_completed),
+                ticks_owed: self.ticks_owed,
+                ..Batch::default()
+            }
+        } else {
             return ControlFlow::Continue(());
-        }
-        let changes = proceed(self.engine.take_changes())?;
-        let batch = self.take_batch(&changes);
-        self.send_schedule.record_send(now);
+        };
+        self.progress_schedule.record_send(now);
         let published = Published {
             batch,
             tick_rate_version: self.tick_rate_version,
