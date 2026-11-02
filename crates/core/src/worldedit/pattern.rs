@@ -209,7 +209,7 @@ fn parse_weighted_pattern(input: &str) -> Result<WeightedPattern, PatternParseEr
             if rest.contains('%') {
                 return Err(PatternParseError::InvalidWeight(input.to_string()));
             }
-            (weight / 100.0, rest)
+            (weight, rest)
         }
         _ => (1.0, input),
     };

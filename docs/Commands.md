@@ -177,7 +177,7 @@ Servers can add their own aliases in [Config.toml](../README.md#command-aliases)
 
 | Type | Values | Description |
 | --- | --- | --- |
-| `<pattern>` | `stone`, `minecraft:glass`, `repeater[delay=3]`, `stone,20%glass`, `^[powered=true]` | Blocks to place, optionally with states. Commas separate random choices; prefixes such as `20%` set relative weights (default `100%`). `^` preserves compatible existing states unless overridden. |
+| `<pattern>` | `stone`, `minecraft:glass`, `repeater[delay=3]`, `stone,20%glass`, `^[powered=true]` | Blocks to place, optionally with states. Commas separate random choices; prefixes such as `20%` set relative weights (default `1%`). `^` preserves compatible existing states unless overridden. |
 | `<mask>` | `stone,glass`, `repeater[delay=2,powered=true]`, `!stone`, `#existing`, `#solid`, `#surface`, `>stone`, `<stone`, `%50`, `^[powered=true]` | Select blocks by type, state, or condition. Block lists match any state unless states are given. `!` negates, `>` checks the block below, `<` checks the block above, `%` matches randomly, `^[...]` matches block states. Quote masks separated by spaces to require all of them to match, e.g. `"stone #solid"`. |
 | `<type>` | `barrel`, `furnace`, `hopper` | Container type to use. |
 | `<angle>` | `90`, `180`, `270`, `-90`, `-180` | Rotation in degrees, in 90° steps. |
