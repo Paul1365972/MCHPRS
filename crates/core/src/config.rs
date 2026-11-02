@@ -1,10 +1,15 @@
+use mchprs_commands::flag::{FlagValue, FlagValues};
+use mchprs_redpiler::backend::Backend;
+use mchprs_redpiler_backends::BACKENDS;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::{fs, sync::LazyLock};
 use tracing::warn;
 
-pub static CONFIG: LazyLock<ServerConfig> = LazyLock::new(|| ServerConfig::load("Config.toml"));
+const PATH: &str = "Config.toml";
+
+pub static CONFIG: LazyLock<ServerConfig> = LazyLock::new(|| ServerConfig::load(PATH));
 
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
@@ -18,6 +23,7 @@ pub struct ServerConfig {
     pub schemati: bool,
     pub block_in_hitbox: bool,
     pub velocity: VelocityConfig,
+    pub redpiler: RedpilerConfig,
     pub command_aliases: HashMap<String, String>,
 }
 
@@ -33,6 +39,7 @@ impl Default for ServerConfig {
             schemati: false,
             block_in_hitbox: true,
             velocity: VelocityConfig::default(),
+            redpiler: RedpilerConfig::default(),
             command_aliases: HashMap::new(),
         }
     }
@@ -42,6 +49,53 @@ impl Default for ServerConfig {
 pub struct VelocityConfig {
     pub enabled: bool,
     pub secret: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RedpilerConfig {
+    pub default_engine: String,
+    #[serde(default)]
+    pub backends: BTreeMap<String, toml::Table>,
+}
+
+impl Default for RedpilerConfig {
+    fn default() -> Self {
+        RedpilerConfig {
+            default_engine: BACKENDS[0].name().to_owned(),
+            backends: BTreeMap::new(),
+        }
+    }
+}
+
+impl RedpilerConfig {
+    pub fn default_engine(&self) -> &'static dyn Backend {
+        mchprs_redpiler_backends::named(&self.default_engine).unwrap_or_else(|error| {
+            panic!("{PATH}'s `redpiler.default_engine` is invalid: {error}")
+        })
+    }
+
+    pub fn flags(&self, backend: &dyn Backend) -> FlagValues {
+        let mut flags = FlagValues::default();
+        let Some(table) = self.backends.get(backend.name()) else {
+            return flags;
+        };
+        for (name, value) in table {
+            let key = format!("redpiler.backends.{}.{name}", backend.name());
+            let Some(&flag) = backend.flags().iter().find(|flag| flag.name() == name) else {
+                warn!("Ignoring `{key}` in {PATH}: unknown flag");
+                continue;
+            };
+            let value = match (flag.value_name(), value) {
+                (None, toml::Value::Boolean(on)) => FlagValue::Switch(*on),
+                (Some(_), toml::Value::String(text)) => FlagValue::Text(text.clone()),
+                (Some(_), toml::Value::Integer(number)) => FlagValue::Text(number.to_string()),
+                (None, _) => panic!("{PATH}'s `{key}` has to be true or false"),
+                (Some(_), _) => panic!("{PATH}'s `{key}` has to be text or a number"),
+            };
+            flags.set(flag, value);
+        }
+        flags
+    }
 }
 
 impl ServerConfig {
@@ -79,8 +133,14 @@ impl ServerConfig {
                 );
             }
         }
-        table
+        let config: ServerConfig = table
             .try_into()
-            .unwrap_or_else(|error| panic!("{path} is invalid: {error}"))
+            .unwrap_or_else(|error| panic!("{path} is invalid: {error}"));
+        for name in config.redpiler.backends.keys() {
+            if mchprs_redpiler_backends::named(name).is_err() {
+                warn!("{path} has `redpiler.backends.{name}`, but there is no {name} engine, so it is ignored");
+            }
+        }
+        config
     }
 }

@@ -2,89 +2,26 @@ use super::Plot;
 use crate::player::PacketSender;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
+use mchprs_commands::flag::FlagValues;
 use mchprs_network::PlayerPacketSender;
+use mchprs_redpiler::backend::{Backend, CompilePlan};
 use mchprs_redpiler::circuit::Circuit;
-use mchprs_redpiler::compile::{CompileOptions, Stage};
-use mchprs_redpiler::engine::{Engine, EngineError};
-use mchprs_redpiler::ports::{Observed, Ports};
+use mchprs_redpiler::compile::Stage;
 use mchprs_redpiler::simulation::Simulation;
-use mchprs_redpiler_direct::DirectEngine;
 use mchprs_redstone::tick_queue::{TickEntry, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use mchprs_worker::{Event, RequestId, SendRate, TickRate, Worker};
 use std::collections::HashMap;
-use std::fmt;
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, trace, warn};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum EngineKind {
-    #[default]
-    Direct,
-}
-
-impl EngineKind {
-    pub const ALL: [EngineKind; 1] = [EngineKind::Direct];
-
-    pub fn build(self, circuit: Arc<Circuit>) -> Result<Box<dyn Engine>, EngineError> {
-        Ok(match self {
-            EngineKind::Direct => Box::new(DirectEngine::new(circuit)?),
-        })
-    }
-}
-
-impl fmt::Display for EngineKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EngineKind::Direct => write!(f, "direct"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RedpilerOptions {
-    pub optimize: bool,
-    pub reorder: bool,
-    pub io_only: bool,
-    pub wire_dot_out: bool,
-    pub illegal_states_out: bool,
-    pub wire_cross_out: bool,
-}
-
-impl RedpilerOptions {
-    pub fn compile_options(&self) -> CompileOptions {
-        let mut ports = Ports::conventional();
-        if self.wire_dot_out {
-            ports = ports.with_wire_dots();
-        }
-        if self.wire_cross_out {
-            ports = ports.with_wire_crosses();
-        }
-        if self.illegal_states_out {
-            ports = ports.with_illegal_wires();
-        }
-        let observed = if self.io_only {
-            Observed::Ports
-        } else if self.optimize {
-            Observed::Components
-        } else {
-            Observed::Everything
-        };
-        CompileOptions {
-            ports,
-            observed,
-            optimize: self.optimize,
-            reorder: self.reorder,
-        }
-    }
-}
-
 pub struct Redpiler {
-    pub options: RedpilerOptions,
-    pub engine: EngineKind,
+    pub backend: &'static dyn Backend,
+    pub flags: FlagValues,
+    pub ports_only: bool,
     pub worker: Worker,
     pub stage: Option<Stage>,
     pub circuit: Option<Arc<Circuit>>,
@@ -163,7 +100,7 @@ impl Plot {
                 let message = format!(
                     "Redpiler compiled {} nodes for the {} engine in {:?}.",
                     circuit.len(),
-                    redpiler.engine,
+                    redpiler.backend.name(),
                     redpiler.started.elapsed()
                 );
                 redpiler.stage = None;
@@ -266,15 +203,19 @@ impl Plot {
         self.refresh_scoreboard();
     }
 
-    pub fn start_redpiler(&mut self, options: RedpilerOptions, engine: EngineKind) {
-        debug!("Starting redpiler with the {engine} engine");
+    pub fn start_redpiler(
+        &mut self,
+        backend: &'static dyn Backend,
+        flags: FlagValues,
+        plan: CompilePlan,
+    ) {
+        debug!("Starting redpiler with the {} engine", backend.name());
         self.reset_pressure_plates();
         let region = self.world.region();
         let blocks = self.world.copy_blocks();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
         let compile_ticks = ticks.clone();
-        let compile_options = options.compile_options();
-        let passes = mchprs_redpiler::passes::standard(&compile_options);
+        let ports_only = plan.extract.ports_only;
         let worker = Worker::spawn(
             tick_rate(self.tps),
             send_rate(self.world.world_send_rate),
@@ -283,16 +224,17 @@ impl Plot {
                     &blocks,
                     region,
                     &compile_ticks,
-                    &compile_options,
-                    &passes,
+                    &plan.extract,
+                    &plan.passes,
                     progress,
                 )?;
-                Ok(Simulation::new(engine.build(Arc::new(circuit))?))
+                Ok(Simulation::new((plan.build)(Arc::new(circuit))?))
             },
         );
         self.redpiler = Some(Redpiler {
-            options,
-            engine,
+            backend,
+            flags,
+            ports_only,
             worker,
             stage: None,
             circuit: None,

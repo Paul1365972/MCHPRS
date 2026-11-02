@@ -1,5 +1,5 @@
 use crate::block_map::{BlockChanges, BlockMap};
-use crate::circuit::Circuit;
+use crate::circuit::{Circuit, NodeId};
 use crate::engine::{DriveError, Engine, EngineError, Input, Snapshot};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
@@ -31,6 +31,10 @@ impl<E: Engine> Simulation<E> {
             .circuit
             .node_at(position)
             .ok_or(DriveError::NoNode(position))?;
+        self.drive_node(node, input)
+    }
+
+    pub fn drive_node(&mut self, node: NodeId, input: Input) -> Result<(), DriveError> {
         self.circuit.check_input(node, input)?;
         self.engine.drive(node, input).map_err(DriveError::Engine)
     }

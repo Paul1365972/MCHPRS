@@ -166,8 +166,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
             let (pos, distance) = discovered[idx];
             idx += 1;
 
-            // Dust cannot carry power further, which also keeps the distance from overflowing
-            if distance > 15 {
+            if distance >= 15 {
                 continue;
             }
 

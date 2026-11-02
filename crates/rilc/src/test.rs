@@ -38,7 +38,7 @@ fn run_test(
         Some(schematic_path) => {
             match crate::extract_schematic(
                 &test_path.parent().unwrap().join(schematic_path),
-                &test.options.compile_options(),
+                &test.options.extract,
             ) {
                 Some(graph) => graph,
                 None => return TestOutcome::Failed,
@@ -47,8 +47,12 @@ fn run_test(
         None => test.graph,
     };
 
-    let Some(passes) = crate::chosen_passes(&test.options) else {
-        return TestOutcome::Failed;
+    let passes = match crate::named_passes(&test.options.passes) {
+        Ok(passes) => passes,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return TestOutcome::Failed;
+        }
     };
     let result_graph = crate::run_passes(&passes, graph, false);
     let test_path = test_path.strip_prefix(test_root).unwrap_or(test_path);

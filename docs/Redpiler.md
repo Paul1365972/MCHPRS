@@ -10,11 +10,11 @@ Extraction turns the plot into the nodes and links of the graph.
 
 ## Nodes
 
-Extraction iterates through all the blocks in the plot and tries to identify them as Redstone components. If a block is a Repeater, Comparator, Torch, Stone Button, Lamp, Lever, Pressure Plate, Iron Trapdoor or Note Block, a new node is created in the graph with the appropriate node type containing the necessary state information. Redstone Wires are added too, unless the circuit is optimized and the wire is not observed.
+Extraction iterates through all the blocks in the plot and tries to identify them as Redstone components. If a block is a Repeater, Comparator, Torch, Stone Button, Lamp, Lever, Pressure Plate, Iron Trapdoor or Note Block with air above it, a new node is created in the graph with the appropriate node type containing the necessary state information. Redstone Wires are added too, except that with `--optimize` only wires that are ports are added.
 
 Blocks that have a comparator override such as Barrels, Furnaces, Hoppers, Cauldron, Composters, and Cake are also added into the graph as constant nodes, and so are Redstone Blocks.
 
-Some nodes are ports: inputs the caller sets, and outputs the caller watches. Levers, buttons and pressure plates are inputs; lamps, trapdoors and note blocks are outputs, and the `--wire-*-out` flags make some wires outputs too. The caller sees the observed nodes change while the circuit runs: every node by default; with `--optimize`, every node except wires that aren't ports; with `--io-only`, only the ports.
+Some nodes are ports: inputs set from outside the circuit, and outputs watched from outside it. Levers, buttons and pressure plates are inputs; lamps, trapdoors and note blocks are outputs, and the `--wire-*-out` flags make matching wires outputs too. Observed nodes report their changes while the circuit runs: every node, or with `--io-only` only the ports.
 
 The plot's pending ticks become the pending ticks of their nodes. Ticks due together with the same priority keep their order from the plot's tick queue.
 
@@ -27,20 +27,17 @@ This is the most complex part of the compile, but it is also one of the most imp
 To start, extraction iterates through all nodes in the graph. Different types of nodes need to be handled differently. For example, Torches need to look for links on the block it is placed on, but Comparators and Repeaters need to look for links in the direction it is facing as well as links from the side.
 
 When the input block of a node is searched, the block is either a component that can provide Redstone power on its own, or a Redstone Wire. If it can provide power, then it can directly create a link to that component. The corresponding node in the graph is looked up based on the position of the component, and a link to the node is created with a weight of 0. If the block is a Redstone Wire, then a breadth-first search is run to look for components that provide power to the Wire. The distance of the path taken from the starting wire to the input components are recorded as the weight of the links. Then, input components are looked up in the graph, and links are created.
+The search stops after 15 wires, so every link weighs less than 15.
 
 Each node's outgoing links are ordered by target type, then by target index, which is the order the engine updates them in.
 
 # The Pass System
 
-Passes receive mutable access to the compile graph.
-
-## The `ClampWeights` Pass
-
-The links created by extraction are weighted by the distance taken in the breadth-first search, but this may search Wires infinetely even though wires can only have a maximum 15 signal strength that decays every block. Therefore, this optimization pass was created to remove any links with a 15 or greater weight since they ultimately have no effect.
+Passes receive mutable access to the compile graph. Each engine chooses which passes run, in order; without `--optimize`, none do.
 
 ## The `DedupLinks` Pass
 
-Sometimes, the breadth-first search done by extraction can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 15, the link with weight 15 is removed.
+Sometimes, the breadth-first search done by extraction can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 14, the link with weight 14 is removed.
 
 ## The `ConstantFold` Pass
 
@@ -73,30 +70,30 @@ The sets do not track correlations between inputs, so they can include combinati
 ## The `Coalesce` Pass
 
 There are often times when a wire powers many different components in the same way. For example, it is common for vertical multi-bit latches to be controlled by a slab tower that powers several repeaters that lock other repeaters. This is very inefficient because these repeaters will always have the exact same value, but they are still updated and ticked independently. To avoid this logic duplication, this optimization pass merges duplicate nodes into one, removing duplicate nodes from the graph and adjusting links to point to the new node.
-Nodes that are not inputs, have no pending tick, and have the same type, initial state and input links are identical and get merged, outputs only with outputs.
-A merged output keeps the blocks of all merged nodes and writes each of them.
-Input links are compared by source, link type and weight, and only the strongest link per source and link type counts.
-The weight is ignored when a binary source (everything except comparators, wires and constants) feeds a binary reader (everything except comparators and wires), since any link that carries a signal powers the reader the same way.
-Merging can make the nodes fed by the merged node identical as well, so those are checked again.
+Nodes merge when they have the same type, port role, initial state and input links. Inputs and nodes with a pending tick never merge.
+The merged node keeps the blocks of all merged nodes and writes each of them.
+Input links match by source, link type and weight, counting only the strongest link per source and link type.
+The weight doesn't count when a binary source (everything except comparators, wires and constants) feeds a binary reader (everything except comparators and wires), as any link weighs less than 15.
+After a merge, the nodes fed by the merged node are checked again.
 
 The merged node updates the targets of one merged node after another, as if they ticked right after each other (see [Tick Ordering](#tick-ordering)). This can change the order of updates within a tick, so the pass only runs with `--reorder`.
 Nodes that read their own output, or whose inputs update each other, never merge: an input could change between their ticks.
 
 ## The `PruneOrphans` Pass
 
-Any redstone components that do not contribute to the functioning of output components (Trapdoors and Lamps) can be disregarded.
-This pass recusively marks all nodes connected to an output node and removes all remaining unmarked nodes (Depth-First-Search).
-Nodes with pending ticks and their input dependencies are also retained.
+This pass removes every node that isn't observed and doesn't feed an observed node, directly or through other nodes.
+Nodes with pending ticks and the nodes feeding them stay.
+It only removes nodes with `--io-only`; otherwise every node is observed.
 
 # Circuit Files
 
-`/redpiler export` writes the compiled circuit to a file, and `rilc compile` writes one from a schematic. The file holds the nodes and links of the circuit in a versioned binary format which can be read by other programs. This can be greatly useful for people who wish to experiment with Redstone and might want a directed weighted graph just like what Redpiler creates.
+`/redpiler export` writes the compiled circuit to a file. `rilc compile` writes one from a schematic for an engine and its flags, like `rilc compile plot.schem -e "direct -o"`. The file holds the nodes and links of the circuit in a versioned binary format which can be read by other programs. This can be greatly useful for people who wish to experiment with Redstone and might want a directed weighted graph just like what Redpiler creates.
 
 # Engines
 
 An engine runs a circuit. It may implement redstone execution in any way, whether that is by just-in-time compiling redstone or by interpreting the graph.
 
-`rilc diff` runs a circuit on two engines tick by tick and explains the first difference, comparing every node's state and pending tick, and how many notes each note block played.
+`rilc diff` runs a circuit on two engines tick by tick and explains the first difference. `rilc diff plot.schem --engines "direct" "direct -o" --ticks 1000` checks the optimized circuit against the plain one. Given a schematic, each engine compiles it as it would in game. Engines that end up with the same circuit are compared node by node, including pending ticks; others by the blocks at the positions both show. Note blocks have to play equally often on both, and both engines have to show every port of either circuit.
 
 ## How Redstone Works
 
@@ -142,7 +139,7 @@ A tick is never scheduled at a Trapdoor node, therefore a Trapdoor is never tick
 
 ### Wire
 
-If a wire is updated (in an optimized circuit, only observed wires are nodes), its signal strength is calculated. If that value is different from its current state, its state is changed (this is instant). Since Wires are leaf nodes, there is no need to update any nodes here since no nodes can be affected by this change.
+If a wire is updated (in an optimized circuit, only wires that are ports are nodes), its signal strength is calculated. If that value is different from its current state, its state is changed (this is instant). Since Wires are leaf nodes, there is no need to update any nodes here since no nodes can be affected by this change.
 
 A tick is never scheduled at a Wire node, therefore a Wire is never ticked.
 

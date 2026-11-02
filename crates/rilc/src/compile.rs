@@ -1,16 +1,23 @@
 use mchprs_redpiler::circuit::Circuit;
+use mchprs_redpiler::extract::ExtractOptions;
+use mchprs_redpiler::passes::Pass;
 use mchprs_ril::ast::Global;
 use mchprs_ril::dump_graph;
-use mchprs_ril::RilOptions;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::{fs, process};
 
-pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &RilOptions) {
+pub struct Compilation<'a> {
+    pub extract: &'a ExtractOptions,
+    pub passes: &'a [&'a dyn Pass],
+    pub print_after_all: bool,
+}
+
+pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, compilation: &Compilation) {
     let (output, extension) = if input_path.extension() == Some(OsStr::new("ril")) {
-        (compile_ril(input_path, options).into_bytes(), "out.ril")
+        (compile_ril(input_path, compilation).into_bytes(), "out.ril")
     } else {
-        (compile_schematic(input_path, options), "circuit")
+        (compile_schematic(input_path, compilation), "circuit")
     };
     let output_path = match output_path {
         Some(path) => path.clone(),
@@ -22,7 +29,7 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &RilOp
     }
 }
 
-fn compile_ril(input_path: &Path, options: &RilOptions) -> String {
+fn compile_ril(input_path: &Path, compilation: &Compilation) -> String {
     let ril_src = match fs::read_to_string(input_path) {
         Ok(src) => src,
         Err(err) => {
@@ -34,19 +41,13 @@ fn compile_ril(input_path: &Path, options: &RilOptions) -> String {
         process::exit(1);
     };
 
-    let Some(passes) = crate::chosen_passes(options) else {
-        process::exit(1);
-    };
-
     let mut result = String::new();
     for (name, global) in &module.globals {
         let graph = match global {
-            Global::Circuit(circuit) => {
-                module.get_graph(circuit, options.compile_options().observed)
-            }
+            Global::Circuit(circuit) => module.get_graph(circuit, compilation.extract),
             Global::Schematic(schematic) => {
                 let schematic_path = input_path.parent().unwrap().join(&schematic.path);
-                match crate::extract_schematic(&schematic_path, &options.compile_options()) {
+                match crate::extract_schematic(&schematic_path, compilation.extract) {
                     Some(graph) => graph,
                     None => process::exit(1),
                 }
@@ -61,7 +62,8 @@ fn compile_ril(input_path: &Path, options: &RilOptions) -> String {
             }
         };
 
-        let result_graph = crate::run_passes(&passes, graph, options.print_after_all);
+        let result_graph =
+            crate::run_passes(compilation.passes, graph, compilation.print_after_all);
         result.push('\n');
         dump_graph(&mut result, &result_graph, name).unwrap();
         result.push('\n');
@@ -69,14 +71,11 @@ fn compile_ril(input_path: &Path, options: &RilOptions) -> String {
     result
 }
 
-fn compile_schematic(input_path: &Path, options: &RilOptions) -> Vec<u8> {
-    let Some(graph) = crate::extract_schematic(input_path, &options.compile_options()) else {
+fn compile_schematic(input_path: &Path, compilation: &Compilation) -> Vec<u8> {
+    let Some(graph) = crate::extract_schematic(input_path, compilation.extract) else {
         process::exit(1);
     };
-    let Some(passes) = crate::chosen_passes(options) else {
-        process::exit(1);
-    };
-    let graph = crate::run_passes(&passes, graph, options.print_after_all);
+    let graph = crate::run_passes(compilation.passes, graph, compilation.print_after_all);
     Circuit::new(graph)
         .expect("extraction and the passes keep the circuit invariants")
         .to_bytes()

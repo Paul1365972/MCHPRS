@@ -74,7 +74,6 @@ pub struct ForwardLink {
 impl ForwardLink {
     pub fn new(id: NodeId, side: bool, weight: u8) -> Self {
         assert!(id.index() < (1 << 27));
-        assert!(weight < 15);
         Self {
             data: (id.index() as u32) << 5 | if side { 1 << 4 } else { 0 } | weight as u32,
         }

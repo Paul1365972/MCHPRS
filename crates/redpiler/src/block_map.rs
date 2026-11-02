@@ -7,6 +7,7 @@ use mchprs_blocks::BlockPos;
 use mchprs_redstone::tick_queue::TickEntry;
 use mchprs_redstone::RedstoneWorld;
 use smallvec::SmallVec;
+use std::mem;
 
 type NodeBlocks = SmallVec<[(BlockPos, Block); 1]>;
 
@@ -14,7 +15,15 @@ type NodeBlocks = SmallVec<[(BlockPos, Block); 1]>;
 pub struct BlockChanges {
     pub blocks: Vec<(BlockPos, Block)>,
     pub block_entities: Vec<(BlockPos, BlockEntity)>,
-    pub notes: Vec<(BlockPos, Instrument, u8)>,
+    pub notes: Vec<PlayedNote>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlayedNote {
+    pub position: BlockPos,
+    pub instrument: Instrument,
+    pub note: u8,
+    pub count: u32,
 }
 
 impl BlockChanges {
@@ -29,8 +38,8 @@ impl BlockChanges {
         for (position, block_entity) in &self.block_entities {
             world.set_block_entity(*position, Some(block_entity.clone()));
         }
-        for &(position, instrument, note) in &self.notes {
-            world.play_note(position, instrument, note);
+        for note in &self.notes {
+            world.play_note(note.position, note.instrument, note.note);
         }
     }
 }
@@ -40,8 +49,8 @@ pub struct BlockMap {
     states: Box<[NodeState]>,
     dirty: Box<[bool]>,
     dirty_nodes: Vec<NodeId>,
-    played: Box<[bool]>,
-    notes: Vec<NodeId>,
+    plays: Box<[u32]>,
+    played: Vec<NodeId>,
 }
 
 impl BlockMap {
@@ -58,8 +67,8 @@ impl BlockMap {
             states: circuit.ids().map(|id| circuit.node(id).state).collect(),
             dirty: vec![false; circuit.len()].into_boxed_slice(),
             dirty_nodes: Vec::new(),
-            played: vec![false; circuit.len()].into_boxed_slice(),
-            notes: Vec::new(),
+            plays: vec![0; circuit.len()].into_boxed_slice(),
+            played: Vec::new(),
         }
     }
 
@@ -71,11 +80,12 @@ impl BlockMap {
         for (node, state) in changes.states {
             self.set_state(node, state);
         }
-        for (node, _) in changes.notes {
-            if !self.played[node.index()] {
-                self.played[node.index()] = true;
-                self.notes.push(node);
+        for (node, count) in changes.notes {
+            let plays = &mut self.plays[node.index()];
+            if *plays == 0 {
+                self.played.push(node);
             }
+            *plays = plays.saturating_add(count);
         }
     }
 
@@ -118,8 +128,8 @@ impl BlockMap {
                 }
             }
         }
-        for node in self.notes.drain(..) {
-            self.played[node.index()] = false;
+        for node in self.played.drain(..) {
+            let count = mem::take(&mut self.plays[node.index()]);
             let NodeKind::NoteBlock { instrument, note } = circuit.node(node).kind else {
                 panic!(
                     "node {} played a note but is not a note block",
@@ -127,7 +137,12 @@ impl BlockMap {
                 );
             };
             for &(position, _) in &self.blocks[node.index()] {
-                changes.notes.push((position, instrument, note));
+                changes.notes.push(PlayedNote {
+                    position,
+                    instrument,
+                    note,
+                    count,
+                });
             }
         }
         changes

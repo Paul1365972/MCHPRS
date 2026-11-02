@@ -3,54 +3,54 @@ use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::{Block, LeverFace, Repeater};
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockPos};
-use mchprs_redpiler::compile::CompileOptions;
+use mchprs_commands::flag::{FlagValue, FlagValues};
+use mchprs_redpiler::backend::Backend;
 use mchprs_redpiler::engine::Input;
-use mchprs_redpiler::ports::Observed;
+use mchprs_redpiler::passes::OPTIMIZE;
 use mchprs_redpiler::simulation::Simulation;
-use mchprs_redpiler_direct::DirectEngine;
+use mchprs_redpiler_direct::DirectBackend;
 use mchprs_redstone::interpreter::Interpreter;
 use mchprs_redstone::wire::make_cross;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
 struct RedpilerInstance {
-    options: CompileOptions,
-    simulation: Simulation<DirectEngine>,
+    label: String,
+    simulation: Simulation,
 }
 
 impl RedpilerInstance {
-    fn new(world: &Interpreter<BlockVolume>, optimize: bool) -> RedpilerInstance {
-        let options = CompileOptions {
-            optimize,
-            observed: match optimize {
-                true => Observed::Components,
-                false => Observed::Everything,
-            },
-            ..Default::default()
-        };
+    fn new(
+        world: &Interpreter<BlockVolume>,
+        backend: &dyn Backend,
+        optimize: bool,
+    ) -> RedpilerInstance {
+        let mut flags = FlagValues::default();
+        flags.set(OPTIMIZE, FlagValue::Switch(optimize));
+        let plan = backend
+            .configure(&flags)
+            .expect("the backend takes the flags");
         let region = world.blocks().region();
         let circuit = mchprs_redpiler::compile::compile(
             world,
             region,
             world.pending_ticks(),
-            &options,
-            &mchprs_redpiler::passes::standard(&options),
+            &plan.extract,
+            &plan.passes,
             &mut |_| ControlFlow::Continue(()),
         )
         .expect("the test circuit compiles");
-        let engine =
-            DirectEngine::new(Arc::new(circuit)).expect("the direct engine holds the circuit");
-        let simulation = Simulation::new(engine);
+        let engine = (plan.build)(Arc::new(circuit)).expect("the engine holds the test circuit");
         RedpilerInstance {
-            options,
-            simulation,
+            label: format!("{} {flags}", backend.name()).trim_end().to_owned(),
+            simulation: Simulation::new(engine),
         }
     }
 
     fn sync(&mut self, world: &mut Interpreter<BlockVolume>) {
         self.simulation
             .sync()
-            .expect("the direct engine does not fail")
+            .expect("the engine does not fail")
             .apply(world);
     }
 }
@@ -74,7 +74,7 @@ impl BackendRunner {
                 redpiler: None,
             },
             TestBackend::Direct { optimize } => BackendRunner {
-                redpiler: Some(RedpilerInstance::new(&world, optimize)),
+                redpiler: Some(RedpilerInstance::new(&world, &DirectBackend, optimize)),
                 world,
             },
         }
@@ -85,7 +85,7 @@ impl BackendRunner {
             redpiler
                 .simulation
                 .run(1)
-                .expect("the direct engine does not fail");
+                .expect("the engine does not fail");
             redpiler.sync(&mut self.world);
             return;
         }
@@ -115,8 +115,8 @@ impl BackendRunner {
             assert_eq!(
                 is_block_powered(self.world.block(pos)),
                 Some(powered),
-                "when testing on redpiler options: {:#?}",
-                redpiler.options
+                "when testing on redpiler with `{}`",
+                redpiler.label
             );
             return;
         }

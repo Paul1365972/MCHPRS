@@ -4,13 +4,36 @@ mod update;
 
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_commands::flag::{Flag, FlagValues};
+use mchprs_redpiler::backend::{Backend, CompilePlan};
 use mchprs_redpiler::circuit::{self, Circuit};
 use mchprs_redpiler::engine::{Changes, Engine, EngineError, Input, Snapshot};
+use mchprs_redpiler::extract::{
+    ExtractOptions, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
+};
 use mchprs_redpiler::graph::{self, LinkKind, NodeState, PendingTick};
+use mchprs_redpiler::passes::{
+    Coalesce, ConstantFold, DedupLinks, Pass, PruneOrphans, UnreachableOutput, OPTIMIZE,
+};
 use mchprs_redstone::tick_queue::TickPriority;
 use node::{ForwardLink, ForwardLinks, Node, NodeId, NodeInput, NodeKind, Nodes};
 use std::mem;
 use std::sync::Arc;
+
+const REORDER: Flag = Flag::switch(
+    "reorder",
+    Some('r'),
+    "Let optimizations reorder updates within a tick",
+);
+
+static FLAGS: [Flag; 6] = [
+    OPTIMIZE,
+    REORDER,
+    IO_ONLY,
+    WIRE_DOT_OUT,
+    ILLEGAL_STATES_OUT,
+    WIRE_CROSS_OUT,
+];
 
 #[derive(Default, Clone)]
 struct Queues([Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
@@ -129,6 +152,38 @@ pub struct DirectEngine {
     forward_links: ForwardLinks,
     scheduler: TickScheduler,
     notes: NoteActivations,
+}
+
+pub struct DirectBackend;
+
+impl Backend for DirectBackend {
+    fn name(&self) -> &'static str {
+        "direct"
+    }
+
+    fn flags(&self) -> &'static [Flag] {
+        &FLAGS
+    }
+
+    fn configure(&self, flags: &FlagValues) -> Result<CompilePlan, String> {
+        let optimize = flags.is_on(&OPTIMIZE);
+        let mut passes: Vec<&'static dyn Pass> = Vec::new();
+        if optimize {
+            passes = vec![&DedupLinks, &ConstantFold, &UnreachableOutput];
+            if flags.is_on(&REORDER) {
+                passes.push(&Coalesce);
+            }
+            passes.push(&PruneOrphans);
+        }
+        Ok(CompilePlan {
+            extract: ExtractOptions {
+                keeps_dust: !optimize,
+                ..ExtractOptions::from_flags(flags)
+            },
+            passes,
+            build: Box::new(|circuit| Ok(Box::new(DirectEngine::new(circuit)?))),
+        })
+    }
 }
 
 impl DirectEngine {
@@ -371,16 +426,10 @@ fn build_node(circuit: &Circuit, id: circuit::NodeId, forward_links: &mut Forwar
     let fwd_link_range = if node.kind == graph::NodeKind::Constant {
         Default::default()
     } else {
-        forward_links.extend(
-            circuit
-                .outputs(id)
-                .iter()
-                .filter(|link| link.weight < 15)
-                .map(|link| {
-                    let target = NodeId::new(link.target.index(), circuit.len());
-                    ForwardLink::new(target, link.kind == LinkKind::Side, link.weight)
-                }),
-        )
+        forward_links.extend(circuit.outputs(id).iter().map(|link| {
+            let target = NodeId::new(link.target.index(), circuit.len());
+            ForwardLink::new(target, link.kind == LinkKind::Side, link.weight)
+        }))
     };
 
     let kind = match node.kind {

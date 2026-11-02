@@ -2,64 +2,30 @@ mod compile;
 mod experiment;
 mod test;
 
-use clap::{Args, Parser, Subcommand};
-use experiment::EngineKind;
+use clap::{Parser, Subcommand};
+use compile::Compilation;
+use experiment::{Configured, EngineSpec, Source};
 use line_index::{LineIndex, TextSize};
 use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::BlockPos;
-use mchprs_redpiler::{
-    compile::CompileOptions,
-    extract::extract,
-    graph::Graph,
-    passes::{self, Pass},
-};
-use mchprs_ril::{DumpGraph, RILModule, RilOptions};
+use mchprs_redpiler::extract::{extract, ExtractOptions};
+use mchprs_redpiler::graph::Graph;
+use mchprs_redpiler::passes::{self, Pass};
+use mchprs_redpiler_backends::BACKENDS;
+use mchprs_ril::{DumpGraph, RILModule};
+use std::error::Error;
 use std::fs;
 use std::num::NonZeroU64;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+type Outcome = Result<bool, Box<dyn Error + Send + Sync>>;
+
 #[derive(Parser)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
-}
-
-#[derive(Args)]
-struct CompileFlags {
-    /// Enable optimization passes which may significantly increase compile times.
-    #[arg(long, short = 'O')]
-    optimize: bool,
-    /// Let optimizations reorder updates within a tick
-    #[arg(long, short)]
-    reorder: bool,
-    /// Only flush lamp, button, lever, pressure plate, or trapdoor updates.
-    #[arg(long, short)]
-    io_only: bool,
-    /// Consider a redstone dot to be an output block (for color screens)
-    #[arg(long, short = 'd')]
-    wire_dot_out: bool,
-    /// Consider "illegal" redstone wires to be an output block (for sprite screens)
-    #[arg(long, short = 'l')]
-    illegal_states_out: bool,
-    /// Consider a redstone cross to be an output block (for sprite screens without illegal wire states)
-    #[arg(long, short = 'c')]
-    wire_cross_out: bool,
-}
-
-impl CompileFlags {
-    fn ril_options(&self) -> RilOptions {
-        RilOptions {
-            optimize: self.optimize,
-            reorder: self.reorder,
-            io_only: self.io_only,
-            wire_dot_out: self.wire_dot_out,
-            illegal_states_out: self.illegal_states_out,
-            wire_cross_out: self.wire_cross_out,
-            ..Default::default()
-        }
-    }
 }
 
 #[derive(Subcommand)]
@@ -72,51 +38,70 @@ enum Command {
         update: bool,
     },
     /// Compile a RIL file to RIL, or a schematic to a circuit file
+    #[command(after_help = engines_help())]
     Compile {
         /// Path to the input file
         input_path: PathBuf,
 
         /// Path to the output file
-        #[arg(short = 'o')]
+        #[arg(long = "output")]
         output_path: Option<PathBuf>,
 
-        #[command(flatten)]
-        flags: CompileFlags,
+        /// Engine and flags to compile for, like "direct -o"; defaults to the first engine
+        #[arg(short, long, value_parser = EngineSpec::parse)]
+        engine: Option<EngineSpec>,
         /// Print out the RIL circuit after every redpiler pass
         #[arg(long)]
         print_after_all: bool,
-        /// A comma separated list of passes to run. This can only be used by the rilc driver.
-        #[arg(long)]
-        passes: Option<String>,
+        /// Comma-separated passes to run instead of the engine's
+        #[arg(long, value_delimiter = ',')]
+        passes: Option<Vec<String>>,
     },
     /// Run a circuit file or schematic on an engine and measure it
+    #[command(after_help = engines_help())]
     Run {
         /// Path to the circuit file or schematic
         input_path: PathBuf,
 
-        #[arg(long, default_value_t = EngineKind::Direct)]
-        engine: EngineKind,
+        /// Engine and flags to run on, like "direct -o"; defaults to the first engine
+        #[arg(short, long, value_parser = EngineSpec::parse)]
+        engine: Option<EngineSpec>,
         #[arg(long)]
         ticks: u64,
-        #[command(flatten)]
-        flags: CompileFlags,
     },
     /// Run a circuit file or schematic on two engines and explain the first difference
+    #[command(after_help = engines_help())]
     Diff {
         /// Path to the circuit file or schematic
         input_path: PathBuf,
 
-        #[arg(long, num_args = 2, action = clap::ArgAction::Set, default_values_t = [EngineKind::Direct, EngineKind::Direct])]
-        engines: Vec<EngineKind>,
+        /// The two engines and their flags, like "direct" "direct -o"
+        #[arg(long, num_args = 2, action = clap::ArgAction::Set, required = true, value_parser = EngineSpec::parse)]
+        engines: Vec<EngineSpec>,
         #[arg(long)]
         ticks: u64,
         /// Drive the inputs one at a time, one every DRIVE_INTERVAL ticks
         #[arg(long)]
         drive_interval: Option<NonZeroU64>,
-        #[command(flatten)]
-        flags: CompileFlags,
     },
     Version,
+}
+
+fn engines_help() -> String {
+    let flags = || BACKENDS.iter().flat_map(|backend| backend.flags());
+    let width = flags()
+        .map(|flag| flag.to_string().len())
+        .max()
+        .unwrap_or(0);
+    let mut help = "Engines and their flags:".to_owned();
+    for backend in BACKENDS {
+        help.push_str(&format!("\n  {}", backend.name()));
+        for flag in backend.flags() {
+            let usage = flag.to_string();
+            help.push_str(&format!("\n    {usage:width$}  {}", flag.description()));
+        }
+    }
+    help
 }
 
 fn read_schematic_at_origin(bytes: &[u8]) -> Result<BlockVolume, String> {
@@ -130,7 +115,7 @@ fn read_schematic_at_origin(bytes: &[u8]) -> Result<BlockVolume, String> {
     Ok(schematic.volume.translated(BlockPos::zero() - origin))
 }
 
-fn extract_schematic(schematic_path: &Path, options: &CompileOptions) -> Option<Graph> {
+fn extract_schematic(schematic_path: &Path, options: &ExtractOptions) -> Option<Graph> {
     let volume = match fs::read(schematic_path)
         .map_err(|error| error.to_string())
         .and_then(|bytes| read_schematic_at_origin(&bytes))
@@ -185,21 +170,56 @@ fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
     }
 }
 
-/// The passes `options` name, or else the standard passes of its compile options.
-fn chosen_passes(options: &RilOptions) -> Option<Vec<&'static dyn Pass>> {
-    let Some(names) = &options.passes else {
-        return Some(passes::standard(&options.compile_options()));
-    };
+fn named_passes(names: &[String]) -> Result<Vec<&'static dyn Pass>, String> {
     names
-        .split(',')
-        .map(|name| {
-            let pass = passes::named(name);
-            if pass.is_none() {
-                eprintln!("error: there is no pass `{name}`");
-            }
-            pass
-        })
+        .iter()
+        .map(|name| passes::named(name).ok_or_else(|| format!("unknown pass `{name}`")))
         .collect()
+}
+
+fn compile_command(
+    input_path: &Path,
+    output_path: &Option<PathBuf>,
+    engine: EngineSpec,
+    print_after_all: bool,
+    passes: Option<Vec<String>>,
+) -> Outcome {
+    let plan = engine.configure()?;
+    let passes = match passes {
+        Some(names) => named_passes(&names)?,
+        None => plan.passes,
+    };
+    let compilation = Compilation {
+        extract: &plan.extract,
+        passes: &passes,
+        print_after_all,
+    };
+    compile::compile(input_path, output_path, &compilation);
+    Ok(true)
+}
+
+fn run_command(input_path: &Path, engine: EngineSpec, ticks: u64) -> Outcome {
+    let engine = Configured::new(engine)?;
+    let source = Source::read(input_path)?;
+    experiment::run(&source, engine, ticks)?;
+    Ok(true)
+}
+
+fn diff_command(
+    input_path: &Path,
+    engines: Vec<EngineSpec>,
+    ticks: u64,
+    drive_interval: Option<NonZeroU64>,
+) -> Outcome {
+    let engines = engines
+        .into_iter()
+        .map(Configured::new)
+        .collect::<Result<Vec<_>, _>>()?;
+    let Ok(engines) = <[Configured; 2]>::try_from(engines) else {
+        panic!("clap takes two engines");
+    };
+    let source = Source::read(input_path)?;
+    experiment::diff(&source, engines, ticks, drive_interval)
 }
 
 pub fn get_version_string() -> String {
@@ -227,37 +247,27 @@ fn main() -> ExitCode {
         Command::Compile {
             input_path,
             output_path,
-            flags,
+            engine,
             print_after_all,
             passes,
-        } => {
-            let options = RilOptions {
-                print_after_all,
-                passes,
-                ..flags.ril_options()
-            };
-            compile::compile(&input_path, &output_path, &options);
-            Ok(true)
-        }
+        } => compile_command(
+            &input_path,
+            &output_path,
+            engine.unwrap_or_default(),
+            print_after_all,
+            passes,
+        ),
         Command::Run {
             input_path,
             engine,
             ticks,
-            flags,
-        } => experiment::load_circuit(&input_path, &flags.ril_options())
-            .and_then(|circuit| experiment::run(circuit, engine, ticks))
-            .map(|()| true),
+        } => run_command(&input_path, engine.unwrap_or_default(), ticks),
         Command::Diff {
             input_path,
             engines,
             ticks,
             drive_interval,
-            flags,
-        } => {
-            let engines = <[EngineKind; 2]>::try_from(engines).expect("clap takes two engines");
-            experiment::load_circuit(&input_path, &flags.ril_options())
-                .and_then(|circuit| experiment::diff(circuit, engines, ticks, drive_interval))
-        }
+        } => diff_command(&input_path, engines, ticks, drive_interval),
         Command::Version => {
             println!("{}", get_version_string());
             Ok(true)
