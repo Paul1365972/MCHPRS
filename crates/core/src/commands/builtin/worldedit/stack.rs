@@ -111,20 +111,21 @@ fn exec_stack(
     let clipped = ctx.capture_undo_regions(destinations, first_pos)?;
     let clipboard = create_clipboard(ctx.world(), first_pos, first_pos, second_pos);
 
+    let mut last_copy = None;
     for i in 1..=count {
         let destination = (first_pos + offset * i, second_pos + offset * i);
         if ctx.clip_region(destination.0, destination.1).is_none() {
             continue;
         }
         paste_clipboard(ctx.world_mut()?, &clipboard, destination.0, ignore_air);
+        last_copy = Some(destination);
     }
 
-    let offset = offset * count;
-    if shift_selection {
-        update_selection(ctx, selection, (first_pos + offset, second_pos + offset))?;
+    if shift_selection && let Some(last_copy) = last_copy {
+        update_selection(ctx, Some(selection), last_copy)?;
     } else if expand_selection {
-        let expanded = calculate_expanded_selection(first_pos, second_pos, offset, false);
-        update_selection(ctx, selection, expanded)?;
+        let expanded = calculate_expanded_selection(first_pos, second_pos, offset * count, false);
+        update_selection(ctx, Some(selection), expanded)?;
     }
 
     let message = if clipped {

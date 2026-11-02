@@ -1,3 +1,4 @@
+use super::selection::update_selection;
 use crate::{
     commands::{
         argument::ArgumentType,
@@ -189,9 +190,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                 );
 
                 if shift_selection {
-                    let player = ctx.player_mut()?;
-                    player.worldedit_set_first_pos(first_pos + offset_amount);
-                    player.worldedit_set_second_pos(second_pos + offset_amount);
+                    update_selection(
+                        ctx,
+                        Some((first_pos, second_pos)),
+                        (first_pos + offset_amount, second_pos + offset_amount),
+                    )?;
                 }
 
                 let message = if clipped {

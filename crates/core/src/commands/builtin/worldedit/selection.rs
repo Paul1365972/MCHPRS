@@ -3,14 +3,14 @@ use crate::{
         argument::ArgumentType,
         context::ExecutionContext,
         define::{arg, opt, Command},
-        error::CommandResult,
+        error::{CommandResult, RuntimeError},
         registry::CommandRegistry,
         value::Direction,
     },
     plot::PLOT_BLOCK_HEIGHT,
     worldedit::{calculate_expanded_selection, calculate_selection_volume},
 };
-use mchprs_blocks::BlockPos;
+use mchprs_blocks::{region::Region, BlockPos};
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(
@@ -105,8 +105,10 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         }
 
         let old_volume = calculate_selection_volume(first, second);
+        let (new_first, new_second) =
+            update_selection(ctx, Some((first, second)), (new_first, new_second))?
+                .ok_or(RuntimeError::DestinationOutsidePlot)?;
         let new_volume = calculate_selection_volume(new_first, new_second);
-        update_selection(ctx, (first, second), (new_first, new_second))?;
 
         if contract {
             ctx.worldedit_message(&format!(
@@ -135,9 +137,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                 lower.y = 0;
                 upper.y = PLOT_BLOCK_HEIGHT - 1;
 
+                let (new_first, new_second) =
+                    update_selection(ctx, Some((first, second)), (new_first, new_second))?
+                        .ok_or(RuntimeError::DestinationOutsidePlot)?;
                 let total = calculate_selection_volume(new_first, new_second)
                     - calculate_selection_volume(first, second);
-                update_selection(ctx, (first, second), (new_first, new_second))?;
                 ctx.worldedit_message(&format!("Region expanded {} block(s).", total))
             }))
             .optional("amount", ArgumentType::integer(1, 1000))
@@ -165,26 +169,38 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
                 let (first, second) = ctx.get_selection()?;
                 let offset = direction.offset_pos(BlockPos::zero(), amount);
-
-                let player = ctx.player_mut()?;
-                player.worldedit_set_first_pos(first + offset);
-                player.worldedit_set_second_pos(second + offset);
-                ctx.worldedit_message(&format!("Region shifted {} block(s).", amount))
+                let shifted = (first + offset, second + offset);
+                let selected = update_selection(ctx, Some((first, second)), shifted)?
+                    .ok_or(RuntimeError::DestinationOutsidePlot)?;
+                if selected == shifted {
+                    ctx.worldedit_message(&format!("Region shifted {} block(s).", amount))
+                } else {
+                    ctx.worldedit_message(&format!(
+                        "Region shifted {} block(s) (clipped to plot bounds).",
+                        amount
+                    ))
+                }
             }),
     );
 }
 
 pub(super) fn update_selection(
     ctx: &mut ExecutionContext<'_>,
-    old: (BlockPos, BlockPos),
+    old: Option<(BlockPos, BlockPos)>,
     new: (BlockPos, BlockPos),
-) -> CommandResult<()> {
+) -> CommandResult<Option<(BlockPos, BlockPos)>> {
+    let plot = ctx.plot_mut().world.region();
+    if Region::new(new.0, new.1).intersection(plot).is_none() {
+        return Ok(None);
+    }
+    let clamp = |pos: BlockPos| pos.max(plot.min()).min(plot.max());
+    let new = (clamp(new.0), clamp(new.1));
     let player = ctx.player_mut()?;
-    if new.0 != old.0 {
+    if old.is_none_or(|old| new.0 != old.0) {
         player.worldedit_set_first_pos(new.0);
     }
-    if new.1 != old.1 {
+    if old.is_none_or(|old| new.1 != old.1) {
         player.worldedit_set_second_pos(new.1);
     }
-    Ok(())
+    Ok(Some(new))
 }

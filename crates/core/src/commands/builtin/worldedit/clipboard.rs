@@ -1,9 +1,10 @@
+use super::selection::update_selection;
 use crate::{
     commands::{
         argument::ArgumentType,
         context::ExecutionContext,
         define::Command,
-        error::{CommandError, CommandResult},
+        error::{CommandError, CommandResult, RuntimeError},
         registry::CommandRegistry,
         value::Direction,
     },
@@ -171,15 +172,11 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let pos = ctx.player()?.pos.block_pos();
     let paste_region = ctx.get_clipboard()?.region().translated(pos);
     let (paste_min, paste_max) = (paste_region.min(), paste_region.max());
-    let select = |ctx: &mut ExecutionContext<'_>| -> CommandResult<()> {
-        let player = ctx.player_mut()?;
-        player.worldedit_set_first_pos(paste_min);
-        player.worldedit_set_second_pos(paste_max);
-        Ok(())
-    };
+    let select =
+        |ctx: &mut ExecutionContext<'_>| update_selection(ctx, None, (paste_min, paste_max));
 
     if no_paste {
-        select(ctx)?;
+        select(ctx)?.ok_or(RuntimeError::DestinationOutsidePlot)?;
         return ctx.worldedit_message(&format!("Region selected. ({:?})", start_time.elapsed()));
     }
 
