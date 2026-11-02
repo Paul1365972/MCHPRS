@@ -53,7 +53,6 @@ noop_block_transform!(
     u8,
     u32,
     bool,
-    BlockFacing,
     TrapdoorHalf,
     LeverFace,
     ComparatorMode,
@@ -84,6 +83,22 @@ impl BlockTransform for BlockDirection {
             BlockDirection::South => BlockDirection::West,
             BlockDirection::West => BlockDirection::North,
         }
+    }
+}
+
+impl BlockTransform for BlockFacing {
+    fn flip(&mut self, dir: FlipDirection) {
+        *self = match (dir, *self) {
+            (FlipDirection::FlipX, BlockFacing::East) => BlockFacing::West,
+            (FlipDirection::FlipX, BlockFacing::West) => BlockFacing::East,
+            (FlipDirection::FlipZ, BlockFacing::North) => BlockFacing::South,
+            (FlipDirection::FlipZ, BlockFacing::South) => BlockFacing::North,
+            (_, facing) => facing,
+        }
+    }
+
+    fn rotate90(&mut self) {
+        *self = BlockFacing::rotate(*self);
     }
 }
 
@@ -151,20 +166,40 @@ impl Block {
     }
 
     pub(crate) fn complex_rotate(&mut self, amt: RotateAmt) {
-        match self {
-            Block::RedstoneWire(wire) => wire.rotate(amt),
-            _ => unreachable!(),
+        if let Block::RedstoneWire(wire) = self {
+            return wire.rotate(amt);
         }
+        let quarter_turns = match amt {
+            RotateAmt::Rotate90 => 1,
+            RotateAmt::Rotate180 => 2,
+            RotateAmt::Rotate270 => 3,
+        };
+        let Some(rotation) = self.sign_rotation_mut() else {
+            unreachable!()
+        };
+        *rotation = (*rotation + 4 * quarter_turns) % 16;
     }
 
     pub(crate) fn complex_flip(&mut self, dir: FlipDirection) {
-        match self {
-            Block::RedstoneWire(wire) => wire.flip(dir),
-            _ => unreachable!(),
+        if let Block::RedstoneWire(wire) = self {
+            return wire.flip(dir);
         }
+        let Some(rotation) = self.sign_rotation_mut() else {
+            unreachable!()
+        };
+        let mirror = match dir {
+            FlipDirection::FlipX => 16,
+            FlipDirection::FlipZ => 24,
+        };
+        *rotation = (mirror - *rotation) % 16;
     }
 
-    pub fn get_sign_rotation(self) -> Option<u8> {
+    /// Sixteenths of a turn clockwise from south
+    pub fn get_sign_rotation(mut self) -> Option<u8> {
+        self.sign_rotation_mut().copied()
+    }
+
+    fn sign_rotation_mut(&mut self) -> Option<&mut u8> {
         Some(match self {
             Block::OakSign { rotation, .. }
             | Block::SpruceSign { rotation, .. }
@@ -173,7 +208,10 @@ impl Block {
             | Block::JungleSign { rotation, .. }
             | Block::DarkOakSign { rotation, .. }
             | Block::CrimsonSign { rotation, .. }
-            | Block::WarpedSign { rotation, .. } => rotation,
+            | Block::WarpedSign { rotation, .. }
+            | Block::BambooSign { rotation, .. }
+            | Block::CherrySign { rotation, .. }
+            | Block::MangroveSign { rotation, .. } => rotation,
             _ => return None,
         })
     }
