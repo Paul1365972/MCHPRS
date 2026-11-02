@@ -67,7 +67,7 @@ pub const PLOT_BLOCK_HEIGHT: i32 = PLOT_SECTIONS as i32 * 16;
 pub const ERROR_COMPILING: &str =
     "This plot cannot be changed while redpiler is compiling. To cancel, run `/redpiler reset`.";
 
-const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler is active with `--io-only`. To stop redpiler, run `/redpiler reset`.";
+const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler only updates inputs and outputs. To stop redpiler, run `/redpiler reset`.";
 
 const MAX_BATCH_SIZE: u32 = 50_000;
 
@@ -624,7 +624,7 @@ impl Plot {
             }
             let error = if redpiler.circuit.is_none() {
                 Some(ERROR_COMPILING)
-            } else if redpiler.options.io_only {
+            } else if redpiler.ports_only {
                 Some(ERROR_IO_ONLY)
             } else {
                 None
@@ -697,7 +697,7 @@ impl Plot {
         if let Some(redpiler) = &self.redpiler {
             let error = if redpiler.circuit.is_none() {
                 Some(ERROR_COMPILING)
-            } else if redpiler.options.io_only {
+            } else if redpiler.ports_only {
                 Some(ERROR_IO_ONLY)
             } else {
                 None
@@ -777,13 +777,13 @@ impl Plot {
         let redpiler = match &self.redpiler {
             None => RedpilerStatus::Stopped,
             Some(redpiler) if compiling => RedpilerStatus::Compiling {
-                engine: redpiler.engine,
-                options: redpiler.options.clone(),
+                backend: redpiler.backend,
+                flags: redpiler.flags.clone(),
                 stage: redpiler.stage,
             },
             Some(redpiler) => RedpilerStatus::Running {
-                engine: redpiler.engine,
-                options: redpiler.options.clone(),
+                backend: redpiler.backend,
+                flags: redpiler.flags.clone(),
             },
         };
         PlotStatus {

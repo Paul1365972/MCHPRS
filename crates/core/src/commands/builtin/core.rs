@@ -9,21 +9,21 @@ use crate::{
         registry::CommandRegistry,
         value::{PlayerTarget, PlotCoordinates},
     },
+    config::CONFIG,
     item_stack::ItemStack,
     player::{Gamemode, PlayerPos},
-    plot::{
-        redpiler::{EngineKind, RedpilerOptions},
-        Plot,
-    },
+    plot::Plot,
     server::{get_version_string, Message},
     utils::HyphenatedUUID,
 };
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_commands::flag::FlagValues;
 use mchprs_network::PlayerPacketSender;
+use mchprs_redpiler::backend::Backend;
+use mchprs_redpiler_backends::BACKENDS;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use std::time::Instant;
-use tracing::warn;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
     registry.register(
@@ -337,21 +337,27 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
         })),
     );
 
+    let default_engine = CONFIG.redpiler.default_engine();
+    let mut compile = Command::new("compile")
+        .alias("c")
+        .flags(default_engine.flags());
+    for &backend in BACKENDS {
+        let config_flags = CONFIG.redpiler.flags(backend);
+        if backend.name() == default_engine.name() {
+            let config_flags = config_flags.clone();
+            compile =
+                compile.executes(move |ctx| exec_redpiler_compile(ctx, backend, &config_flags));
+        }
+        compile = compile.subcommand(
+            Command::new(backend.name())
+                .flags(backend.flags())
+                .executes(move |ctx| exec_redpiler_compile(ctx, backend, &config_flags)),
+        );
+    }
     registry.register(
         Command::new("redpiler")
             .alias("rp")
-            .subcommand(
-                compile_flags(EngineKind::ALL.into_iter().fold(
-                    Command::new("compile").alias("c"),
-                    |compile, engine| {
-                        compile.subcommand(
-                            compile_flags(Command::new(&engine.to_string()))
-                                .executes(move |ctx| exec_redpiler_compile(ctx, engine)),
-                        )
-                    },
-                ))
-                .executes(|ctx| exec_redpiler_compile(ctx, EngineKind::default())),
-            )
+            .subcommand(compile)
             .subcommand(Command::new("export").alias("e").executes(|ctx| {
                 let circuit = ctx
                     .plot_mut()
@@ -387,54 +393,15 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
     );
 }
 
-fn compile_flags(command: Command) -> Command {
-    command
-        .flag('o', "optimize", "Enable redpiler optimizations")
-        .flag(
-            'r',
-            "reorder",
-            "Let optimizations reorder updates within a tick",
-        )
-        .flag(
-            'i',
-            "io-only",
-            "Only send block updates of relevant input/output blocks",
-        )
-        .flag(
-            'd',
-            "wire-dot-out",
-            "Consider wires in dot shape as output block",
-        )
-        .flag(
-            'l',
-            "illegal-states-out",
-            "Consider wires in so-called \"illegal\" states as output block",
-        )
-        .flag(
-            'c',
-            "wire-cross-out",
-            "Consider a redstone cross to be an output block",
-        )
-}
-
-fn exec_redpiler_compile(ctx: &mut ExecutionContext<'_>, engine: EngineKind) -> CommandResult<()> {
-    let options = RedpilerOptions {
-        optimize: ctx.flag("optimize"),
-        reorder: ctx.flag("reorder"),
-        io_only: ctx.flag("io-only"),
-        wire_dot_out: ctx.flag("wire-dot-out"),
-        illegal_states_out: ctx.flag("illegal-states-out"),
-        wire_cross_out: ctx.flag("wire-cross-out"),
-    };
-
-    if options.optimize {
-        let msg =
-            "Redpiler optimization is highly unstable and can break builds. Use with caution!";
-        warn!("{}", msg);
-        ctx.reply(msg)?;
-    }
-
+fn exec_redpiler_compile(
+    ctx: &mut ExecutionContext<'_>,
+    backend: &'static dyn Backend,
+    config_flags: &FlagValues,
+) -> CommandResult<()> {
+    let mut flags = config_flags.clone();
+    flags.extend(ctx.flags());
+    let plan = backend.configure(&flags).map_err(CommandError::runtime)?;
     ctx.plot_mut().reset_redpiler();
-    ctx.plot_mut().start_redpiler(options, engine);
-    ctx.reply(&format!("Compiling for the {engine} engine..."))
+    ctx.plot_mut().start_redpiler(backend, flags, plan);
+    ctx.reply(&format!("Compiling for the {} engine...", backend.name()))
 }

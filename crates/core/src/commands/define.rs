@@ -88,6 +88,11 @@ impl Command {
         self
     }
 
+    pub fn flags(mut self, flags: &[Flag]) -> Self {
+        self.flags.extend_from_slice(flags);
+        self
+    }
+
     pub fn executes(
         mut self,
         executor: impl Fn(&mut ExecutionContext<'_>) -> CommandResult<()> + Send + Sync + 'static,

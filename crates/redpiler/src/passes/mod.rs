@@ -1,19 +1,23 @@
 mod opt;
 
-use crate::compile::CompileOptions;
 use crate::graph::Graph;
-use crate::ports::Observed;
-use opt::clamp_weights::ClampWeights;
-use opt::coalesce::Coalesce;
-use opt::constant_fold::ConstantFold;
-use opt::dedup_links::DedupLinks;
-use opt::prune_orphans::PruneOrphans;
-use opt::unreachable_output::UnreachableOutput;
+use mchprs_commands::flag::Flag;
 use std::ops::ControlFlow;
 use tracing::trace;
 
-const ALL: [&dyn Pass; 6] = [
-    &ClampWeights,
+pub use opt::coalesce::Coalesce;
+pub use opt::constant_fold::ConstantFold;
+pub use opt::dedup_links::DedupLinks;
+pub use opt::prune_orphans::PruneOrphans;
+pub use opt::unreachable_output::UnreachableOutput;
+
+pub const OPTIMIZE: Flag = Flag::switch(
+    "optimize",
+    Some('o'),
+    "Enable Redpiler optimizations, which can break builds",
+);
+
+const ALL: [&dyn Pass; 5] = [
     &DedupLinks,
     &ConstantFold,
     &UnreachableOutput,
@@ -31,20 +35,6 @@ pub trait Pass: Sync {
 
 pub fn named(name: &str) -> Option<&'static dyn Pass> {
     ALL.into_iter().find(|pass| pass.name() == name)
-}
-
-pub fn standard(options: &CompileOptions) -> Vec<&'static dyn Pass> {
-    let mut passes: Vec<&'static dyn Pass> = vec![&ClampWeights];
-    if options.optimize {
-        passes.extend([&DedupLinks as &dyn Pass, &ConstantFold, &UnreachableOutput]);
-        if options.reorder {
-            passes.push(&Coalesce);
-        }
-        if options.observed == Observed::Ports {
-            passes.push(&PruneOrphans);
-        }
-    }
-    passes
 }
 
 pub fn run_passes(

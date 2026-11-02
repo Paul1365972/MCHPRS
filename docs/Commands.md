@@ -139,22 +139,23 @@ Placing or breaking blocks stops Redpiler and returns the plot to normal redston
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `/redpiler compile [direct]` | `/rp c` | Compile the current plot for accelerated redstone simulation, on the Direct engine. |
+| `/redpiler compile [direct]` | `/rp c` | Compile the plot and run it on the Direct engine, or on the [default engine](../README.md#redpiler) if none is given. |
 | `/redpiler export` | `/rp e` | Write the compiled circuit to `redpiler-p<x>,<z>.circuit` in the server directory, for use by `rilc` and other tools. |
 | `/redpiler reset` | `/rp r` | Stop Redpiler, or cancel a compile, and return to normal redstone ticking. Flags: `-r`/`--restore` (return every component to its state at compile time), `-u`/`--update` (update every block in the plot afterwards). |
 
 ### Compiler Flags
 
-The `/redpiler compile` command supports these optional flags:
+`/help redpiler compile <engine>` lists the flags an engine takes.
+The [config](../README.md#redpiler) can set default flags per engine; flags given to the command override them, and `--<flag>=false` turns one off.
 
 | Flag | Short | Description |
 | --- | --- | --- |
 | `--optimize` | `-o` | Enable Redpiler optimizations. This can and will break the state of your build; use backups. |
 | `--reorder` | `-r` | Let `--optimize` also run optimizations that can reorder updates within a tick. |
 | `--io-only` | `-i` | Only send block updates for inputs and outputs: buttons, levers, pressure plates, lamps, trapdoors, and note blocks. This can reduce lag and improve simulation speed. |
-| `--wire-dot-out` | `-d` | Treat redstone dots as outputs with `--io-only`, useful for color displays. |
-| `--illegal-states-out` | `-l` | Treat redstone wires in illegal states (one connected side) as outputs with `--io-only`, useful for sprite displays. |
-| `--wire-cross-out` | `-c` | Treat redstone crosses as outputs with `--io-only`, useful for sprite displays without illegal wire states. |
+| `--wire-dot-out` | `-d` | Treat redstone dots as outputs, so they still update with `--io-only` or `--optimize`; useful for color displays. |
+| `--illegal-states-out` | `-l` | Treat redstone wires in illegal states (one connected side) as outputs, so they still update with `--io-only` or `--optimize`; useful for sprite displays. |
+| `--wire-cross-out` | `-c` | Treat redstone crosses as outputs, so they still update with `--io-only` or `--optimize`; useful for sprite displays without illegal wire states. |
 
 ## Command Aliases
 

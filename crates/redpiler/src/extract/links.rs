@@ -5,6 +5,8 @@ use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_redstone::{self, comparator, provides_strong_power, provides_weak_power, wire};
 use rustc_hash::FxHashMap;
 
+const DUST_RANGE: u8 = 15;
+
 pub fn add_links(
     graph: &mut Graph,
     world: &impl BlockView,
@@ -166,8 +168,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
             let (pos, distance) = discovered[idx];
             idx += 1;
 
-            // Dust cannot carry power further, which also keeps the distance from overflowing
-            if distance > 15 {
+            if distance >= DUST_RANGE {
                 continue;
             }
 

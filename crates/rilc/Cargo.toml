@@ -13,9 +13,10 @@ include.workspace = true
 
 [dependencies]
 mchprs_redpiler = { path = "../redpiler" }
-mchprs_redpiler_direct = { path = "../redpiler_direct" }
+mchprs_redpiler_backends = { path = "../redpiler_backends" }
 mchprs_ril = { path = "../ril" }
 mchprs_blocks = { path = "../blocks" }
+mchprs_commands = { path = "../commands" }
 mchprs_schematic = { path = "../schematic" }
 line-index = { workspace = true }
 rustc-hash = { workspace = true }

@@ -832,6 +832,7 @@ name = "mchprs"
 version = "0.5.2-dev"
 dependencies = [
  "mchprs_blocks",
+ "mchprs_commands",
  "mchprs_core",
  "mchprs_redpiler",
  "mchprs_redpiler_direct",
@@ -886,7 +887,7 @@ dependencies = [
  "mchprs_commands",
  "mchprs_network",
  "mchprs_redpiler",
- "mchprs_redpiler_direct",
+ "mchprs_redpiler_backends",
  "mchprs_redstone",
  "mchprs_save_data",
  "mchprs_schematic",
@@ -926,6 +927,7 @@ dependencies = [
  "bincode",
  "itertools",
  "mchprs_blocks",
+ "mchprs_commands",
  "mchprs_redstone",
  "rustc-hash",
  "serde",
@@ -934,10 +936,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mchprs_redpiler_backends"
+version = "0.5.2-dev"
+dependencies = [
+ "mchprs_redpiler",
+ "mchprs_redpiler_direct",
+]
+
+[[package]]
 name = "mchprs_redpiler_direct"
 version = "0.5.2-dev"
 dependencies = [
  "mchprs_blocks",
+ "mchprs_commands",
  "mchprs_redpiler",
  "mchprs_redstone",
 ]
@@ -959,9 +970,9 @@ dependencies = [
  "indexmap",
  "itertools",
  "mchprs_blocks",
+ "mchprs_commands",
  "mchprs_redpiler",
  "rustc-hash",
- "tracing",
 ]
 
 [[package]]
@@ -1271,8 +1282,9 @@ dependencies = [
  "clap",
  "line-index",
  "mchprs_blocks",
+ "mchprs_commands",
  "mchprs_redpiler",
- "mchprs_redpiler_direct",
+ "mchprs_redpiler_backends",
  "mchprs_ril",
  "mchprs_schematic",
  "owo-colors",

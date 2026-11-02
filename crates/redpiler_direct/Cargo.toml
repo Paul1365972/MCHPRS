@@ -12,5 +12,6 @@ repository.workspace = true
 
 [dependencies]
 mchprs_blocks = { path = "../blocks" }
+mchprs_commands = { path = "../commands" }
 mchprs_redpiler = { path = "../redpiler" }
 mchprs_redstone = { path = "../redstone" }

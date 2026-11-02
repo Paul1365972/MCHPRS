@@ -1,4 +1,4 @@
-use crate::compile::CompileOptions;
+use super::ExtractOptions;
 use crate::graph::{Graph, Node, NodeIdx, NodeKind, NodeState};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockView;
@@ -14,7 +14,7 @@ pub fn add_nodes(
     graph: &mut Graph,
     world: &impl BlockView,
     region: Region,
-    options: &CompileOptions,
+    options: &ExtractOptions,
 ) -> FxHashMap<BlockPos, NodeIdx> {
     let mut nodes_by_position = FxHashMap::default();
     for position in world
@@ -33,13 +33,12 @@ fn add_node(
     graph: &mut Graph,
     world: &impl BlockView,
     position: BlockPos,
-    options: &CompileOptions,
+    options: &ExtractOptions,
 ) -> Option<NodeIdx> {
     let block = world.block(position);
     let (kind, state) = identify_block(block, position, world)?;
     let port = options.ports.role(position, block, &kind);
-    let observed = options.observed.includes(&kind, port);
-    if kind == NodeKind::Wire && !observed && options.optimize {
+    if kind == NodeKind::Wire && port.is_none() && !options.keeps_dust {
         return None;
     }
     Some(graph.add_node(Node {
@@ -49,7 +48,7 @@ fn add_node(
         state,
         pending_tick: None,
         port,
-        observed,
+        observed: options.observes(port),
     }))
 }
 

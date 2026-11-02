@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod backend;
 pub mod block_map;
 pub mod circuit;
 pub mod compile;

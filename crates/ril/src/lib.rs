@@ -5,89 +5,46 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use mchprs_blocks::blocks::{ComparatorMode, Instrument};
 use mchprs_blocks::signal_strength::SignalStrength;
-use mchprs_redpiler::compile::CompileOptions;
+use mchprs_commands::flag::{self, Flag};
+use mchprs_commands::reader::Reader;
+use mchprs_redpiler::extract::{
+    ExtractOptions, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
+};
 use mchprs_redpiler::graph::{
     Direction, Graph, Link, LinkKind, Node, NodeIdx, NodeKind, NodeState,
 };
-use mchprs_redpiler::ports::{Observed, Ports};
 use rustc_hash::FxHashMap;
 use std::iter::Peekable;
 use std::str::CharIndices;
 use std::{fmt, vec};
-use tracing::warn;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+const PASSES: Flag = Flag::valued("passes", "PASSES", "The passes to run, separated by commas");
+
+static FLAGS: [Flag; 5] = [
+    PASSES,
+    IO_ONLY,
+    WIRE_DOT_OUT,
+    ILLEGAL_STATES_OUT,
+    WIRE_CROSS_OUT,
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RilOptions {
-    pub optimize: bool,
-    pub reorder: bool,
-    pub io_only: bool,
-    pub wire_dot_out: bool,
-    pub illegal_states_out: bool,
-    pub wire_cross_out: bool,
-    pub print_after_all: bool,
-    /// A comma separated list of passes to run instead of the pipeline
-    pub passes: Option<String>,
+    pub extract: ExtractOptions,
+    pub passes: Vec<String>,
 }
 
 impl RilOptions {
-    pub fn parse(arguments: &str) -> RilOptions {
-        let mut options = RilOptions::default();
-        for argument in arguments.split_whitespace() {
-            if let Some(passes) = argument.strip_prefix("--passes=") {
-                options.passes = Some(passes.to_owned());
-                continue;
-            }
-            match argument {
-                "--optimize" => options.optimize = true,
-                "--reorder" => options.reorder = true,
-                "--io-only" => options.io_only = true,
-                "--wire-dot-out" => options.wire_dot_out = true,
-                "--illegal-states-out" => options.illegal_states_out = true,
-                "--wire-cross-out" => options.wire_cross_out = true,
-                "--print-after-all" => options.print_after_all = true,
-                _ if !argument.starts_with("--") && argument.starts_with('-') => {
-                    for flag in argument[1..].chars() {
-                        match flag.to_ascii_lowercase() {
-                            'o' => options.optimize = true,
-                            'r' => options.reorder = true,
-                            'i' => options.io_only = true,
-                            'd' => options.wire_dot_out = true,
-                            'l' => options.illegal_states_out = true,
-                            'c' => options.wire_cross_out = true,
-                            _ => warn!("Unrecognized option: -{flag}"),
-                        }
-                    }
-                }
-                _ => warn!("Unrecognized option: {argument}"),
-            }
-        }
-        options
-    }
-
-    pub fn compile_options(&self) -> CompileOptions {
-        let mut ports = Ports::conventional();
-        if self.wire_dot_out {
-            ports = ports.with_wire_dots();
-        }
-        if self.wire_cross_out {
-            ports = ports.with_wire_crosses();
-        }
-        if self.illegal_states_out {
-            ports = ports.with_illegal_wires();
-        }
-        let observed = if self.io_only {
-            Observed::Ports
-        } else if self.optimize {
-            Observed::Components
-        } else {
-            Observed::Everything
-        };
-        CompileOptions {
-            ports,
-            observed,
-            optimize: self.optimize,
-            reorder: self.reorder,
-        }
+    pub fn parse(arguments: &str) -> Result<RilOptions, String> {
+        let flags = flag::parse(&mut Reader::new(arguments), &FLAGS)
+            .map_err(|error| error.contextual(arguments))?;
+        let passes = flags
+            .text(&PASSES)
+            .ok_or_else(|| format!("missing `--{}`", PASSES.name()))?;
+        Ok(RilOptions {
+            extract: ExtractOptions::from_flags(&flags),
+            passes: passes.split(',').map(str::to_owned).collect(),
+        })
     }
 }
 
@@ -628,7 +585,7 @@ impl RILModule {
         Parser::parse(tokens)
     }
 
-    pub fn get_graph(&self, circuit: &ast::Circuit, observed: Observed) -> Graph {
+    pub fn get_graph(&self, circuit: &ast::Circuit, options: &ExtractOptions) -> Graph {
         let mut graph = Graph::default();
         let mut name_map = FxHashMap::default();
         for component in &circuit.components {
@@ -640,7 +597,7 @@ impl RILModule {
                 blocks: Default::default(),
                 pending_tick: None,
                 port,
-                observed: observed.includes(&component.node_kind, port),
+                observed: options.observes(port),
             });
             name_map.insert(component.name.clone(), node_idx);
         }
@@ -660,9 +617,10 @@ impl RILModule {
             .or(self.test_args.as_ref().map(|args| &args.args))
             .expect("could not determine test arguments")
             .clone();
-        let observed = options.compile_options().observed;
         let (graph, schematic_path) = match self.globals.get(&test.input) {
-            Some(ast::Global::Circuit(circuit)) => (self.get_graph(circuit, observed), None),
+            Some(ast::Global::Circuit(circuit)) => {
+                (self.get_graph(circuit, &options.extract), None)
+            }
             Some(ast::Global::Schematic(schematic)) => {
                 (Graph::default(), Some(schematic.path.clone()))
             }
@@ -984,9 +942,9 @@ impl Parser {
         let test_args = match parens_or_comma.kind {
             TokenType::RightParens => None,
             TokenType::Comma => {
-                let (_, args) = self.expect_string()?;
+                let options = self.expect_options()?;
                 self.expect_token(&[TokenType::RightParens])?;
-                Some(RilOptions::parse(&args))
+                Some(options)
             }
             _ => unreachable!(),
         };
@@ -1014,10 +972,14 @@ impl Parser {
     }
 
     fn parse_test_args(&mut self) -> RILParserResult<()> {
-        let (_, args) = self.expect_string()?;
-        let args = RilOptions::parse(&args);
+        let args = self.expect_options()?;
         self.module.test_args = Some(ast::TestArgs { args });
         Ok(())
+    }
+
+    fn expect_options(&mut self) -> RILParserResult<RilOptions> {
+        let (token, arguments) = self.expect_string()?;
+        RilOptions::parse(&arguments).map_err(|message| RILParserError::new(token.pos, message))
     }
 
     fn parse_outputs(&mut self) -> RILParserResult<Vec<ast::Output>> {
@@ -1054,12 +1016,12 @@ impl Parser {
             .unwrap_value();
         self.expect_token(&[TokenType::Colon])?;
         let (token, weight) = self.expect_int()?;
-        let weight = u8::try_from(weight).map_err(|_| {
-            RILParserError::new(
-                token.pos,
-                format!("link weight {weight} is outside 0..=255"),
-            )
-        })?;
+        let weight = u8::try_from(weight)
+            .ok()
+            .filter(|&weight| weight < 15)
+            .ok_or_else(|| {
+                RILParserError::new(token.pos, format!("link weight {weight} is outside 0..=14"))
+            })?;
         Ok(ast::Output {
             link: Link::new(kind, weight),
             target,
