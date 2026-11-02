@@ -354,19 +354,20 @@ impl Plot {
     }
 
     fn on_player_move(&mut self, player_idx: usize, old: PlayerPos, new: PlayerPos) {
-        let old_block = old.block_pos();
+        self.release_pressure_plate(old.block_pos());
         let new_block = new.block_pos();
-
-        if let Some(true) = self.world.get_block(old_block).get_pressure_plate_powered()
-            && !self.are_players_on_block(old_block)
-        {
-            self.set_pressure_plate(old_block, false);
-        }
-
         if let Some(false) = self.world.get_block(new_block).get_pressure_plate_powered()
             && self.players[player_idx].on_ground
         {
             self.set_pressure_plate(new_block, true);
+        }
+    }
+
+    fn release_pressure_plate(&mut self, pos: BlockPos) {
+        if let Some(true) = self.world.get_block(pos).get_pressure_plate_powered()
+            && !self.are_players_on_block(pos)
+        {
+            self.set_pressure_plate(pos, false);
         }
     }
 
@@ -862,7 +863,10 @@ impl Plot {
             for command in commands {
                 let mut args: Vec<&str> = command.split(' ').collect();
                 let command = args.remove(0);
-                if self.handle_command(player_idx, command, args) {
+                let old_block = self.players[player_idx].pos.block_pos();
+                let left_plot = self.handle_command(player_idx, command, args);
+                self.release_pressure_plate(old_block);
+                if left_plot {
                     removal_offset += 1;
                     break;
                 }
@@ -910,6 +914,7 @@ impl Plot {
                     for player in &mut mem::take(&mut self.players) {
                         player.save();
                         player.kick("Server closed".into());
+                        self.release_pressure_plate(player.pos.block_pos());
                     }
                     self.always_running = false;
                     self.running = false;
@@ -981,13 +986,14 @@ impl Plot {
                 message_sender
                     .send(Message::PlayerLeft(player.uuid))
                     .unwrap();
-                disconnected_players.push(player.entity_id);
+                disconnected_players.push((player.entity_id, player.pos.block_pos()));
             }
             alive
         });
-        for entity_id in disconnected_players {
+        for (entity_id, block) in disconnected_players {
             self.world.packet_senders.remove(&entity_id);
             self.destroy_entity(entity_id);
+            self.release_pressure_plate(block);
         }
     }
 
