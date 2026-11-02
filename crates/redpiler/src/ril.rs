@@ -87,9 +87,13 @@ fn dump_node(f: &mut impl fmt::Write, graph: &CompileGraph, node_idx: NodeIdx) -
         NodeType::Trapdoor => write!(f, "trapdoor {}", node.state.is_powered()),
         NodeType::Wire => write!(f, "wire {}", node.state.power),
         NodeType::Constant => write!(f, "constant {}", node.state.power),
-        NodeType::NoteBlock { instrument, note } => {
-            write!(f, "note_block {}, {}", instrument, note)
-        }
+        NodeType::NoteBlock { instrument, note } => write!(
+            f,
+            "note_block {}, {}, {}",
+            instrument,
+            note,
+            node.state.is_powered()
+        ),
     }?;
     dump_outputs(f, graph, node_idx)?;
 
@@ -678,6 +682,7 @@ impl Parser {
             let keyword_token = parser.expect_token(&[
                 TokenType::Circuit,
                 TokenType::BackendCircuit,
+                TokenType::Schematic,
                 TokenType::Test,
                 TokenType::TestArgs,
             ])?;
@@ -689,6 +694,13 @@ impl Parser {
                         .globals
                         .insert(circuit.name.clone(), ast::Global::Circuit(circuit));
                 }
+                TokenType::Schematic => {
+                    let schematic = parser.parse_schematic()?;
+                    parser
+                        .module
+                        .globals
+                        .insert(schematic.name.clone(), ast::Global::Schematic(schematic));
+                }
                 TokenType::BackendCircuit => todo!("backend circuit parsing"),
                 TokenType::Test => parser.parse_test()?,
                 TokenType::TestArgs => parser.parse_test_args()?,
@@ -697,6 +709,18 @@ impl Parser {
         }
 
         Ok(parser.module)
+    }
+
+    fn parse_schematic(&mut self) -> RILParserResult<ast::Schematic> {
+        let name = self
+            .expect_token_with(
+                |token| matches!(token.ty, TokenType::GlobalValue(_)),
+                &[TokenType::GlobalValue(Default::default())],
+            )?
+            .ty
+            .unwrap_global_value();
+        let (_, path) = self.expect_string()?;
+        Ok(ast::Schematic { name, path })
     }
 
     fn parse_circuit(&mut self, src_begin: usize) -> RILParserResult<ast::Circuit> {
@@ -806,8 +830,6 @@ impl Parser {
                 )
             }
             ComponentType::NoteBlock => {
-                let (_, note) = self.expect_int()?;
-                self.expect_token(&[TokenType::Comma])?;
                 let instrument = self
                     .expect_token_with(
                         |token| matches!(token.ty, TokenType::Instrument(_)),
@@ -815,11 +837,21 @@ impl Parser {
                     )?
                     .ty
                     .unwrap_instrument();
+                self.expect_token(&[TokenType::Comma])?;
+                let (token, note) = self.expect_int()?;
+                if note > 24 {
+                    return Err(RILParserError::new(
+                        token.pos,
+                        "note must be between 0 and 24",
+                    ));
+                }
+                self.expect_token(&[TokenType::Comma])?;
+                let (_, powered) = self.expect_bool()?;
                 let ty = NodeType::NoteBlock {
                     instrument,
                     note: note as u8,
                 };
-                (ty, NodeState::from_powered(false))
+                (ty, NodeState::from_powered(powered))
             }
         };
         Ok(ast::Component {
