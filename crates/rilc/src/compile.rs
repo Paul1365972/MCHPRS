@@ -1,5 +1,4 @@
 use mchprs_redpiler::circuit::Circuit;
-use mchprs_redpiler::passes::PassRegistry;
 use mchprs_ril::ast::Global;
 use mchprs_ril::dump_graph;
 use mchprs_ril::RilOptions;
@@ -35,8 +34,7 @@ fn compile_ril(input_path: &Path, options: &RilOptions) -> String {
         process::exit(1);
     };
 
-    let registry = PassRegistry::default();
-    let Some(pass_pipeline) = crate::pass_pipeline(&registry, options) else {
+    let Some(passes) = crate::chosen_passes(options) else {
         process::exit(1);
     };
 
@@ -63,7 +61,7 @@ fn compile_ril(input_path: &Path, options: &RilOptions) -> String {
             }
         };
 
-        let result_graph = crate::run_pipeline(&pass_pipeline, graph, options.print_after_all);
+        let result_graph = crate::run_passes(&passes, graph, options.print_after_all);
         result.push('\n');
         dump_graph(&mut result, &result_graph, name).unwrap();
         result.push('\n');
@@ -75,11 +73,10 @@ fn compile_schematic(input_path: &Path, options: &RilOptions) -> Vec<u8> {
     let Some(graph) = crate::extract_schematic(input_path, &options.compile_options()) else {
         process::exit(1);
     };
-    let registry = PassRegistry::default();
-    let Some(pass_pipeline) = crate::pass_pipeline(&registry, options) else {
+    let Some(passes) = crate::chosen_passes(options) else {
         process::exit(1);
     };
-    let graph = crate::run_pipeline(&pass_pipeline, graph, options.print_after_all);
+    let graph = crate::run_passes(&passes, graph, options.print_after_all);
     Circuit::new(graph)
         .expect("extraction and the passes keep the circuit invariants")
         .to_bytes()

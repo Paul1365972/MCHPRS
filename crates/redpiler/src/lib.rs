@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod block_map;
 pub mod circuit;
 pub mod compile;

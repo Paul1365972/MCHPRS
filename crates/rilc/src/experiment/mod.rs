@@ -65,6 +65,7 @@ pub fn load_circuit(
         volume.region(),
         &[],
         &options.compile_options(),
+        &mchprs_redpiler::passes::standard(&options.compile_options()),
         &mut |_| ControlFlow::Continue(()),
     )?;
     Ok(circuit)

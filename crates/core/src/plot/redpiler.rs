@@ -274,6 +274,7 @@ impl Plot {
         let ticks = mem::take(&mut self.world.ticks).into_entries();
         let compile_ticks = ticks.clone();
         let compile_options = options.compile_options();
+        let passes = mchprs_redpiler::passes::standard(&compile_options);
         let worker = Worker::spawn(
             tick_rate(self.tps),
             send_rate(self.world.world_send_rate),
@@ -283,6 +284,7 @@ impl Plot {
                     region,
                     &compile_ticks,
                     &compile_options,
+                    &passes,
                     progress,
                 )?;
                 Ok(Simulation::new(engine.build(Arc::new(circuit))?))

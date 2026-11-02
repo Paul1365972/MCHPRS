@@ -6,12 +6,12 @@
 //! weight 15 is removed.
 
 use crate::graph::{Direction, Graph, NodeIdx};
-use crate::passes::{AnalysisInfos, Pass};
+use crate::passes::Pass;
 
 pub struct DedupLinks;
 
 impl Pass for DedupLinks {
-    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
+    fn run(&self, graph: &mut Graph) {
         for i in 0..graph.node_bound() {
             let idx = NodeIdx::new(i);
             if !graph.contains_node(idx) {
@@ -47,7 +47,7 @@ impl Pass for DedupLinks {
         "Deduplicating links"
     }
 
-    fn driver_key(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "dedup-links"
     }
 }
