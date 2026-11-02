@@ -264,10 +264,18 @@ pub fn calculate_expanded_selection(
         } else {
             *first < *second
         };
-        if first_extends ^ contract {
-            *first += amount;
+        let (moving, fixed) = if first_extends ^ contract {
+            (first, *second)
         } else {
-            *second += amount;
+            (second, *first)
+        };
+        *moving += amount;
+        if contract {
+            *moving = if amount > 0 {
+                (*moving).min(fixed)
+            } else {
+                (*moving).max(fixed)
+            };
         }
     }
 
