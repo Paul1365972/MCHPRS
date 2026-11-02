@@ -128,7 +128,7 @@ These arguments have a standard type:
 ### note_block
 
 ```
-%x = note_block <instrument>, <note>
+%x = note_block <instrument>, <note>, <powered>
 ```
 
 `instrument` is one of `harp`, `basedrum`, `snare`, `hat`, `bass`, `flute`, `bell`, `guitar`, `chime`, `xylophone`, `iron_xylophone`, `cow_bell`, `didgeridoo`, `bit`, `banjo`, or `pling`.\
