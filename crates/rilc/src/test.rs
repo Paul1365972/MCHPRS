@@ -21,25 +21,13 @@ fn search_path(path: PathBuf, paths: &mut Vec<PathBuf>) -> io::Result<()> {
     Ok(())
 }
 
-fn find_test_root(path: &Path) -> Option<&Path> {
-    if path.is_file() {
-        return find_test_root(path.parent()?);
-    }
-
-    if path.join(".ril_test_root").exists() {
-        Some(path)
-    } else {
-        find_test_root(path.parent()?)
-    }
-}
-
 enum TestOutcome {
     Passed,
     Updated(Graph),
     Failed,
 }
 
-fn run_test(test_root: &Option<&Path>, test_path: &Path, test: &Test, update: bool) -> TestOutcome {
+fn run_test(test_root: &Path, test_path: &Path, test: &Test, update: bool) -> TestOutcome {
     let graph = match &test.input {
         Input::Schematic(schematic) => {
             match extract_schematic(test_path, &schematic.path, &test.options.extract) {
@@ -51,10 +39,7 @@ fn run_test(test_root: &Option<&Path>, test_path: &Path, test: &Test, update: bo
     };
 
     let result_graph = run_passes(&test.options.passes, graph, false);
-    let test_path = match test_root {
-        Some(test_root) => test_path.strip_prefix(test_root).unwrap(),
-        None => test_path,
-    };
+    let test_path = test_path.strip_prefix(test_root).unwrap_or(test_path);
     let full_name = format!("{}:{}", test_path.with_extension("").display(), test.name);
     let mismatches = test.compare(&result_graph);
     if mismatches.is_empty() {
@@ -79,10 +64,11 @@ fn run_test(test_root: &Option<&Path>, test_path: &Path, test: &Test, update: bo
 
 pub fn run_tests(path: PathBuf, update: bool) -> bool {
     let mut ril_paths = Vec::new();
-    let test_root = find_test_root(&path);
-    if test_root.is_none() {
-        eprintln!("warning: failed to find .ril_test_root");
-    }
+    let test_root = if path.is_dir() {
+        path.as_path()
+    } else {
+        path.parent().unwrap_or(&path)
+    };
     if let Err(error) = search_path(path.clone(), &mut ril_paths) {
         eprintln!(
             "error: failed to discover tests at {}: {error}",
@@ -111,7 +97,7 @@ pub fn run_tests(path: PathBuf, update: bool) -> bool {
         };
         let mut results = Vec::new();
         for test in module.tests() {
-            match run_test(&test_root, &path, test, update) {
+            match run_test(test_root, &path, test, update) {
                 TestOutcome::Passed => num_passed += 1,
                 TestOutcome::Updated(graph) => results.push((test, graph)),
                 TestOutcome::Failed => num_failed += 1,
