@@ -52,7 +52,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                     if x.abs() > 30_000_000.0 || z.abs() > 30_000_000.0 || y.abs() > 20_000_000.0 {
                         return Err(RuntimeError::CoordinateOutOfRange.into());
                     }
-                    ctx.player_mut()?.teleport(position);
+                    ctx.teleport(position)?;
                     return ctx.reply(&format!("Teleporting to ({}, {}, {})", x, y, z));
                 }
 
@@ -227,8 +227,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
         if center.0.abs() > 30_000_000.0 || center.1.abs() > 30_000_000.0 {
             return Err(RuntimeError::CoordinateOutOfRange.into());
         }
-        ctx.player_mut()?
-            .teleport(PlayerPos::new(center.0, 64.0, center.1));
+        ctx.teleport(PlayerPos::new(center.0, 64.0, center.1))?;
         Ok(())
     }
 
