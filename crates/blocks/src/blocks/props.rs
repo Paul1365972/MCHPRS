@@ -73,6 +73,26 @@ pub enum LeverFace {
     Ceiling,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct StandingSign {
+    pub rotation: u8,
+    pub waterlogged: bool,
+}
+
+impl BlockTransform for StandingSign {
+    fn rotate90(&mut self) {
+        self.rotation = (self.rotation + 4) % 16;
+    }
+
+    fn flip(&mut self, dir: FlipDirection) {
+        let mirror = match dir {
+            FlipDirection::FlipX => 16,
+            FlipDirection::FlipZ => 24,
+        };
+        self.rotation = (mirror - self.rotation) % 16;
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, BlockProperty, BlockTransform)]
 pub struct Lever {
     pub face: LeverFace,

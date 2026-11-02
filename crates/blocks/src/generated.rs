@@ -2085,80 +2085,47 @@ impl Block {
             Block::OakSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::SpruceSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::BirchSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::AcaciaSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::JungleSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::DarkOakSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::CrimsonSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::WarpedSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::BambooSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::CherrySign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::MangroveSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::rotate(rotation, amt);
-                <bool as BlockTransform>::rotate(waterlogged, amt);
-            }
+            } => self.complex_rotate(amt),
             Block::Lever {
                 face,
                 facing,
@@ -2505,80 +2472,47 @@ impl Block {
             Block::OakSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::SpruceSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::BirchSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::AcaciaSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::JungleSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::DarkOakSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::CrimsonSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::WarpedSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::BambooSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::CherrySign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::MangroveSign {
                 rotation,
                 waterlogged,
-            } => {
-                <u8 as BlockTransform>::flip(rotation, dir);
-                <bool as BlockTransform>::flip(waterlogged, dir);
-            }
+            } => self.complex_flip(dir),
             Block::Lever {
                 face,
                 facing,
