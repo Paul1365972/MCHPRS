@@ -236,6 +236,7 @@ impl BlockStore for PlotWorld {
 
     fn set_block_entity(&mut self, pos: BlockPos, block_entity: Option<BlockEntity>) {
         let Some(block_entity) = block_entity else {
+            let had_sign = matches!(self.block_entity(pos), Some(BlockEntity::Sign(_)));
             self.pending_block_entities.remove(&pos);
             let chunk_index = match self.get_chunk_index_for_block(pos.x, pos.z) {
                 Some(idx) => idx,
@@ -243,6 +244,20 @@ impl BlockStore for PlotWorld {
             };
             let chunk = &mut self.chunks[chunk_index];
             chunk.delete_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF));
+            let block = self.block(pos);
+            if had_sign && (block.is_sign() || block.is_wall_sign()) {
+                let blank = BlockEntity::Sign(Box::default());
+                if let Some(nbt) = blank.to_nbt(true) {
+                    let block_entity_data = CBlockEntityData {
+                        x: pos.x,
+                        y: pos.y,
+                        z: pos.z,
+                        ty: blank.ty(),
+                        nbt,
+                    };
+                    self.pending_block_entities.insert(pos, block_entity_data);
+                }
+            }
             return;
         };
         if !(0..PLOT_BLOCK_HEIGHT).contains(&pos.y) {

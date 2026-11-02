@@ -43,9 +43,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
         let world = ctx.world_mut()?;
         for pos in region_positions(first_pos, second_pos) {
-            if mask.is_none_or(|mask| mask.matches(world, pos))
-                && world.set_block(pos, pattern.pick(world, pos))
-            {
+            if mask.is_none_or(|mask| mask.matches(world, pos)) && pattern.place(world, pos) {
                 blocks_updated += 1;
             }
         }
