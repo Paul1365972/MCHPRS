@@ -222,7 +222,10 @@ impl Block {
             | Block::JungleWallSign { facing, .. }
             | Block::DarkOakWallSign { facing, .. }
             | Block::CrimsonWallSign { facing, .. }
-            | Block::WarpedWallSign { facing, .. } => facing,
+            | Block::WarpedWallSign { facing, .. }
+            | Block::BambooWallSign { facing, .. }
+            | Block::CherryWallSign { facing, .. }
+            | Block::MangroveWallSign { facing, .. } => facing,
             _ => return None,
         })
     }
