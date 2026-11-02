@@ -3,18 +3,23 @@ mod toolchain;
 
 use crate::cache;
 use crate::circuit::{Circuit, State};
-use crate::engine::Simulator;
+use crate::engine::Observer;
 use crate::readback::{Readback, ReadbackError};
 use crate::registers::Registers;
 use crate::rtl;
 use crate::stage::Stage;
-use device::{Device, DeviceError, Identity, Input, Report};
-use mchprs_redpiler::Reporting;
+use device::{Board, Command, Data, DeviceError};
+use mchprs_redpiler::{
+    Engine, EngineError, EngineSnapshot, Input, NodeChanges, NodeId, Progress, Reporting, Resume,
+};
+use mchprs_world::{SendRate, TickRate};
 use std::io;
 use std::path::Path;
+use std::time::{Duration, Instant};
 use toolchain::ToolchainError;
 
 const PORT_VARIABLE: &str = "MCHPRS_FPGA_PORT";
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BoardError {
@@ -28,94 +33,152 @@ pub(crate) enum BoardError {
     Toolchain(#[from] ToolchainError),
     #[error(transparent)]
     Readback(#[from] ReadbackError),
-    #[error("programmed board state does not match the compiled circuit")]
-    State,
-    #[error("board ran to tick {reached} instead of {target}")]
-    Ticks { reached: u64, target: u64 },
-    #[error("board build reads back only input and output nodes")]
-    NoStateReadback,
+    #[error("the programmed board does not run the compiled circuit")]
+    Circuit,
 }
 
-pub(crate) struct Board {
-    device: Device,
-    ticks: u64,
+struct View {
+    data: Data,
+    nodes: Vec<usize>,
+}
+
+impl View {
+    fn new(every_block: bool, circuit: &Circuit) -> View {
+        if every_block {
+            View {
+                data: Data::States,
+                nodes: (0..circuit.nodes().len()).collect(),
+            }
+        } else {
+            View {
+                data: Data::Outputs,
+                nodes: circuit.io_nodes().to_vec(),
+            }
+        }
+    }
+
+    fn read(
+        &self,
+        board: &mut Board,
+        readback: &Readback,
+    ) -> Result<impl Iterator<Item = (usize, State)> + '_, BoardError> {
+        let payload = board.request(Command::Read(self.data))?.payload;
+        let states = readback.decode(self.nodes.iter().copied(), &payload)?;
+        Ok(self.nodes.iter().copied().zip(states))
+    }
+}
+
+/// The board paces its own ticks; the host only polls its tick count and reads its states.
+pub(crate) struct BoardEngine {
+    board: Board,
+    observer: Observer,
     readback: Readback,
-    node_count: usize,
-    snapshots_every_block: bool,
-    pending_inputs: Vec<Input>,
+    snapshot: View,
+    report: View,
+    rate: TickRate,
+    target: u64,
+    ticks_counted: u64,
 }
 
-impl Board {
+impl BoardEngine {
     pub(crate) fn program(
         circuit: &Circuit,
         reporting: Reporting,
         progress: &dyn Fn(Stage),
-    ) -> Result<Board, BoardError> {
+    ) -> Result<BoardEngine, BoardError> {
         let port = std::env::var(PORT_VARIABLE).map_err(|_| BoardError::MissingPort)?;
         let directory = cache::unique_build_directory(&cache::board_root(), "", circuit.identity());
         progress(Stage::GenerateVerilog);
         let registers = Registers::new(circuit);
         rtl::write(&registers, reporting, &directory).map_err(BoardError::Write)?;
         progress(Stage::OpenBoardConnection);
-        let readback = Readback::new(&registers);
-        let node_count = circuit.nodes().len();
-        let snapshots_every_block = reporting.snapshots_every_block();
-        let (snapshot, snapshot_nodes): (_, Vec<_>) = if snapshots_every_block {
-            (Report::States, (0..node_count).collect())
-        } else {
-            (Report::Outputs, circuit.io_nodes().to_vec())
-        };
-        let identity = Identity {
-            circuit_id: circuit.identity(),
-            node_count: node_count as u32,
-            output_count: circuit.io_nodes().len() as u32,
-            state_bytes: if snapshots_every_block {
-                readback.bytes(0..node_count) as u32
-            } else {
-                0
-            },
-            output_bytes: readback.bytes(circuit.io_nodes().iter().copied()) as u32,
-            max_inputs: rtl::MAX_INPUTS_PER_REQUEST as u16,
-        };
-        let mut device = Device::serial(&port, identity)?;
+        let mut board = Board::open(&port)?;
         let bitstream = toolchain::build(&directory, progress)?;
         progress(Stage::ProgramBoard);
         toolchain::program(&bitstream)?;
         progress(Stage::VerifyCircuit);
-        device.identify()?;
-        let programmed = device.advance(&[], 0, snapshot)?;
-        let initial: Vec<_> = snapshot_nodes
-            .iter()
-            .map(|&node| circuit.nodes()[node].initial)
-            .collect();
-        let states = readback.decode(snapshot_nodes.iter().copied(), &programmed.data)?;
-        if programmed.ticks != 0 || states != initial {
-            return Err(BoardError::State);
+        board.discard_received()?;
+        let status = board.request(Command::Status)?;
+        if status.ticks != 0 || status.payload != circuit.identity().to_le_bytes() {
+            return Err(BoardError::Circuit);
+        }
+        let mut engine = BoardEngine {
+            board,
+            observer: Observer::new(circuit, reporting),
+            readback: Readback::new(&registers),
+            snapshot: View::new(reporting.snapshots_every_block(), circuit),
+            report: View::new(reporting.reports_every_block_while_running(), circuit),
+            rate: TickRate::Paused,
+            target: 0,
+            ticks_counted: 0,
+        };
+        let initial = engine
+            .snapshot
+            .read(&mut engine.board, &engine.readback)?
+            .all(|(node, state)| state == circuit.nodes()[node].initial);
+        if !initial {
+            return Err(BoardError::Circuit);
         }
         if let Err(error) = remove_build_artifacts(&directory) {
             tracing::warn!(%error, directory = %directory.display(), "could not remove the FPGA build artifacts");
         }
-        Ok(Board {
-            device,
-            ticks: 0,
-            readback,
-            node_count,
-            snapshots_every_block,
-            pending_inputs: Vec::new(),
+        Ok(engine)
+    }
+}
+
+impl Engine for BoardEngine {
+    fn set_tick_rate(&mut self, rate: TickRate) -> Result<(), EngineError> {
+        let ticks = self.board.request(Command::Run(rate))?.ticks;
+        if let TickRate::Ticks(owed) = rate {
+            self.target = ticks.saturating_add(owed);
+        }
+        self.rate = rate;
+        Ok(())
+    }
+
+    fn set_send_rate(&mut self, _rate: SendRate) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    fn run(&mut self, _deadline: Instant) -> Result<Progress, EngineError> {
+        let ticks = self.board.request(Command::Status)?.ticks;
+        let ticks_completed = ticks - self.ticks_counted;
+        self.ticks_counted = ticks;
+        let ticks_owed = match self.rate {
+            TickRate::Ticks(_) => self.target - ticks,
+            _ => 0,
+        };
+        let resume = match self.rate {
+            TickRate::Paused => Resume::OnRequest,
+            TickRate::Ticks(_) if ticks_owed == 0 => Resume::OnRequest,
+            TickRate::Ticks(_) => Resume::Now,
+            TickRate::Unlimited | TickRate::PerSecond(_) => Resume::After(POLL_INTERVAL),
+        };
+        Ok(Progress {
+            ticks_completed,
+            ticks_owed,
+            resume,
         })
     }
 
-    fn request(&mut self, target: u64, report: Report) -> Result<Vec<u8>, BoardError> {
-        let inputs = std::mem::take(&mut self.pending_inputs);
-        let response = self.device.advance(&inputs, target, report)?;
-        if response.ticks != target {
-            return Err(BoardError::Ticks {
-                reached: response.ticks,
-                target,
-            });
-        }
-        self.ticks = target;
-        Ok(response.data)
+    fn input(&mut self, node: NodeId, input: Input) -> Result<(), EngineError> {
+        let (index, powered) = self.observer.input_power(node, input)?;
+        let input = Command::Input {
+            node: index as u32,
+            powered,
+        };
+        self.board.request(input)?;
+        Ok(())
+    }
+
+    fn take_changes(&mut self) -> Result<NodeChanges, EngineError> {
+        let states = self.report.read(&mut self.board, &self.readback)?;
+        Ok(self.observer.changes(states))
+    }
+
+    fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError> {
+        let states = self.snapshot.read(&mut self.board, &self.readback)?;
+        Ok(self.observer.snapshot(states))
     }
 }
 
@@ -129,35 +192,4 @@ fn remove_build_artifacts(directory: &Path) -> io::Result<()> {
         }
     }
     Ok(())
-}
-
-impl Simulator for Board {
-    type Error = BoardError;
-
-    fn input(&mut self, node: usize, powered: bool) -> Result<(), BoardError> {
-        self.pending_inputs.push(Input {
-            node: node as u32,
-            powered,
-        });
-        Ok(())
-    }
-
-    fn advance(&mut self, ticks: u64) -> Result<(), BoardError> {
-        let target = self.ticks + ticks;
-        self.request(target, Report::Nothing)?;
-        Ok(())
-    }
-
-    fn states(&mut self) -> Result<Vec<State>, BoardError> {
-        if !self.snapshots_every_block {
-            return Err(BoardError::NoStateReadback);
-        }
-        let data = self.request(self.ticks, Report::States)?;
-        Ok(self.readback.decode(0..self.node_count, &data)?)
-    }
-
-    fn io_states(&mut self, io_nodes: &[usize]) -> Result<Vec<State>, BoardError> {
-        let data = self.request(self.ticks, Report::Outputs)?;
-        Ok(self.readback.decode(io_nodes.iter().copied(), &data)?)
-    }
 }

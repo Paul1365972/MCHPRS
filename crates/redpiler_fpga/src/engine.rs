@@ -23,32 +23,31 @@ pub(crate) trait Simulator: Send {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum PhaseError {
+pub(crate) enum ObserverError {
     #[error("node {node}: {kind:?} does not accept {input:?}")]
     Input {
         node: usize,
         kind: Kind,
         input: Input,
     },
-    #[error("phase tick counter overflow")]
-    TickOverflow,
 }
 
-pub(crate) struct PhaseEngine<S> {
-    simulator: S,
+#[derive(Debug, thiserror::Error)]
+#[error("phase tick counter overflow")]
+struct TickOverflow;
+
+/// Turns inputs into input node powers and node states into the changes and snapshots engines report.
+pub(crate) struct Observer {
     kinds: Vec<Kind>,
     io_nodes: Vec<usize>,
     reporting: Reporting,
     input_powered: Vec<bool>,
     reported: Vec<State>,
-    ticks: u64,
-    ticks_per_second: f64,
 }
 
-impl<S: Simulator> PhaseEngine<S> {
-    pub(crate) fn new(simulator: S, circuit: &Circuit, reporting: Reporting) -> PhaseEngine<S> {
-        PhaseEngine {
-            simulator,
+impl Observer {
+    pub(crate) fn new(circuit: &Circuit, reporting: Reporting) -> Observer {
+        Observer {
             kinds: circuit.nodes().iter().map(|node| node.kind).collect(),
             io_nodes: circuit.io_nodes().to_vec(),
             reporting,
@@ -58,18 +57,70 @@ impl<S: Simulator> PhaseEngine<S> {
                 .map(|node| node.initial.is_powered())
                 .collect(),
             reported: circuit.nodes().iter().map(|node| node.initial).collect(),
-            ticks: 0,
-            ticks_per_second: 0.0,
         }
     }
 
-    fn states(&mut self, every_block: bool) -> Result<Vec<(usize, State)>, S::Error> {
-        Ok(if every_block {
-            self.simulator.states()?.into_iter().enumerate().collect()
-        } else {
-            let states = self.simulator.io_states(&self.io_nodes)?;
-            self.io_nodes.iter().copied().zip(states).collect()
-        })
+    pub(crate) fn io_nodes(&self) -> &[usize] {
+        &self.io_nodes
+    }
+
+    pub(crate) fn reporting(&self) -> Reporting {
+        self.reporting
+    }
+
+    pub(crate) fn input_power(
+        &mut self,
+        node: NodeId,
+        input: Input,
+    ) -> Result<(usize, bool), ObserverError> {
+        let index = node.index();
+        let powered = match (input, self.kinds[index]) {
+            (Input::Interact, Kind::Lever) => !self.input_powered[index],
+            (Input::Interact, Kind::Button) => true,
+            (Input::PressurePlate { powered }, Kind::PressurePlate) => powered,
+            (input, kind) => {
+                return Err(ObserverError::Input {
+                    node: index,
+                    kind,
+                    input,
+                })
+            }
+        };
+        self.input_powered[index] = powered;
+        Ok((index, powered))
+    }
+
+    pub(crate) fn changes(
+        &mut self,
+        states: impl IntoIterator<Item = (usize, State)>,
+    ) -> NodeChanges {
+        let mut changes = NodeChanges::default();
+        for (node, state) in states {
+            self.report(node, state, &mut changes);
+        }
+        changes
+    }
+
+    pub(crate) fn snapshot(
+        &mut self,
+        states: impl IntoIterator<Item = (usize, State)>,
+    ) -> EngineSnapshot {
+        let mut changes = NodeChanges::default();
+        let mut pending_ticks = Vec::new();
+        for (node, state) in states {
+            if let Some(pending) = state.pending {
+                pending_ticks.push(PendingTick {
+                    node: NodeId::new(node),
+                    delay: u32::from(pending.delay.get()),
+                    priority: pending.priority,
+                });
+            }
+            self.report(node, state, &mut changes);
+        }
+        EngineSnapshot {
+            changes,
+            pending_ticks,
+        }
     }
 
     fn report(&mut self, node: usize, state: State, changes: &mut NodeChanges) {
@@ -91,6 +142,34 @@ fn appearance(state: State) -> (bool, SignalStrength) {
     (state.locked, state.strength)
 }
 
+pub(crate) struct PhaseEngine<S> {
+    simulator: S,
+    observer: Observer,
+    ticks: u64,
+    ticks_per_second: f64,
+}
+
+impl<S: Simulator> PhaseEngine<S> {
+    pub(crate) fn new(simulator: S, circuit: &Circuit, reporting: Reporting) -> PhaseEngine<S> {
+        PhaseEngine {
+            simulator,
+            observer: Observer::new(circuit, reporting),
+            ticks: 0,
+            ticks_per_second: 0.0,
+        }
+    }
+
+    fn states(&mut self, every_block: bool) -> Result<Vec<(usize, State)>, S::Error> {
+        Ok(if every_block {
+            self.simulator.states()?.into_iter().enumerate().collect()
+        } else {
+            let io_nodes = self.observer.io_nodes();
+            let states = self.simulator.io_states(io_nodes)?;
+            io_nodes.iter().copied().zip(states).collect()
+        })
+    }
+}
+
 impl<S: Simulator> SteppedEngine for PhaseEngine<S> {
     fn run_ticks(&mut self, max_ticks: u64, deadline: Instant) -> Result<u64, EngineError> {
         let mut completed = 0;
@@ -98,10 +177,7 @@ impl<S: Simulator> SteppedEngine for PhaseEngine<S> {
             let started = Instant::now();
             let budget = deadline.saturating_duration_since(started).as_secs_f64();
             let chunk = ((self.ticks_per_second * budget) as u64).clamp(1, max_ticks - completed);
-            let ticks = self
-                .ticks
-                .checked_add(chunk)
-                .ok_or(PhaseError::TickOverflow)?;
+            let ticks = self.ticks.checked_add(chunk).ok_or(TickOverflow)?;
             self.simulator.advance(chunk)?;
             self.ticks = ticks;
             completed += chunk;
@@ -119,51 +195,23 @@ impl<S: Simulator> SteppedEngine for PhaseEngine<S> {
     }
 
     fn input(&mut self, node: NodeId, input: Input) -> Result<(), EngineError> {
-        let index = node.index();
-        let powered = match (input, self.kinds[index]) {
-            (Input::Interact, Kind::Lever) => !self.input_powered[index],
-            (Input::Interact, Kind::Button) => true,
-            (Input::PressurePlate { powered }, Kind::PressurePlate) => powered,
-            (input, kind) => {
-                return Err(PhaseError::Input {
-                    node: index,
-                    kind,
-                    input,
-                }
-                .into());
-            }
-        };
+        let (index, powered) = self.observer.input_power(node, input)?;
         self.simulator.input(index, powered)?;
-        self.input_powered[index] = powered;
         Ok(())
     }
 
     fn take_changes(&mut self) -> Result<NodeChanges, EngineError> {
-        let mut changes = NodeChanges::default();
-        let every_block = self.reporting.reports_every_block_while_running();
-        for (node, state) in self.states(every_block)? {
-            self.report(node, state, &mut changes);
-        }
-        Ok(changes)
+        let every_block = self
+            .observer
+            .reporting()
+            .reports_every_block_while_running();
+        let states = self.states(every_block)?;
+        Ok(self.observer.changes(states))
     }
 
     fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError> {
-        let states = self.states(self.reporting.snapshots_every_block())?;
-        let mut changes = NodeChanges::default();
-        let mut pending_ticks = Vec::new();
-        for (node, state) in states {
-            if let Some(pending) = state.pending {
-                pending_ticks.push(PendingTick {
-                    node: NodeId::new(node),
-                    delay: u32::from(pending.delay.get()),
-                    priority: pending.priority,
-                });
-            }
-            self.report(node, state, &mut changes);
-        }
-        Ok(EngineSnapshot {
-            changes,
-            pending_ticks,
-        })
+        let every_block = self.observer.reporting().snapshots_every_block();
+        let states = self.states(every_block)?;
+        Ok(self.observer.snapshot(states))
     }
 }

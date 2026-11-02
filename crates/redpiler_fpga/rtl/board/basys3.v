@@ -16,7 +16,7 @@ module basys3 (
     localparam [1:0] TICK_COUNT_VIEW = 0, TICK_RATE_VIEW = 1, FAULT_VIEW = 2;
     localparam [7:0] DASH = 8'h40, LETTER_E = 8'h79;
 
-    wire ticking, waiting, clear_fault, previous_view, next_view;
+    wire ticking, halted, clear_fault, previous_view, next_view;
     wire ticking_shown, receiving, transmitting;
     wire [3:0] fault_code;
     wire [63:0] tick_count;
@@ -54,12 +54,12 @@ module basys3 (
 
     assign led = {
         fault_code != 0, view == TICK_COUNT_VIEW, view == TICK_RATE_VIEW, view == FAULT_VIEW,
-        7'b0, transmitting, receiving, waiting, ticking_shown, heartbeat[26]
+        7'b0, transmitting, receiving, halted, ticking_shown, heartbeat[26]
     };
 
     circuit_system system (
         .clock(clock), .serial_receive(serial_receive), .clear_fault(clear_fault),
-        .serial_transmit(serial_transmit), .ticking(ticking), .waiting(waiting),
+        .serial_transmit(serial_transmit), .ticking(ticking), .halted(halted),
         .tick_count(tick_count), .fault_code(fault_code)
     );
     push_button center (.clock(clock), .button(button_center), .pressed(clear_fault));

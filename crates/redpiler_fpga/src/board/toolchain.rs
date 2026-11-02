@@ -74,7 +74,7 @@ fn synthesize(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, Too
     fs::write(
         &script,
         format!(
-            "read_verilog -sv {sources}\nsynth_xilinx -flatten -abc9 -arch xc7 -top basys3\nwrite_json {}\n",
+            "read_verilog -sv {sources}\nsynth_xilinx -flatten -abc9 -nosrl -arch xc7 -top basys3\nwrite_json {}\n",
             yosys_path(&netlist)?
         ),
     )?;

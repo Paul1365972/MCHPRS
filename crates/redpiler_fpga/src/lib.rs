@@ -14,7 +14,7 @@ mod stage;
 mod subprocess;
 mod verilator;
 
-use board::Board;
+use board::BoardEngine;
 use circuit::Circuit;
 use engine::PhaseEngine;
 use mchprs_redpiler::{
@@ -138,11 +138,7 @@ pub fn prepare(
             &circuit,
             reporting,
         ))),
-        Target::Fpga => Box::new(HostPaced::new(PhaseEngine::new(
-            Board::program(&circuit, reporting, &report)?,
-            &circuit,
-            reporting,
-        ))),
+        Target::Fpga => Box::new(BoardEngine::program(&circuit, reporting, &report)?),
     };
     progress.set(None);
     Ok(engine)

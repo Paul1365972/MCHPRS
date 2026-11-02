@@ -21,7 +21,6 @@ static LIBRARY: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/rtl");
 pub(crate) const LIBRARY_DIRECTORY: &str = "rtl";
 const CIRCUIT_FILE: &str = "circuit.v";
 const ITEMS_PER_LINE: usize = 16;
-pub(crate) const MAX_INPUTS_PER_REQUEST: usize = 256;
 
 pub(crate) fn write(
     registers: &Registers,
@@ -115,7 +114,7 @@ impl<'a> Writer<'a> {
     input wire [31:0] input_index,
     input wire input_value, run,
     input wire [63:0] tick_limit,
-    output wire busy,
+    output wire busy, tick_started,
     output wire [63:0] tick_count,
     output wire [{}:0] readback
 );
@@ -128,6 +127,7 @@ impl<'a> Writer<'a> {
         attenuated = signal > attenuation ? signal - attenuation : 4'd0;
     endfunction
     wire input_nodes, begin_tick;
+    assign tick_started = begin_tick;
     wire [3:0] firing;
     fpga_sequencer sequencer (
         .clock(clock), .set_input(set_input), .run(run), .tick_limit(tick_limit),
@@ -197,25 +197,22 @@ impl<'a> Writer<'a> {
 
     fn system(&mut self, state_bytes: usize, output_bytes: usize) {
         let node_count = self.circuit.nodes().len();
-        let output_count = self.circuit.io_nodes().len();
         let identity = self.circuit.identity();
         writeln!(
             self.output,
             "
 module circuit_system #(parameter CLOCKS_PER_BIT = 25)(
     input wire clock, serial_receive, clear_fault,
-    output wire serial_transmit, ticking, waiting,
+    output wire serial_transmit, ticking, halted,
     output wire [63:0] tick_count,
     output wire [3:0] fault_code
 );
     protocol_controller #(
-        .NODE_COUNT({node_count}), .OUTPUT_COUNT({output_count}),
-        .STATE_BYTES({state_bytes}), .OUTPUT_BYTES({output_bytes}),
-        .CIRCUIT_ID(64'h{identity:016x}), .MAX_INPUTS({MAX_INPUTS_PER_REQUEST}),
-        .CLOCKS_PER_BIT(CLOCKS_PER_BIT)
+        .NODE_COUNT({node_count}), .STATE_BYTES({state_bytes}), .OUTPUT_BYTES({output_bytes}),
+        .CIRCUIT_ID(64'h{identity:016x}), .CLOCKS_PER_BIT(CLOCKS_PER_BIT)
     ) controller (
         .clock(clock), .serial_receive(serial_receive), .clear_fault(clear_fault),
-        .serial_transmit(serial_transmit), .ticking(ticking), .waiting(waiting),
+        .serial_transmit(serial_transmit), .ticking(ticking), .halted(halted),
         .tick_count(tick_count), .fault_code(fault_code)
     );
 endmodule"
