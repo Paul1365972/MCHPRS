@@ -1033,21 +1033,24 @@ fn expand_selection(player: &mut Player, amount: BlockPos, contract: bool) {
 
     let mut expand_axis = |axis: u8| {
         let amount = *get_pos_axis(&mut amount.clone(), axis);
+        if amount == 0 {
+            return;
+        }
         let p1 = get_pos_axis(&mut p1, axis);
         let p2 = get_pos_axis(&mut p2, axis);
-        #[allow(clippy::comparison_chain)]
-        if amount > 0 {
-            if (p1 > p2) ^ contract {
-                *p1 += amount;
+        let p1_extends = if amount > 0 { *p1 > *p2 } else { *p1 < *p2 };
+        let (moving, fixed) = if p1_extends ^ contract {
+            (p1, *p2)
+        } else {
+            (p2, *p1)
+        };
+        *moving += amount;
+        if contract {
+            *moving = if amount > 0 {
+                (*moving).min(fixed)
             } else {
-                *p2 += amount;
-            }
-        } else if amount < 0 {
-            if (p1 < p2) ^ contract {
-                *p1 += amount;
-            } else {
-                *p2 += amount;
-            }
+                (*moving).max(fixed)
+            };
         }
     };
 
