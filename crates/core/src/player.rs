@@ -402,7 +402,12 @@ impl Player {
         }
         .encode();
         self.pos = pos;
+        self.on_ground = false;
         self.client.send_packet(&player_position_and_look);
+    }
+
+    pub fn standing_on(&self) -> Option<BlockPos> {
+        self.on_ground.then(|| self.pos.block_pos())
     }
 
     /// Sends the `ChatMessage` packet containing the raw text component

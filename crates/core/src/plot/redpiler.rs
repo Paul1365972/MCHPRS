@@ -209,7 +209,7 @@ impl Plot {
                 self.end_redpiler();
             }
             Event::Cancelled => {
-                self.restore_compile_ticks();
+                self.abandon_compile();
                 self.end_redpiler();
             }
             Event::Failed(error) => {
@@ -220,12 +220,36 @@ impl Plot {
                     .as_ref()
                     .is_some_and(|redpiler| redpiler.circuit.is_none())
                 {
-                    self.restore_compile_ticks();
+                    self.abandon_compile();
                 }
                 self.end_redpiler();
             }
         }
         None
+    }
+
+    fn abandon_compile(&mut self) {
+        let Some(redpiler) = &mut self.redpiler else {
+            return;
+        };
+        self.world.ticks = TickQueue::new(mem::take(&mut redpiler.plot_ticks));
+        self.reset_pressure_plates();
+    }
+
+    pub(super) fn reset_pressure_plates(&mut self) {
+        let region = self.world.region();
+        for pos in self
+            .world
+            .occupied_regions(region)
+            .into_iter()
+            .flat_map(Region::positions)
+        {
+            if let Some(&mut powered) = self.world.block(pos).get_pressure_plate_powered()
+                && powered != self.are_players_on_block(pos)
+            {
+                mchprs_redstone::set_pressure_plate(&mut self.world, pos, !powered);
+            }
+        }
     }
 
     fn end_redpiler(&mut self) {
@@ -244,6 +268,7 @@ impl Plot {
 
     pub fn start_redpiler(&mut self, options: RedpilerOptions, engine: EngineKind) {
         debug!("Starting redpiler with the {engine} engine");
+        self.reset_pressure_plates();
         let region = self.world.region();
         let blocks = self.world.copy_blocks();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
@@ -284,12 +309,15 @@ impl Plot {
         };
         if redpiler.circuit.is_none() {
             debug!("Cancelling the redpiler compile");
-            self.restore_compile_ticks();
+            self.abandon_compile();
             self.end_redpiler();
         } else {
             debug!("Stopping redpiler");
             for event in redpiler.worker.stop(restore) {
                 self.apply_redpiler_event(event);
+            }
+            if restore {
+                self.reset_pressure_plates();
             }
         }
         if update {
@@ -315,13 +343,5 @@ impl Plot {
         self.redpiler
             .as_ref()
             .is_some_and(|redpiler| redpiler.circuit.is_none())
-    }
-}
-
-impl Plot {
-    fn restore_compile_ticks(&mut self) {
-        if let Some(redpiler) = &mut self.redpiler {
-            self.world.ticks = TickQueue::new(mem::take(&mut redpiler.plot_ticks));
-        }
     }
 }

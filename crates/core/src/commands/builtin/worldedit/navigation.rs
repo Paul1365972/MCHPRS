@@ -28,14 +28,14 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         let target = ctx.target_block(1000.0)?;
         let above = BlockPos::new(target.x, target.y + 1, target.z);
         let pos = free_spot_above(ctx.world(), above);
-        ctx.player_mut()?.teleport(pos);
+        ctx.teleport(pos)?;
         ctx.worldedit_message("Teleported to block.")
     }));
 
     registry.register(Command::new("unstuck").alias("!").executes(|ctx| {
         let feet = ctx.player()?.pos.block_pos();
         let pos = free_spot_above(ctx.world(), feet);
-        ctx.player_mut()?.teleport(pos);
+        ctx.teleport(pos)?;
         ctx.worldedit_message("Moved to free position.")
     }));
 
@@ -67,7 +67,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     }
                 }
 
-                ctx.player_mut()?.teleport(new_pos);
+                ctx.teleport(new_pos)?;
                 ctx.worldedit_message(&format!("Moved up {} blocks", distance))
             }),
     );
@@ -107,7 +107,7 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
         let mut new_pos = ctx.player()?.pos;
         new_pos.y = player_y as f64;
-        ctx.player_mut()?.teleport(new_pos);
+        ctx.teleport(new_pos)?;
         ctx.worldedit_message(&format!("{} {} levels", verb, levels - remaining))
     }
 

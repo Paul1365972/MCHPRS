@@ -46,7 +46,9 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
-use tracing::{error, info, warn};
+#[cfg(feature = "whitelist")]
+use tracing::warn;
+use tracing::{error, info};
 
 /// The width of a plot (2^n)
 pub const PLOT_SCALE: u32 = 5;
@@ -406,48 +408,49 @@ impl Plot {
         ));
     }
 
-    fn on_player_move(&mut self, player_idx: usize, old: PlayerPos, new: PlayerPos) {
-        self.release_pressure_plate(old.block_pos());
-        let new_block = new.block_pos();
-        if let Some(false) = self.world.block(new_block).get_pressure_plate_powered()
-            && self.players[player_idx].on_ground
-        {
-            self.set_pressure_plate(new_block, true);
-        }
+    pub fn teleport_player(&mut self, player_idx: usize, pos: PlayerPos) {
+        let from = self.players[player_idx].standing_on();
+        self.players[player_idx].teleport(pos);
+        self.step(from, self.players[player_idx].standing_on());
     }
 
-    fn release_pressure_plate(&mut self, pos: BlockPos) {
-        if let Some(true) = self.world.block(pos).get_pressure_plate_powered()
-            && !self.are_players_on_block(pos)
-        {
-            self.set_pressure_plate(pos, false);
-        }
-    }
-
-    fn set_pressure_plate(&mut self, pos: BlockPos, new_powered: bool) {
-        if let Some(redpiler) = &self.redpiler {
-            redpiler.worker.drive(pos, Input::Set(new_powered.into()));
-            let mut block = self.world.block(pos);
-            if let Some(powered) = block.get_pressure_plate_powered() {
-                *powered = new_powered;
-                self.world.set_block(pos, block);
+    fn step(&mut self, from: Option<BlockPos>, to: Option<BlockPos>) {
+        if from == to {
+            if let Some(to) = to
+                && self.redpiler.is_none()
+                && let Some(false) = self.world.block(to).get_pressure_plate_powered()
+            {
+                self.set_pressure_plate(to, true);
             }
             return;
         }
-
-        if !mchprs_redstone::set_pressure_plate(&mut self.world, pos, new_powered) {
-            warn!("Block at {} is not a pressure plate", pos);
+        if let Some(from) = from
+            && !self.are_players_on_block(from)
+        {
+            self.set_pressure_plate(from, false);
         }
-        self.publish_world();
+        if let Some(to) = to {
+            self.set_pressure_plate(to, true);
+        }
     }
 
-    fn are_players_on_block(&mut self, pos: BlockPos) -> bool {
-        for player in &self.players {
-            if player.pos.block_pos() == pos && player.on_ground {
-                return true;
+    fn set_pressure_plate(&mut self, pos: BlockPos, pressed: bool) {
+        if self.world.block(pos).get_pressure_plate_powered().is_none() {
+            return;
+        }
+        match &mut self.redpiler {
+            Some(redpiler) => redpiler.worker.drive(pos, Input::Set(pressed.into())),
+            None => {
+                mchprs_redstone::set_pressure_plate(&mut self.world, pos, pressed);
+                self.publish_world();
             }
         }
-        false
+    }
+
+    fn are_players_on_block(&self, pos: BlockPos) -> bool {
+        self.players
+            .iter()
+            .any(|player| player.standing_on() == Some(pos))
     }
 
     fn enter_plot(&mut self, player: Player) {
@@ -485,8 +488,10 @@ impl Plot {
             .insert(player.entity_id, PlayerPacketSender::new(&player.client));
         self.refresh_scoreboard();
         self.scoreboard.add_player(&player);
+        let to = player.standing_on();
         self.players.push(player);
         self.update_view_pos_for_player(self.players.len() - 1, true);
+        self.step(None, to);
     }
 
     fn get_chunk_distance(x1: i32, z1: i32, x2: i32, z2: i32) -> u32 {
@@ -921,6 +926,7 @@ impl Plot {
         self.destroy_entity(player.entity_id);
         self.locked_players.remove(&player.entity_id);
         self.scoreboard.remove_player(&player);
+        self.step(player.standing_on(), None);
         player
     }
 
@@ -934,12 +940,13 @@ impl Plot {
     }
 
     #[cfg(feature = "claims")]
-    pub fn claim_plot(&mut self, plot_x: i32, plot_z: i32, player: usize) {
-        let player = &mut self.players[player];
-        database::claim_plot(plot_x, plot_z, &format!("{:032x}", player.uuid));
+    pub fn claim_plot(&mut self, plot_x: i32, plot_z: i32, player_idx: usize) {
+        let uuid = self.players[player_idx].uuid;
+        database::claim_plot(plot_x, plot_z, &format!("{:032x}", uuid));
         let center = Plot::get_center(plot_x, plot_z);
-        player.teleport(PlayerPos::new(center.0, 64.0, center.1));
-        player.send_system_message(&format!("Claimed plot {},{}", plot_x, plot_z));
+        self.teleport_player(player_idx, PlayerPos::new(center.0, 64.0, center.1));
+        self.players[player_idx]
+            .send_system_message(&format!("Claimed plot {},{}", plot_x, plot_z));
     }
 
     pub fn get_center(plot_x: i32, plot_z: i32) -> (f64, f64) {
@@ -992,12 +999,10 @@ impl Plot {
                     "{} issued command: {}",
                     self.players[player_idx].username, command_line
                 );
-                let old_block = self.players[player_idx].pos.block_pos();
                 let result = COMMAND_REGISTRY.execute(self, player_idx, &command_line);
                 if let Err(err) = result {
                     error!("Failed to run command `{}`: {}", command_line, err);
                 }
-                self.release_pressure_plate(old_block);
                 if self.players.get(player_idx).map(|p| p.uuid) != Some(uuid) {
                     break;
                 }
@@ -1048,7 +1053,7 @@ impl Plot {
                     for player in &mut mem::take(&mut self.players) {
                         player.save();
                         player.kick("Server closed".into());
-                        self.release_pressure_plate(player.pos.block_pos());
+                        self.step(player.standing_on(), None);
                     }
                     self.always_running = false;
                     self.running = false;
@@ -1120,14 +1125,14 @@ impl Plot {
                 message_sender
                     .send(Message::PlayerLeft(player.uuid))
                     .unwrap();
-                disconnected_players.push((player.entity_id, player.pos.block_pos()));
+                disconnected_players.push((player.entity_id, player.standing_on()));
             }
             alive
         });
-        for (entity_id, block) in disconnected_players {
+        for (entity_id, standing_on) in disconnected_players {
             self.world.packet_senders.remove(&entity_id);
             self.destroy_entity(entity_id);
-            self.release_pressure_plate(block);
+            self.step(standing_on, None);
         }
     }
 
@@ -1335,7 +1340,11 @@ impl Plot {
         let plot_path = format!("./world/plots/p{},{}", x, z);
         Ok(if Path::new(&plot_path).exists() {
             match data::load_plot(plot_path) {
-                Ok(data) => Plot::from_data(data, x, z, rx, tx, priv_rx, always_running),
+                Ok(data) => {
+                    let mut plot = Plot::from_data(data, x, z, rx, tx, priv_rx, always_running);
+                    plot.reset_pressure_plates();
+                    plot
+                }
                 Err(err) => {
                     return Result::Err((
                         err.context(format!("error loading plot {},{}", x, z)),

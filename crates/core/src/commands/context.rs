@@ -171,6 +171,12 @@ impl<'a> ExecutionContext<'a> {
             .ok_or(InternalError::InvalidPlayerIndex { index })
     }
 
+    pub(super) fn teleport(&mut self, pos: PlayerPos) -> CommandResult<()> {
+        self.player()?;
+        self.plot.teleport_player(self.player_idx, pos);
+        Ok(())
+    }
+
     pub(super) fn player_index(&self) -> usize {
         self.player_idx
     }
