@@ -1,7 +1,7 @@
 use crate::circuit::Circuit;
 use crate::extract::{extract, ExtractError};
 use crate::graph::Graph;
-use crate::passes::{build_pass_pipeline, PassPipeline, PassRegistry};
+use crate::passes::{run_passes, Pass};
 use crate::ports::{Observed, Ports};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
@@ -69,6 +69,7 @@ pub fn compile(
     region: Region,
     ticks: &[TickEntry],
     options: &CompileOptions,
+    passes: &[&dyn Pass],
     progress: &mut dyn FnMut(Stage) -> ControlFlow<()>,
 ) -> Result<Circuit, CompileError> {
     let mut graph = extract(world, region, ticks, options)?;
@@ -76,10 +77,7 @@ pub fn compile(
     if progress(Stage::Extracted { nodes }).is_break() {
         return Err(CompileError::Cancelled);
     }
-    let registry = PassRegistry::default();
-    let pipeline = build_pass_pipeline(&registry, options);
-    if optimize(&mut graph, &pipeline, progress).is_break() || progress(Stage::Building).is_break()
-    {
+    if optimize(&mut graph, passes, progress).is_break() || progress(Stage::Building).is_break() {
         return Err(CompileError::Cancelled);
     }
     Ok(Circuit::new(graph).expect("extraction and the passes keep the circuit invariants"))
@@ -87,10 +85,9 @@ pub fn compile(
 
 fn optimize(
     graph: &mut Graph,
-    pipeline: &PassPipeline,
+    passes: &[&dyn Pass],
     progress: &mut dyn FnMut(Stage) -> ControlFlow<()>,
 ) -> ControlFlow<()> {
-    let passes = pipeline.passes();
     let mut starting = |completed: usize| match passes.get(completed) {
         Some(pass) => progress(Stage::Optimizing {
             pass: pass.status_message(),
@@ -101,7 +98,7 @@ fn optimize(
     };
     starting(0)?;
     let mut completed = 0;
-    pipeline.run_passes(graph, &mut |_, _| {
+    run_passes(passes, graph, &mut |_, _| {
         completed += 1;
         starting(completed)
     })

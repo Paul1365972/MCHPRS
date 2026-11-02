@@ -11,7 +11,7 @@ use mchprs_redpiler::{
     compile::CompileOptions,
     extract::extract,
     graph::Graph,
-    passes::{build_pass_pipeline, PassPipeline, PassPipelineBuilder, PassRegistry},
+    passes::{self, Pass},
 };
 use mchprs_ril::{DumpGraph, RILModule, RilOptions};
 use std::fs;
@@ -153,10 +153,10 @@ fn extract_schematic(schematic_path: &Path, options: &CompileOptions) -> Option<
     }
 }
 
-fn run_pipeline(pipeline: &PassPipeline, mut graph: Graph, print_after_all: bool) -> Graph {
-    let _ = pipeline.run_passes(&mut graph, &mut |pass, graph| {
+fn run_passes(passes: &[&dyn Pass], mut graph: Graph, print_after_all: bool) -> Graph {
+    let _ = passes::run_passes(passes, &mut graph, &mut |pass, graph| {
         if print_after_all {
-            println!("Circuit after pass: {}", pass.debug_name());
+            println!("Circuit after pass: {}", pass.name());
             graph.dump();
         }
         ControlFlow::Continue(())
@@ -185,19 +185,21 @@ fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
     }
 }
 
-/// The passes `options` name, or else the pipeline of its compile options.
-fn pass_pipeline<'p>(registry: &'p PassRegistry, options: &RilOptions) -> Option<PassPipeline<'p>> {
-    let Some(passes) = &options.passes else {
-        return Some(build_pass_pipeline(registry, &options.compile_options()));
+/// The passes `options` name, or else the standard passes of its compile options.
+fn chosen_passes(options: &RilOptions) -> Option<Vec<&'static dyn Pass>> {
+    let Some(names) = &options.passes else {
+        return Some(passes::standard(&options.compile_options()));
     };
-    let mut builder = PassPipelineBuilder::new(registry);
-    for driver_key in passes.split(',') {
-        if !builder.add_pass_by_driver_key(driver_key) {
-            eprintln!("error: failed to add pass with key: {}", driver_key);
-            return None;
-        }
-    }
-    Some(builder.build())
+    names
+        .split(',')
+        .map(|name| {
+            let pass = passes::named(name);
+            if pass.is_none() {
+                eprintln!("error: there is no pass `{name}`");
+            }
+            pass
+        })
+        .collect()
 }
 
 pub fn get_version_string() -> String {

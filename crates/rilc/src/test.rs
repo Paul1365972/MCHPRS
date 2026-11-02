@@ -1,5 +1,4 @@
 use anstream::println;
-use mchprs_redpiler::passes::PassRegistry;
 use mchprs_ril::string_replacer::StringReplacer;
 use mchprs_ril::{self as ril, RILModule, RILTest};
 use owo_colors::OwoColorize as _;
@@ -48,11 +47,10 @@ fn run_test(
         None => test.graph,
     };
 
-    let registry = PassRegistry::default();
-    let Some(pass_pipeline) = crate::pass_pipeline(&registry, &test.options) else {
+    let Some(passes) = crate::chosen_passes(&test.options) else {
         return TestOutcome::Failed;
     };
-    let result_graph = crate::run_pipeline(&pass_pipeline, graph, false);
+    let result_graph = crate::run_passes(&passes, graph, false);
     let test_path = test_path.strip_prefix(test_root).unwrap_or(test_path);
     let full_name = format!("{}:{}", test_path.with_extension("").display(), test.name);
     if !module.compare_test_result(&test.name, &result_graph) {
