@@ -758,6 +758,7 @@ impl Plot {
         let region = self.world.region();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
         let compile_options = options.compile_options();
+        let passes = mchprs_redpiler::passes::standard(&compile_options);
 
         let mut players_need_updates = HashSet::new();
         let result = thread::scope(|s| {
@@ -768,6 +769,7 @@ impl Plot {
                     region,
                     &ticks,
                     &compile_options,
+                    &passes,
                     &mut |stage| {
                         trace!("Redpiler compile stage {stage:?}");
                         ControlFlow::Continue(())

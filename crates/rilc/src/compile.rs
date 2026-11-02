@@ -1,5 +1,4 @@
-use crate::{extract_schematic, run_pipeline};
-use mchprs_redpiler::passes::{build_pass_pipeline, PassRegistry};
+use crate::{chosen_passes, extract_schematic, run_passes};
 use mchprs_ril::ast::Global;
 use mchprs_ril::dump_graph;
 use mchprs_ril::RILOptions;
@@ -18,13 +17,8 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &RILOp
         process::exit(1);
     };
 
-    let registry = PassRegistry::default();
-    let pass_pipeline = match &options.passes {
-        Some(passes) => match crate::parse_pass_pipeline(&registry, passes) {
-            Some(pipeline) => pipeline,
-            None => process::exit(1),
-        },
-        None => build_pass_pipeline(&registry, &options.compile_options()),
+    let Some(passes) = chosen_passes(options) else {
+        process::exit(1);
     };
 
     let mut result = String::new();
@@ -46,7 +40,7 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, options: &RILOp
             Global::BackendCircuit(_) => todo!("backend circuit compilation"),
         };
 
-        let result_graph = run_pipeline(&pass_pipeline, graph, options.print_after_all);
+        let result_graph = run_passes(&passes, graph, options.print_after_all);
         result.push('\n');
         dump_graph(&mut result, &result_graph, name).unwrap();
         result.push('\n');

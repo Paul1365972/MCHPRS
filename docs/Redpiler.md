@@ -48,11 +48,11 @@ Nodes with pending ticks are not folded. A folded node keeps its current output 
 ## The `UnreachableOutput` Pass
 
 A link only carries a signal if its source can output a strength above the link's weight.
-`SSSetAnalysis` provides each node's maximum output strength, including its current output and any pending tick.
+The `ss_sets` analysis provides each node's maximum output strength, including its current output and any pending tick.
 Every outgoing link whose weight is at least that maximum is removed.
 For example, a comparator in subtract mode with a constant side input never outputs more than its maximum default input minus that constant, so links with a higher weight are removed.
 
-## The `SSSetAnalysis` Pass
+## The `ss_sets` Analysis
 
 This analysis approximates output strengths using the compile graph's node states and inputs.
 Every node starts with its current output strength.

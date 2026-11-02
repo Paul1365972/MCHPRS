@@ -1,11 +1,11 @@
 use crate::graph::{Direction, Graph, NodeIdx, NodeKind};
-use crate::passes::{AnalysisInfos, Pass};
+use crate::passes::Pass;
 use tracing::trace;
 
 pub struct ConstantFold;
 
 impl Pass for ConstantFold {
-    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
+    fn run(&self, graph: &mut Graph) {
         let num_folded = fold(graph);
         trace!("Fold iteration: {} nodes", num_folded);
     }
@@ -14,7 +14,7 @@ impl Pass for ConstantFold {
         "Constant folding"
     }
 
-    fn driver_key(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "constant-fold"
     }
 }

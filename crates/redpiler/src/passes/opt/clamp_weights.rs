@@ -1,10 +1,10 @@
 use crate::graph::Graph;
-use crate::passes::{AnalysisInfos, Pass};
+use crate::passes::Pass;
 
 pub struct ClampWeights;
 
 impl Pass for ClampWeights {
-    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
+    fn run(&self, graph: &mut Graph) {
         graph.retain_edges(|g, edge| g[edge].weight < 15);
     }
 
@@ -12,7 +12,7 @@ impl Pass for ClampWeights {
         "Clamping weights"
     }
 
-    fn driver_key(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "clamp-weights"
     }
 }

@@ -34,6 +34,7 @@ impl RedpilerInstance {
             region,
             world.pending_ticks(),
             &options,
+            &mchprs_redpiler::passes::standard(&options),
             &mut |_| ControlFlow::Continue(()),
         )
         .expect("the test circuit compiles");

@@ -1,6 +1,6 @@
 use crate::circuit::Circuit;
 use crate::extract::{extract, ExtractError};
-use crate::passes::{build_pass_pipeline, PassRegistry};
+use crate::passes::{run_passes, Pass};
 use crate::ports::{Observed, Ports};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
@@ -67,6 +67,7 @@ pub fn compile(
     region: Region,
     ticks: &[TickEntry],
     options: &CompileOptions,
+    passes: &[&dyn Pass],
     progress: &mut dyn FnMut(Stage) -> ControlFlow<()>,
 ) -> Result<Circuit, CompileError> {
     let mut graph = extract(world, region, ticks, options)?;
@@ -74,11 +75,9 @@ pub fn compile(
     if progress(Stage::Extracted { nodes }).is_break() {
         return Err(CompileError::Cancelled);
     }
-    let registry = PassRegistry::default();
-    let pipeline = build_pass_pipeline(&registry, options);
-    let total = pipeline.len();
+    let total = passes.len();
     let mut completed = 0;
-    let flow = pipeline.run_passes(&mut graph, &mut |pass, _| {
+    let flow = run_passes(passes, &mut graph, &mut |pass, _| {
         completed += 1;
         progress(Stage::Optimized {
             pass: pass.status_message(),

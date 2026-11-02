@@ -6,13 +6,13 @@
 //! Observed nodes count as outputs, and so do nodes with a pending tick.
 
 use crate::graph::{Direction, Graph};
-use crate::passes::{AnalysisInfos, Pass};
+use crate::passes::Pass;
 use itertools::Itertools;
 
 pub struct PruneOrphans;
 
 impl Pass for PruneOrphans {
-    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
+    fn run(&self, graph: &mut Graph) {
         let mut worklist = graph
             .node_indices()
             .filter(|&idx| graph[idx].observed || graph[idx].pending_tick.is_some())
@@ -41,7 +41,7 @@ impl Pass for PruneOrphans {
         "Pruning orphans"
     }
 
-    fn driver_key(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "prune-orphans"
     }
 }

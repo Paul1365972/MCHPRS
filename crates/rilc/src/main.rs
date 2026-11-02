@@ -5,7 +5,7 @@ use mchprs_redpiler::compile::CompileOptions;
 use mchprs_redpiler::{
     extract::extract,
     graph::Graph,
-    passes::{PassPipeline, PassPipelineBuilder, PassRegistry},
+    passes::{self, Pass},
 };
 use mchprs_ril::{DumpGraph, RILModule, RILOptions};
 use std::fs;
@@ -99,10 +99,10 @@ fn extract_schematic(
     }
 }
 
-fn run_pipeline(pipeline: &PassPipeline, mut graph: Graph, print_after_all: bool) -> Graph {
-    let _ = pipeline.run_passes(&mut graph, &mut |pass, graph| {
+fn run_passes(passes: &[&dyn Pass], mut graph: Graph, print_after_all: bool) -> Graph {
+    let _ = passes::run_passes(passes, &mut graph, &mut |pass, graph| {
         if print_after_all {
-            println!("Circuit after pass: {}", pass.debug_name());
+            println!("Circuit after pass: {}", pass.name());
             graph.dump();
         }
         ControlFlow::Continue(())
@@ -131,15 +131,20 @@ fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
     }
 }
 
-fn parse_pass_pipeline<'p>(registry: &'p PassRegistry, passes: &str) -> Option<PassPipeline<'p>> {
-    let mut builder = PassPipelineBuilder::new(registry);
-    for driver_key in passes.split(',') {
-        if !builder.add_pass_by_driver_key(driver_key) {
-            eprintln!("error: failed to add pass with key: {}", driver_key);
-            return None;
-        }
-    }
-    Some(builder.build())
+fn chosen_passes(options: &RILOptions) -> Option<Vec<&'static dyn Pass>> {
+    let Some(names) = &options.passes else {
+        return Some(passes::standard(&options.compile_options()));
+    };
+    names
+        .split(',')
+        .map(|name| {
+            let pass = passes::named(name);
+            if pass.is_none() {
+                eprintln!("error: there is no pass `{name}`");
+            }
+            pass
+        })
+        .collect()
 }
 
 pub fn get_version_string() -> String {

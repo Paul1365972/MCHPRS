@@ -1,4 +1,4 @@
-//! # [`SSSetAnalysis`]
+//! # [`ss_sets`]
 //!
 //! This analysis approximates output strengths using the compile graph's node states and inputs.
 //! Every node starts with its current output strength. Sweeps in index order grow each set by what
@@ -12,7 +12,6 @@
 //! also admit both 0 and 15.
 
 use crate::graph::{Direction, DriveKind, Graph, LinkKind, NodeIdx, NodeKind, NodeState};
-use crate::passes::{AnalysisInfo, AnalysisInfos, AnalysisUsage, Pass};
 use mchprs_blocks::blocks::ComparatorMode;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -102,78 +101,56 @@ impl SSSet {
     }
 }
 
-#[derive(Default)]
-pub struct SSSetInfo {
-    sets: Vec<Option<SSSet>>,
-}
+pub struct SSSets(Vec<Option<SSSet>>);
 
-impl SSSetInfo {
-    pub fn get_set(&self, node_idx: NodeIdx) -> Option<SSSet> {
-        self.sets.get(node_idx.index()).copied().flatten()
+impl SSSets {
+    pub fn of(&self, node_idx: NodeIdx) -> SSSet {
+        self.0[node_idx.index()].expect("every node of the analyzed graph has a set")
     }
 }
 
-impl AnalysisInfo for SSSetInfo {}
+pub fn ss_sets(graph: &Graph) -> SSSets {
+    let nodes: Vec<NodeIdx> = graph.node_indices().collect();
+    let mut sets = vec![None; graph.node_bound()];
+    let mut dirty = vec![true; graph.node_bound()];
+    for &node_idx in &nodes {
+        let node = &graph[node_idx];
+        let initial = if node.is_input() {
+            SSSet::drivable_strengths(&node.kind)
+        } else if node.pending_tick.is_some() && matches!(node.kind, NodeKind::Repeater { .. }) {
+            SSSet::BINARY
+        } else {
+            SSSet::singleton(node.state.power.get())
+        };
+        sets[node_idx.index()] = Some(initial);
+    }
 
-pub struct SSSetAnalysis;
-
-impl Pass for SSSetAnalysis {
-    fn run_pass(&self, graph: &mut Graph, analysis_infos: &mut AnalysisInfos) {
-        let nodes: Vec<NodeIdx> = graph.node_indices().collect();
-        let mut sets = vec![None; graph.node_bound()];
-        let mut dirty = vec![true; graph.node_bound()];
+    let mut changed = true;
+    while changed {
+        changed = false;
         for &node_idx in &nodes {
+            if !dirty[node_idx.index()] {
+                continue;
+            }
+            dirty[node_idx.index()] = false;
+
+            let (default_input, side_input) = collect_inputs(graph, &sets, node_idx);
             let node = &graph[node_idx];
-            let initial = if node.is_input() {
-                SSSet::drivable_strengths(&node.kind)
-            } else if node.pending_tick.is_some() && matches!(node.kind, NodeKind::Repeater { .. })
-            {
-                SSSet::BINARY
-            } else {
-                SSSet::singleton(node.state.power.get())
-            };
-            sets[node_idx.index()] = Some(initial);
-        }
+            let old = sets[node_idx.index()].unwrap();
+            let new = old.union(evaluate(&node.kind, &node.state, default_input, side_input));
+            if new == old {
+                continue;
+            }
+            sets[node_idx.index()] = Some(new);
+            changed = true;
 
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for &node_idx in &nodes {
-                if !dirty[node_idx.index()] {
-                    continue;
-                }
-                dirty[node_idx.index()] = false;
-
-                let (default_input, side_input) = collect_inputs(graph, &sets, node_idx);
-                let node = &graph[node_idx];
-                let old = sets[node_idx.index()].unwrap();
-                let new = old.union(evaluate(&node.kind, &node.state, default_input, side_input));
-                if new == old {
-                    continue;
-                }
-                sets[node_idx.index()] = Some(new);
-                changed = true;
-
-                for neighbor in graph.neighbors(node_idx, Direction::Outgoing) {
-                    dirty[neighbor.index()] = true;
-                }
+            for neighbor in graph.neighbors(node_idx, Direction::Outgoing) {
+                dirty[neighbor.index()] = true;
             }
         }
-
-        analysis_infos.insert_analysis(SSSetInfo { sets });
     }
 
-    fn status_message(&self) -> &'static str {
-        "Analyzing signal strength sets"
-    }
-
-    fn analysis_usage(&self, au: &mut AnalysisUsage) {
-        au.set_preserves_all();
-    }
-
-    fn driver_key(&self) -> &'static str {
-        "ss-set-analysis"
-    }
+    SSSets(sets)
 }
 
 fn collect_inputs(graph: &Graph, sets: &[Option<SSSet>], node_idx: NodeIdx) -> (SSSet, SSSet) {

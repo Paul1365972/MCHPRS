@@ -4,7 +4,7 @@
 //! pending tick and nodes whose inputs could change between their ticks.
 
 use crate::graph::{Direction, Graph, Link, LinkKind, NodeIdx, NodeKind, NodeState};
-use crate::passes::{AnalysisInfos, Pass};
+use crate::passes::Pass;
 use crate::ports::Role;
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
@@ -13,7 +13,7 @@ use tracing::trace;
 pub struct Coalesce;
 
 impl Pass for Coalesce {
-    fn run_pass(&self, graph: &mut Graph, _: &mut AnalysisInfos) {
+    fn run(&self, graph: &mut Graph) {
         let node_count = graph.node_count();
         let mut candidates: Vec<NodeIdx> = graph.node_indices().collect();
         while !candidates.is_empty() {
@@ -27,7 +27,7 @@ impl Pass for Coalesce {
         "Combining duplicate logic"
     }
 
-    fn driver_key(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "coalesce"
     }
 }
