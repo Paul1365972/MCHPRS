@@ -258,15 +258,16 @@ impl BlockEntity {
             BlockEntity::Container { inventory, ty, .. } => Some({
                 let mut items = Vec::new();
                 for entry in inventory {
-                    let nbt = map! {
+                    let mut nbt = map! {
                         "Count" => nbt::Value::Byte(entry.count),
                         "id" => nbt::Value::String(Item::from_id(entry.id).get_name().to_owned()),
                         "Slot" => nbt::Value::Byte(entry.slot)
                     };
-                    // TODO: item nbt data in containers
-                    // if let Some(tag) = &entry.nbt {
-                    //     let blob = nbt::Blob::from_reader(&mut Cursor::new(tag)).unwrap();
-                    // }
+                    if let Some(tag) = &entry.nbt {
+                        let tag = nbt::Blob::from_reader(&mut tag.as_slice())
+                            .expect("item tags are stored as NBT");
+                        nbt.insert("tag".to_owned(), Value::Compound(tag.content));
+                    }
                     items.push(nbt::Value::Compound(nbt));
                 }
                 nbt::Blob::with_content(map! {
