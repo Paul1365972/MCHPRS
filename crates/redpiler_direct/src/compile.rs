@@ -33,16 +33,10 @@ pub fn lower(circuit: &Circuit) -> Result<(Box<[Node]>, ForwardLinks), EngineErr
 
 fn build_node(circuit: &Circuit, id: circuit::NodeId, forward_links: &mut ForwardLinks) -> Node {
     let node = circuit.node(id);
-    let fwd_link_range = forward_links.extend(
-        circuit
-            .outputs(id)
-            .iter()
-            .filter(|link| link.weight < 15)
-            .map(|link| {
-                let target = NodeId::new(link.target.index(), circuit.len());
-                ForwardLink::new(target, link.kind == LinkKind::Side, link.weight)
-            }),
-    );
+    let fwd_link_range = forward_links.extend(circuit.outputs(id).iter().map(|link| {
+        let target = NodeId::new(link.target.index(), circuit.len());
+        ForwardLink::new(target, link.kind == LinkKind::Side, link.weight)
+    }));
 
     let kind = match node.kind {
         graph::NodeKind::Repeater { delay, prioritized } => {

@@ -22,6 +22,7 @@ schematic @<name> <path>
 ### Tests
 
 `test_args <args>` specifies the default `redpiler_args` used in test blocks. `args` is a string.
+It must list the passes to run, like `--passes=coalesce,prune-orphans`, and can add the `/redpiler compile` flags `--io-only`, `--wire-dot-out`, `--illegal-states-out` and `--wire-cross-out`. Every wire in a schematic becomes a node, as without `--optimize`.
 
 `test(@<src>) <test_result>` or `test(@<src>, <redpiler_args>) <test_result>`
 
@@ -43,7 +44,7 @@ Examples: `%a`, `%repeater`, `%123`
 
 ### Output lists
 
-A component may end with `->` and the links leading out of it, in the order the engine updates their targets. Each link names its target and its weight, the power lost along the link, from 0 through 255; the `clamp-weights` pass removes links with a weight of 15 or more. `side` marks a link into the side of a repeater or comparator.
+A component may end with `->` and its outgoing links, in the order the engine updates their targets. Each link names its target and its weight, the power lost along the link, from 0 through 14. `side` marks a link into the side of a repeater or comparator.
 
 `-> [%<name>:<weight>, side %<name>:<weight>, ...]`
 

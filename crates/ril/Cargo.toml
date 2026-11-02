@@ -12,8 +12,8 @@ repository.workspace = true
 
 [dependencies]
 mchprs_blocks = { path = "../blocks" }
+mchprs_commands = { path = "../commands" }
 mchprs_redpiler = { path = "../redpiler" }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 rustc-hash = { workspace = true }
-tracing = { workspace = true }

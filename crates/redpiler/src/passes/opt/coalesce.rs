@@ -90,9 +90,8 @@ fn signature(graph: &Graph, idx: NodeIdx) -> Signature {
         .edges(idx, Direction::Incoming)
         .map(|edge| {
             let link = edge.weight();
-            let carries_binary_signal = link.weight < 15
-                && node.kind.is_binary_reader()
-                && graph[edge.source()].kind.is_binary_source();
+            let carries_binary_signal =
+                node.kind.is_binary_reader() && graph[edge.source()].kind.is_binary_source();
             let weight = if carries_binary_signal {
                 0
             } else {

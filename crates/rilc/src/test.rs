@@ -1,4 +1,4 @@
-use crate::{chosen_passes, extract_schematic, run_passes};
+use crate::{extract_schematic, named_passes, run_passes};
 use anstream::println;
 use mchprs_ril::string_replacer::StringReplacer;
 use mchprs_ril::{self as ril, RILModule, RILTest};
@@ -49,7 +49,7 @@ fn run_test(
 ) -> TestOutcome {
     let graph = match &test.schematic_path {
         Some(schematic_path) => {
-            match extract_schematic(test_path, schematic_path, &test.options.compile_options()) {
+            match extract_schematic(test_path, schematic_path, &test.options.extract) {
                 Some(graph) => graph,
                 None => return TestOutcome::Failed,
             }
@@ -57,8 +57,12 @@ fn run_test(
         None => test.graph,
     };
 
-    let Some(passes) = chosen_passes(&test.options) else {
-        return TestOutcome::Failed;
+    let passes = match named_passes(&test.options.passes) {
+        Ok(passes) => passes,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return TestOutcome::Failed;
+        }
     };
     let result_graph = run_passes(&passes, graph, false);
     let test_path = match test_root {

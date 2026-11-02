@@ -1,13 +1,12 @@
 use clap::{Parser, Subcommand};
+use compile::Compilation;
 use line_index::{LineIndex, TextSize};
 use mchprs_blocks::BlockPos;
-use mchprs_redpiler::compile::CompileOptions;
-use mchprs_redpiler::{
-    extract::extract,
-    graph::Graph,
-    passes::{self, Pass},
-};
-use mchprs_ril::{DumpGraph, RILModule, RILOptions};
+use mchprs_redpiler::extract::{extract, ExtractOptions};
+use mchprs_redpiler::graph::Graph;
+use mchprs_redpiler::passes::{self, Pass};
+use mchprs_redpiler_backends::{BackendSetup, BACKENDS};
+use mchprs_ril::{DumpGraph, RILModule};
 use std::fs;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -31,46 +30,49 @@ enum Command {
         #[arg(long)]
         update: bool,
     },
+    #[command(after_help = backends_help())]
     Compile {
         /// Path to the input file
         input_path: PathBuf,
 
         /// Path to the output file
-        #[arg(short = 'o')]
+        #[arg(long = "output")]
         output_path: Option<PathBuf>,
 
-        /// Enable optimization passes which may significantly increase compile times.
-        #[arg(long, short = 'O')]
-        optimize: bool,
-        /// Let optimizations reorder updates within a tick
-        #[arg(long, short)]
-        reorder: bool,
-        /// Only flush lamp, button, lever, pressure plate, or trapdoor updates.
-        #[arg(long, short)]
-        io_only: bool,
-        /// Consider a redstone dot to be an output block (for color screens)
-        #[arg(long, short = 'd')]
-        wire_dot_out: bool,
-        /// Consider "illegal" redstone wires to be an output block (for sprite screens)
-        #[arg(long, short = 'l')]
-        illegal_states_out: bool,
-        /// Consider a redstone cross to be an output block (for sprite screens without illegal wire states)
-        #[arg(long, short = 'c')]
-        wire_cross_out: bool,
+        /// Backend and flags to compile for, like "direct -o"; defaults to the first backend
+        #[arg(short, long, value_parser = BackendSetup::parse)]
+        backend: Option<BackendSetup>,
         /// Print out the RIL circuit after every redpiler pass
         #[arg(long)]
         print_after_all: bool,
-        /// A comma separated list of passes to run. This can only be used by the rilc driver.
-        #[arg(long)]
-        passes: Option<String>,
+        /// A comma separated list of passes to run instead of the backend's
+        #[arg(long, value_delimiter = ',')]
+        passes: Option<Vec<String>>,
     },
     Version,
+}
+
+fn backends_help() -> String {
+    let flags = || BACKENDS.iter().flat_map(|backend| backend.flags());
+    let width = flags()
+        .map(|flag| flag.to_string().len())
+        .max()
+        .unwrap_or(0);
+    let mut help = "Backends and their flags:".to_owned();
+    for backend in BACKENDS {
+        help.push_str(&format!("\n  {}", backend.name()));
+        for flag in backend.flags() {
+            let usage = flag.to_string();
+            help.push_str(&format!("\n    {usage:width$}  {}", flag.description()));
+        }
+    }
+    help
 }
 
 fn extract_schematic(
     ril_file_path: &Path,
     schematic_path: &str,
-    options: &CompileOptions,
+    options: &ExtractOptions,
 ) -> Option<Graph> {
     let schematic_path = ril_file_path.parent().unwrap().join(schematic_path);
     let Some(schematic) = fs::read(&schematic_path)
@@ -131,20 +133,32 @@ fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
     }
 }
 
-fn chosen_passes(options: &RILOptions) -> Option<Vec<&'static dyn Pass>> {
-    let Some(names) = &options.passes else {
-        return Some(passes::standard(&options.compile_options()));
-    };
+fn named_passes(names: &[String]) -> Result<Vec<&'static dyn Pass>, String> {
     names
-        .split(',')
-        .map(|name| {
-            let pass = passes::named(name);
-            if pass.is_none() {
-                eprintln!("error: there is no pass `{name}`");
-            }
-            pass
-        })
+        .iter()
+        .map(|name| passes::named(name).ok_or_else(|| format!("unknown pass `{name}`")))
         .collect()
+}
+
+fn compile_command(
+    input_path: &Path,
+    output_path: &Option<PathBuf>,
+    backend: BackendSetup,
+    print_after_all: bool,
+    passes: Option<Vec<String>>,
+) -> Result<(), String> {
+    let plan = backend.configure()?;
+    let passes = match passes {
+        Some(names) => named_passes(&names)?,
+        None => plan.passes,
+    };
+    let compilation = Compilation {
+        extract: &plan.extract,
+        passes: &passes,
+        print_after_all,
+    };
+    compile::compile(input_path, output_path, &compilation);
+    Ok(())
 }
 
 pub fn get_version_string() -> String {
@@ -172,26 +186,20 @@ fn main() -> ExitCode {
         Command::Compile {
             input_path,
             output_path,
-            optimize,
-            reorder,
-            io_only,
-            wire_dot_out,
-            illegal_states_out,
-            wire_cross_out,
+            backend,
             print_after_all,
             passes,
         } => {
-            let options = RILOptions {
-                optimize,
-                reorder,
-                io_only,
-                wire_dot_out,
-                illegal_states_out,
-                wire_cross_out,
+            if let Err(error) = compile_command(
+                &input_path,
+                &output_path,
+                backend.unwrap_or_default(),
                 print_after_all,
                 passes,
-            };
-            compile::compile(&input_path, &output_path, &options);
+            ) {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
         }
         Command::Version => {
             println!("{}", get_version_string());

@@ -1,10 +1,14 @@
+use mchprs_redpiler::backend::Backend;
+use mchprs_redpiler_backends::{BackendSetup, BACKENDS};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::{fs, sync::LazyLock};
 use tracing::warn;
 
-pub static CONFIG: LazyLock<ServerConfig> = LazyLock::new(|| ServerConfig::load("Config.toml"));
+const PATH: &str = "Config.toml";
+
+pub static CONFIG: LazyLock<ServerConfig> = LazyLock::new(|| ServerConfig::load(PATH));
 
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
@@ -18,6 +22,7 @@ pub struct ServerConfig {
     pub schemati: bool,
     pub block_in_hitbox: bool,
     pub velocity: VelocityConfig,
+    pub redpiler: RedpilerConfig,
     pub command_aliases: HashMap<String, String>,
 }
 
@@ -33,6 +38,7 @@ impl Default for ServerConfig {
             schemati: false,
             block_in_hitbox: true,
             velocity: VelocityConfig::default(),
+            redpiler: RedpilerConfig::default(),
             command_aliases: HashMap::new(),
         }
     }
@@ -83,4 +89,58 @@ impl ServerConfig {
 pub struct VelocityConfig {
     pub enabled: bool,
     pub secret: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RedpilerConfig {
+    default_backend: String,
+    #[serde(default)]
+    flags: BTreeMap<String, String>,
+}
+
+impl Default for RedpilerConfig {
+    fn default() -> Self {
+        RedpilerConfig {
+            default_backend: BACKENDS[0].name().to_owned(),
+            flags: BTreeMap::new(),
+        }
+    }
+}
+
+impl RedpilerConfig {
+    pub fn backends(&self) -> Backends {
+        for name in self.flags.keys() {
+            if mchprs_redpiler_backends::named(name).is_err() {
+                warn!("Ignoring `redpiler.flags.{name}` in {PATH}: unknown backend");
+            }
+        }
+        let setup = |backend: &'static dyn Backend| {
+            self.setup(backend).unwrap_or_else(|error| {
+                panic!(
+                    "Invalid `redpiler.flags.{}` in {PATH}: {error}",
+                    backend.name()
+                )
+            })
+        };
+        let default =
+            mchprs_redpiler_backends::named(&self.default_backend).unwrap_or_else(|error| {
+                panic!("Invalid `redpiler.default_backend` in {PATH}: {error}")
+            });
+        Backends {
+            default: setup(default),
+            all: BACKENDS.iter().map(|&backend| setup(backend)).collect(),
+        }
+    }
+
+    fn setup(&self, backend: &'static dyn Backend) -> Result<BackendSetup, String> {
+        let flags = self.flags.get(backend.name()).map_or("", String::as_str);
+        let setup = BackendSetup::new(backend, flags)?;
+        setup.configure()?;
+        Ok(setup)
+    }
+}
+
+pub struct Backends {
+    pub default: BackendSetup,
+    pub all: Vec<BackendSetup>,
 }

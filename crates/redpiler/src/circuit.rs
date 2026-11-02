@@ -222,6 +222,9 @@ fn check(nodes: &[Node], links: &[Link]) -> Result<(), String> {
         if link.source.index() >= node_count || link.target.index() >= node_count {
             return Err(format!("a link joins a missing node: {link:?}"));
         }
+        if link.weight >= 15 {
+            return Err(format!("a link is too long to carry power: {link:?}"));
+        }
         let target = &nodes[link.target.index()];
         if target.is_input() {
             return Err(format!(

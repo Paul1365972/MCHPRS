@@ -5,6 +5,8 @@ use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use mchprs_redstone::{self, comparator, provides_strong_power, provides_weak_power, wire};
 use rustc_hash::FxHashMap;
 
+const DUST_RANGE: u8 = 15;
+
 pub fn add_links(
     graph: &mut Graph,
     world: &impl BlockView,
@@ -172,7 +174,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
 
             // We can stop looking once we've reached the max ss of a wire.
             // This also prevents overflowing the distance past 255.
-            if distance > 15 {
+            if distance >= DUST_RANGE {
                 continue;
             }
 

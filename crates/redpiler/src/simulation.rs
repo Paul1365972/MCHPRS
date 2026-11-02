@@ -1,5 +1,5 @@
 use crate::block_map::{BlockChanges, BlockMap};
-use crate::circuit::Circuit;
+use crate::circuit::{Circuit, NodeId};
 use crate::engine::{Changes, DriveError, Engine, EngineError, Input, Snapshot};
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::tick_queue::TickEntry;
@@ -26,6 +26,10 @@ impl<E: Engine> Simulation<E> {
 
     pub fn drive(&mut self, pos: BlockPos, input: Input) -> Result<(), DriveError> {
         let node = self.circuit.node_at(pos).ok_or(DriveError::NoNode(pos))?;
+        self.drive_node(node, input)
+    }
+
+    pub fn drive_node(&mut self, node: NodeId, input: Input) -> Result<(), DriveError> {
         self.circuit.check_input(node, input)?;
         self.engine.drive(node, input).map_err(DriveError::Engine)
     }

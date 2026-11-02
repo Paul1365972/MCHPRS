@@ -11,27 +11,6 @@ pub enum Role {
     Output,
 }
 
-/// Which parts of the circuit the caller sees change. The optimizer may remove anything else.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum Observed {
-    #[default]
-    Everything,
-    /// Every component, and dust only where it is a port
-    Components,
-    Ports,
-}
-
-impl Observed {
-    pub fn includes(self, kind: &NodeKind, port: Option<Role>) -> bool {
-        port.is_some()
-            || match self {
-                Observed::Everything => true,
-                Observed::Components => *kind != NodeKind::Wire,
-                Observed::Ports => false,
-            }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ports {
     conventional: bool,

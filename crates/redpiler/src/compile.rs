@@ -1,31 +1,11 @@
 use crate::circuit::Circuit;
-use crate::extract::{extract, ExtractError};
+use crate::extract::{extract, ExtractError, ExtractOptions};
 use crate::passes::{run_passes, Pass};
-use crate::ports::{Observed, Ports};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
 use mchprs_redstone::tick_queue::TickEntry;
 use std::fmt;
 use std::ops::ControlFlow;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompileOptions {
-    pub ports: Ports,
-    pub observed: Observed,
-    pub optimize: bool,
-    pub reorder: bool,
-}
-
-impl Default for CompileOptions {
-    fn default() -> Self {
-        CompileOptions {
-            ports: Ports::conventional(),
-            observed: Observed::Everything,
-            optimize: false,
-            reorder: false,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
@@ -66,7 +46,7 @@ pub fn compile(
     world: &impl BlockView,
     region: Region,
     ticks: &[TickEntry],
-    options: &CompileOptions,
+    options: &ExtractOptions,
     passes: &[&dyn Pass],
     progress: &mut dyn FnMut(Stage) -> ControlFlow<()>,
 ) -> Result<Circuit, CompileError> {

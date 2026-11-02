@@ -13,6 +13,7 @@ include.workspace = true
 
 [dependencies]
 mchprs_redpiler = { path = "../redpiler" }
+mchprs_redpiler_backends = { path = "../redpiler_backends" }
 mchprs_ril = { path = "../ril" }
 mchprs_blocks = { path = "../blocks" }
 mchprs_schematic = { path = "../schematic" }

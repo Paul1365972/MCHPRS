@@ -72,7 +72,7 @@ impl<'a> ExecutionContext<'a> {
             .is_some_and(|flags| flags.get(name) == Some(&FlagValue::Switch(true)))
     }
 
-    fn flags(&self) -> Option<&'a FlagValues> {
+    pub(super) fn flags(&self) -> Option<&'a FlagValues> {
         match self.value(FLAGS_ARGUMENT) {
             Some(Value::Flags(flags)) => Some(flags),
             _ => None,

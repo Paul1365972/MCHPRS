@@ -7,7 +7,7 @@ pub mod redpiler;
 mod scoreboard;
 
 use self::data::sleep_time_for_tps;
-use self::redpiler::{Redpiler, RedpilerOptions};
+use self::redpiler::{Redpiler, UPDATE};
 use self::scoreboard::Scoreboard;
 use crate::commands::COMMAND_REGISTRY;
 use crate::config::CONFIG;
@@ -29,9 +29,10 @@ use mchprs_network::chunk::{encode_block_changes, encode_chunk, encode_empty_chu
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
+use mchprs_redpiler::backend::CompilePlan;
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
-use mchprs_redpiler_direct::DirectEngine;
+use mchprs_redpiler_backends::BackendSetup;
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
@@ -66,7 +67,7 @@ pub const PLOT_SECTIONS: usize = 24;
 /// The plot height in blocks
 pub const PLOT_BLOCK_HEIGHT: i32 = PLOT_SECTIONS as i32 * 16;
 
-const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler is active with `--io-only`. To stop redpiler, run `/redpiler reset`.";
+const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler only updates inputs and outputs. To stop redpiler, run `/redpiler reset`.";
 
 const MAX_BATCH_SIZE: u32 = 50_000;
 
@@ -595,7 +596,7 @@ impl Plot {
                 self.drive_redpiler(block_pos, input);
                 self.publish_world();
                 return;
-            } else if redpiler.options.io_only {
+            } else if redpiler.ports_only {
                 self.players[player].send_error_message(ERROR_IO_ONLY);
                 cancel(self);
                 return;
@@ -661,7 +662,7 @@ impl Plot {
         }
 
         if let Some(redpiler) = &self.redpiler
-            && redpiler.options.io_only
+            && redpiler.ports_only
         {
             self.players[player].send_error_message(ERROR_IO_ONLY);
             self.send_block_corrections(&[block_pos]);
@@ -728,8 +729,7 @@ impl Plot {
                 self.redpiler = None;
                 self.scoreboard
                     .set_redpiler_state(&self.players, RedpilerState::Stopped);
-                self.scoreboard
-                    .set_redpiler_options(&self.players, &Default::default());
+                self.scoreboard.set_redpiler_setup(&self.players, None);
                 None
             }
         }
@@ -747,18 +747,21 @@ impl Plot {
         });
     }
 
-    pub fn start_redpiler(&mut self, options: RedpilerOptions) -> Result<(), EngineError> {
-        debug!("Starting redpiler");
+    pub fn start_redpiler(
+        &mut self,
+        setup: BackendSetup,
+        plan: CompilePlan,
+    ) -> Result<(), EngineError> {
+        debug!("Starting redpiler with {setup}");
         self.reset_pressure_plates();
         self.scoreboard
             .set_redpiler_state(&self.players, RedpilerState::Compiling);
         self.scoreboard
-            .set_redpiler_options(&self.players, &options);
+            .set_redpiler_setup(&self.players, Some(&setup));
 
         let region = self.world.region();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
-        let compile_options = options.compile_options();
-        let passes = mchprs_redpiler::passes::standard(&compile_options);
+        let ports_only = plan.extract.ports_only;
 
         let mut players_need_updates = HashSet::new();
         let result = thread::scope(|s| {
@@ -768,16 +771,16 @@ impl Plot {
                     &self.world,
                     region,
                     &ticks,
-                    &compile_options,
-                    &passes,
+                    &plan.extract,
+                    &plan.passes,
                     &mut |stage| {
                         trace!("Redpiler compile stage {stage:?}");
                         ControlFlow::Continue(())
                     },
                 )?;
-                let engine = DirectEngine::new(&circuit)?;
+                let engine = setup.backend().build(&circuit, setup.flags())?;
                 debug!("Compile completed in {:?}", start.elapsed());
-                Ok(Simulation::new(Arc::new(circuit), Box::new(engine)))
+                Ok(Simulation::new(Arc::new(circuit), engine))
             });
             while !handle.is_finished() {
                 // We'll update the players so that they don't time out.
@@ -805,13 +808,13 @@ impl Plot {
                 self.world.ticks = TickQueue::new(ticks);
                 self.scoreboard
                     .set_redpiler_state(&self.players, RedpilerState::Stopped);
-                self.scoreboard
-                    .set_redpiler_options(&self.players, &Default::default());
+                self.scoreboard.set_redpiler_setup(&self.players, None);
                 return Err(error);
             }
         };
         self.redpiler = Some(Redpiler {
-            options,
+            setup,
+            ports_only,
             simulation,
         });
         self.scoreboard
@@ -835,7 +838,7 @@ impl Plot {
                 self.world
                     .schedule_tick(tick.pos, tick.ticks_left, tick.priority);
             }
-            if redpiler.options.update {
+            if redpiler.setup.flags().is_on(&UPDATE) {
                 let region = self.world.region();
                 for pos in self
                     .world
@@ -849,8 +852,7 @@ impl Plot {
             }
             self.scoreboard
                 .set_redpiler_state(&self.players, RedpilerState::Stopped);
-            self.scoreboard
-                .set_redpiler_options(&self.players, &Default::default());
+            self.scoreboard.set_redpiler_setup(&self.players, None);
 
             // reseting redpiler could cause a large amount of block updates
             self.reset_timings();

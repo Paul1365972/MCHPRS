@@ -1,10 +1,10 @@
-use super::RedpilerOptions;
 use crate::player::{PacketSender, Player};
 use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
 use mchprs_network::text::{ColorCode, TextComponent, TextComponentBuilder};
+use mchprs_redpiler_backends::BackendSetup;
 
 #[derive(PartialEq, Eq, Default, Clone, Copy)]
 pub enum RedpilerState {
@@ -139,48 +139,27 @@ impl Scoreboard {
         );
     }
 
-    pub fn set_redpiler_options(&mut self, players: &[Player], options: &RedpilerOptions) {
+    pub fn set_redpiler_setup(&mut self, players: &[Player], setup: Option<&BackendSetup>) {
         let mut new_lines = vec![self.current_state[0].clone()];
-
-        let mut flags = Vec::new();
-        if options.optimize {
-            flags.push(("o", "- optimize"));
-        }
-        if options.reorder {
-            flags.push(("r", "- reorder"));
-        }
-        if options.io_only {
-            flags.push(("i", "- io only"));
-        }
-        if options.update {
-            flags.push(("u", "- update"));
-        }
-        if options.wire_dot_out {
-            flags.push(("d", "- wire dot out"));
-        }
-        if options.illegal_states_out {
-            flags.push(("l", "- illegal states out"));
-        }
-        if options.wire_cross_out {
-            flags.push(("c", "- wire cross out"));
-        }
-
-        if !flags.is_empty() {
-            new_lines.push(ScoreboardLine::new(
-                "flags".into(),
-                TextComponentBuilder::new("Flags:".into())
-                    .color_code(ColorCode::Gray)
-                    .finish(),
-            ));
-            new_lines.extend(flags.iter().map(|flag| {
-                ScoreboardLine::new(
-                    format!("flag_{}", flag.0),
-                    TextComponentBuilder::new(flag.1.to_string())
-                        .color_code(ColorCode::Aqua)
-                        .finish(),
-                )
-            }));
+        if let Some(setup) = setup {
+            new_lines.push(setup_line("backend", "Backend", setup.backend().name()));
+            let flags = setup.flags().to_string();
+            if !flags.is_empty() {
+                new_lines.push(setup_line("flags", "Flags", &flags));
+            }
         }
         self.set_lines(players, new_lines);
     }
+}
+
+fn setup_line(entity_name: &str, label: &str, value: &str) -> ScoreboardLine {
+    let mut text = TextComponentBuilder::new(format!("{label}: "))
+        .color_code(ColorCode::Gray)
+        .finish();
+    text.extra.push(
+        TextComponentBuilder::new(value.to_owned())
+            .color_code(ColorCode::Aqua)
+            .finish(),
+    );
+    ScoreboardLine::new(entity_name.into(), text)
 }

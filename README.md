@@ -17,6 +17,8 @@ MCHPRS has made it possible to run programs such as [a limited form of Minecraft
     - [Features](#features)
 - [Configuration](#configuration)
     - [Command Aliases](#command-aliases)
+    - [Velocity](#velocity)
+    - [Redpiler](#redpiler)
 - [Usage](#usage)
 - [Acknowledgments](#acknowledgments)
 - [Contributing](#contributing)
@@ -90,6 +92,18 @@ enabled = true
 # This is the secret contained within `forwarding-secret-file` from your velocity config,
 # NOT the path to the file.
 secret = "<secret>"
+```
+
+### Redpiler
+
+`default_backend` sets the backend `/redpiler compile` uses. The `redpiler.flags` table sets default [flags](docs/Commands.md#compiler-flags) other than `--update` for each backend, written as in the command. Flags given to the command override them.
+
+```toml
+[redpiler]
+default_backend = "direct"
+
+[redpiler.flags]
+direct = "--optimize --io-only"
 ```
 
 ## Usage
