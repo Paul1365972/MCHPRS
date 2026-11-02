@@ -1,7 +1,8 @@
 //! Patterns as in WorldEdit: <https://worldedit.enginehub.org/en/latest/usage/general/patterns/>
 
 use super::{
-    parse_block, parse_block_states, parse_raw_block, split_top_level_commas, validate_states,
+    parse_block, parse_block_states, parse_raw_block, replace_block, split_top_level_commas,
+    validate_states,
 };
 use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
@@ -25,9 +26,14 @@ impl WorldEditPattern {
         });
     }
 
+    /// Only a pattern applying states keeps the block entity.
     pub fn place(&self, world: &mut impl BlockStore, pos: BlockPos) -> bool {
-        let block = self.select().pick(world, pos);
-        world.set_block(pos, block)
+        let pattern = self.select();
+        let block = pattern.pick(world, pos);
+        match pattern {
+            BlockPattern::TypeApplying { block: None, .. } => world.set_block(pos, block),
+            _ => replace_block(world, pos, block),
+        }
     }
 
     fn select(&self) -> &BlockPattern {
