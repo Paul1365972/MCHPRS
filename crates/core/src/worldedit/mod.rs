@@ -176,7 +176,13 @@ pub fn paste_clipboard(
     for position in clipboard.region().positions() {
         let block = clipboard.block(position);
         if !(ignore_air && block == Block::Air) {
-            world.set_block(position + at, block);
+            let destination = position + at;
+            world.set_block(destination, block);
+            if clipboard.block_entity(position).is_none()
+                && world.block_entity(destination).is_some()
+            {
+                world.set_block_entity(destination, None);
+            }
         }
     }
 
@@ -188,13 +194,22 @@ pub fn paste_clipboard(
     }
 }
 
+pub fn replace_block(world: &mut impl BlockStore, pos: BlockPos, block: Block) -> bool {
+    let changed = world.set_block(pos, block);
+    let had_entity = (changed || block.has_block_entity()) && world.block_entity(pos).is_some();
+    if had_entity {
+        world.set_block_entity(pos, None);
+    }
+    changed || had_entity
+}
+
 pub fn clear_area(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {
     for pos in plot
         .occupied_regions(Region::new(first_pos, second_pos))
         .into_iter()
         .flat_map(Region::positions)
     {
-        plot.set_block(pos, Block::Air);
+        replace_block(plot, pos, Block::Air);
     }
 
     let start_pos = first_pos.min(second_pos);
