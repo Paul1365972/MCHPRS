@@ -479,7 +479,10 @@ impl MinecraftServer {
                     .to_string(),
                 }
                 .encode();
-                clients[client_idx].send_packet(&disconnect);
+                let client = clients.remove(client_idx);
+                client.send_packet(&disconnect);
+                client.close_connection();
+                return;
             }
         }
 
@@ -642,6 +645,9 @@ impl MinecraftServer {
             let packets = self.network.handshaking_clients[client_idx].receive_packets();
             for packet in packets {
                 packet.handle(self, client_idx);
+                if self.network.handshaking_clients.len() != clients_len {
+                    break;
+                }
             }
 
             let new_len = self.network.handshaking_clients.len();
