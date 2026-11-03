@@ -8,12 +8,11 @@ use mchprs_redpiler::compile::Stage;
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::tick_queue::TickEntry;
-use std::collections::VecDeque;
 use std::ops::ControlFlow;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TickRate {
@@ -27,14 +26,19 @@ pub struct SendRate {
     pub per_second: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RequestId(u64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Goal {
+    Ticks(u64),
+    Settled,
+}
 
 /// The ticks run since the previous report, and how long running them took.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TickReport {
     pub ticks: u64,
     pub ticking: Duration,
+    /// How far the running advance has come
+    pub advanced: u64,
 }
 
 pub enum Event {
@@ -42,7 +46,11 @@ pub enum Event {
     Started(Arc<Circuit>),
     Ticked(TickReport),
     Batch(BlockChanges),
-    Advanced(RequestId),
+    /// Every advance ends with one.
+    Advanced {
+        ran: u64,
+        settled: bool,
+    },
     Rejected {
         position: BlockPos,
         error: DriveError,
@@ -71,27 +79,18 @@ impl Event {
 enum Command {
     SetTickRate(TickRate),
     SetSendRate(SendRate),
-    Drive {
-        position: BlockPos,
-        input: Input,
-    },
-    Advance {
-        request: RequestId,
-        ticks: u64,
-    },
+    Drive { position: BlockPos, input: Input },
+    Advance(Goal),
+    StopAdvancing,
     ReportTicks,
     Sync,
-    /// Advances that haven't finished are dropped, with the inputs waiting for them.
-    Stop {
-        restore: bool,
-    },
+    Stop { restore: bool },
 }
 
 /// Dropping the worker stops it without waiting for it.
 pub struct Worker {
     commands: Sender<Command>,
     events: Receiver<Event>,
-    next_request: u64,
     thread: Option<JoinHandle<()>>,
     finished: bool,
 }
@@ -112,7 +111,6 @@ impl Worker {
         Worker {
             commands,
             events,
-            next_request: 0,
             thread: Some(thread),
             finished: false,
         }
@@ -152,13 +150,12 @@ impl Worker {
         self.send(Command::Drive { position, input });
     }
 
-    /// Runs `ticks` more ticks as fast as possible, then sends [`Event::Advanced`]. Inputs sent
-    /// afterwards wait for it.
-    pub fn advance(&mut self, ticks: u64) -> RequestId {
-        let request = RequestId(self.next_request);
-        self.next_request += 1;
-        self.send(Command::Advance { request, ticks });
-        request
+    pub fn advance(&self, goal: Goal) {
+        self.send(Command::Advance(goal));
+    }
+
+    pub fn stop_advancing(&self) {
+        self.send(Command::StopAdvancing);
     }
 
     pub fn sync(&mut self) -> Vec<Event> {

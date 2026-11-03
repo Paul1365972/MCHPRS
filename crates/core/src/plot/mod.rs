@@ -1,3 +1,4 @@
+mod advance;
 mod data;
 #[cfg(feature = "claims")]
 pub mod database;
@@ -6,8 +7,9 @@ mod packet_handlers;
 pub mod redpiler;
 mod scoreboard;
 
+use self::advance::Advances;
 use self::data::sleep_time_for_tps;
-use self::redpiler::{send_rate, tick_rate, Advance, Redpiler};
+use self::redpiler::{send_rate, tick_rate, Redpiler};
 use self::scoreboard::{PlotStatus, RedpilerStatus, Scoreboard};
 use crate::commands::COMMAND_REGISTRY;
 use crate::config::CONFIG;
@@ -73,10 +75,13 @@ const MAX_BATCH_SIZE: u32 = 50_000;
 
 const SCOREBOARD_INTERVAL: Duration = Duration::from_millis(500);
 
+const ADVANCE_BATCH_TIME: Duration = Duration::from_millis(50);
+
 pub struct Plot {
     pub world: PlotWorld,
     pub players: Vec<Player>,
     pub redpiler: Option<Redpiler>,
+    advances: Advances,
 
     // Thread communication
     message_receiver: BusReader<BroadcastMessage>,
@@ -368,17 +373,6 @@ impl PlotWorld {
 }
 
 impl Plot {
-    pub fn tickn(&mut self, ticks: u64) {
-        if ticks == 0 {
-            return;
-        }
-        let start = Instant::now();
-        for _ in 0..ticks {
-            self.tick();
-        }
-        self.tick_time = Some(start.elapsed().div_f64(ticks as f64));
-    }
-
     fn tick(&mut self) {
         self.timings.tick();
         mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world, |world| &mut world.ticks);
@@ -752,21 +746,6 @@ impl Plot {
         }
     }
 
-    /// Returns false when redpiler is not running. While it compiles, the advance waits for it.
-    pub fn advance_redpiler(&mut self, ticks: u64, requester: PlayerPacketSender) -> bool {
-        let Some(redpiler) = &mut self.redpiler else {
-            return false;
-        };
-        let request = redpiler.worker.advance(ticks);
-        let advance = Advance {
-            ticks,
-            started: Instant::now(),
-            requester,
-        };
-        redpiler.advances.insert(request, advance);
-        true
-    }
-
     fn world_send_interval(&self) -> Duration {
         Duration::try_from_secs_f64(1.0 / f64::from(self.world.world_send_rate.0))
             .unwrap_or(Duration::MAX)
@@ -786,8 +765,13 @@ impl Plot {
                 flags: redpiler.flags.clone(),
             },
         };
+        let worker_ran = match &self.redpiler {
+            Some(redpiler) if self.advances.is_on_worker() => redpiler.advanced,
+            _ => 0,
+        };
         PlotStatus {
             redpiler,
+            advance: self.advances.progress(worker_ran),
             tps: self.timings.recent_tps().filter(|_| !compiling),
             tps_target: self.tps,
             tick_time: self.tick_time.filter(|_| !compiling),
@@ -1172,34 +1156,36 @@ impl Plot {
                 }
             };
 
-            let batch_size = match self.tps {
-                Tps::Limited(tps) if tps > 0.0 => {
-                    // Very high rates can round the interval to zero and cause division by zero.
-                    let dur_per_tick = Duration::try_from_secs_f64(1.0 / f64::from(tps))
-                        .unwrap_or(Duration::MAX)
-                        .max(Duration::from_nanos(1));
-                    self.lag_time += now - self.last_update_time;
-                    let ticks_behind = self.lag_time.as_nanos() / dur_per_tick.as_nanos();
-                    self.lag_time = Duration::from_nanos(
-                        (self.lag_time.as_nanos() % dur_per_tick.as_nanos()) as u64,
-                    );
-                    ticks_behind.min(u128::from(max_batch_size)) as u32
-                }
-                Tps::Unlimited => max_batch_size,
-                _ => 0,
-            };
-
-            self.last_update_time = now;
-            if batch_size != 0 && self.redpiler.is_none() {
-                let mut ticks_completed = batch_size;
-                for i in 0..batch_size {
-                    self.tick();
-                    if now.elapsed() > Duration::from_millis(200) {
-                        ticks_completed = i + 1;
-                        break;
+            if self.redpiler.is_none() && self.advances.is_empty() {
+                let batch_size = match self.tps {
+                    Tps::Limited(tps) if tps > 0.0 => {
+                        // Very high rates can round the interval to zero and cause division by zero.
+                        let dur_per_tick = Duration::try_from_secs_f64(1.0 / f64::from(tps))
+                            .unwrap_or(Duration::MAX)
+                            .max(Duration::from_nanos(1));
+                        self.lag_time += now - self.last_update_time;
+                        let ticks_behind = self.lag_time.as_nanos() / dur_per_tick.as_nanos();
+                        self.lag_time = Duration::from_nanos(
+                            (self.lag_time.as_nanos() % dur_per_tick.as_nanos()) as u64,
+                        );
+                        ticks_behind.min(u128::from(max_batch_size)) as u32
                     }
+                    Tps::Unlimited => max_batch_size,
+                    _ => 0,
+                };
+
+                self.last_update_time = now;
+                if batch_size != 0 {
+                    let mut ticks_completed = batch_size;
+                    for i in 0..batch_size {
+                        self.tick();
+                        if now.elapsed() > Duration::from_millis(200) {
+                            ticks_completed = i + 1;
+                            break;
+                        }
+                    }
+                    self.tick_time = Some(self.last_update_time.elapsed() / ticks_completed);
                 }
-                self.tick_time = Some(self.last_update_time.elapsed() / ticks_completed);
             }
 
             let now = Instant::now();
@@ -1215,11 +1201,15 @@ impl Plot {
         } else {
             self.timings.set_ticking(false);
             // Unload plot after 600 seconds unless the plot should be always loaded
-            if self.last_player_time.elapsed().as_secs() > 600 && !self.always_running {
+            if self.last_player_time.elapsed().as_secs() > 600
+                && !self.always_running
+                && self.advances.is_empty()
+            {
                 self.running = false;
                 self.timings.stop();
             }
         }
+        self.continue_advancing();
 
         self.update_players();
 
@@ -1323,6 +1313,7 @@ impl Plot {
             tps,
             always_running,
             redpiler: None,
+            advances: Advances::default(),
             timings: TimingsMonitor::new(tps),
             scoreboard: Scoreboard::new(x, z),
             world,
@@ -1394,10 +1385,10 @@ impl Plot {
                 Some(_) => self.world_send_interval().min(Duration::from_millis(50)),
                 None => self.sleep_time,
             };
-            // Fast path, for super high RTPS
+            // Fast path, for super high RTPS and advancing
             if self.redpiler.is_none()
-                && self.sleep_time <= Duration::from_millis(5)
-                && !self.players.is_empty()
+                && (self.sleep_time <= Duration::from_millis(5) && !self.players.is_empty()
+                    || !self.advances.is_empty())
             {
                 self.update();
                 if self.tps != Tps::Unlimited {

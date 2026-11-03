@@ -1,4 +1,5 @@
-use super::*;
+use crate::{SendRate, TickRate};
+use std::time::{Duration, Instant};
 
 const MAX_BACKLOG: Duration = Duration::from_secs(1);
 
@@ -63,6 +64,14 @@ impl Pacing {
         let interval = interval.as_nanos().max(1);
         let behind = (now - self.next_tick).as_nanos() / interval + 1;
         u64::try_from(behind).unwrap_or(u64::MAX)
+    }
+
+    /// Ticks that fell due while ticks ran ahead of the rate aren't owed, so the next one waits a
+    /// full interval. A tick that isn't due yet keeps its time.
+    pub(super) fn skip_overdue(&mut self, now: Instant) {
+        if self.next_tick <= now {
+            self.next_tick = now + self.tick_interval().unwrap_or_default();
+        }
     }
 
     pub(super) fn ran_ticks(&mut self, ticks: u64) {
