@@ -24,8 +24,8 @@ pub enum RuntimeError {
     UndoFromDifferentPlot,
     #[error("Redo is from a different plot")]
     RedoFromDifferentPlot,
-    #[error("{}", crate::plot::ERROR_COMPILING)]
-    RedpilerCompiling,
+    #[error("{}", crate::plot::ERROR_REDPILER_ACTIVE)]
+    RedpilerActive,
     #[error("{0}")]
     Message(String),
 }
