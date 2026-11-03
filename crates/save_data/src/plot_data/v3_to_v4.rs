@@ -17,12 +17,12 @@ pub struct TickEntryV3 {
 pub struct PlotDataV3 {
     pub tps: Tps,
     pub world_send_rate: WorldSendRate,
-    pub chunk_data: Vec<ChunkData>,
+    pub chunk_data: Vec<ChunkData<'static>>,
     pub pending_ticks: Vec<TickEntryV3>,
 }
 
 impl PlotDataV3 {
-    pub fn upgrade(self) -> PlotData {
+    pub fn upgrade(self) -> PlotData<'static> {
         let plot_width = self.chunk_data.len().isqrt() as i32;
         let chunks: Vec<Chunk> = self
             .chunk_data

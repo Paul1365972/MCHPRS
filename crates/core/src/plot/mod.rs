@@ -1151,7 +1151,7 @@ impl Plot {
     }
 
     fn from_data(
-        plot_data: PlotData,
+        plot_data: PlotData<'_>,
         x: i32,
         z: i32,
         rx: BusReader<BroadcastMessage>,
@@ -1252,7 +1252,7 @@ impl Plot {
 
     fn save(&mut self) {
         let world = &mut self.world;
-        let chunk_data: Vec<ChunkData> = world.chunks.iter_mut().map(ChunkData::new).collect();
+        let chunk_data: Vec<ChunkData<'_>> = world.chunks.iter_mut().map(ChunkData::new).collect();
         let data = PlotData {
             tps: self.tps,
             world_send_rate: world.world_send_rate,

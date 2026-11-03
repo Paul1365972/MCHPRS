@@ -10,8 +10,9 @@ use mchprs_world::storage::{Chunk, ChunkSection};
 use mchprs_world::TickPriority;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::{fmt, io};
 use thiserror::Error;
@@ -23,6 +24,8 @@ use thiserror::Error;
 /// 3: Change Tps and WorldSendRate to support real values (f32)
 /// 4: Save the block each pending tick is for
 pub const VERSION: u32 = 4;
+
+const WRITE_BUFFER_SIZE: usize = 1 << 20;
 
 #[derive(Error, Debug)]
 pub enum PlotLoadError {
@@ -44,7 +47,7 @@ pub enum PlotLoadError {
 
 #[derive(Error, Debug)]
 pub enum PlotSaveError {
-    #[error("plot data serialization error")]
+    #[error("plot data serialization error: {0}")]
     Serialize(#[from] bincode::Error),
 
     #[error(transparent)]
@@ -54,43 +57,53 @@ pub enum PlotSaveError {
 static PLOT_MAGIC: &[u8; 8] = b"\x86MCHPRS\x00";
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-pub struct ChunkSectionData {
-    pub data: Vec<u64>,
-    pub palette: Vec<u32>,
+pub struct ChunkSectionData<'a> {
+    pub data: Cow<'a, [u64]>,
+    pub palette: Cow<'a, [u32]>,
     pub bits_per_block: u8,
     pub block_count: u32,
 }
 
-impl ChunkSectionData {
-    fn new(section: &ChunkSection) -> Self {
+impl<'a> ChunkSectionData<'a> {
+    fn new(section: &'a ChunkSection) -> Self {
         Self {
-            data: section.data().to_vec(),
-            palette: section.palette().to_vec(),
+            data: Cow::Borrowed(section.data()),
+            palette: Cow::Borrowed(section.palette()),
             bits_per_block: section.bits_per_block(),
             block_count: section.block_count(),
         }
     }
 
+    fn into_owned(self) -> ChunkSectionData<'static> {
+        ChunkSectionData {
+            data: Cow::Owned(self.data.into_owned()),
+            palette: Cow::Owned(self.palette.into_owned()),
+            bits_per_block: self.bits_per_block,
+            block_count: self.block_count,
+        }
+    }
+
     fn load(self) -> ChunkSection {
         ChunkSection::from_raw(
-            self.data,
+            self.data.into_owned(),
             self.bits_per_block,
-            self.palette,
+            self.palette.into_owned(),
             self.block_count,
         )
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ChunkData {
-    pub sections: Vec<Option<ChunkSectionData>>,
-    pub block_entities: FxHashMap<BlockPos, BlockEntity>,
+pub struct ChunkData<'a> {
+    pub sections: Vec<Option<ChunkSectionData<'a>>>,
+    pub block_entities: Cow<'a, FxHashMap<BlockPos, BlockEntity>>,
 }
 
-impl ChunkData {
+impl<'a> ChunkData<'a> {
     /// Takes a mutable Chunk to flush it first
-    pub fn new(chunk: &mut Chunk) -> Self {
+    pub fn new(chunk: &'a mut Chunk) -> Self {
         chunk.flush();
+        let chunk: &'a Chunk = chunk;
         Self {
             sections: chunk
                 .sections
@@ -103,7 +116,18 @@ impl ChunkData {
                     }
                 })
                 .collect(),
-            block_entities: chunk.block_entities.clone(),
+            block_entities: Cow::Borrowed(&chunk.block_entities),
+        }
+    }
+
+    pub fn into_owned(self) -> ChunkData<'static> {
+        ChunkData {
+            sections: self
+                .sections
+                .into_iter()
+                .map(|section| section.map(ChunkSectionData::into_owned))
+                .collect(),
+            block_entities: Cow::Owned(self.block_entities.into_owned()),
         }
     }
 
@@ -119,7 +143,7 @@ impl ChunkData {
                     None => Default::default(),
                 })
                 .collect(),
-            block_entities: self.block_entities,
+            block_entities: self.block_entities.into_owned(),
         }
     }
 }
@@ -157,15 +181,15 @@ pub struct SavedTick {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PlotData {
+pub struct PlotData<'a> {
     pub tps: Tps,
     pub world_send_rate: WorldSendRate,
-    pub chunk_data: Vec<ChunkData>,
+    pub chunk_data: Vec<ChunkData<'a>>,
     pub pending_ticks: Vec<SavedTick>,
 }
 
-impl PlotData {
-    pub fn load_from_file(path: impl AsRef<Path>) -> Result<PlotData, PlotLoadError> {
+impl PlotData<'_> {
+    pub fn load_from_file(path: impl AsRef<Path>) -> Result<PlotData<'static>, PlotLoadError> {
         let path = path.as_ref();
         let mut file = File::open(path)?;
         let version = read_version(&mut file)?;
@@ -194,10 +218,11 @@ impl PlotData {
             fs::copy(path, original)?;
         }
         crate::replace_file(path, |file| {
+            let mut file = BufWriter::with_capacity(WRITE_BUFFER_SIZE, file);
             file.write_all(PLOT_MAGIC)?;
             file.write_u32::<LittleEndian>(VERSION)?;
-            let data = bincode::serialize(self)?;
-            Ok(file.write_all(&data)?)
+            bincode::serialize_into(&mut file, self)?;
+            Ok(file.flush()?)
         })
     }
 }

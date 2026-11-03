@@ -20,7 +20,7 @@ pub fn sleep_time_for_tps(tps: Tps) -> Duration {
     }
 }
 
-pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData> {
+pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData<'static>> {
     let path = path.as_ref();
     if path.exists() {
         Ok(PlotData::load_from_file(path)
@@ -30,11 +30,11 @@ pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData> {
     }
 }
 
-pub fn empty_plot() -> PlotData {
+pub fn empty_plot() -> PlotData<'static> {
     EMPTY_PLOT.clone()
 }
 
-static EMPTY_PLOT: LazyLock<PlotData> = LazyLock::new(|| {
+static EMPTY_PLOT: LazyLock<PlotData<'static>> = LazyLock::new(|| {
     let template_path = Path::new("./world/plots/pTEMPLATE");
     if template_path.exists() {
         PlotData::load_from_file(template_path).expect("failed to read template plot")
@@ -55,7 +55,11 @@ static EMPTY_PLOT: LazyLock<PlotData> = LazyLock::new(|| {
             pending_block_entities: Default::default(),
             pending_sounds: Default::default(),
         };
-        let chunk_data: Vec<ChunkData> = world.chunks.iter_mut().map(ChunkData::new).collect();
+        let chunk_data: Vec<ChunkData<'_>> = world
+            .chunks
+            .iter_mut()
+            .map(|chunk| ChunkData::new(chunk).into_owned())
+            .collect();
         PlotData {
             tps: Tps::Limited(10.0),
             world_send_rate: WorldSendRate::default(),
