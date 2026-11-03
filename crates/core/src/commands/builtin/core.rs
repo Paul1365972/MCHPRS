@@ -407,6 +407,8 @@ fn exec_redpiler_compile(
     flags.extend(ctx.flags());
     let plan = backend.configure(&flags).map_err(CommandError::runtime)?;
     ctx.plot_mut().reset_redpiler();
-    ctx.plot_mut().start_redpiler(backend, flags, plan);
+    ctx.plot_mut()
+        .start_redpiler(backend, flags, plan)
+        .map_err(CommandError::runtime)?;
     ctx.reply(&format!("Compiling for the {} engine...", backend.name()))
 }

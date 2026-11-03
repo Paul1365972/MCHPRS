@@ -183,8 +183,7 @@ impl Runner {
             Command::ReportTicks => self.report_ticks(),
             Command::Sync => {
                 let changes = self.simulation.sync_all()?;
-                let ticks = self.simulation.pending_ticks()?;
-                self.events.send(Event::Synced { changes, ticks });
+                self.events.send(Event::Synced(changes));
             }
             Command::Stop { restore } => {
                 self.finish_advance(false);
