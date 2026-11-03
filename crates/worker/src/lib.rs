@@ -1,5 +1,5 @@
-mod pacing;
 mod runner;
+mod schedule;
 
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::block_map::BlockChanges;
@@ -14,17 +14,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TickRate {
-    Paused,
-    PerSecond(f64),
-    Unlimited,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SendRate {
-    pub per_second: f64,
-}
+pub use schedule::{SendRate, SendSchedule, TickRate, TickSchedule};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Goal {
@@ -33,12 +23,16 @@ pub enum Goal {
 }
 
 /// The ticks run since the previous report, and how long running them took.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TickReport {
     pub ticks: u64,
     pub ticking: Duration,
+    /// The time since the previous report
+    pub period: Duration,
     /// How far the running advance has come
     pub advanced: u64,
+    /// Whether ticking falls behind the tick rate
+    pub behind: bool,
 }
 
 pub enum Event {

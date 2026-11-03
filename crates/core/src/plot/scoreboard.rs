@@ -43,7 +43,7 @@ pub enum RedpilerStatus {
 pub struct PlotStatus {
     pub redpiler: RedpilerStatus,
     pub advance: Option<Progress>,
-    pub tps: Option<f32>,
+    pub tps: Option<f64>,
     pub tps_target: Tps,
     pub tick_time: Option<Duration>,
     pub world_send_rate: WorldSendRate,
@@ -180,9 +180,7 @@ fn layout(status: &PlotStatus) -> Vec<Line> {
 
     lines.push(Line::blank());
     let rate_color = if status.running_behind { BAD } else { GOOD };
-    let measured = status
-        .tps
-        .map_or("–".to_owned(), |rate| format_rate(f64::from(rate)));
+    let measured = status.tps.map_or("–".to_owned(), format_rate);
     let mut rate = colored(&measured, rate_color);
     let target = match status.tps_target {
         Tps::Limited(rate) if rate <= 0.0 => "paused".to_owned(),

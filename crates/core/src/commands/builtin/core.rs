@@ -89,12 +89,18 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                     return exec_rtps_set(ctx, Tps::Limited(tps));
                 }
 
-                let report = ctx.plot_mut().generate_timings_report();
+                let report = ctx.plot_mut().tick_rate_report();
                 let tps = ctx.plot_mut().tps();
+                let rate =
+                    |rate: Option<f64>| rate.map_or("–".to_owned(), |rate| format!("{rate:.1}"));
                 let message = match report {
                     Some(report) => format!(
-                        "&6RTPS from last 10s, 1m, 5m, 15m: &a{:.1}, {:.1}, {:.1}, {:.1} ({})",
-                        report.ten_s, report.one_m, report.five_m, report.fifteen_m, tps
+                        "&6RTPS from last 10s, 1m, 5m, 15m: &a{}, {}, {}, {:.1} ({})",
+                        rate(report.ten_seconds),
+                        rate(report.one_minute),
+                        rate(report.five_minutes),
+                        report.fifteen_minutes,
+                        tps
                     ),
                     None => format!("&6No timings data. &a({})", tps),
                 };

@@ -9,7 +9,7 @@ use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::tick_queue::{TickEntry, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use mchprs_worker::{Event, SendRate, TickRate, Worker};
+use mchprs_worker::{Event, SendRate, TickRate, TickReport, Worker};
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
@@ -23,9 +23,10 @@ pub struct Redpiler {
     pub circuit: Option<Arc<Circuit>>,
     pub plot_ticks: Vec<TickEntry>,
     pub started: Instant,
+    pub paused: bool,
     pub report_requested: bool,
     pub advanced: u64,
-    pub paused: bool,
+    pub behind: bool,
 }
 
 pub fn tick_rate(tps: Tps) -> TickRate {
@@ -69,10 +70,6 @@ impl Plot {
             };
             redpiler.worker.set_tick_rate(rate);
         }
-        if !redpiler.report_requested {
-            redpiler.worker.report_ticks();
-            redpiler.report_requested = true;
-        }
         for event in redpiler.worker.poll() {
             self.apply_redpiler_event(event);
         }
@@ -100,15 +97,7 @@ impl Plot {
                 self.reset_timings();
                 self.refresh_scoreboard();
             }
-            Event::Ticked(report) => {
-                let redpiler = self.redpiler.as_mut()?;
-                redpiler.report_requested = false;
-                redpiler.advanced = report.advanced;
-                if report.ticks > 0 {
-                    self.timings.tickn(report.ticks);
-                    self.tick_time = Some(report.ticking.div_f64(report.ticks as f64));
-                }
-            }
+            Event::Ticked(report) => self.apply_tick_report(report),
             Event::Batch(changes) => {
                 changes.apply(&mut self.world);
                 self.publish_world();
@@ -150,6 +139,22 @@ impl Plot {
             }
         }
         None
+    }
+
+    fn apply_tick_report(&mut self, report: TickReport) {
+        let Some(redpiler) = &mut self.redpiler else {
+            return;
+        };
+        redpiler.report_requested = false;
+        redpiler.advanced = report.advanced;
+        redpiler.behind = report.behind;
+        if report.ticks > 0 {
+            self.tick_time = Some(report.ticking.div_f64(report.ticks as f64));
+        }
+        if !self.players.is_empty() {
+            self.tick_history
+                .add(Instant::now(), report.period, report.ticks);
+        }
     }
 
     fn abandon_compile(&mut self) {
@@ -219,10 +224,12 @@ impl Plot {
             circuit: None,
             plot_ticks: ticks,
             started: Instant::now(),
+            paused: false,
             report_requested: false,
             advanced: 0,
-            paused: false,
+            behind: false,
         });
+        self.reset_timings();
         self.refresh_scoreboard();
     }
 

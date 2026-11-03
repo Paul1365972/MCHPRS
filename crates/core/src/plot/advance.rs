@@ -1,10 +1,9 @@
-use super::{Plot, ADVANCE_BATCH_TIME};
+use super::Plot;
 use crate::player::PacketSender;
 use mchprs_network::PlayerPacketSender;
-use mchprs_save_data::plot_data::Tps;
 use mchprs_worker::Goal;
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 struct Advance {
     goal: Goal,
@@ -176,9 +175,10 @@ impl Plot {
             Goal::Settled => (u64::MAX, true),
         };
         let start = Instant::now();
+        let batch_time = self.batch_time();
         let mut ran = 0;
         let mut settled = false;
-        while ran < limit && start.elapsed() < ADVANCE_BATCH_TIME {
+        while ran < limit && (ran == 0 || start.elapsed() < batch_time) {
             if until_settled && self.world.ticks.entries().is_empty() {
                 settled = true;
                 break;
@@ -188,30 +188,11 @@ impl Plot {
         }
         if ran > 0 {
             self.tick_time = Some(start.elapsed().div_f64(ran as f64));
-            self.skip_overdue_ticks();
+            self.tick_schedule.skip_overdue(Instant::now());
         }
         if settled || ran == limit {
             self.publish_world();
         }
         self.advances.ran(ran, settled);
-    }
-
-    /// Ticks that fell due while the plot advanced aren't owed, so the next one waits a full
-    /// interval. A tick that isn't due yet keeps its time.
-    fn skip_overdue_ticks(&mut self) {
-        let now = Instant::now();
-        let interval = match self.tps {
-            Tps::Limited(tps) if tps > 0.0 => {
-                Duration::try_from_secs_f64(1.0 / f64::from(tps)).unwrap_or(Duration::MAX)
-            }
-            _ => Duration::ZERO,
-        };
-        let lag_time = self.lag_time + (now - self.last_update_time);
-        self.lag_time = if lag_time < interval {
-            lag_time
-        } else {
-            Duration::ZERO
-        };
-        self.last_update_time = now;
     }
 }
