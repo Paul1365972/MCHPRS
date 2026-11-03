@@ -26,7 +26,7 @@ Flags such as `-a` go after all other arguments.
 | `/help [<command>]` | `//help` | List available commands, or show syntax and flags for a command. |
 | `/speed <speed>` | None | Set your flying speed. |
 | `/teleport (<position> \| <player>)` | `/tp` | Teleport to coordinates or another player. |
-| `/rtps [unlimited \| <tps>]` | `/rtps u` (for unlimited) | Show plot timings or set the redstone tick rate (default 10 ticks per second). Fractional rates are allowed; `0` pauses simulation; `unlimited` runs as fast as possible. One redstone tick equals two game ticks. |
+| `/rtps [unlimited \| <tps>]` | `/rtps u` (for unlimited) | Show the recent tick rate, or set the redstone ticks per second (default 10, fractions allowed). `0` pauses, `unlimited` runs as fast as possible. A redstone tick is two game ticks. |
 | `/radvance <ticks>` | `/radv` | Immediately advance the plot by the given number of redstone ticks. |
 | `/stop` | None | Stop the server. |
 | `/gamemode (creative \| spectator)` | `1` (creative), `3` (spectator), `/gmc`, `/gmsp` | Change your game mode. |

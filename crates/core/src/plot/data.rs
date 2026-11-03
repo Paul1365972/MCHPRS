@@ -3,21 +3,6 @@ use anyhow::{Context, Result};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::Duration;
-
-// TODO: where to put this?
-pub fn sleep_time_for_tps(tps: Tps) -> Duration {
-    match tps {
-        Tps::Limited(tps) => {
-            if tps > 10.0 {
-                Duration::from_secs_f64(1.0 / f64::from(tps))
-            } else {
-                Duration::from_millis(50)
-            }
-        }
-        Tps::Unlimited => Duration::ZERO,
-    }
-}
 
 pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData<'static>> {
     let path = path.as_ref();

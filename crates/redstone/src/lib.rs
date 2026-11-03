@@ -5,6 +5,7 @@
 pub mod comparator;
 pub mod interpreter;
 pub mod noteblock;
+pub mod pace;
 pub mod repeater;
 pub mod tick_queue;
 pub mod wire;

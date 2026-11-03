@@ -1,14 +1,16 @@
 #[cfg(feature = "claims")]
 pub mod claims;
 pub mod data;
-mod monitor;
 mod packet_handlers;
 pub mod redpiler;
 mod scoreboard;
+mod send_schedule;
+mod tick_history;
 
-use self::data::sleep_time_for_tps;
-use self::redpiler::{Redpiler, UPDATE};
+use self::redpiler::{tick_rate, Redpiler, UPDATE};
 use self::scoreboard::Scoreboard;
+use self::send_schedule::SendSchedule;
+use self::tick_history::{TickHistory, TickRateReport};
 use crate::interaction;
 use crate::interaction::UseOnBlockContext;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
@@ -33,12 +35,12 @@ use mchprs_redpiler::compile::BuildContext;
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
 use mchprs_redpiler_backends::BackendSetup;
+use mchprs_redstone::pace::Pacer;
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
 use mchprs_world::occupied_regions;
 use mchprs_world::storage::Chunk;
-use monitor::TimingsMonitor;
 use rustc_hash::FxHashMap;
 use scoreboard::RedpilerState;
 #[cfg(feature = "claims")]
@@ -68,7 +70,7 @@ pub const PLOT_BLOCK_HEIGHT: i32 = PLOT_SECTIONS as i32 * 16;
 
 const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler only updates inputs and outputs. To stop redpiler, run `/redpiler reset`.";
 
-const MAX_BATCH_SIZE: u32 = 50_000;
+const UPDATE_INTERVAL: Duration = Duration::from_millis(50);
 
 pub struct Plot {
     pub world: PlotWorld,
@@ -85,16 +87,12 @@ pub struct Plot {
 
     // Timings
     tps: Tps,
-    last_update_time: Instant,
-    lag_time: Duration,
-    last_nspt: Option<Duration>,
-    timings: TimingsMonitor,
+    origin: Instant,
+    pacer: Pacer,
+    send_schedule: SendSchedule,
+    tick_history: TickHistory,
     /// The last time a player was in this plot
     last_player_time: Instant,
-    /// The last time the world changes were sent to the player
-    last_world_send_time: Instant,
-    /// The duration we should sleep for after every update
-    sleep_time: Duration,
     /// When this is false, the update loop will end and the thread will stop.
     /// This will be set to false if no players are on the plot for a certain amount of time.
     running: bool,
@@ -331,7 +329,7 @@ impl RedstoneWorld for PlotWorld {
 impl Plot {
     pub fn tickn(&mut self, ticks: u64) {
         if self.redpiler.is_some() {
-            self.timings.tickn(ticks);
+            self.tick_history.record(ticks);
             self.with_simulation(|simulation| simulation.run(ticks));
             return;
         }
@@ -342,13 +340,33 @@ impl Plot {
     }
 
     fn tick(&mut self) {
-        self.timings.tick();
+        self.tick_history.record(1);
         if self.redpiler.is_some() {
             self.with_simulation(|simulation| simulation.run(1));
             return;
         }
 
         mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world, |world| &mut world.ticks);
+    }
+
+    fn run_world_ticks(&mut self) {
+        let Some(due) = self.pacer.due(self.now()) else {
+            return;
+        };
+        let start = Instant::now();
+        let batch_time = self.batch_time();
+        let mut ran = 0;
+        while ran < due && (ran == 0 || start.elapsed() < batch_time) {
+            self.tick();
+            ran += 1;
+        }
+        self.pacer.ran(ran);
+    }
+
+    fn sample_ticks(&mut self, now: Instant) {
+        if self.tick_history.is_sample_due(now) {
+            self.tick_history.sample(now);
+        }
     }
 
     pub fn send_block_corrections(&mut self, positions: &[BlockPos]) {
@@ -699,13 +717,10 @@ impl Plot {
     }
 
     /// After an expensive operation or change in timings, it's important to
-    /// call this function so our timings monitor doesn't think we're running
-    /// behind.
+    /// call this function so we don't try to catch up on the ticks it held up.
     fn reset_timings(&mut self) {
-        self.lag_time = Duration::ZERO;
-        self.last_update_time = Instant::now();
-        self.last_nspt = None;
-        self.timings.reset_timings();
+        self.pacer.skip_overdue(self.now());
+        self.tick_history.restart(Instant::now());
     }
 
     pub fn publish_world(&mut self) {
@@ -713,7 +728,29 @@ impl Plot {
             changes.apply(&mut self.world);
         }
         self.world.flush_block_changes();
-        self.last_world_send_time = Instant::now();
+        self.send_schedule.sent(self.now());
+    }
+
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
+    }
+
+    fn batch_time(&self) -> Duration {
+        self.send_schedule
+            .interval()
+            .map_or(UPDATE_INTERVAL, |interval| interval.min(UPDATE_INTERVAL))
+    }
+
+    fn next_update(&self) -> Instant {
+        let now = Instant::now();
+        if self.players.is_empty() {
+            return now + UPDATE_INTERVAL;
+        }
+        [self.pacer.next_tick(), self.send_schedule.next_send()]
+            .into_iter()
+            .flatten()
+            .map(|due| self.origin + due)
+            .fold(now + UPDATE_INTERVAL, Instant::min)
     }
 
     /// Writes the state of every node to the world, including the nodes that aren't observed.
@@ -868,8 +905,8 @@ impl Plot {
         let _ = self.message_sender.send(message);
     }
 
-    pub fn generate_timings_report(&self) -> Option<monitor::TimingsReport> {
-        self.timings.generate_report()
+    pub fn tick_rate_report(&self) -> Option<TickRateReport> {
+        self.tick_history.report(Instant::now())
     }
 
     pub fn tps(&self) -> Tps {
@@ -878,8 +915,7 @@ impl Plot {
 
     pub fn set_tps(&mut self, tps: Tps) {
         self.tps = tps;
-        self.sleep_time = sleep_time_for_tps(tps);
-        self.timings.set_tps(tps);
+        self.pacer.set_rate(tick_rate(tps), self.now());
         self.reset_timings();
     }
 
@@ -890,7 +926,7 @@ impl Plot {
     pub fn set_world_send_rate(&mut self, rate: WorldSendRate) {
         self.world.world_send_rate = rate;
         self.world.pending_sounds.clear();
-        self.last_world_send_time = Instant::now();
+        self.send_schedule.set_rate(rate, self.now());
     }
 
     pub fn add_locked_player(&mut self, entity_id: EntityId) -> bool {
@@ -1211,74 +1247,20 @@ impl Plot {
 
         // Only tick if there are players in the plot
         if !self.players.is_empty() {
-            self.timings.set_ticking(true);
-            let now = Instant::now();
-            self.last_player_time = now;
+            self.last_player_time = Instant::now();
 
-            let world_send_interval =
-                Duration::try_from_secs_f64(1.0 / f64::from(self.world.world_send_rate.0))
-                    .unwrap_or(Duration::MAX);
+            self.run_world_ticks();
 
-            let batch_interval = world_send_interval.min(Duration::from_millis(50));
-            let max_batch_size = match self.last_nspt {
-                Some(Duration::ZERO) | None => 1,
-                Some(last_nspt) => {
-                    let ticks_fit = batch_interval.as_nanos() / last_nspt.as_nanos();
-                    // A tick previously took longer than the batch interval.
-                    // Run at least one just so we're not stuck doing nothing
-                    ticks_fit.clamp(1, u128::from(MAX_BATCH_SIZE)) as u32
-                }
-            };
-
-            let batch_size = match self.tps {
-                Tps::Limited(tps) if tps > 0.0 => {
-                    // Very high rates can round the interval to zero and cause division by zero.
-                    let dur_per_tick = Duration::try_from_secs_f64(1.0 / f64::from(tps))
-                        .unwrap_or(Duration::MAX)
-                        .max(Duration::from_nanos(1));
-                    self.lag_time += now - self.last_update_time;
-                    let ticks_behind = self.lag_time.as_nanos() / dur_per_tick.as_nanos();
-                    self.lag_time = Duration::from_nanos(
-                        (self.lag_time.as_nanos() % dur_per_tick.as_nanos()) as u64,
-                    );
-                    ticks_behind.min(u128::from(max_batch_size)) as u32
-                }
-                Tps::Unlimited => max_batch_size,
-                _ => 0,
-            };
-
-            self.last_update_time = now;
-            if batch_size != 0 {
-                let mut ticks_completed = batch_size;
-                if self.redpiler.is_some() {
-                    self.tickn(batch_size as u64);
-                    if let Some(changes) = self.with_simulation(|simulation| simulation.sync()) {
-                        changes.apply(&mut self.world);
-                    }
-                } else {
-                    for i in 0..batch_size {
-                        self.tick();
-                        if now.elapsed() > Duration::from_millis(200) {
-                            ticks_completed = i + 1;
-                            break;
-                        }
-                    }
-                }
-                self.last_nspt = Some(self.last_update_time.elapsed() / ticks_completed);
-            }
-
-            let now = Instant::now();
-            let time_since_last_world_send = now - self.last_world_send_time;
-            if time_since_last_world_send > world_send_interval {
-                self.last_world_send_time = now;
-                self.world.flush_block_changes();
+            self.sample_ticks(Instant::now());
+            if self.send_schedule.is_due(self.now()) {
+                self.publish_world();
             }
         } else {
-            self.timings.set_ticking(false);
+            self.pacer.skip_overdue(self.now());
+            self.tick_history.restart(Instant::now());
             // Unload plot after 600 seconds unless the plot should be always loaded
             if self.last_player_time.elapsed().as_secs() > 600 && !self.always_running {
                 self.running = false;
-                self.timings.stop();
             }
         }
 
@@ -1366,13 +1348,12 @@ impl Plot {
             pending_sounds: FxHashMap::default(),
         };
         let tps = plot_data.tps;
+        let now = Instant::now();
         Plot {
-            last_player_time: Instant::now(),
-            last_update_time: Instant::now(),
-            last_world_send_time: Instant::now(),
-            lag_time: Duration::new(0, 0),
-            sleep_time: sleep_time_for_tps(tps),
-            last_nspt: None,
+            last_player_time: now,
+            origin: now,
+            pacer: Pacer::new(tick_rate(tps), Duration::ZERO),
+            send_schedule: SendSchedule::new(plot_data.world_send_rate, Duration::ZERO),
             message_receiver: channels.broadcasts,
             message_sender: channels.server,
             priv_message_receiver: channels.private,
@@ -1382,7 +1363,7 @@ impl Plot {
             tps,
             always_running,
             redpiler: None,
-            timings: TimingsMonitor::new(tps),
+            tick_history: TickHistory::new(now),
             scoreboard: Default::default(),
             shared,
             world,
@@ -1446,24 +1427,10 @@ impl Plot {
         }
 
         while self.running {
-            // Fast path, for super high RTPS
-            if self.sleep_time <= Duration::from_millis(5) && !self.players.is_empty() {
-                self.update();
-                if self.tps != Tps::Unlimited {
-                    thread::yield_now();
-                }
-                continue;
-            }
-
-            let before = Instant::now();
             self.update();
-            let delta = Instant::now().duration_since(before);
-
-            if delta < self.sleep_time {
-                let sleep_time = self.sleep_time - delta;
-                thread::sleep(sleep_time);
-            } else {
-                thread::yield_now();
+            match self.next_update().checked_duration_since(Instant::now()) {
+                Some(wait) if !wait.is_zero() => thread::sleep(wait),
+                _ => thread::yield_now(),
             }
         }
 

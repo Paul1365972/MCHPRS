@@ -172,12 +172,16 @@ fn exec_rtps_set(ctx: &mut ExecutionContext<'_>, tps: Tps) -> CommandResult<()> 
 }
 
 fn exec_rtps_report(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
-    let report = ctx.plot().generate_timings_report();
+    let report = ctx.plot().tick_rate_report();
     let tps = ctx.plot().tps();
+    let rate = |rate: Option<f64>| rate.map_or("–".to_owned(), |rate| format!("{rate:.1}"));
     let message = match report {
         Some(report) => format!(
-            "&6RTPS from last 10s, 1m, 5m, 15m: &a{:.1}, {:.1}, {:.1}, {:.1} ({tps})",
-            report.ten_s, report.one_m, report.five_m, report.fifteen_m
+            "&6RTPS from last 10s, 1m, 5m, 15m: &a{}, {}, {}, {:.1} ({tps})",
+            rate(report.ten_seconds),
+            rate(report.one_minute),
+            rate(report.five_minutes),
+            report.fifteen_minutes
         ),
         None => format!("&6No timings data. &a({tps})"),
     };
