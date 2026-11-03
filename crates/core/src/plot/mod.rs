@@ -66,10 +66,8 @@ pub const PLOT_SECTIONS: usize = 24;
 /// The plot height in blocks
 pub const PLOT_BLOCK_HEIGHT: i32 = PLOT_SECTIONS as i32 * 16;
 
-pub const ERROR_COMPILING: &str =
-    "This plot cannot be changed while redpiler is compiling. To cancel, run `/redpiler reset`.";
-
-const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler only updates inputs and outputs. To stop redpiler, run `/redpiler reset`.";
+pub const ERROR_REDPILER_ACTIVE: &str =
+    "This plot cannot be changed while redpiler is active. To stop it, run /redpiler reset.";
 
 const MAX_BATCH_SIZE: u32 = 50_000;
 
@@ -593,8 +591,6 @@ impl Plot {
                 self.players[player].worldedit_set_second_pos(block_pos);
             }
             cancel(self);
-            // FIXME: Because the client sends another packet after this for the left hand for
-            // most blocks, redpiler will get reset anyways.
             return;
         }
 
@@ -616,19 +612,11 @@ impl Plot {
                 redpiler.worker.drive(block_pos, input);
                 return;
             }
-            let error = if redpiler.circuit.is_none() {
-                Some(ERROR_COMPILING)
-            } else if redpiler.ports_only {
-                Some(ERROR_IO_ONLY)
-            } else {
-                None
-            };
-            if let Some(error) = error {
-                self.players[player].send_error_message(error);
-                cancel(self);
-                return;
+            if use_item_on.hand == 0 {
+                self.players[player].send_error_message(ERROR_REDPILER_ACTIVE);
             }
-            self.reset_redpiler();
+            cancel(self);
+            return;
         }
 
         if let Some(item) = item_in_hand {
@@ -688,22 +676,11 @@ impl Plot {
             return;
         }
 
-        if let Some(redpiler) = &self.redpiler {
-            let error = if redpiler.circuit.is_none() {
-                Some(ERROR_COMPILING)
-            } else if redpiler.ports_only {
-                Some(ERROR_IO_ONLY)
-            } else {
-                None
-            };
-            if let Some(error) = error {
-                self.players[player].send_error_message(error);
-                self.send_block_corrections(&[block_pos]);
-                return;
-            }
+        if self.redpiler.is_some() {
+            self.players[player].send_error_message(ERROR_REDPILER_ACTIVE);
+            self.send_block_corrections(&[block_pos]);
+            return;
         }
-
-        self.reset_redpiler();
 
         interaction::destroy(block, &mut self.world, block_pos);
         self.world.flush_block_changes();

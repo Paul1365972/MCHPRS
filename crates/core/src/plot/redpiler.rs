@@ -18,7 +18,6 @@ use tracing::{debug, error, trace, warn};
 pub struct Redpiler {
     pub backend: &'static dyn Backend,
     pub flags: FlagValues,
-    pub ports_only: bool,
     pub worker: Worker,
     pub stage: Option<Stage>,
     pub circuit: Option<Arc<Circuit>>,
@@ -197,7 +196,6 @@ impl Plot {
         let blocks = self.world.copy_blocks();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
         let compile_ticks = ticks.clone();
-        let ports_only = plan.extract.ports_only;
         let worker = Worker::spawn(
             tick_rate(self.tps),
             send_rate(self.world.world_send_rate),
@@ -216,7 +214,6 @@ impl Plot {
         self.redpiler = Some(Redpiler {
             backend,
             flags,
-            ports_only,
             worker,
             stage: None,
             circuit: None,

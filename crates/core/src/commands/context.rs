@@ -144,14 +144,10 @@ impl<'a> ExecutionContext<'a> {
     }
 
     pub(super) fn world_mut(&mut self) -> Result<&mut PlotWorld, RuntimeError> {
-        if self.world_access != WorldAccess::Mutable {
-            if self.plot.is_compiling_redpiler() {
-                return Err(RuntimeError::RedpilerCompiling);
-            }
-            self.world();
-            self.plot.reset_redpiler();
-            self.world_access = WorldAccess::Mutable;
+        if self.plot.redpiler.is_some() {
+            return Err(RuntimeError::RedpilerActive);
         }
+        self.world_access = WorldAccess::Mutable;
         Ok(&mut self.plot.world)
     }
 
