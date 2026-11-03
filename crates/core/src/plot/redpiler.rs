@@ -1,9 +1,7 @@
 use super::Plot;
-use crate::player::PacketSender;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
 use mchprs_commands::flag::FlagValues;
-use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::backend::{Backend, CompilePlan};
 use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler::compile::Stage;
@@ -11,8 +9,7 @@ use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::tick_queue::{TickEntry, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use mchprs_worker::{Event, RequestId, SendRate, TickRate, Worker};
-use std::collections::HashMap;
+use mchprs_worker::{Event, SendRate, TickRate, Worker};
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
@@ -28,14 +25,8 @@ pub struct Redpiler {
     pub plot_ticks: Vec<TickEntry>,
     pub started: Instant,
     pub report_requested: bool,
-    pub advances: HashMap<RequestId, Advance>,
+    pub advanced: u64,
     pub paused: bool,
-}
-
-pub struct Advance {
-    pub ticks: u64,
-    pub started: Instant,
-    pub requester: PlayerPacketSender,
 }
 
 pub fn tick_rate(tps: Tps) -> TickRate {
@@ -111,7 +102,9 @@ impl Plot {
                 self.refresh_scoreboard();
             }
             Event::Ticked(report) => {
-                self.redpiler.as_mut()?.report_requested = false;
+                let redpiler = self.redpiler.as_mut()?;
+                redpiler.report_requested = false;
+                redpiler.advanced = report.advanced;
                 if report.ticks > 0 {
                     self.timings.tickn(report.ticks);
                     self.tick_time = Some(report.ticking.div_f64(report.ticks as f64));
@@ -121,14 +114,9 @@ impl Plot {
                 changes.apply(&mut self.world);
                 self.publish_world();
             }
-            Event::Advanced(request) => {
-                let redpiler = self.redpiler.as_mut()?;
-                let advance = redpiler.advances.remove(&request)?;
-                advance.requester.send_system_message(&format!(
-                    "Plot has been advanced by {} ticks ({:?})",
-                    advance.ticks,
-                    advance.started.elapsed()
-                ));
+            Event::Advanced { ran, settled } => {
+                self.redpiler.as_mut()?.advanced = 0;
+                self.advances.worker_ran(ran, settled);
             }
             Event::Rejected { position, error } => {
                 warn!("Redpiler rejected the input at {position}: {error}");
@@ -190,14 +178,8 @@ impl Plot {
     }
 
     fn end_redpiler(&mut self) {
-        if let Some(redpiler) = self.redpiler.take() {
-            for advance in redpiler.advances.into_values() {
-                advance.requester.send_system_message(&format!(
-                    "Redpiler stopped before the plot was advanced by {} ticks.",
-                    advance.ticks
-                ));
-            }
-        }
+        self.redpiler = None;
+        self.advances.worker_ended();
         self.publish_world();
         self.reset_timings();
         self.refresh_scoreboard();
@@ -241,7 +223,7 @@ impl Plot {
             plot_ticks: ticks,
             started: Instant::now(),
             report_requested: false,
-            advances: HashMap::new(),
+            advanced: 0,
             paused: false,
         });
         self.refresh_scoreboard();

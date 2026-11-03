@@ -23,7 +23,7 @@ use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::backend::Backend;
 use mchprs_redpiler_backends::BACKENDS;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use std::time::Instant;
+use mchprs_worker::Goal;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
     registry.register(
@@ -129,31 +129,30 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
     registry.add_custom_alias("gmc", "gamemode creative");
     registry.add_custom_alias("gmsp", "gamemode spectator");
 
+    fn exec_radvance(ctx: &mut ExecutionContext<'_>, goal: Goal) -> CommandResult<()> {
+        let requester = PlayerPacketSender::new(&ctx.player()?.client);
+        let plot = ctx.plot_mut();
+        plot.queue_advance(goal, requester);
+        if plot.is_compiling_redpiler() {
+            return ctx.reply("The plot will advance once redpiler has compiled.");
+        }
+        Ok(())
+    }
+
     registry.register(
         Command::new("radvance")
             .alias("radv")
+            .subcommand(Command::new("settle").executes(|ctx| exec_radvance(ctx, Goal::Settled)))
+            .subcommand(Command::new("stop").executes(|ctx| {
+                if ctx.plot_mut().stop_advancing() {
+                    return Ok(());
+                }
+                ctx.reply("The plot isn't advancing.")
+            }))
             .arg("ticks", ArgumentType::integer(0, 1_000_000_000))
             .executes(|ctx| {
                 let ticks: i32 = ctx.arg("ticks")?;
-
-                let requester = PlayerPacketSender::new(&ctx.player()?.client);
-                let plot = ctx.plot_mut();
-                let compiling = plot.is_compiling_redpiler();
-                if plot.advance_redpiler(ticks as u64, requester) {
-                    if compiling {
-                        return ctx.reply("The plot will advance once redpiler has compiled.");
-                    }
-                    return Ok(());
-                }
-                let start_time = Instant::now();
-                plot.tickn(ticks as u64);
-                plot.publish_world();
-
-                ctx.reply(&format!(
-                    "Plot has been advanced by {} ticks ({:?})",
-                    ticks,
-                    start_time.elapsed()
-                ))
+                exec_radvance(ctx, Goal::Ticks(ticks as u64))
             }),
     );
 

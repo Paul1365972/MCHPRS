@@ -1,3 +1,4 @@
+use super::advance::Progress;
 use crate::player::{PacketSender, Player};
 use mchprs_commands::flag::FlagValues;
 use mchprs_network::packets::clientbound::{
@@ -8,6 +9,7 @@ use mchprs_network::text::{TextColor, TextComponent};
 use mchprs_redpiler::backend::Backend;
 use mchprs_redpiler::compile::Stage;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
+use mchprs_worker::Goal;
 use std::time::Duration;
 
 const OBJECTIVE: &str = "plot_status";
@@ -40,6 +42,7 @@ pub enum RedpilerStatus {
 
 pub struct PlotStatus {
     pub redpiler: RedpilerStatus,
+    pub advance: Option<Progress>,
     pub tps: Option<f32>,
     pub tps_target: Tps,
     pub tick_time: Option<Duration>,
@@ -188,6 +191,9 @@ fn layout(status: &PlotStatus) -> Vec<Line> {
     };
     rate.extra.push(colored(&format!(" / {target}"), LABEL));
     lines.push(Line::new("RTPS", rate));
+    if let Some(progress) = status.advance {
+        push_advance(&mut lines, progress);
+    }
     let tick_time = status.tick_time.map_or("–".to_owned(), format_duration);
     lines.push(Line::new("Tick time", colored(&tick_time, VALUE)));
     let send_rate = match status.world_send_rate.0 {
@@ -224,19 +230,41 @@ fn push_progress(lines: &mut Vec<Line>, stage: Option<Stage>) {
                 label: colored(pass, VALUE),
                 value: Some(colored(&format!("{completed}/{total}"), LABEL)),
             });
-            let filled = (completed * PROGRESS_BAR_WIDTH)
-                .checked_div(total)
-                .unwrap_or(0)
-                .min(PROGRESS_BAR_WIDTH);
-            let mut bar = colored(&"|".repeat(filled), GOOD);
-            bar.extra
-                .push(colored(&"|".repeat(PROGRESS_BAR_WIDTH - filled), MUTED));
-            lines.push(Line {
-                label: bar,
-                value: None,
-            });
+            push_bar(lines, completed as u64, total as u64);
         }
     }
+}
+
+fn push_advance(lines: &mut Vec<Line>, progress: Progress) {
+    let mut ran = colored(&format_count(progress.ran), BUSY);
+    match progress.goal {
+        Goal::Ticks(ticks) => {
+            ran.extra
+                .push(colored(&format!(" / {}", format_count(ticks)), LABEL));
+            lines.push(Line::new("Advancing", ran));
+            push_bar(lines, progress.ran, ticks);
+        }
+        Goal::Settled => lines.push(Line::new("Settling", ran)),
+    }
+    if progress.waiting > 0 {
+        let waiting = format!("{} more", progress.waiting);
+        lines.push(Line::new("Waiting", colored(&waiting, VALUE)));
+    }
+}
+
+fn push_bar(lines: &mut Vec<Line>, completed: u64, total: u64) {
+    let fraction = match total {
+        0 => 0.0,
+        total => completed as f64 / total as f64,
+    };
+    let filled = ((fraction * PROGRESS_BAR_WIDTH as f64) as usize).min(PROGRESS_BAR_WIDTH);
+    let mut bar = colored(&"|".repeat(filled), GOOD);
+    bar.extra
+        .push(colored(&"|".repeat(PROGRESS_BAR_WIDTH - filled), MUTED));
+    lines.push(Line {
+        label: bar,
+        value: None,
+    });
 }
 
 fn update_packet(index: usize, line: &Line) -> CUpdateScore {
@@ -273,6 +301,14 @@ fn format_rate(rate: f64) -> String {
         rate if rate >= 100.0 => format!("{rate:.0}"),
         rate if rate.fract() == 0.0 => format!("{rate:.0}"),
         rate => format!("{rate:.1}"),
+    }
+}
+
+fn format_count(count: u64) -> String {
+    match count {
+        1_000_000.. => format!("{:.2}M", count as f64 / 1e6),
+        10_000.. => format!("{:.1}k", count as f64 / 1e3),
+        _ => count.to_string(),
     }
 }
 
