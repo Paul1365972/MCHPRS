@@ -47,8 +47,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run clippy
-        # If we ever get around to fix everything clippy complains about we can start failing on warning via: -- -D warnings
-        run: cargo clippy --locked --workspace --all-features --all-targets
+        run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
 
   test:
     name: Run tests
