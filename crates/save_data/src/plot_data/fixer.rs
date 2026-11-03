@@ -38,7 +38,10 @@ fn make_backup(path: impl AsRef<Path>) -> Result<(), PlotLoadError> {
     Ok(())
 }
 
-pub fn try_fix(path: impl AsRef<Path>, info: FixInfo) -> Result<Option<PlotData>, PlotLoadError> {
+pub fn try_fix(
+    path: impl AsRef<Path>,
+    info: FixInfo,
+) -> Result<Option<PlotData<'static>>, PlotLoadError> {
     debug!("Trying to fix plot with {:?}", info);
     let result: Option<PlotData> = match info {
         FixInfo::OldVersion {

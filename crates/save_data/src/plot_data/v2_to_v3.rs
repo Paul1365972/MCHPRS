@@ -22,7 +22,7 @@ struct WorldSendRateV2(u32);
 struct PlotDataV2 {
     tps: TpsV2,
     world_send_rate: WorldSendRateV2,
-    chunk_data: Vec<ChunkData>,
+    chunk_data: Vec<ChunkData<'static>>,
     pending_ticks: Vec<TickEntryV3>,
 }
 

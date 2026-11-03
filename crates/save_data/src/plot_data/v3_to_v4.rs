@@ -22,12 +22,12 @@ pub struct TickEntryV3 {
 pub struct PlotDataV3 {
     pub tps: Tps,
     pub world_send_rate: WorldSendRate,
-    pub chunk_data: Vec<ChunkData>,
+    pub chunk_data: Vec<ChunkData<'static>>,
     pub pending_ticks: Vec<TickEntryV3>,
 }
 
 impl PlotDataV3 {
-    pub fn upgrade(self) -> PlotData {
+    pub fn upgrade(self) -> PlotData<'static> {
         let plot_width = self.chunk_data.len().isqrt() as i32;
         let chunks: Vec<Chunk> = self
             .chunk_data
@@ -62,7 +62,9 @@ impl PlotDataV3 {
     }
 }
 
-pub fn convert_v3_to_v4(path: impl AsRef<Path>) -> Result<Option<PlotData>, PlotLoadError> {
+pub fn convert_v3_to_v4(
+    path: impl AsRef<Path>,
+) -> Result<Option<PlotData<'static>>, PlotLoadError> {
     let mut file = File::open(&path)?;
 
     let mut magic = [0; 8];
