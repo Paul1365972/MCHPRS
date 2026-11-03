@@ -43,18 +43,16 @@ pub fn send_rate(rate: WorldSendRate) -> SendRate {
 }
 
 impl Plot {
-    pub fn sync_redpiler(&mut self) -> Option<Vec<TickEntry>> {
-        let redpiler = self.redpiler.as_mut()?;
+    pub fn sync_redpiler(&mut self) {
+        let Some(redpiler) = &mut self.redpiler else {
+            return;
+        };
         if redpiler.circuit.is_none() {
-            return Some(redpiler.plot_ticks.clone());
+            return;
         }
-        let mut pending_ticks = None;
         for event in redpiler.worker.sync() {
-            if let Some(ticks) = self.apply_redpiler_event(event) {
-                pending_ticks = Some(ticks);
-            }
+            self.apply_redpiler_event(event);
         }
-        pending_ticks
     }
 
     pub(super) fn handle_redpiler_events(&mut self) {
@@ -75,15 +73,17 @@ impl Plot {
         }
     }
 
-    fn apply_redpiler_event(&mut self, event: Event) -> Option<Vec<TickEntry>> {
+    fn apply_redpiler_event(&mut self, event: Event) {
+        let Some(redpiler) = &mut self.redpiler else {
+            return;
+        };
         match event {
             Event::Progress(stage) => {
                 trace!("Redpiler compile stage {stage:?}");
-                self.redpiler.as_mut()?.stage = Some(stage);
+                redpiler.stage = Some(stage);
                 self.refresh_scoreboard();
             }
             Event::Started(circuit) => {
-                let redpiler = self.redpiler.as_mut()?;
                 let message = format!(
                     "Redpiler compiled {} nodes for the {} engine in {:?}.",
                     circuit.len(),
@@ -103,17 +103,17 @@ impl Plot {
                 self.publish_world();
             }
             Event::Advanced { ran, settled } => {
-                self.redpiler.as_mut()?.advanced = 0;
+                redpiler.advanced = 0;
                 self.advances.worker_ran(ran, settled);
             }
             Event::Rejected { position, error } => {
                 warn!("Redpiler rejected the input at {position}: {error}");
             }
-            Event::Synced { changes, ticks } => {
-                changes.apply(&mut self.world);
-                return Some(ticks);
-            }
+            Event::Synced(changes) => changes.apply(&mut self.world),
             Event::Stopped { changes, ticks } => {
+                if !redpiler.plot_ticks.is_empty() {
+                    self.world.mark_unsaved();
+                }
                 changes.apply(&mut self.world);
                 for tick in ticks {
                     self.world
@@ -126,19 +126,25 @@ impl Plot {
                 self.end_redpiler();
             }
             Event::Failed(error) => {
+                let compiling = redpiler.circuit.is_none();
                 error!("Redpiler failed: {error}");
-                self.broadcast(&format!("Redpiler failed and was stopped: {error}"));
-                if self
-                    .redpiler
-                    .as_ref()
-                    .is_some_and(|redpiler| redpiler.circuit.is_none())
-                {
+                let mut message = format!("Redpiler failed and was stopped: {error}.");
+                if compiling {
                     self.abandon_compile();
+                } else {
+                    match self.restore_saved_world() {
+                        Ok(()) => message
+                            .push_str(" The plot was restored to its state before compiling."),
+                        Err(error) => {
+                            error!("Failed to restore the plot after redpiler failed: {error:?}");
+                            message.push_str(" The plot couldn't be restored.");
+                        }
+                    }
                 }
+                self.broadcast(&message);
                 self.end_redpiler();
             }
         }
-        None
     }
 
     fn apply_tick_report(&mut self, report: TickReport) {
@@ -183,6 +189,7 @@ impl Plot {
 
     fn end_redpiler(&mut self) {
         self.redpiler = None;
+        self.world.postpone_autosave();
         self.advances.worker_ended();
         self.publish_world();
         self.reset_timings();
@@ -194,9 +201,13 @@ impl Plot {
         backend: &'static dyn Backend,
         flags: FlagValues,
         plan: CompilePlan,
-    ) {
-        debug!("Starting redpiler with the {} engine", backend.name());
+    ) -> Result<(), &'static str> {
         self.reset_pressure_plates();
+        self.save();
+        if self.world.unsaved_since.is_some() {
+            return Err("Redpiler didn't start because the plot couldn't be saved.");
+        }
+        debug!("Starting redpiler with the {} engine", backend.name());
         let region = self.world.region();
         let blocks = self.world.copy_blocks();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
@@ -231,6 +242,7 @@ impl Plot {
         });
         self.reset_timings();
         self.refresh_scoreboard();
+        Ok(())
     }
 
     pub fn stop_redpiler(&mut self, restore: bool, update: bool) {

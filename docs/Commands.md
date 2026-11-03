@@ -133,9 +133,9 @@ File names can use letters, digits, `_`, `-`, `.` and `+`, and end in `.schem` o
 
 ## Redpiler Commands
 
-Redpiler compiles the plot's redstone circuits for faster simulation.
-It compiles and runs on its own thread, so the plot stays responsive.
-While it compiles or runs, only its inputs can be used: the plot can't be changed until `/redpiler reset` stops it.
+Redpiler compiles the plot's redstone for faster simulation.
+While it compiles or runs, the plot can't be changed. Levers, buttons and pressure plates still work once it runs.
+Compiling saves the plot. A run's changes are only saved once `/redpiler reset` ends it: stopping the server during a run discards them, and if the run fails, the plot goes back to that save.
 
 | Command | Alias | Description |
 | --- | --- | --- |

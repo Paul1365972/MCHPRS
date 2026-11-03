@@ -49,10 +49,7 @@ pub enum Event {
         position: BlockPos,
         error: DriveError,
     },
-    Synced {
-        changes: BlockChanges,
-        ticks: Vec<TickEntry>,
-    },
+    Synced(BlockChanges),
     Stopped {
         changes: BlockChanges,
         ticks: Vec<TickEntry>,
@@ -154,7 +151,7 @@ impl Worker {
 
     pub fn sync(&mut self) -> Vec<Event> {
         self.send(Command::Sync);
-        self.collect_until(|event| matches!(event, Event::Synced { .. }))
+        self.collect_until(|event| matches!(event, Event::Synced(_)))
     }
 
     pub fn stop(&mut self, restore: bool) -> Vec<Event> {
