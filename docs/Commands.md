@@ -27,7 +27,7 @@ Flags such as `-a` go after all other arguments.
 | `/speed <speed>` | None | Set your flying speed. |
 | `/teleport (<position> \| <player>)` | `/tp` | Teleport to coordinates or another player. |
 | `/rtps [unlimited \| <tps>]` | `/rtps u` (for unlimited) | Show the recent tick rate, or set the redstone ticks per second (default 10, fractions allowed). `0` pauses, `unlimited` runs as fast as possible. A redstone tick is two game ticks. |
-| `/radvance <ticks>` | `/radv` | Immediately advance the plot by the given number of redstone ticks. |
+| `/radvance (<ticks> \| settle \| stop)` | `/radv` | Run the given number of redstone ticks as fast as possible, or with `settle` until no tick is pending. A plot runs one advance at a time, which carries on when Redpiler starts or stops; `stop` cancels it. |
 | `/stop` | None | Stop the server. |
 | `/gamemode (creative \| spectator)` | `1` (creative), `3` (spectator), `/gmc`, `/gmsp` | Change your game mode. |
 | `/worldsendrate [<hertz>]` | `/wsr` | Show or set how often the plot sends block updates to players (0–1000, fractional; `0` disables periodic sends; default 60 Hz). |

@@ -1,3 +1,4 @@
+mod advance;
 #[cfg(feature = "claims")]
 pub mod claims;
 pub mod data;
@@ -7,6 +8,7 @@ mod scoreboard;
 mod send_schedule;
 mod tick_history;
 
+use self::advance::Advance;
 use self::redpiler::{tick_rate, Redpiler, UPDATE};
 use self::scoreboard::Scoreboard;
 use self::send_schedule::SendSchedule;
@@ -77,6 +79,7 @@ pub struct Plot {
     pub players: Vec<Player>,
     pub redpiler: Option<Redpiler>,
     pub shared: Arc<Shared>,
+    advance: Option<Advance>,
 
     // Thread communication
     message_receiver: BusReader<BroadcastMessage>,
@@ -327,18 +330,6 @@ impl RedstoneWorld for PlotWorld {
 }
 
 impl Plot {
-    pub fn tickn(&mut self, ticks: u64) {
-        if self.redpiler.is_some() {
-            self.tick_history.record(ticks);
-            self.with_simulation(|simulation| simulation.run(ticks));
-            return;
-        }
-
-        for _ in 0..ticks {
-            self.tick();
-        }
-    }
-
     fn tick(&mut self) {
         self.tick_history.record(1);
         if self.redpiler.is_some() {
@@ -356,11 +347,26 @@ impl Plot {
         let start = Instant::now();
         let batch_time = self.batch_time();
         let mut ran = 0;
-        while ran < due && (ran == 0 || start.elapsed() < batch_time) {
+        let mut settled = false;
+        while ran < due.limit && (ran == 0 || start.elapsed() < batch_time) {
+            if due.until_settled && self.is_settled() {
+                settled = true;
+                break;
+            }
             self.tick();
             ran += 1;
         }
-        self.pacer.ran(ran);
+        if let Some(advanced) = self.pacer.ran(ran, settled, self.now()) {
+            self.publish_world();
+            self.record_advance(advanced);
+        }
+    }
+
+    fn is_settled(&mut self) -> bool {
+        match self.with_simulation(|simulation| simulation.settle(0)) {
+            Some(settled) => settled.is_some(),
+            None => self.world.ticks.entries().is_empty(),
+        }
     }
 
     fn sample_ticks(&mut self, now: Instant) {
@@ -743,6 +749,9 @@ impl Plot {
 
     fn next_update(&self) -> Instant {
         let now = Instant::now();
+        if self.advance.is_some() {
+            return now;
+        }
         if self.players.is_empty() {
             return now + UPDATE_INTERVAL;
         }
@@ -1244,6 +1253,7 @@ impl Plot {
 
     fn update(&mut self) {
         self.handle_messages();
+        self.continue_advancing();
 
         // Only tick if there are players in the plot
         if !self.players.is_empty() {
@@ -1258,8 +1268,14 @@ impl Plot {
         } else {
             self.pacer.skip_overdue(self.now());
             self.tick_history.restart(Instant::now());
+            if self.pacer.is_advancing() {
+                self.run_world_ticks();
+            }
             // Unload plot after 600 seconds unless the plot should be always loaded
-            if self.last_player_time.elapsed().as_secs() > 600 && !self.always_running {
+            if self.last_player_time.elapsed().as_secs() > 600
+                && !self.always_running
+                && self.advance.is_none()
+            {
                 self.running = false;
             }
         }
@@ -1363,6 +1379,7 @@ impl Plot {
             tps,
             always_running,
             redpiler: None,
+            advance: None,
             tick_history: TickHistory::new(now),
             scoreboard: Default::default(),
             shared,

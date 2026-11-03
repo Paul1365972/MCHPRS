@@ -10,10 +10,9 @@ use crate::server::{get_version_string, Message};
 use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::signal_strength::SignalStrength;
-#[cfg(feature = "whitelist")]
 use mchprs_network::PlayerPacketSender;
+use mchprs_redstone::pace::Goal;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use std::time::Instant;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
     registry.register(
@@ -77,8 +76,18 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("radvance")
             .alias("radv")
+            .subcommand(Command::new("settle").executes(|ctx| exec_radvance(ctx, Goal::Settled)))
+            .subcommand(Command::new("stop").executes(|ctx| {
+                if ctx.plot_mut().stop_advancing() {
+                    return Ok(());
+                }
+                ctx.reply("The plot isn't advancing.")
+            }))
             .arg("ticks", ArgumentType::integer(0, 1_000_000_000))
-            .executes(exec_radvance),
+            .executes(|ctx| {
+                let ticks: i32 = ctx.arg("ticks")?;
+                exec_radvance(ctx, Goal::Ticks(ticks as u64))
+            }),
     );
 
     registry.register(
@@ -194,16 +203,10 @@ fn exec_gamemode(ctx: &mut ExecutionContext<'_>, gamemode: Gamemode) -> CommandR
     Ok(())
 }
 
-fn exec_radvance(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
-    let ticks: i32 = ctx.arg("ticks")?;
-
-    let start_time = Instant::now();
-    let plot = ctx.plot_mut();
-    plot.tickn(ticks as u64);
-    plot.publish_world();
-
-    ctx.reply(&format!(
-        "Plot has been advanced by {ticks} ticks ({:?})",
-        start_time.elapsed()
-    ))
+fn exec_radvance(ctx: &mut ExecutionContext<'_>, goal: Goal) -> CommandResult<()> {
+    let requester = PlayerPacketSender::new(&ctx.player()?.client);
+    if !ctx.plot_mut().start_advancing(goal, requester) {
+        return ctx.reply("The plot is already advancing. Use /radv stop first.");
+    }
+    Ok(())
 }

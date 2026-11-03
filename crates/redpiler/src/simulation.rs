@@ -38,6 +38,10 @@ impl<E: Engine> Simulation<E> {
         self.engine.run(ticks)
     }
 
+    pub fn settle(&mut self, limit: u64) -> Result<Option<u64>, EngineError> {
+        self.engine.settle(limit)
+    }
+
     pub fn sync(&mut self) -> Result<BlockChanges, EngineError> {
         self.record_changes()?;
         Ok(self.blocks.take_changes(&self.circuit))
