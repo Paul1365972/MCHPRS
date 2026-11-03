@@ -51,7 +51,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 #[cfg(feature = "whitelist")]
 use tracing::warn;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// The width of a plot (2^n)
 pub const PLOT_SCALE: u32 = 5;
@@ -71,6 +71,7 @@ pub const ERROR_REDPILER_ACTIVE: &str =
     "This plot cannot be changed while redpiler is active. To stop it, run /redpiler reset.";
 
 const SCOREBOARD_INTERVAL: Duration = Duration::from_millis(500);
+const SAVE_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 const UPDATE_INTERVAL: Duration = Duration::from_millis(50);
 
 pub struct Plot {
@@ -121,6 +122,7 @@ pub struct PlotWorld {
     world_send_rate: WorldSendRate,
     pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
     pending_sounds: FxHashMap<BlockPos, CSoundEffect>,
+    unsaved_since: Option<Instant>,
 }
 
 impl PlotWorld {
@@ -206,6 +208,14 @@ impl PlotWorld {
             }
         }
     }
+
+    fn mark_unsaved(&mut self) {
+        self.unsaved_since.get_or_insert_with(Instant::now);
+    }
+
+    fn retry_save_later(&mut self) {
+        self.unsaved_since = Some(Instant::now());
+    }
 }
 
 impl BlockView for PlotWorld {
@@ -236,15 +246,20 @@ impl BlockStore for PlotWorld {
         }
 
         let chunk = &mut self.chunks[chunk_index];
-        chunk.set_block(
+        let changed = chunk.set_block(
             (pos.x & 0xF) as u32,
             pos.y as u32,
             (pos.z & 0xF) as u32,
             block.get_id(),
-        )
+        );
+        if changed {
+            self.mark_unsaved();
+        }
+        changed
     }
 
     fn set_block_entity(&mut self, pos: BlockPos, block_entity: Option<BlockEntity>) {
+        self.mark_unsaved();
         let Some(block_entity) = block_entity else {
             let had_sign = matches!(self.block_entity(pos), Some(BlockEntity::Sign(_)));
             self.pending_block_entities.remove(&pos);
@@ -299,6 +314,7 @@ impl RedstoneWorld for PlotWorld {
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority) {
         let block = self.block(pos);
         self.ticks.schedule(pos, delay, priority, block);
+        self.mark_unsaved();
     }
 
     fn pending_tick_at(&self, pos: BlockPos) -> bool {
@@ -347,6 +363,9 @@ impl BlockView for PlotBlocks {
 impl Plot {
     fn tick(&mut self) {
         self.tick_history.record(1);
+        if !self.world.ticks.entries().is_empty() {
+            self.world.mark_unsaved();
+        }
         mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world, |world| &mut world.ticks);
     }
 
@@ -452,7 +471,6 @@ impl Plot {
     }
 
     fn enter_plot(&mut self, player: Player) {
-        self.save();
         if self.players.is_empty() {
             self.world.pending_sounds.clear();
         }
@@ -803,6 +821,7 @@ impl Plot {
 
     pub fn set_tps(&mut self, tps: Tps) {
         self.tps = tps;
+        self.world.mark_unsaved();
         self.pacer.set_rate(tick_rate(tps), self.now());
         self.reset_timings();
     }
@@ -813,6 +832,7 @@ impl Plot {
 
     pub fn set_world_send_rate(&mut self, rate: WorldSendRate) {
         self.world.world_send_rate = rate;
+        self.world.mark_unsaved();
         self.world.pending_sounds.clear();
         self.send_schedule.set_rate(rate, self.now());
     }
@@ -1164,9 +1184,10 @@ impl Plot {
                 && self.advance.is_none()
             {
                 self.reset_redpiler();
-                self.running = false;
+                self.unload_once_saved();
             }
         }
+        self.autosave_if_due();
 
         self.update_players();
 
@@ -1219,6 +1240,7 @@ impl Plot {
             world_send_rate: plot_data.world_send_rate,
             pending_block_entities: FxHashMap::default(),
             pending_sounds: FxHashMap::default(),
+            unsaved_since: None,
         };
         let tps = plot_data.tps;
         let now = Instant::now();
@@ -1266,7 +1288,9 @@ impl Plot {
             }
         } else {
             let data = shared.empty_plot.clone();
-            Plot::from_data(data, x, z, channels, always_running, shared)
+            let mut plot = Plot::from_data(data, x, z, channels, always_running, shared);
+            plot.world.mark_unsaved();
+            plot
         };
         plot.reset_pressure_plates();
         Ok(plot)
@@ -1280,6 +1304,11 @@ impl Plot {
         } else {
             self.shared.empty_plot.clone()
         };
+        if data.tps == self.tps && data.world_send_rate == self.world.world_send_rate {
+            self.world.unsaved_since = None;
+        } else {
+            self.world.mark_unsaved();
+        }
         self.world.chunks = load_chunks(data.chunk_data, x, z);
         self.world.ticks = load_ticks(data.pending_ticks);
         self.world.pending_block_entities.clear();
@@ -1290,11 +1319,51 @@ impl Plot {
         Ok(())
     }
 
+    fn needs_saving(&self) -> bool {
+        !self.redpiler.is_active() && self.world.unsaved_since.is_some()
+    }
+
+    fn unload_once_saved(&mut self) {
+        if self
+            .world
+            .unsaved_since
+            .is_some_and(|since| since.elapsed() >= SAVE_RETRY_INTERVAL)
+        {
+            self.save_for_unload();
+        }
+        if !self.needs_saving() {
+            self.running = false;
+        }
+    }
+
+    fn save_for_unload(&mut self) {
+        if self.needs_saving() {
+            for chunk in &mut self.world.chunks {
+                chunk.flush();
+                chunk.compress();
+            }
+        }
+        self.save();
+    }
+
+    fn autosave_if_due(&mut self) {
+        let interval = Duration::from_secs(self.shared.config.autosave_interval_seconds);
+        if !interval.is_zero()
+            && self
+                .world
+                .unsaved_since
+                .is_some_and(|since| since.elapsed() >= interval)
+        {
+            self.save();
+        }
+    }
+
     /// While redpiler is active, the file keeps the world it compiled.
     fn save(&mut self) {
-        if self.redpiler.is_active() {
+        if !self.needs_saving() {
             return;
         }
+        let start = Instant::now();
         let world = &mut self.world;
         let chunk_data: Vec<ChunkData<'_>> = world.chunks.iter_mut().map(ChunkData::new).collect();
         let data = PlotData {
@@ -1313,9 +1382,21 @@ impl Plot {
                 })
                 .collect(),
         };
-        data.save_to_file(plot_path(world.x, world.z)).unwrap();
-
-        self.reset_timings();
+        match data.save_to_file(plot_path(world.x, world.z)) {
+            Ok(()) => {
+                world.unsaved_since = None;
+                debug!(
+                    "Saved plot ({}, {}) in {:?}",
+                    world.x,
+                    world.z,
+                    start.elapsed()
+                );
+            }
+            Err(error) => {
+                world.retry_save_later();
+                error!("Failed to save plot ({}, {}): {error}", world.x, world.z);
+            }
+        }
     }
 
     fn run(&mut self, initial_player: Option<Player>) {
@@ -1331,7 +1412,7 @@ impl Plot {
             }
         }
 
-        self.save();
+        self.save_for_unload();
     }
 
     /// This function is used in case of an error. It will try to send the player to spawn if this
@@ -1462,10 +1543,6 @@ impl Drop for Plot {
                     .unwrap();
             }
         }
-        self.world
-            .chunks
-            .iter_mut()
-            .for_each(|chunk| chunk.compress());
         self.save();
         let world = &self.world;
         self.message_sender

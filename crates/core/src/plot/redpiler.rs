@@ -36,6 +36,7 @@ pub struct Running {
     pub(super) setup: BackendSetup,
     blocks: BlockMap,
     session: Box<dyn Session>,
+    had_ticks: bool,
     tick_rate: TickRate,
     pub(super) behind: bool,
     pub(super) advanced_ticks: u64,
@@ -141,6 +142,9 @@ impl Plot {
     ) -> Result<(), &'static str> {
         self.reset_pressure_plates();
         self.save();
+        if self.world.unsaved_since.is_some() {
+            return Err("Redpiler didn't start because the plot couldn't be saved.");
+        }
         debug!("Starting redpiler with {setup}");
         let session = SessionContext {
             name: format!("p{},{}", self.world.x, self.world.z),
@@ -182,6 +186,9 @@ impl Plot {
                 debug!("Stopping redpiler");
                 match running.session.stop(restore, SESSION_TIMEOUT) {
                     Ok(stopped) => {
+                        if running.had_ticks {
+                            self.world.mark_unsaved();
+                        }
                         running.blocks.record(&stopped.update.changes);
                         running.blocks.finish(&stopped.snapshot, &mut self.world);
                         self.record_ticks(&stopped.update);
@@ -275,6 +282,7 @@ impl Plot {
             setup: compiling.setup,
             blocks,
             session,
+            had_ticks: !compiling.plot_ticks.is_empty(),
             tick_rate: TickRate::Paused,
             behind: false,
             advanced_ticks: 0,

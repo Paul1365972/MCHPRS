@@ -30,6 +30,7 @@ pub fn empty_plot() -> Result<PlotData<'static>> {
             world_send_rate: WorldSendRate::default(),
             pending_block_entities: Default::default(),
             pending_sounds: Default::default(),
+            unsaved_since: None,
         };
         let chunk_data: Vec<ChunkData<'_>> = world
             .chunks
