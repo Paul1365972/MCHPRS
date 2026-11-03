@@ -20,8 +20,6 @@
           rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           nativeBuildInputs = with pkgs; [
             rustToolchain pkg-config
-            # Use mold for faster linking
-            mold clang
           ];
           buildInputs = with pkgs; [
             openssl
@@ -31,7 +29,6 @@
         {
           devShells.default = mkShell {
 	          inherit buildInputs nativeBuildInputs;
-            RUSTFLAGS = "-Clink-arg=-fuse-ld=${pkgs.mold}/bin/mold";
             LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
           };
         }
