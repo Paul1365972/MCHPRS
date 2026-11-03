@@ -32,8 +32,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Lint
-        # If we ever get around to fix everything clippy complains about we can start failing on warning via: -- -D warnings
-        run: cargo clippy --locked --workspace --all-features --all-targets
+        run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
 
       - name: Test
         run: cargo test --locked --workspace --all-features --all-targets
