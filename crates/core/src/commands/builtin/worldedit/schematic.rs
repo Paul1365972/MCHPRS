@@ -20,7 +20,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     .alias("all")
                     .alias("ls")
                     .executes(|ctx| {
-                        let schematics = schematic_names(ctx.player()?.uuid).map_err(|error| {
+                        let schemati = ctx.shared().config.schemati;
+                        let schematics = schematic_names(schemati, ctx.player()?.uuid).map_err(|error| {
                             warn!("Unable to list schematics: {error}");
                             CommandError::runtime("Unable to list schematics. Check console for details.")
                         })?;
@@ -45,7 +46,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                     .executes(|ctx| {
                         let filename: String = ctx.arg("filename")?;
                         let start_time = Instant::now();
-                        let path = schematic_path(ctx.player()?.uuid, &filename)?;
+                        let path =
+                            schematic_path(ctx.shared().config.schemati, ctx.player()?.uuid, &filename)?;
 
                         let bytes = match fs::read(&path) {
                             Ok(bytes) => bytes,
@@ -97,7 +99,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
                         let filename: String = ctx.arg("filename")?;
                         let start_time = Instant::now();
 
-                        let path = schematic_path(ctx.player()?.uuid, &filename)?;
+                        let path =
+                            schematic_path(ctx.shared().config.schemati, ctx.player()?.uuid, &filename)?;
                         let clipboard = ctx.get_clipboard()?;
                         let bytes = mchprs_schematic::write::write(clipboard).map_err(|error| {
                             warn!("There was an error encoding a schematic: {error}");

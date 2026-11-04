@@ -1,7 +1,7 @@
 mod advance;
-mod data;
 #[cfg(feature = "claims")]
-pub mod database;
+pub mod claims;
+pub mod data;
 mod packet_handlers;
 pub mod redpiler;
 mod scoreboard;
@@ -11,14 +11,13 @@ use self::advance::Advances;
 use self::redpiler::{send_rate, tick_rate, Redpiler};
 use self::scoreboard::{PlotStatus, RedpilerStatus, Scoreboard};
 use self::tick_history::{TickHistory, TickRateReport};
-use crate::commands::COMMAND_REGISTRY;
-use crate::config::CONFIG;
 use crate::interaction;
 use crate::interaction::UseOnBlockContext;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
 #[cfg(feature = "whitelist")]
 use crate::profile::PlayerProfile;
 use crate::server::{BroadcastMessage, Message, PrivMessage};
+use crate::shared::Shared;
 use anyhow::Error;
 use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
@@ -46,6 +45,7 @@ use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 #[cfg(feature = "whitelist")]
@@ -104,6 +104,13 @@ pub struct Plot {
     always_running: bool,
 
     scoreboard: Scoreboard,
+    pub shared: Arc<Shared>,
+}
+
+pub struct PlotChannels {
+    pub broadcasts: BusReader<BroadcastMessage>,
+    pub server: Sender<Message>,
+    pub private: Receiver<PrivMessage>,
 }
 
 pub struct PlotWorld {
@@ -564,7 +571,7 @@ impl Plot {
 
     pub fn update_view_pos_for_player(&mut self, player_idx: usize, force_load: bool) {
         self.publish_world();
-        let view_distance = CONFIG.view_distance as i32;
+        let view_distance = self.shared.config.view_distance as i32;
         let (chunk_x, chunk_z) = self.players[player_idx].pos.chunk_pos();
         let last_chunk_x = self.players[player_idx].last_chunk_x;
         let last_chunk_z = self.players[player_idx].last_chunk_z;
@@ -673,6 +680,7 @@ impl Plot {
                     block_pos,
                     player: &mut self.players[player],
                     cursor_y: use_item_on.cursor_y,
+                    block_in_hitbox: self.shared.config.block_in_hitbox,
                 },
             );
             if cancelled {
@@ -879,7 +887,7 @@ impl Plot {
 
     #[cfg(feature = "whitelist")]
     pub fn whitelist_add(&self, username: String, packet_sender: PlayerPacketSender) {
-        if !CONFIG.whitelist {
+        if !self.shared.config.whitelist {
             packet_sender.send_error_message("Whitelist is not enabled!");
             return;
         }
@@ -904,7 +912,7 @@ impl Plot {
 
     #[cfg(feature = "whitelist")]
     pub fn whitelist_remove(&self, username: String, packet_sender: PlayerPacketSender) {
-        if !CONFIG.whitelist {
+        if !self.shared.config.whitelist {
             packet_sender.send_error_message("Whitelist is not enabled!");
             return;
         }
@@ -973,7 +981,9 @@ impl Plot {
     #[cfg(feature = "claims")]
     pub fn claim_plot(&mut self, plot_x: i32, plot_z: i32, player_idx: usize) {
         let uuid = self.players[player_idx].uuid;
-        database::claim_plot(plot_x, plot_z, &format!("{:032x}", uuid));
+        self.shared
+            .claims
+            .claim_plot(plot_x, plot_z, &format!("{:032x}", uuid));
         let center = Plot::get_center(plot_x, plot_z);
         self.teleport_player(player_idx, PlayerPos::new(center.0, 64.0, center.1));
         self.players[player_idx]
@@ -1030,7 +1040,8 @@ impl Plot {
                     "{} issued command: {}",
                     self.players[player_idx].username, command_line
                 );
-                let result = COMMAND_REGISTRY.execute(self, player_idx, &command_line);
+                let shared = Arc::clone(&self.shared);
+                let result = shared.commands.execute(self, player_idx, &command_line);
                 if let Err(err) = result {
                     error!("Failed to run command `{}`: {}", command_line, err);
                 }
@@ -1256,10 +1267,9 @@ impl Plot {
         plot_data: PlotData<'_>,
         x: i32,
         z: i32,
-        rx: BusReader<BroadcastMessage>,
-        tx: Sender<Message>,
-        priv_rx: Receiver<PrivMessage>,
+        channels: PlotChannels,
         always_running: bool,
+        shared: Arc<Shared>,
     ) -> Plot {
         let world = PlotWorld {
             x,
@@ -1280,9 +1290,9 @@ impl Plot {
             tick_schedule: TickSchedule::new(tick_rate(tps), now),
             send_schedule: SendSchedule::new(send_rate(plot_data.world_send_rate), now),
             tick_time: None,
-            message_receiver: rx,
-            message_sender: tx,
-            priv_message_receiver: priv_rx,
+            message_receiver: channels.broadcasts,
+            message_sender: channels.server,
+            priv_message_receiver: channels.private,
             players: Vec::new(),
             locked_players: HashSet::new(),
             running: true,
@@ -1292,6 +1302,7 @@ impl Plot {
             advances: Advances::default(),
             tick_history: TickHistory::new(now),
             scoreboard: Scoreboard::new(x, z),
+            shared,
             world,
         }
     }
@@ -1299,29 +1310,28 @@ impl Plot {
     fn load(
         x: i32,
         z: i32,
-        rx: BusReader<BroadcastMessage>,
-        tx: Sender<Message>,
-        priv_rx: Receiver<PrivMessage>,
+        channels: PlotChannels,
         always_running: bool,
+        shared: Arc<Shared>,
     ) -> Result<Plot, (Error, Sender<Message>)> {
         let plot_path = plot_path(x, z);
         Ok(if Path::new(&plot_path).exists() {
             match data::load_plot(plot_path) {
                 Ok(data) => {
-                    let mut plot = Plot::from_data(data, x, z, rx, tx, priv_rx, always_running);
+                    let mut plot = Plot::from_data(data, x, z, channels, always_running, shared);
                     plot.reset_pressure_plates();
                     plot
                 }
                 Err(err) => {
                     return Result::Err((
                         err.context(format!("error loading plot {},{}", x, z)),
-                        tx,
+                        channels.server,
                     ))
                 }
             }
         } else {
-            let mut plot =
-                Plot::from_data(data::empty_plot(), x, z, rx, tx, priv_rx, always_running);
+            let data = shared.empty_plot.clone();
+            let mut plot = Plot::from_data(data, x, z, channels, always_running, shared);
             plot.world.mark_unsaved();
             plot
         })
@@ -1329,7 +1339,12 @@ impl Plot {
 
     fn restore_saved_world(&mut self) -> Result<(), Error> {
         let (x, z) = (self.world.x, self.world.z);
-        let data = data::load_plot(plot_path(x, z))?;
+        let path = plot_path(x, z);
+        let data = if Path::new(&path).exists() {
+            data::load_plot(path)?
+        } else {
+            self.shared.empty_plot.clone()
+        };
         self.world.chunks = load_chunks(data.chunk_data, x, z);
         self.world.ticks = load_ticks(data.pending_ticks);
         self.world.pending_block_entities.clear();
@@ -1370,7 +1385,7 @@ impl Plot {
     }
 
     fn autosave_if_due(&mut self) {
-        let interval = Duration::from_secs(CONFIG.autosave_interval_seconds);
+        let interval = Duration::from_secs(self.shared.config.autosave_interval_seconds);
         if !interval.is_zero()
             && self
                 .world
@@ -1453,16 +1468,15 @@ impl Plot {
     pub fn load_and_run(
         x: i32,
         z: i32,
-        rx: BusReader<BroadcastMessage>,
-        tx: Sender<Message>,
-        priv_rx: Receiver<PrivMessage>,
+        channels: PlotChannels,
         always_running: bool,
         initial_player: Option<Player>,
+        shared: Arc<Shared>,
     ) {
         thread::Builder::new()
             .name(format!("p{},{}", x, z))
             .spawn(
-                move || match Plot::load(x, z, rx, tx, priv_rx, always_running) {
+                move || match Plot::load(x, z, channels, always_running, shared) {
                     Ok(mut plot) => plot.run(initial_player),
                     Err((err, tx)) => {
                         if let Some(mut player) = initial_player {
