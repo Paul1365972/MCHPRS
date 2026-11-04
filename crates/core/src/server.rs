@@ -139,6 +139,23 @@ struct WhitelistEntry {
     name: String,
 }
 
+#[cfg(feature = "whitelist")]
+fn load_whitelist() -> Result<Vec<WhitelistEntry>, String> {
+    let content = match fs::read("whitelist.json") {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            fs::write("whitelist.json", b"[]")
+                .map_err(|error| format!("Failed to create whitelist.json: {error}"))?;
+            return Ok(Vec::new());
+        }
+        Err(error) => return Err(format!("Failed to read whitelist.json: {error}")),
+    };
+    if content.trim_ascii().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_slice(&content).map_err(|error| format!("Invalid whitelist.json: {error}"))
+}
+
 /// This represents a minecraft server
 pub struct MinecraftServer {
     network: NetworkServer,
@@ -154,7 +171,7 @@ pub struct MinecraftServer {
 
 impl MinecraftServer {
     /// Start the server
-    pub fn run() {
+    pub fn start() -> Result<MinecraftServer, Vec<String>> {
         std::panic::set_hook(Box::new(|panic_info| {
             let backtrace = std::backtrace::Backtrace::force_capture();
             let thread = std::thread::current();
@@ -165,20 +182,61 @@ impl MinecraftServer {
         info!("Starting server...");
         let start_time = Instant::now();
 
+        let mut problems = Vec::new();
         // Create world folders if they don't exist yet
-        fs::create_dir_all("./world/players").unwrap();
-        fs::create_dir_all("./world/plots").unwrap();
-        fs::create_dir_all("./schems").unwrap();
-
+        for directory in ["./world/players", "./world/plots", "./schems"] {
+            if let Err(error) = fs::create_dir_all(directory) {
+                problems.push(format!("Failed to create {directory}: {error}"));
+            }
+        }
         #[cfg(not(feature = "claims"))]
         if Path::new("./world/plots.db").exists() {
-            panic!("world/plots.db holds plot claims, but this build has no claims feature. Build with `--features claims` to keep them, or delete the file");
+            problems.push(
+                "world/plots.db requires the `claims` feature (build with `--features claims`, or \
+                 delete the file)"
+                    .to_owned(),
+            );
         }
-        let config = ServerConfig::load();
-        let commands = command_registry(&config);
-        let empty_plot = data::empty_plot();
         #[cfg(feature = "claims")]
-        let claims = Claims::open("./world/plots.db").expect("Error opening plot database!");
+        let claims = Claims::open("./world/plots.db")
+            .map_err(|error| problems.push(format!("Failed to open world/plots.db: {error}")))
+            .ok();
+        let empty_plot = data::empty_plot()
+            .map_err(|error| problems.push(format!("{error:#}")))
+            .ok();
+        let (config, config_problems) = ServerConfig::load();
+        problems.extend(config_problems);
+        let commands = config.as_ref().and_then(|config| {
+            command_registry(config)
+                .map_err(|registry_problems| problems.extend(registry_problems))
+                .ok()
+        });
+        #[cfg(feature = "whitelist")]
+        let whitelist = match &config {
+            Some(config) if config.whitelist => load_whitelist()
+                .map_err(|problem| problems.push(problem))
+                .ok(),
+            _ => None,
+        };
+
+        let (Some(config), Some(commands), Some(empty_plot)) = (config, commands, empty_plot)
+        else {
+            return Err(problems);
+        };
+        #[cfg(feature = "claims")]
+        let Some(claims) = claims
+        else {
+            return Err(problems);
+        };
+        if !problems.is_empty() {
+            return Err(problems);
+        }
+        let network = NetworkServer::new(&config.bind_address).map_err(|error| {
+            vec![format!(
+                "Failed to listen on {}: {error}",
+                config.bind_address
+            )]
+        })?;
         let shared = Arc::new(Shared {
             config,
             commands,
@@ -195,33 +253,11 @@ impl MinecraftServer {
         ctrlc::set_handler(move || {
             ctrl_handler_sender.send(Message::Shutdown).unwrap();
         })
-        .expect("There was an error setting the ctrlc handler");
-
-        #[cfg(not(feature = "whitelist"))]
-        if shared.config.whitelist {
-            panic!("Config.toml enables the whitelist, but this build has no whitelist feature. Build with `--features whitelist`, or set `whitelist = false`");
-        }
-
-        #[cfg(feature = "whitelist")]
-        let whitelist = shared.config.whitelist.then(|| {
-            let content = match fs::read("whitelist.json") {
-                Ok(content) => content,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    fs::write("whitelist.json", b"[]").expect("Failed to create whitelist.json");
-                    Vec::new()
-                }
-                Err(error) => panic!("Failed to read whitelist.json: {error}"),
-            };
-            if content.trim_ascii().is_empty() {
-                Vec::new()
-            } else {
-                serde_json::from_slice(&content).expect("Invalid whitelist.json")
-            }
-        });
+        .map_err(|error| vec![format!("Failed to set the Ctrl+C handler: {error}")])?;
 
         // Create server struct
         let mut server = MinecraftServer {
-            network: NetworkServer::new(shared.config.bind_address.clone()),
+            network,
             broadcaster: bus,
             receiver: server_rx,
             plot_sender: plot_tx,
@@ -237,9 +273,12 @@ impl MinecraftServer {
         server.spawn_plot(0, 0, true, None);
 
         info!("Done! Start took {:?}", start_time.elapsed());
+        Ok(server)
+    }
 
+    pub fn run(mut self) -> ! {
         loop {
-            server.update();
+            self.update();
             std::thread::sleep(Duration::from_millis(2));
         }
     }

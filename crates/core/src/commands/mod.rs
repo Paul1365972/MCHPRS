@@ -18,12 +18,13 @@ pub mod value;
 use self::registry::CommandRegistry;
 use crate::config::ServerConfig;
 
-pub fn command_registry(config: &ServerConfig) -> CommandRegistry {
+pub fn command_registry(config: &ServerConfig) -> Result<CommandRegistry, Vec<String>> {
+    let backends = config.redpiler.backends()?;
     let mut registry = CommandRegistry::new();
-    builtin::register_commands(&mut registry, config);
+    builtin::register_commands(&mut registry, backends);
     for (alias, replacement) in &config.command_aliases {
         registry.add_custom_alias(alias.trim(), replacement.trim());
     }
     registry.remove_invalid_aliases();
-    registry
+    Ok(registry)
 }

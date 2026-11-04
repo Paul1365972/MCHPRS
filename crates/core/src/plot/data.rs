@@ -25,10 +25,10 @@ pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData<'static>> {
         .with_context(|| format!("error loading plot save file at {}", path.display()))
 }
 
-pub fn empty_plot() -> PlotData<'static> {
+pub fn empty_plot() -> Result<PlotData<'static>> {
     let template_path = Path::new("./world/plots/pTEMPLATE");
     if template_path.exists() {
-        PlotData::load_from_file(template_path).expect("failed to read template plot")
+        PlotData::load_from_file(template_path).context("Failed to load world/plots/pTEMPLATE")
     } else {
         let mut chunks = Vec::new();
         for chunk_x in 0..PLOT_WIDTH {
@@ -51,11 +51,11 @@ pub fn empty_plot() -> PlotData<'static> {
             .iter_mut()
             .map(|chunk| ChunkData::new(chunk).into_owned())
             .collect();
-        PlotData {
+        Ok(PlotData {
             tps: Tps::Limited(10.0),
             world_send_rate: WorldSendRate::default(),
             chunk_data,
             pending_ticks: Vec::new(),
-        }
+        })
     }
 }

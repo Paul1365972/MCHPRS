@@ -9,13 +9,13 @@ use super::define::Command;
 use super::error::CommandResult;
 use super::help::generate_help;
 use super::registry::CommandRegistry;
-use crate::config::ServerConfig;
+use crate::config::Backends;
 use mchprs_commands::graph::NodeKind;
 
-pub(super) fn register_commands(registry: &mut CommandRegistry, config: &ServerConfig) {
+pub(super) fn register_commands(registry: &mut CommandRegistry, backends: Backends) {
     core::register_commands(registry);
     plot::register_commands(registry);
-    redpiler::register_commands(registry, config);
+    redpiler::register_commands(registry, backends);
     worldedit::register_commands(registry);
     registry.register(
         Command::new("help")

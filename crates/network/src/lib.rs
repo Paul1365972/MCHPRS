@@ -5,6 +5,7 @@ pub mod text;
 
 use packets::serverbound::ServerBoundPacket;
 use packets::{read_packet, PacketEncoder, PlayerProperty};
+use std::io;
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
@@ -175,9 +176,7 @@ pub struct NetworkServer {
 }
 
 impl NetworkServer {
-    fn listen(bind_address: &str, sender: mpsc::Sender<NetworkClient>) {
-        let listener = TcpListener::bind(bind_address).unwrap();
-
+    fn listen(listener: TcpListener, sender: mpsc::Sender<NetworkClient>) {
         for (index, stream) in listener.incoming().enumerate() {
             let stream = stream.unwrap();
             let (packet_sender, packet_receiver) = mpsc::channel();
@@ -201,13 +200,14 @@ impl NetworkServer {
     }
 
     /// Creates a new `NetworkServer`. The server will then start accepting TCP clients.
-    pub fn new(bind_address: String) -> NetworkServer {
+    pub fn new(bind_address: &str) -> io::Result<NetworkServer> {
+        let listener = TcpListener::bind(bind_address)?;
         let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || NetworkServer::listen(&bind_address, sender));
-        NetworkServer {
+        thread::spawn(move || NetworkServer::listen(listener, sender));
+        Ok(NetworkServer {
             client_receiver: receiver,
             handshaking_clients: Vec::new(),
-        }
+        })
     }
 
     pub fn update(&mut self) {
