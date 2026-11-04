@@ -7,7 +7,7 @@ use crate::{
         registry::CommandRegistry,
         value::{PlayerTarget, PlotCoordinates},
     },
-    config::Engines,
+    config::Backends,
     item_stack::ItemStack,
     player::{Gamemode, PlayerPos},
     plot::Plot,
@@ -16,13 +16,12 @@ use crate::{
 };
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::signal_strength::SignalStrength;
-use mchprs_commands::flag::FlagValues;
 use mchprs_network::PlayerPacketSender;
-use mchprs_redpiler::backend::Backend;
+use mchprs_redpiler_backends::BackendSetup;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use mchprs_worker::Goal;
 
-pub(super) fn register_commands(registry: &mut CommandRegistry, engines: &Engines) {
+pub(super) fn register_commands(registry: &mut CommandRegistry, backends: Backends) {
     registry.register(
         Command::new("speed")
             .arg("speed", ArgumentType::float(0.0, 10.0))
@@ -339,20 +338,16 @@ pub(super) fn register_commands(registry: &mut CommandRegistry, engines: &Engine
         })),
     );
 
-    let default_engine = engines.default;
+    let default = backends.default;
     let mut compile = Command::new("compile")
         .alias("c")
-        .flags(default_engine.flags());
-    for (backend, config_flags) in engines.flags.iter().cloned() {
-        if backend.name() == default_engine.name() {
-            let config_flags = config_flags.clone();
-            compile =
-                compile.executes(move |ctx| exec_redpiler_compile(ctx, backend, &config_flags));
-        }
+        .flags(default.backend().flags())
+        .executes(move |ctx| exec_redpiler_compile(ctx, &default));
+    for setup in backends.all {
         compile = compile.subcommand(
-            Command::new(backend.name())
-                .flags(backend.flags())
-                .executes(move |ctx| exec_redpiler_compile(ctx, backend, &config_flags)),
+            Command::new(setup.backend().name())
+                .flags(setup.backend().flags())
+                .executes(move |ctx| exec_redpiler_compile(ctx, &setup)),
         );
     }
     registry.register(
@@ -396,15 +391,14 @@ pub(super) fn register_commands(registry: &mut CommandRegistry, engines: &Engine
 
 fn exec_redpiler_compile(
     ctx: &mut ExecutionContext<'_>,
-    backend: &'static dyn Backend,
-    config_flags: &FlagValues,
+    setup: &BackendSetup,
 ) -> CommandResult<()> {
-    let mut flags = config_flags.clone();
-    flags.extend(ctx.flags());
-    let plan = backend.configure(&flags).map_err(CommandError::runtime)?;
+    let setup = setup.overridden(ctx.flags());
+    let plan = setup.configure().map_err(CommandError::runtime)?;
+    let name = setup.backend().name();
     ctx.plot_mut().reset_redpiler();
     ctx.plot_mut()
-        .start_redpiler(backend, flags, plan)
+        .start_redpiler(setup, plan)
         .map_err(CommandError::runtime)?;
-    ctx.reply(&format!("Compiling for the {} engine...", backend.name()))
+    ctx.reply(&format!("Compiling for the {name} backend..."))
 }

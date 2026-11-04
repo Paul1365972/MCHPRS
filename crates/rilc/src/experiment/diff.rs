@@ -17,11 +17,11 @@ const EXPLAINED_DIFFERENCES: usize = 12;
 
 pub fn diff(
     source: &Source,
-    engines: [Configured; 2],
+    backends: [Configured; 2],
     ticks: u64,
     drive_interval: Option<NonZeroU64>,
 ) -> Result<bool, BoxError> {
-    let [first, second] = engines;
+    let [first, second] = backends;
     let mut subjects = [
         Subject::start(first, source)?,
         Subject::start(second, source)?,
@@ -131,9 +131,9 @@ struct Ticked {
 }
 
 impl Subject {
-    fn start(engine: Configured, source: &Source) -> Result<Subject, BoxError> {
-        let name = engine.label.clone();
-        let mut simulation = Simulation::new(engine.start(source)?);
+    fn start(backend: Configured, source: &Source) -> Result<Subject, BoxError> {
+        let name = backend.label.clone();
+        let mut simulation = Simulation::new(backend.start(source)?);
         let circuit = simulation.circuit();
         let shown = circuit
             .ids()

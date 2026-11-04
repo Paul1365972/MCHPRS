@@ -5,11 +5,11 @@ use crate::commands::{
     argument::ArgumentType, context::ExecutionContext, define::Command, error::CommandResult,
     help::generate_help, registry::CommandRegistry,
 };
-use crate::config::Engines;
+use crate::config::Backends;
 use mchprs_commands::graph::NodeKind;
 
-pub fn register_commands(registry: &mut CommandRegistry, engines: &Engines) {
-    core::register_commands(registry, engines);
+pub fn register_commands(registry: &mut CommandRegistry, backends: Backends) {
+    core::register_commands(registry, backends);
     worldedit::register_commands(registry);
     registry.register(
         Command::new("help")

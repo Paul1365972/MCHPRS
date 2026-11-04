@@ -19,9 +19,9 @@ use crate::config::ServerConfig;
 pub use registry::CommandRegistry;
 
 pub fn command_registry(config: &ServerConfig) -> Result<CommandRegistry, Vec<String>> {
-    let engines = config.redpiler.engines()?;
+    let backends = config.redpiler.backends()?;
     let mut registry = CommandRegistry::new();
-    builtin::register_commands(&mut registry, &engines);
+    builtin::register_commands(&mut registry, backends);
     for (alias, replacement) in &config.command_aliases {
         registry.add_custom_alias(alias.trim(), replacement.trim());
     }

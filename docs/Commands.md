@@ -139,14 +139,14 @@ Compiling saves the plot. A run's changes are only saved once `/redpiler reset` 
 
 | Command | Alias | Description |
 | --- | --- | --- |
-| `/redpiler compile [direct]` | `/rp c` | Compile the plot and run it on the Direct engine, or on the [default engine](../README.md#redpiler) if none is given. |
+| `/redpiler compile [direct]` | `/rp c` | Compile the plot and run it on the `direct` backend, or on the [default backend](../README.md#redpiler) if none is given. |
 | `/redpiler export` | `/rp e` | Write the compiled circuit to `redpiler-p<x>,<z>.circuit` in the server directory, for use by `rilc` and other tools. |
 | `/redpiler reset` | `/rp r` | Stop Redpiler, or cancel a compile, and return to normal redstone ticking. Flags: `-r`/`--restore` (return every component to its state at compile time), `-u`/`--update` (update every block in the plot afterwards). |
 
 ### Compiler Flags
 
-`/help redpiler compile <engine>` lists the flags an engine takes.
-The [config](../README.md#redpiler) can set default flags per engine; flags given to the command override them, and `--<flag>=false` turns one off.
+`/help redpiler compile <backend>` lists the flags a backend takes.
+The [config](../README.md#redpiler) can set default flags per backend; flags given to the command override them, and `--<flag>=false` turns one off.
 
 | Flag | Short | Description |
 | --- | --- | --- |
