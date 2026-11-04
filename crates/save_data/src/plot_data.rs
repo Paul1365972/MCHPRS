@@ -193,14 +193,12 @@ impl PlotData {
             original.push(format!(".v{version}"));
             fs::copy(path, original)?;
         }
-        let mut file = File::create(path)?;
-
-        file.write_all(PLOT_MAGIC)?;
-        file.write_u32::<LittleEndian>(VERSION)?;
-        let data = bincode::serialize(self)?;
-        file.write_all(&data)?;
-        file.sync_data()?;
-        Ok(())
+        crate::replace_file(path, |file| {
+            file.write_all(PLOT_MAGIC)?;
+            file.write_u32::<LittleEndian>(VERSION)?;
+            let data = bincode::serialize(self)?;
+            Ok(file.write_all(&data)?)
+        })
     }
 }
 
