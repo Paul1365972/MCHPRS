@@ -10,7 +10,7 @@ use mchprs_world::storage::{Chunk, ChunkSection};
 use mchprs_world::TickPriority;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::{fmt, io};
@@ -202,13 +202,17 @@ impl PlotData {
     }
 
     pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), PlotSaveError> {
-        let mut file = File::create(path)?;
+        let path = path.as_ref();
+        let mut unfinished = path.as_os_str().to_owned();
+        unfinished.push(".tmp");
+        let mut file = File::create(&unfinished)?;
 
         file.write_all(PLOT_MAGIC)?;
         file.write_u32::<LittleEndian>(VERSION)?;
         let data = bincode::serialize(self)?;
         file.write_all(&data)?;
         file.sync_data()?;
+        fs::rename(unfinished, path)?;
         Ok(())
     }
 }
