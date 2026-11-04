@@ -27,7 +27,7 @@ schematic @<name> <path>
 
 `redpiler_args` is a string. If `redpiler_args` is not specified, it must be specified through `test_args`.
 
-`test_result` can either be a `circuit` or `backend_circuit`. `test_result` can be automatically updated with the `--update-tests` flag.
+`test_result` can either be a `circuit` or `backend_circuit`. `test_result` can be automatically updated with `rilc test --update`.
 
 ```
 test_args <args>
