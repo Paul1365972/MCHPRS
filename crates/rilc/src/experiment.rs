@@ -14,7 +14,7 @@ use std::fs;
 use std::io::Write;
 use std::iter::Peekable;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::{slice, vec};
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
@@ -257,6 +257,7 @@ impl Compiled {
         reporting: Reporting,
     ) -> (Result<Box<dyn Engine>>, Vec<Stage>) {
         use std::sync::mpsc::{self, RecvTimeoutError};
+        use std::time::Duration;
         let progress = CompileProgress::default();
         std::thread::scope(|scope| {
             let (finished_sender, finished) = mpsc::channel::<std::convert::Infallible>();
