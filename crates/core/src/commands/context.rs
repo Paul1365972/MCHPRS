@@ -6,6 +6,7 @@ use crate::{
     },
     player::{PacketSender, Player, PlayerPos},
     plot::{Plot, PlotWorld, PLOT_BLOCK_HEIGHT},
+    shared::Shared,
     worldedit::{create_clipboard, ray_trace_block, WorldEditUndo},
 };
 use mchprs_blocks::block_volume::BlockVolume;
@@ -129,6 +130,10 @@ impl<'a> ExecutionContext<'a> {
 
     pub(super) fn plot_mut(&mut self) -> &mut Plot {
         self.plot
+    }
+
+    pub(super) fn shared(&self) -> &Shared {
+        &self.plot.shared
     }
 
     pub(super) fn world(&mut self) -> &PlotWorld {

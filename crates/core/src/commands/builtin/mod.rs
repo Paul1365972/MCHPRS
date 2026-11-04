@@ -3,12 +3,13 @@ mod worldedit;
 
 use crate::commands::{
     argument::ArgumentType, context::ExecutionContext, define::Command, error::CommandResult,
-    help::generate_help, registry::CommandRegistry, COMMAND_REGISTRY,
+    help::generate_help, registry::CommandRegistry,
 };
+use crate::config::ServerConfig;
 use mchprs_commands::graph::NodeKind;
 
-pub fn register_commands(registry: &mut CommandRegistry) {
-    core::register_commands(registry);
+pub fn register_commands(registry: &mut CommandRegistry, config: &ServerConfig) {
+    core::register_commands(registry, config);
     worldedit::register_commands(registry);
     registry.register(
         Command::new("help")
@@ -24,7 +25,7 @@ pub fn register_commands(registry: &mut CommandRegistry) {
 
 fn exec_help(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let command: String = ctx.arg_or("command", String::new())?;
-    let registry = &*COMMAND_REGISTRY;
+    let registry = &ctx.shared().commands;
     if command.is_empty() {
         let mut names: Vec<_> = registry
             .visible_commands()

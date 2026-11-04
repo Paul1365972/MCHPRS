@@ -1,5 +1,3 @@
-#[cfg(feature = "claims")]
-use crate::plot::database;
 use crate::{
     commands::{
         argument::ArgumentType,
@@ -9,7 +7,7 @@ use crate::{
         registry::CommandRegistry,
         value::{PlayerTarget, PlotCoordinates},
     },
-    config::CONFIG,
+    config::ServerConfig,
     item_stack::ItemStack,
     player::{Gamemode, PlayerPos},
     plot::Plot,
@@ -25,7 +23,7 @@ use mchprs_redpiler_backends::BACKENDS;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use mchprs_worker::Goal;
 
-pub(super) fn register_commands(registry: &mut CommandRegistry) {
+pub(super) fn register_commands(registry: &mut CommandRegistry, config: &ServerConfig) {
     registry.register(
         Command::new("speed")
             .arg("speed", ArgumentType::float(0.0, 10.0))
@@ -240,8 +238,9 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
     let plot = plot
         .subcommand(Command::new("info").alias("i").executes(|ctx| {
             let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
-            if let Some(owner) = database::get_plot_owner(plot_x, plot_z) {
-                let username = database::get_cached_username(owner.clone()).unwrap_or(owner);
+            let claims = &ctx.shared().claims;
+            if let Some(owner) = claims.plot_owner(plot_x, plot_z) {
+                let username = claims.cached_username(owner.clone()).unwrap_or(owner);
                 ctx.reply(&format!("Plot owner is: {}", username))
             } else {
                 ctx.reply("Plot is not owned by anyone.")
@@ -249,7 +248,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
         }))
         .subcommand(Command::new("claim").alias("c").executes(|ctx| {
             let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
-            if database::is_claimed(plot_x, plot_z).unwrap() {
+            if ctx.shared().claims.is_claimed(plot_x, plot_z).unwrap() {
                 ctx.reply("Plot is already claimed!")
             } else {
                 let player_idx = ctx.player_index();
@@ -259,7 +258,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
         }))
         .subcommand(Command::new("auto").alias("a").executes(|ctx| {
             let mut plot = (0, 0);
-            while database::is_claimed(plot.0, plot.1).unwrap() {
+            while ctx.shared().claims.is_claimed(plot.0, plot.1).unwrap() {
                 plot = Plot::get_next_plot(plot.0, plot.1);
             }
             let player_idx = ctx.player_index();
@@ -275,7 +274,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                     let username: String = ctx.arg("username")?;
                     let index = ctx.arg_opt::<i32>("index")?;
 
-                    let plots = database::get_owned_plots(&username);
+                    let plots = ctx.shared().claims.owned_plots(&username);
                     if plots.is_empty() {
                         return ctx.reply(&format!("{} does not own any plots.", username));
                     }
@@ -341,12 +340,12 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
         })),
     );
 
-    let default_engine = CONFIG.redpiler.default_engine();
+    let default_engine = config.redpiler.default_engine();
     let mut compile = Command::new("compile")
         .alias("c")
         .flags(default_engine.flags());
     for &backend in BACKENDS {
-        let config_flags = CONFIG.redpiler.flags(backend);
+        let config_flags = config.redpiler.flags(backend);
         if backend.name() == default_engine.name() {
             let config_flags = config_flags.clone();
             compile =
