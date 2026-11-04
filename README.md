@@ -55,6 +55,7 @@ The following options are available at the toplevel (under no header):
 | `auto_redpiler` | Use redpiler automatically | `false` |
 
 To change the plot size edit the constants defined in [plot/mod.rs](./crates/core/src/plot/mod.rs).
+If `world/plots/pTEMPLATE` exists, new plots start as a copy of it.
 
 ### Velocity
 
