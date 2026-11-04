@@ -4,7 +4,7 @@ use std::io;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Mutex;
-use tracing::warn;
+use tracing::{error, warn};
 use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -52,8 +52,15 @@ fn main() -> ExitCode {
         warn!("Invalid MCHPRS_LOG, using `info`: {error}");
     }
 
-    MinecraftServer::run();
-    ExitCode::SUCCESS
+    match MinecraftServer::start() {
+        Ok(server) => server.run(),
+        Err(problems) => {
+            for problem in problems {
+                error!("{problem}");
+            }
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn log_filter() -> (Targets, Option<String>) {

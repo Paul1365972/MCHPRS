@@ -67,17 +67,43 @@ impl Default for RedpilerConfig {
     }
 }
 
+pub struct Engines {
+    pub default: &'static dyn Backend,
+    pub flags: Vec<(&'static dyn Backend, FlagValues)>,
+}
+
 impl RedpilerConfig {
-    pub fn default_engine(&self) -> &'static dyn Backend {
-        mchprs_redpiler_backends::named(&self.default_engine).unwrap_or_else(|error| {
-            panic!("{PATH}'s `redpiler.default_engine` is invalid: {error}")
-        })
+    pub fn engines(&self) -> Result<Engines, Vec<String>> {
+        for name in self.backends.keys() {
+            if mchprs_redpiler_backends::named(name).is_err() {
+                warn!("Ignoring `redpiler.backends.{name}` in {PATH}: unknown engine");
+            }
+        }
+        let mut problems = Vec::new();
+        let default = mchprs_redpiler_backends::named(&self.default_engine)
+            .map_err(|error| {
+                problems.push(format!(
+                    "Invalid `redpiler.default_engine` in {PATH}: {error}"
+                ))
+            })
+            .ok();
+        let mut flags = Vec::new();
+        for &backend in BACKENDS {
+            match self.flags(backend) {
+                Ok(values) => flags.push((backend, values)),
+                Err(problem) => problems.push(problem),
+            }
+        }
+        match default {
+            Some(default) if problems.is_empty() => Ok(Engines { default, flags }),
+            _ => Err(problems),
+        }
     }
 
-    pub fn flags(&self, backend: &dyn Backend) -> FlagValues {
+    fn flags(&self, backend: &dyn Backend) -> Result<FlagValues, String> {
         let mut flags = FlagValues::default();
         let Some(table) = self.backends.get(backend.name()) else {
-            return flags;
+            return Ok(flags);
         };
         for (name, value) in table {
             let key = format!("redpiler.backends.{}.{name}", backend.name());
@@ -89,17 +115,23 @@ impl RedpilerConfig {
                 (None, toml::Value::Boolean(on)) => FlagValue::Switch(*on),
                 (Some(_), toml::Value::String(text)) => FlagValue::Text(text.clone()),
                 (Some(_), toml::Value::Integer(number)) => FlagValue::Text(number.to_string()),
-                (None, _) => panic!("{PATH}'s `{key}` has to be true or false"),
-                (Some(_), _) => panic!("{PATH}'s `{key}` has to be text or a number"),
+                (None, _) => {
+                    return Err(format!("Invalid `{key}` in {PATH}: expected true or false"))
+                }
+                (Some(_), _) => {
+                    return Err(format!(
+                        "Invalid `{key}` in {PATH}: expected text or a number"
+                    ))
+                }
             };
             flags.set(flag, value);
         }
-        flags
+        Ok(flags)
     }
 }
 
 impl ServerConfig {
-    pub fn load() -> ServerConfig {
+    pub fn load() -> Result<ServerConfig, Vec<String>> {
         let text = match fs::read_to_string(PATH) {
             Ok(text) => text,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -108,18 +140,22 @@ impl ServerConfig {
                 if let Err(error) = fs::write(PATH, defaults) {
                     warn!("Failed to write the default {PATH}: {error}");
                 }
-                return ServerConfig::default();
+                return Ok(ServerConfig::default());
             }
-            Err(error) => panic!("Failed to read {PATH}: {error}"),
+            Err(error) => return Err(vec![format!("Failed to read {PATH}: {error}")]),
         };
-        let table: toml::Table = toml::from_str(&text)
-            .unwrap_or_else(|error| panic!("{PATH} is not valid TOML: {error}"));
+        let table: toml::Table =
+            toml::from_str(&text).map_err(|error| vec![format!("Invalid {PATH}: {error}")])?;
+        let mut problems = Vec::new();
         if table.contains_key("luckperms") {
-            panic!("{PATH} has a [luckperms] table, but LuckPerms support was removed, so every player could edit every plot and run every command. Remove the table to start the server");
+            problems.push(format!("LuckPerms is not supported: every player can use every command and edit every plot. Remove [luckperms] from {PATH} to start anyway"));
         }
         let defaults =
             toml::Table::try_from(ServerConfig::default()).expect("the default config serializes");
-        for key in table.keys().filter(|key| !defaults.contains_key(*key)) {
+        for key in table
+            .keys()
+            .filter(|key| !defaults.contains_key(*key) && *key != "luckperms")
+        {
             warn!("Ignoring unknown setting `{key}` in {PATH}");
         }
         for (key, value) in defaults {
@@ -133,14 +169,21 @@ impl ServerConfig {
                 );
             }
         }
-        let config: ServerConfig = table
-            .try_into()
-            .unwrap_or_else(|error| panic!("{PATH} is invalid: {error}"));
-        for name in config.redpiler.backends.keys() {
-            if mchprs_redpiler_backends::named(name).is_err() {
-                warn!("{PATH} has `redpiler.backends.{name}`, but there is no {name} engine, so it is ignored");
+        let config: ServerConfig = match table.try_into() {
+            Ok(config) => config,
+            Err(error) => {
+                problems.push(format!("Invalid {PATH}: {error}"));
+                return Err(problems);
             }
+        };
+        #[cfg(not(feature = "whitelist"))]
+        if config.whitelist {
+            problems.push(format!("`whitelist = true` in {PATH} requires the `whitelist` feature (build with `--features whitelist`, or set it to false)"));
         }
-        config
+        if problems.is_empty() {
+            Ok(config)
+        } else {
+            Err(problems)
+        }
     }
 }

@@ -18,12 +18,13 @@ use crate::config::ServerConfig;
 
 pub use registry::CommandRegistry;
 
-pub fn command_registry(config: &ServerConfig) -> CommandRegistry {
+pub fn command_registry(config: &ServerConfig) -> Result<CommandRegistry, Vec<String>> {
+    let engines = config.redpiler.engines()?;
     let mut registry = CommandRegistry::new();
-    builtin::register_commands(&mut registry, config);
+    builtin::register_commands(&mut registry, &engines);
     for (alias, replacement) in &config.command_aliases {
         registry.add_custom_alias(alias.trim(), replacement.trim());
     }
     registry.remove_invalid_aliases();
-    registry
+    Ok(registry)
 }
