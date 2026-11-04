@@ -7,7 +7,7 @@ use crate::{
         registry::CommandRegistry,
         value::{PlayerTarget, PlotCoordinates},
     },
-    config::ServerConfig,
+    config::Engines,
     item_stack::ItemStack,
     player::{Gamemode, PlayerPos},
     plot::Plot,
@@ -19,11 +19,10 @@ use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_commands::flag::FlagValues;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::backend::Backend;
-use mchprs_redpiler_backends::BACKENDS;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use mchprs_worker::Goal;
 
-pub(super) fn register_commands(registry: &mut CommandRegistry, config: &ServerConfig) {
+pub(super) fn register_commands(registry: &mut CommandRegistry, engines: &Engines) {
     registry.register(
         Command::new("speed")
             .arg("speed", ArgumentType::float(0.0, 10.0))
@@ -340,12 +339,11 @@ pub(super) fn register_commands(registry: &mut CommandRegistry, config: &ServerC
         })),
     );
 
-    let default_engine = config.redpiler.default_engine();
+    let default_engine = engines.default;
     let mut compile = Command::new("compile")
         .alias("c")
         .flags(default_engine.flags());
-    for &backend in BACKENDS {
-        let config_flags = config.redpiler.flags(backend);
+    for (backend, config_flags) in engines.flags.iter().cloned() {
         if backend.name() == default_engine.name() {
             let config_flags = config_flags.clone();
             compile =
