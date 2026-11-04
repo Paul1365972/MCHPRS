@@ -65,6 +65,7 @@ The following options are available at the toplevel (under no header):
 | `autosave_interval_seconds` | Seconds until a changed plot is saved, `0` disables autosave | `300` |
 
 To change the plot size edit the constants defined in [plot/mod.rs](./crates/core/src/plot/mod.rs).
+If `world/plots/pTEMPLATE` exists, new plots start as a copy of it.
 
 Set `MCHPRS_LOG` to change the log level, for example `MCHPRS_LOG=debug`.
 
