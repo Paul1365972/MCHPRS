@@ -1,15 +1,15 @@
+use crate::shared::Shared;
 use mchprs_network::chunk::{encode_block_changes, encode_chunk, encode_empty_chunk};
-mod data;
+use std::sync::Arc;
 #[cfg(feature = "claims")]
-pub mod database;
+pub mod claims;
+pub mod data;
 mod monitor;
 mod packet_handlers;
 mod scoreboard;
 
 use self::data::sleep_time_for_tps;
 use self::scoreboard::Scoreboard;
-use crate::commands::COMMAND_REGISTRY;
-use crate::config::CONFIG;
 use crate::interaction;
 use crate::interaction::UseOnBlockContext;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
@@ -61,6 +61,7 @@ const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler 
 const MAX_BATCH_SIZE: u32 = 50_000;
 
 pub struct Plot {
+    pub shared: Arc<Shared>,
     pub world: PlotWorld,
     pub players: Vec<Player>,
     pub redpiler: Compiler,
@@ -103,6 +104,12 @@ pub struct PlotWorld {
     world_send_rate: WorldSendRate,
     pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
     pending_sounds: FxHashMap<BlockPos, CSoundEffect>,
+}
+
+pub struct PlotChannels {
+    pub broadcasts: BusReader<BroadcastMessage>,
+    pub server: Sender<Message>,
+    pub private: Receiver<PrivMessage>,
 }
 
 impl PlotWorld {
@@ -459,7 +466,7 @@ impl Plot {
 
     pub fn update_view_pos_for_player(&mut self, player_idx: usize, force_load: bool) {
         self.publish_world();
-        let view_distance = CONFIG.view_distance as i32;
+        let view_distance = self.shared.config.view_distance as i32;
         let (chunk_x, chunk_z) = self.players[player_idx].pos.chunk_pos();
         let last_chunk_x = self.players[player_idx].last_chunk_x;
         let last_chunk_z = self.players[player_idx].last_chunk_z;
@@ -565,6 +572,7 @@ impl Plot {
                     block_pos,
                     player: &mut self.players[player],
                     cursor_y: use_item_on.cursor_y,
+                    block_in_hitbox: self.shared.config.block_in_hitbox,
                 },
             );
             if cancelled {
@@ -761,7 +769,7 @@ impl Plot {
 
     #[cfg(feature = "whitelist")]
     pub fn whitelist_add(&self, username: String, packet_sender: PlayerPacketSender) {
-        if !CONFIG.whitelist {
+        if !self.shared.config.whitelist {
             packet_sender.send_error_message("Whitelist is not enabled!");
             return;
         }
@@ -773,7 +781,7 @@ impl Plot {
 
     #[cfg(feature = "whitelist")]
     pub fn whitelist_remove(&self, username: String, packet_sender: PlayerPacketSender) {
-        if !CONFIG.whitelist {
+        if !self.shared.config.whitelist {
             packet_sender.send_error_message("Whitelist is not enabled!");
             return;
         }
@@ -853,7 +861,9 @@ impl Plot {
     #[cfg(feature = "claims")]
     pub fn claim_plot(&mut self, plot_x: i32, plot_z: i32, player: usize) {
         let player = &mut self.players[player];
-        database::claim_plot(plot_x, plot_z, &format!("{:032x}", player.uuid));
+        self.shared
+            .claims
+            .claim_plot(plot_x, plot_z, &format!("{:032x}", player.uuid));
         let center = Plot::get_center(plot_x, plot_z);
         player.teleport(PlayerPos::new(center.0, 64.0, center.1));
         player.send_system_message(&format!("Claimed plot {},{}", plot_x, plot_z));
@@ -909,7 +919,8 @@ impl Plot {
                     "{} issued command: {}",
                     self.players[player_idx].username, command_line
                 );
-                let result = COMMAND_REGISTRY.execute(self, player_idx, &command_line);
+                let shared = Arc::clone(&self.shared);
+                let result = shared.commands.execute(self, player_idx, &command_line);
                 if let Err(error) = result {
                     error!("Failed to run command `{}`: {}", command_line, error);
                 }
@@ -1139,8 +1150,9 @@ impl Plot {
         self.remove_dc_players();
         self.remove_oob_players();
 
-        let autosave_interval = Duration::from_secs(CONFIG.autosave_interval_seconds as u64);
-        if CONFIG.autosave_interval_seconds != 0
+        let autosave_interval =
+            Duration::from_secs(self.shared.config.autosave_interval_seconds as u64);
+        if self.shared.config.autosave_interval_seconds != 0
             && self.last_autosave_time.elapsed() >= autosave_interval
             && self.last_player_time >= self.last_autosave_time
             && !self.redpiler.is_active()
@@ -1186,10 +1198,9 @@ impl Plot {
         plot_data: PlotData<'_>,
         x: i32,
         z: i32,
-        rx: BusReader<BroadcastMessage>,
-        tx: Sender<Message>,
-        priv_rx: Receiver<PrivMessage>,
+        channels: PlotChannels,
         always_running: bool,
+        shared: Arc<Shared>,
     ) -> Plot {
         let chunk_x_offset = x << PLOT_SCALE;
         let chunk_z_offset = z << PLOT_SCALE;
@@ -1223,9 +1234,10 @@ impl Plot {
             lag_time: Duration::new(0, 0),
             sleep_time: sleep_time_for_tps(tps),
             last_nspt: None,
-            message_receiver: rx,
-            message_sender: tx,
-            priv_message_receiver: priv_rx,
+            message_receiver: channels.broadcasts,
+            message_sender: channels.server,
+            priv_message_receiver: channels.private,
+            shared,
             players: Vec::new(),
             locked_players: HashSet::new(),
             running: true,
@@ -1242,24 +1254,30 @@ impl Plot {
     fn load(
         x: i32,
         z: i32,
-        rx: BusReader<BroadcastMessage>,
-        tx: Sender<Message>,
-        priv_rx: Receiver<PrivMessage>,
+        channels: PlotChannels,
         always_running: bool,
+        shared: Arc<Shared>,
     ) -> Result<Plot, (Error, Sender<Message>)> {
         let plot_path = format!("./world/plots/p{},{}", x, z);
         Ok(if Path::new(&plot_path).exists() {
             match data::load_plot(plot_path) {
-                Ok(data) => Plot::from_data(data, x, z, rx, tx, priv_rx, always_running),
+                Ok(data) => Plot::from_data(data, x, z, channels, always_running, shared),
                 Err(err) => {
                     return Result::Err((
                         err.context(format!("error loading plot {},{}", x, z)),
-                        tx,
+                        channels.server,
                     ))
                 }
             }
         } else {
-            Plot::from_data(data::empty_plot(), x, z, rx, tx, priv_rx, always_running)
+            Plot::from_data(
+                shared.empty_plot.clone(),
+                x,
+                z,
+                channels,
+                always_running,
+                shared,
+            )
         })
     }
 
@@ -1323,16 +1341,15 @@ impl Plot {
     pub fn load_and_run(
         x: i32,
         z: i32,
-        rx: BusReader<BroadcastMessage>,
-        tx: Sender<Message>,
-        priv_rx: Receiver<PrivMessage>,
+        channels: PlotChannels,
         always_running: bool,
         initial_player: Option<Player>,
+        shared: Arc<Shared>,
     ) {
         thread::Builder::new()
             .name(format!("p{},{}", x, z))
             .spawn(
-                move || match Plot::load(x, z, rx, tx, priv_rx, always_running) {
+                move || match Plot::load(x, z, channels, always_running, shared) {
                     Ok(mut plot) => plot.run(initial_player),
                     Err((err, tx)) => {
                         if let Some(mut player) = initial_player {

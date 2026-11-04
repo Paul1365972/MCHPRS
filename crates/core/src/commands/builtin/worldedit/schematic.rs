@@ -44,7 +44,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 }
 
 fn exec_list(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
-    let schematics = schematic_names(ctx.player()?.uuid).map_err(|error| {
+    let schemati = ctx.shared().config.schemati;
+    let schematics = schematic_names(schemati, ctx.player()?.uuid).map_err(|error| {
         warn!("Unable to list schematics: {error}");
         CommandError::runtime("Unable to list schematics. Check console for details.")
     })?;
@@ -65,7 +66,7 @@ fn exec_list(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
 
 fn exec_load(ctx: &mut ExecutionContext<'_>, filename: &str) -> CommandResult<()> {
     let start_time = Instant::now();
-    let path = schematic_path(ctx.player()?.uuid, filename)?;
+    let path = schematic_path(ctx.shared().config.schemati, ctx.player()?.uuid, filename)?;
 
     match load_schematic(&path) {
         Ok(clipboard) => {
@@ -100,7 +101,7 @@ fn exec_save(
 ) -> CommandResult<()> {
     let start_time = Instant::now();
 
-    let path = schematic_path(ctx.player()?.uuid, filename)?;
+    let path = schematic_path(ctx.shared().config.schemati, ctx.player()?.uuid, filename)?;
     let clipboard = ctx.clipboard()?;
     match save_schematic(&path, clipboard, force_overwrite) {
         Ok(_) => ctx.worldedit_message(&format!(

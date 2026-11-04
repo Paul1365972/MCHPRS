@@ -15,10 +15,7 @@ pub mod suggestions;
 mod syntax;
 pub mod value;
 
-use crate::config::{ServerConfig, CONFIG};
-use std::sync::LazyLock;
-pub static COMMAND_REGISTRY: LazyLock<CommandRegistry> =
-    LazyLock::new(|| command_registry(&CONFIG));
+use crate::config::ServerConfig;
 use itertools::Itertools;
 use registry::CommandRegistry;
 use tracing::warn;

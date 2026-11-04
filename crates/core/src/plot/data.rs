@@ -3,7 +3,6 @@ use anyhow::{ensure, Context, Result};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::LazyLock;
 use std::time::Duration;
 
 // TODO: where to put this?
@@ -33,14 +32,10 @@ pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData<'static>> {
     Ok(data)
 }
 
-pub fn empty_plot() -> PlotData<'static> {
-    EMPTY_PLOT.clone()
-}
-
-static EMPTY_PLOT: LazyLock<PlotData<'static>> = LazyLock::new(|| {
+pub fn empty_plot() -> Result<PlotData<'static>> {
     let template_path = Path::new("./world/plots/pTEMPLATE");
     if template_path.exists() {
-        load_plot(template_path).expect("failed to read template plot")
+        load_plot(template_path)
     } else {
         let mut chunks = Vec::new();
         for chunk_x in 0..PLOT_WIDTH {
@@ -63,11 +58,11 @@ static EMPTY_PLOT: LazyLock<PlotData<'static>> = LazyLock::new(|| {
             .iter_mut()
             .map(|chunk| ChunkData::new(chunk).into_owned())
             .collect();
-        PlotData {
+        Ok(PlotData {
             tps: Tps::Limited(10.0),
             world_send_rate: WorldSendRate::default(),
             chunk_data,
             pending_ticks: Vec::new(),
-        }
+        })
     }
-});
+}

@@ -1,7 +1,6 @@
 use super::{Plot, PLOT_BLOCK_HEIGHT};
 use crate::commands::schematic::schematic_names;
 use crate::commands::suggestions::SuggestionSource;
-use crate::commands::COMMAND_REGISTRY;
 use crate::item_stack::ItemStack;
 use crate::player::{PacketSender, PlayerPos, SkinParts};
 use crate::server::Message;
@@ -32,12 +31,17 @@ impl ServerBoundPacketHandler for Plot {
         packet: SCommandSuggestionsRequest,
         player_idx: usize,
     ) {
-        let mut suggestions = COMMAND_REGISTRY.suggestions(&packet.text, packet.transaction_id);
+        let mut suggestions = self
+            .shared
+            .commands
+            .suggestions(&packet.text, packet.transaction_id);
         if suggestions.needs(SuggestionSource::SchematicFiles) {
-            let names = schematic_names(self.players[player_idx].uuid).unwrap_or_else(|error| {
-                warn!("Unable to complete schematic filenames: {error}");
-                Vec::new()
-            });
+            let schemati = self.shared.config.schemati;
+            let names =
+                schematic_names(schemati, self.players[player_idx].uuid).unwrap_or_else(|error| {
+                    warn!("Unable to complete schematic filenames: {error}");
+                    Vec::new()
+                });
             suggestions.resolve(SuggestionSource::SchematicFiles, names);
         }
         if suggestions.needs(SuggestionSource::PlayerNames) {

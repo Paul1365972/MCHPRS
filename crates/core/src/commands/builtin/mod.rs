@@ -10,7 +10,6 @@ use super::error::CommandResult;
 use super::graph::NodeKind;
 use super::help::generate_help;
 use super::registry::CommandRegistry;
-use crate::commands::COMMAND_REGISTRY;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
     core::register_commands(registry);
@@ -26,7 +25,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
 }
 
 fn exec_help(ctx: &mut ExecutionContext<'_>, command: &str) -> CommandResult<()> {
-    let registry = &*COMMAND_REGISTRY;
+    let registry = &ctx.shared().commands;
     if command.is_empty() {
         let mut names: Vec<_> = registry.commands().map(|name| format!("/{name}")).collect();
         names.sort();

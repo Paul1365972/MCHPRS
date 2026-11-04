@@ -11,6 +11,7 @@ mod plot;
 #[cfg(feature = "whitelist")]
 mod profile;
 pub mod server;
+mod shared;
 mod worldedit;
 
 #[macro_use]

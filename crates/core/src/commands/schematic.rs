@@ -1,19 +1,22 @@
 use super::error::{CommandError, CommandResult};
-use crate::config::CONFIG;
 use crate::utils::HyphenatedUUID;
 use mchprs_syntax::reader::Reader;
 use std::path::PathBuf;
 use std::{fs, io};
 
-pub(super) fn schematic_path(player_uuid: u128, filename: &str) -> CommandResult<PathBuf> {
+pub(super) fn schematic_path(
+    schemati: bool,
+    player_uuid: u128,
+    filename: &str,
+) -> CommandResult<PathBuf> {
     if !valid_schematic_filename(filename) {
         return Err(CommandError::runtime("Filename is invalid"));
     }
-    Ok(schematic_directory(player_uuid).join(filename))
+    Ok(schematic_directory(schemati, player_uuid).join(filename))
 }
 
-pub fn schematic_names(player_uuid: u128) -> io::Result<Vec<String>> {
-    let entries = match fs::read_dir(schematic_directory(player_uuid)) {
+pub fn schematic_names(schemati: bool, player_uuid: u128) -> io::Result<Vec<String>> {
+    let entries = match fs::read_dir(schematic_directory(schemati, player_uuid)) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => return Err(error),
@@ -42,9 +45,9 @@ fn valid_schematic_filename(filename: &str) -> bool {
     !stem.is_empty() && stem.chars().all(Reader::allowed_word)
 }
 
-fn schematic_directory(player_uuid: u128) -> PathBuf {
+fn schematic_directory(schemati: bool, player_uuid: u128) -> PathBuf {
     let mut path = PathBuf::from("./schems");
-    if CONFIG.schemati {
+    if schemati {
         path.push(HyphenatedUUID(player_uuid).to_string());
     }
     path

@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::io;
-use std::{fs, sync::LazyLock};
 use tracing::warn;
-
-pub static CONFIG: LazyLock<ServerConfig> = LazyLock::new(|| ServerConfig::load("Config.toml"));
+const PATH: &str = "Config.toml";
 
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
@@ -41,28 +40,37 @@ impl Default for ServerConfig {
 }
 
 impl ServerConfig {
-    fn load(path: &str) -> ServerConfig {
-        let text = match fs::read_to_string(path) {
+    pub fn load() -> (Option<ServerConfig>, Vec<String>) {
+        let text = match fs::read_to_string(PATH) {
             Ok(text) => text,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 let defaults = toml::to_string(&ServerConfig::default())
                     .expect("the default config serializes");
-                if let Err(error) = fs::write(path, defaults) {
-                    warn!("Failed to write the default {path}: {error}");
+                if let Err(error) = fs::write(PATH, defaults) {
+                    warn!("Failed to write the default {PATH}: {error}");
                 }
-                return ServerConfig::default();
+                return (Some(ServerConfig::default()), Vec::new());
             }
-            Err(error) => panic!("Failed to read {path}: {error}"),
+            Err(error) => return (None, vec![format!("Failed to read {PATH}: {error}")]),
         };
-        let table: toml::Table = toml::from_str(&text)
-            .unwrap_or_else(|error| panic!("{path} is not valid TOML: {error}"));
+        let table: toml::Table = match toml::from_str(&text) {
+            Ok(table) => table,
+            Err(error) => return (None, vec![format!("Invalid {PATH}: {error}")]),
+        };
+        let mut problems = Vec::new();
         if table.contains_key("luckperms") {
-            panic!("{path} has a [luckperms] table, but LuckPerms support was removed, so every player could edit every plot and run every command. Remove the table to start the server");
+            problems.push(format!(
+                "LuckPerms is not supported: every player can use every command and edit every \
+                 plot. Remove [luckperms] from {PATH} to start anyway"
+            ));
         }
         let defaults =
             toml::Table::try_from(ServerConfig::default()).expect("the default config serializes");
-        for key in table.keys().filter(|key| !defaults.contains_key(*key)) {
-            warn!("{path} has `{key}`, which is not a setting, so it is ignored");
+        for key in table
+            .keys()
+            .filter(|key| !defaults.contains_key(*key) && *key != "luckperms")
+        {
+            warn!("Ignoring unknown setting `{key}` in {PATH}");
         }
         for (key, value) in defaults {
             if !table.contains_key(&key) {
@@ -70,14 +78,26 @@ impl ServerConfig {
                 default.insert(key.clone(), value);
                 let default = toml::to_string(&default).expect("a default value serializes");
                 warn!(
-                    "{path} has no `{key}`, so it uses the default:\n{}",
+                    "{PATH} is missing `{key}`, using the default:\n{}",
                     default.trim_end()
                 );
             }
         }
-        table
-            .try_into()
-            .unwrap_or_else(|error| panic!("{path} is invalid: {error}"))
+        let config: ServerConfig = match table.try_into() {
+            Ok(config) => config,
+            Err(error) => {
+                problems.push(format!("Invalid {PATH}: {error}"));
+                return (None, problems);
+            }
+        };
+        #[cfg(not(feature = "whitelist"))]
+        if config.whitelist {
+            problems.push(format!(
+                "`whitelist = true` in {PATH} requires the `whitelist` feature (build with \
+                 `--features whitelist`, or set it to false)"
+            ));
+        }
+        (Some(config), problems)
     }
 }
 
