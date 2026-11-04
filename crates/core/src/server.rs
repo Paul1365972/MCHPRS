@@ -1,11 +1,12 @@
+use crate::commands::command_registry;
 use crate::commands::suggestions::{CommandSuggestions, SuggestionSource};
 use crate::commands::value::PlayerTarget;
-use crate::commands::COMMAND_REGISTRY;
-use crate::config::CONFIG;
+use crate::config::ServerConfig;
 use crate::player::{Gamemode, PacketSender, Player};
 #[cfg(feature = "claims")]
-use crate::plot::database;
-use crate::plot::{Plot, PLOT_BLOCK_HEIGHT};
+use crate::plot::claims::Claims;
+use crate::plot::{data, Plot, PlotChannels, PLOT_BLOCK_HEIGHT};
+use crate::shared::Shared;
 use crate::utils;
 #[cfg(feature = "whitelist")]
 use crate::utils::HyphenatedUUID;
@@ -34,6 +35,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
+use std::backtrace::Backtrace;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
@@ -42,8 +44,9 @@ use std::io::{self, Write as _};
 #[cfg(not(feature = "claims"))]
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
-use std::sync::LazyLock;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{panic, process, thread};
 use tracing::{error, info, warn};
 
 /// `Message` gets send from a plot thread to the server thread.
@@ -146,14 +149,15 @@ pub struct MinecraftServer {
     running_plots: Vec<PlotListEntry>,
     #[cfg(feature = "whitelist")]
     whitelist: Option<Vec<WhitelistEntry>>,
+    shared: Arc<Shared>,
 }
 
 impl MinecraftServer {
     /// Start the server
-    pub fn run() {
-        std::panic::set_hook(Box::new(|panic_info| {
-            let backtrace = std::backtrace::Backtrace::force_capture();
-            let thread = std::thread::current();
+    pub fn start() -> Result<MinecraftServer, Vec<String>> {
+        panic::set_hook(Box::new(|panic_info| {
+            let backtrace = Backtrace::force_capture();
+            let thread = thread::current();
             let name = thread.name().unwrap_or("unnamed");
             error!("Thread '{name}' {panic_info}\n{backtrace}");
         }));
@@ -161,19 +165,64 @@ impl MinecraftServer {
         info!("Starting server...");
         let start_time = Instant::now();
 
+        let mut problems = Vec::new();
         // Create world folders if they don't exist yet
-        fs::create_dir_all("./world/players").unwrap();
-        fs::create_dir_all("./world/plots").unwrap();
-        fs::create_dir_all("./schems").unwrap();
-
+        for directory in ["./world/players", "./world/plots", "./schems"] {
+            if let Err(error) = fs::create_dir_all(directory) {
+                problems.push(format!("Failed to create {directory}: {error}"));
+            }
+        }
         #[cfg(not(feature = "claims"))]
         if Path::new("./world/plots.db").exists() {
-            panic!("world/plots.db holds plot claims, but this build has no claims feature. Build with --features claims to keep them, or delete the file");
+            problems.push(
+                "world/plots.db requires the `claims` feature (build with `--features claims`, or \
+                 delete the file)"
+                    .to_owned(),
+            );
         }
         #[cfg(feature = "claims")]
-        database::init();
+        let claims = Claims::open("./world/plots.db")
+            .map_err(|error| problems.push(format!("Failed to open world/plots.db: {error}")))
+            .ok();
+        let empty_plot = data::empty_plot()
+            .map_err(|error| problems.push(format!("{error:#}")))
+            .ok();
+        let (config, config_problems) = ServerConfig::load();
+        problems.extend(config_problems);
+        let commands = config.as_ref().map(command_registry);
+        #[cfg(feature = "whitelist")]
+        let whitelist = match &config {
+            Some(config) if config.whitelist => load_whitelist()
+                .map_err(|problem| problems.push(problem))
+                .ok(),
+            _ => None,
+        };
 
-        let bind_addr = CONFIG.bind_address.clone();
+        let (Some(config), Some(commands), Some(empty_plot)) = (config, commands, empty_plot)
+        else {
+            return Err(problems);
+        };
+        #[cfg(feature = "claims")]
+        let Some(claims) = claims
+        else {
+            return Err(problems);
+        };
+        if !problems.is_empty() {
+            return Err(problems);
+        }
+        let network = NetworkServer::new(&config.bind_address).map_err(|error| {
+            vec![format!(
+                "Failed to listen on {}: {error}",
+                config.bind_address
+            )]
+        })?;
+        let shared = Arc::new(Shared {
+            config,
+            commands,
+            empty_plot,
+            #[cfg(feature = "claims")]
+            claims,
+        });
 
         // Create thread messaging structs
         let (plot_tx, server_rx) = mpsc::channel();
@@ -183,34 +232,11 @@ impl MinecraftServer {
         ctrlc::set_handler(move || {
             ctrl_handler_sender.send(Message::Shutdown).unwrap();
         })
-        .expect("There was an error setting the ctrlc handler");
-
-        LazyLock::force(&COMMAND_REGISTRY);
-
-        #[cfg(not(feature = "whitelist"))]
-        if CONFIG.whitelist {
-            panic!("Config.toml enables the whitelist, but this build has no whitelist feature. Build with --features whitelist, or set whitelist = false");
-        }
-        #[cfg(feature = "whitelist")]
-        let whitelist = CONFIG.whitelist.then(|| {
-            let content = match fs::read("whitelist.json") {
-                Ok(content) => content,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    fs::write("whitelist.json", b"[]").expect("Failed to create whitelist.json");
-                    Vec::new()
-                }
-                Err(error) => panic!("Failed to read whitelist.json: {error}"),
-            };
-            if content.trim_ascii().is_empty() {
-                Vec::new()
-            } else {
-                serde_json::from_slice(&content).expect("Invalid whitelist.json")
-            }
-        });
+        .map_err(|error| vec![format!("Failed to set the Ctrl+C handler: {error}")])?;
 
         // Create server struct
         let mut server = MinecraftServer {
-            network: NetworkServer::new(bind_addr),
+            network,
             broadcaster: bus,
             receiver: server_rx,
             plot_sender: plot_tx,
@@ -218,31 +244,21 @@ impl MinecraftServer {
             running_plots: Vec::new(),
             #[cfg(feature = "whitelist")]
             whitelist,
+            shared,
         };
 
         // Load the spawn area plot on server start
         // This plot should be always active
-        let (spawn_tx, spawn_rx) = mpsc::channel();
-        Plot::load_and_run(
-            0,
-            0,
-            server.broadcaster.add_rx(),
-            server.plot_sender.clone(),
-            spawn_rx,
-            true,
-            None,
-        );
-        server.running_plots.push(PlotListEntry {
-            plot_x: 0,
-            plot_z: 0,
-            priv_message_sender: spawn_tx,
-        });
+        server.spawn_plot(0, 0, true, None);
 
         info!("Done! Start took {:?}", start_time.elapsed());
+        Ok(server)
+    }
 
+    pub fn run(mut self) -> ! {
         loop {
-            server.update();
-            std::thread::sleep(Duration::from_millis(2));
+            self.update();
+            thread::sleep(Duration::from_millis(2));
         }
     }
 
@@ -279,7 +295,36 @@ impl MinecraftServer {
             }
         }
 
-        std::process::exit(0);
+        process::exit(0);
+    }
+
+    fn spawn_plot(
+        &mut self,
+        plot_x: i32,
+        plot_z: i32,
+        always_running: bool,
+        initial_player: Option<Player>,
+    ) {
+        let (priv_message_sender, private) = mpsc::channel();
+        let channels = PlotChannels {
+            broadcasts: self.broadcaster.add_rx(),
+            server: self.plot_sender.clone(),
+            private,
+        };
+        let shared = Arc::clone(&self.shared);
+        Plot::load_and_run(
+            plot_x,
+            plot_z,
+            channels,
+            always_running,
+            initial_player,
+            shared,
+        );
+        self.running_plots.push(PlotListEntry {
+            plot_x,
+            plot_z,
+            priv_message_sender,
+        });
     }
 
     fn send_player_to_plot(&mut self, player: Player, new_entry: bool) {
@@ -303,21 +348,7 @@ impl MinecraftServer {
             .iter()
             .any(|p| p.plot_x == plot_x && p.plot_z == plot_z);
         if !plot_loaded {
-            let (priv_tx, priv_rx) = mpsc::channel();
-            Plot::load_and_run(
-                plot_x,
-                plot_z,
-                self.broadcaster.add_rx(),
-                self.plot_sender.clone(),
-                priv_rx,
-                false,
-                Some(player),
-            );
-            self.running_plots.push(PlotListEntry {
-                plot_x,
-                plot_z,
-                priv_message_sender: priv_tx,
-            });
+            self.spawn_plot(plot_x, plot_z, false, Some(player));
         } else {
             let plot_list_entry = self
                 .running_plots
@@ -342,9 +373,9 @@ impl MinecraftServer {
             entity_id: player.entity_id as i32,
             is_hardcore: false,
             dimension_names: vec!["minecraft:overworld".to_owned()],
-            max_players: CONFIG.max_players as i32,
-            view_distance: CONFIG.view_distance as i32,
-            simulation_distance: CONFIG.view_distance as i32,
+            max_players: self.shared.config.max_players as i32,
+            view_distance: self.shared.config.view_distance as i32,
+            simulation_distance: self.shared.config.view_distance as i32,
             reduced_debug_info: false,
             enable_respawn_screen: false,
             do_limited_crafting: false,
@@ -437,7 +468,7 @@ impl MinecraftServer {
 
         player
             .client
-            .send_packet(&COMMAND_REGISTRY.declare_commands_packet());
+            .send_packet(&self.shared.commands.declare_commands_packet());
 
         let time_update = UpdateTime {
             world_age: 0,
@@ -466,7 +497,7 @@ impl MinecraftServer {
         let username = login_start.name;
         clients[client_idx].username = Some(username.clone());
 
-        if CONFIG.velocity.enabled {
+        if self.shared.config.velocity.enabled {
             let message_id = rand::random();
             clients[client_idx].forwarding_message_id = Some(message_id);
             let plugin_message = CLoginPluginRequest {
@@ -507,7 +538,7 @@ impl MinecraftServer {
             }
         }
 
-        if self.online_players.len() as i64 >= CONFIG.max_players {
+        if self.online_players.len() as i64 >= self.shared.config.max_players {
             return refuse_login(&clients.remove(client_idx), "The server is full");
         }
 
@@ -551,7 +582,9 @@ impl MinecraftServer {
                     properties: player.properties.clone(),
                 };
                 #[cfg(feature = "claims")]
-                database::ensure_user(&format!("{:032x}", player.uuid), &player.username);
+                self.shared
+                    .claims
+                    .ensure_user(&format!("{:032x}", player.uuid), &player.username);
                 self.broadcaster
                     .broadcast(BroadcastMessage::PlayerJoinedInfo(player_join_info));
                 self.send_player_to_plot(player, true);
@@ -569,7 +602,9 @@ impl MinecraftServer {
                 self.broadcaster.broadcast(BroadcastMessage::Chat(
                     uuid,
                     TextComponent::from_legacy_text(
-                        &CONFIG
+                        &self
+                            .shared
+                            .config
                             .chat_format
                             .replace("{username}", &username)
                             .replace("{message}", &message),
@@ -718,6 +753,23 @@ impl MinecraftServer {
     }
 }
 
+#[cfg(feature = "whitelist")]
+fn load_whitelist() -> Result<Vec<WhitelistEntry>, String> {
+    let content = match fs::read("whitelist.json") {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            fs::write("whitelist.json", b"[]")
+                .map_err(|error| format!("Failed to create whitelist.json: {error}"))?;
+            return Ok(Vec::new());
+        }
+        Err(error) => return Err(format!("Failed to read whitelist.json: {error}")),
+    };
+    if content.trim_ascii().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_slice(&content).map_err(|error| format!("Invalid whitelist.json: {error}"))
+}
+
 fn refuse_login(client: &HandshakingConn, reason: &str) {
     let disconnect = CDisconnectLogin {
         reason: json!({ "text": reason }).to_string(),
@@ -758,12 +810,12 @@ impl ServerBoundPacketHandler for MinecraftServer {
                     "protocol": PROTOCOL_VERSION
                 },
                 "players": {
-                    "max": CONFIG.max_players,
+                    "max": self.shared.config.max_players,
                     "online": self.online_players.len(),
                     "sample": []
                 },
                 "description": {
-                    "text": CONFIG.motd
+                    "text": self.shared.config.motd
                 }
             })
             .to_string(),
@@ -903,7 +955,7 @@ impl ServerBoundPacketHandler for MinecraftServer {
             }
         };
 
-        let secret = CONFIG.velocity.secret.as_bytes();
+        let secret = self.shared.config.velocity.secret.as_bytes();
         let mut mac = <Hmac<Sha256>>::new_from_slice(secret).unwrap();
         mac.update(&packet.data[32..]);
         if mac.verify_slice(&packet.data[..32]).is_err() {
