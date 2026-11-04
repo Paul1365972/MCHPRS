@@ -5,8 +5,6 @@ use crate::commands::error::{CommandResult, RuntimeError};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::PlotCoordinates;
 use crate::player::PlayerPos;
-#[cfg(feature = "claims")]
-use crate::plot::database;
 use crate::plot::Plot;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
@@ -63,8 +61,9 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
 #[cfg(feature = "claims")]
 fn exec_info(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
-    if let Some(owner) = database::get_plot_owner(plot_x, plot_z) {
-        let username = database::get_cached_username(owner.clone()).unwrap_or(owner);
+    let claims = &ctx.shared().claims;
+    if let Some(owner) = claims.plot_owner(plot_x, plot_z) {
+        let username = claims.cached_username(&owner).unwrap_or(owner);
         ctx.reply(&format!("Plot owner is: {username}"))
     } else {
         ctx.reply("Plot is not owned by anyone.")
@@ -74,7 +73,7 @@ fn exec_info(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
 #[cfg(feature = "claims")]
 fn exec_claim(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let (plot_x, plot_z) = ctx.player()?.pos.plot_pos();
-    if database::is_claimed(plot_x, plot_z).unwrap() {
+    if ctx.shared().claims.is_claimed(plot_x, plot_z).unwrap() {
         ctx.reply("Plot is already claimed!")
     } else {
         let player_idx = ctx.player_idx();
@@ -86,7 +85,7 @@ fn exec_claim(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
 #[cfg(feature = "claims")]
 fn exec_auto(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let mut plot = (0, 0);
-    while database::is_claimed(plot.0, plot.1).unwrap() {
+    while ctx.shared().claims.is_claimed(plot.0, plot.1).unwrap() {
         plot = Plot::get_next_plot(plot.0, plot.1);
     }
     let player_idx = ctx.player_idx();
@@ -99,7 +98,7 @@ fn exec_visit(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let username: &str = ctx.arg("username")?;
     let index = ctx.arg_opt::<i32>("index")?;
 
-    let plots = database::get_owned_plots(username);
+    let plots = ctx.shared().claims.owned_plots(username);
     if plots.is_empty() {
         return ctx.reply(&format!("{username} does not own any plots."));
     }

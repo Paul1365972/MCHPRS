@@ -3,6 +3,7 @@ use super::error::{CommandResult, InternalError, RuntimeError};
 use super::value::{BlockCoordinates, FromValue, PositionCoordinates, Value};
 use crate::player::{PacketSender, Player, PlayerPos};
 use crate::plot::{Plot, PlotWorld, PLOT_BLOCK_HEIGHT};
+use crate::shared::Shared;
 use crate::worldedit::{create_clipboard, ray_trace_block, WorldEditUndo};
 use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::region::Region;
@@ -123,6 +124,10 @@ impl<'a> ExecutionContext<'a> {
 
     pub(super) fn plot_mut(&mut self) -> &mut Plot {
         self.plot
+    }
+
+    pub(super) fn shared(&self) -> &Shared {
+        &self.plot.shared
     }
 
     pub(super) fn world(&mut self) -> &PlotWorld {

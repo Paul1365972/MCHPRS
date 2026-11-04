@@ -1,11 +1,12 @@
+use crate::commands::command_registry;
 use crate::commands::suggestions::{CommandSuggestions, SuggestionSource};
 use crate::commands::value::PlayerTarget;
-use crate::commands::COMMAND_REGISTRY;
-use crate::config::CONFIG;
+use crate::config::ServerConfig;
 use crate::player::{Gamemode, PacketSender, Player};
 #[cfg(feature = "claims")]
-use crate::plot::database;
-use crate::plot::{Plot, PLOT_BLOCK_HEIGHT};
+use crate::plot::claims::Claims;
+use crate::plot::{data, Plot, PlotChannels, PLOT_BLOCK_HEIGHT};
+use crate::shared::Shared;
 use crate::utils;
 #[cfg(feature = "whitelist")]
 use crate::utils::HyphenatedUUID;
@@ -42,7 +43,7 @@ use std::io::{self, Write as _};
 #[cfg(not(feature = "claims"))]
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
-use std::sync::LazyLock;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
@@ -148,6 +149,7 @@ pub struct MinecraftServer {
     running_plots: Vec<PlotListEntry>,
     #[cfg(feature = "whitelist")]
     whitelist: Option<Vec<WhitelistEntry>>,
+    shared: Arc<Shared>,
 }
 
 impl MinecraftServer {
@@ -172,10 +174,18 @@ impl MinecraftServer {
         if Path::new("./world/plots.db").exists() {
             panic!("world/plots.db holds plot claims, but this build has no claims feature. Build with `--features claims` to keep them, or delete the file");
         }
+        let config = ServerConfig::load();
+        let commands = command_registry(&config);
+        let empty_plot = data::empty_plot();
         #[cfg(feature = "claims")]
-        database::init();
-
-        let bind_addr = CONFIG.bind_address.clone();
+        let claims = Claims::open("./world/plots.db").expect("Error opening plot database!");
+        let shared = Arc::new(Shared {
+            config,
+            commands,
+            empty_plot,
+            #[cfg(feature = "claims")]
+            claims,
+        });
 
         // Create thread messaging structs
         let (plot_tx, server_rx) = mpsc::channel();
@@ -187,15 +197,13 @@ impl MinecraftServer {
         })
         .expect("There was an error setting the ctrlc handler");
 
-        LazyLock::force(&COMMAND_REGISTRY);
-
         #[cfg(not(feature = "whitelist"))]
-        if CONFIG.whitelist {
+        if shared.config.whitelist {
             panic!("Config.toml enables the whitelist, but this build has no whitelist feature. Build with `--features whitelist`, or set `whitelist = false`");
         }
 
         #[cfg(feature = "whitelist")]
-        let whitelist = CONFIG.whitelist.then(|| {
+        let whitelist = shared.config.whitelist.then(|| {
             let content = match fs::read("whitelist.json") {
                 Ok(content) => content,
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -213,7 +221,7 @@ impl MinecraftServer {
 
         // Create server struct
         let mut server = MinecraftServer {
-            network: NetworkServer::new(bind_addr),
+            network: NetworkServer::new(shared.config.bind_address.clone()),
             broadcaster: bus,
             receiver: server_rx,
             plot_sender: plot_tx,
@@ -221,25 +229,12 @@ impl MinecraftServer {
             running_plots: Vec::new(),
             #[cfg(feature = "whitelist")]
             whitelist,
+            shared,
         };
 
         // Load the spawn area plot on server start
         // This plot should be always active
-        let (spawn_tx, spawn_rx) = mpsc::channel();
-        Plot::load_and_run(
-            0,
-            0,
-            server.broadcaster.add_rx(),
-            server.plot_sender.clone(),
-            spawn_rx,
-            true,
-            None,
-        );
-        server.running_plots.push(PlotListEntry {
-            plot_x: 0,
-            plot_z: 0,
-            priv_message_sender: spawn_tx,
-        });
+        server.spawn_plot(0, 0, true, None);
 
         info!("Done! Start took {:?}", start_time.elapsed());
 
@@ -285,6 +280,35 @@ impl MinecraftServer {
         std::process::exit(0);
     }
 
+    fn spawn_plot(
+        &mut self,
+        plot_x: i32,
+        plot_z: i32,
+        always_running: bool,
+        initial_player: Option<Player>,
+    ) {
+        let (priv_message_sender, private) = mpsc::channel();
+        let channels = PlotChannels {
+            broadcasts: self.broadcaster.add_rx(),
+            server: self.plot_sender.clone(),
+            private,
+        };
+        let shared = Arc::clone(&self.shared);
+        Plot::load_and_run(
+            plot_x,
+            plot_z,
+            channels,
+            always_running,
+            initial_player,
+            shared,
+        );
+        self.running_plots.push(PlotListEntry {
+            plot_x,
+            plot_z,
+            priv_message_sender,
+        });
+    }
+
     fn send_player_to_plot(&mut self, player: Player, new_entry: bool) {
         let (plot_x, plot_z) = player.pos.plot_pos();
 
@@ -306,21 +330,7 @@ impl MinecraftServer {
             .iter()
             .any(|p| p.plot_x == plot_x && p.plot_z == plot_z);
         if !plot_loaded {
-            let (priv_tx, priv_rx) = mpsc::channel();
-            Plot::load_and_run(
-                plot_x,
-                plot_z,
-                self.broadcaster.add_rx(),
-                self.plot_sender.clone(),
-                priv_rx,
-                false,
-                Some(player),
-            );
-            self.running_plots.push(PlotListEntry {
-                plot_x,
-                plot_z,
-                priv_message_sender: priv_tx,
-            });
+            self.spawn_plot(plot_x, plot_z, false, Some(player));
         } else {
             let plot_list_entry = self
                 .running_plots
@@ -345,9 +355,9 @@ impl MinecraftServer {
             entity_id: player.entity_id as i32,
             is_hardcore: false,
             dimension_names: vec!["minecraft:overworld".to_owned()],
-            max_players: CONFIG.max_players as i32,
-            view_distance: CONFIG.view_distance as i32,
-            simulation_distance: CONFIG.view_distance as i32,
+            max_players: self.shared.config.max_players as i32,
+            view_distance: self.shared.config.view_distance as i32,
+            simulation_distance: self.shared.config.view_distance as i32,
             reduced_debug_info: false,
             enable_respawn_screen: false,
             do_limited_crafting: false,
@@ -440,7 +450,7 @@ impl MinecraftServer {
 
         player
             .client
-            .send_packet(&COMMAND_REGISTRY.declare_commands_packet());
+            .send_packet(&self.shared.commands.declare_commands_packet());
 
         let time_update = UpdateTime {
             world_age: 0,
@@ -469,7 +479,7 @@ impl MinecraftServer {
         let username = login_start.name;
         clients[client_idx].username = Some(username.clone());
 
-        if CONFIG.velocity.enabled {
+        if self.shared.config.velocity.enabled {
             let message_id = rand::random();
             clients[client_idx].forwarding_message_id = Some(message_id);
             let plugin_message = CLoginPluginRequest {
@@ -559,7 +569,9 @@ impl MinecraftServer {
                     properties: player.properties.clone(),
                 };
                 #[cfg(feature = "claims")]
-                database::ensure_user(&format!("{:032x}", player.uuid), &player.username);
+                self.shared
+                    .claims
+                    .ensure_user(&format!("{:032x}", player.uuid), &player.username);
                 self.broadcaster
                     .broadcast(BroadcastMessage::PlayerJoinedInfo(player_join_info));
                 self.send_player_to_plot(player, true);
@@ -577,7 +589,9 @@ impl MinecraftServer {
                 self.broadcaster.broadcast(BroadcastMessage::Chat(
                     uuid,
                     TextComponent::from_legacy_text(
-                        &CONFIG
+                        &self
+                            .shared
+                            .config
                             .chat_format
                             .replace("{username}", &username)
                             .replace("{message}", &message),
@@ -757,12 +771,12 @@ impl ServerBoundPacketHandler for MinecraftServer {
                     "protocol": PROTOCOL_VERSION
                 },
                 "players": {
-                    "max": CONFIG.max_players,
+                    "max": self.shared.config.max_players,
                     "online": self.online_players.len(),
                     "sample": []
                 },
                 "description": {
-                    "text": CONFIG.motd
+                    "text": self.shared.config.motd
                 }
             })
             .to_string(),
@@ -902,7 +916,7 @@ impl ServerBoundPacketHandler for MinecraftServer {
             }
         };
 
-        let secret = CONFIG.velocity.secret.as_bytes();
+        let secret = self.shared.config.velocity.secret.as_bytes();
         let mut mac = <Hmac<Sha256>>::new_from_slice(secret).unwrap();
         mac.update(&packet.data[32..]);
         if mac.verify_slice(&packet.data[..32]).is_err() {

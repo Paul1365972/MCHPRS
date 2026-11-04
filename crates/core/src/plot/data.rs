@@ -3,7 +3,6 @@ use anyhow::{Context, Result};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::LazyLock;
 use std::time::Duration;
 
 // TODO: where to put this?
@@ -22,19 +21,11 @@ pub fn sleep_time_for_tps(tps: Tps) -> Duration {
 
 pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData<'static>> {
     let path = path.as_ref();
-    if path.exists() {
-        Ok(PlotData::load_from_file(path)
-            .with_context(|| format!("error loading plot save file at {}", path.display()))?)
-    } else {
-        Ok(EMPTY_PLOT.clone())
-    }
+    PlotData::load_from_file(path)
+        .with_context(|| format!("error loading plot save file at {}", path.display()))
 }
 
 pub fn empty_plot() -> PlotData<'static> {
-    EMPTY_PLOT.clone()
-}
-
-static EMPTY_PLOT: LazyLock<PlotData<'static>> = LazyLock::new(|| {
     let template_path = Path::new("./world/plots/pTEMPLATE");
     if template_path.exists() {
         PlotData::load_from_file(template_path).expect("failed to read template plot")
@@ -67,4 +58,4 @@ static EMPTY_PLOT: LazyLock<PlotData<'static>> = LazyLock::new(|| {
             pending_ticks: Vec::new(),
         }
     }
-});
+}

@@ -9,13 +9,13 @@ use super::define::Command;
 use super::error::CommandResult;
 use super::help::generate_help;
 use super::registry::CommandRegistry;
-use super::COMMAND_REGISTRY;
+use crate::config::ServerConfig;
 use mchprs_commands::graph::NodeKind;
 
-pub(super) fn register_commands(registry: &mut CommandRegistry) {
+pub(super) fn register_commands(registry: &mut CommandRegistry, config: &ServerConfig) {
     core::register_commands(registry);
     plot::register_commands(registry);
-    redpiler::register_commands(registry);
+    redpiler::register_commands(registry, config);
     worldedit::register_commands(registry);
     registry.register(
         Command::new("help")
@@ -27,7 +27,7 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
 
 fn exec_help(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let command: &str = ctx.arg_or("command", "")?;
-    let registry = &*COMMAND_REGISTRY;
+    let registry = &ctx.shared().commands;
     if command.is_empty() {
         let mut names: Vec<_> = registry
             .visible_commands()

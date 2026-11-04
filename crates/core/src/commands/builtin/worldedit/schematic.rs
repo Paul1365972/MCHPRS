@@ -38,7 +38,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 }
 
 fn exec_list(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
-    let schematics = schematic_names(ctx.player()?.uuid).map_err(|error| {
+    let schemati = ctx.shared().config.schemati;
+    let schematics = schematic_names(schemati, ctx.player()?.uuid).map_err(|error| {
         warn!("Unable to list schematics: {error}");
         CommandError::runtime("Unable to list schematics. Check console for details.")
     })?;
@@ -60,7 +61,7 @@ fn exec_list(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
 fn exec_load(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let filename: &str = ctx.arg("filename")?;
     let start_time = Instant::now();
-    let path = schematic_path(ctx.player()?.uuid, filename)?;
+    let path = schematic_path(ctx.shared().config.schemati, ctx.player()?.uuid, filename)?;
 
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
@@ -110,7 +111,7 @@ fn exec_save(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let filename: &str = ctx.arg("filename")?;
     let start_time = Instant::now();
 
-    let path = schematic_path(ctx.player()?.uuid, filename)?;
+    let path = schematic_path(ctx.shared().config.schemati, ctx.player()?.uuid, filename)?;
     let clipboard = ctx.clipboard()?;
     let bytes = mchprs_schematic::write(clipboard).map_err(|error| {
         warn!("There was an error encoding a schematic: {error}");

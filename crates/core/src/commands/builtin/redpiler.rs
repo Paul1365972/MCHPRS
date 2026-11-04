@@ -2,14 +2,14 @@ use crate::commands::context::ExecutionContext;
 use crate::commands::define::Command;
 use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
-use crate::config::CONFIG;
+use crate::config::ServerConfig;
 use crate::plot::redpiler::HOST_FLAGS;
 use mchprs_redpiler_backends::BackendSetup;
 use std::time::Instant;
 use tracing::debug;
 
-pub(super) fn register_commands(registry: &mut CommandRegistry) {
-    let backends = CONFIG.redpiler.backends();
+pub(super) fn register_commands(registry: &mut CommandRegistry, config: &ServerConfig) {
+    let backends = config.redpiler.backends();
     let default = backends.default;
     let mut compile = Command::new("compile")
         .alias("c")

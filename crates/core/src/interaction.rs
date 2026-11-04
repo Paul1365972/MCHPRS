@@ -1,4 +1,3 @@
-use crate::config::CONFIG;
 use crate::item_stack::ItemStack;
 use crate::player::Player;
 use crate::plot::{PlotWorld, PLOT_BLOCK_HEIGHT};
@@ -444,6 +443,7 @@ pub struct UseOnBlockContext<'a> {
     pub block_face: BlockFace,
     pub player: &'a mut Player,
     pub cursor_y: f32,
+    pub block_in_hitbox: bool,
 }
 
 /// returns true if cancelled
@@ -457,8 +457,7 @@ pub fn use_item_on_block(
     let block_pos = ctx.block_pos.offset(ctx.block_face);
     let mut top_pos = ctx.player.pos.block_pos();
     top_pos.y += 1;
-    if (block_pos == ctx.player.pos.block_pos() || block_pos == top_pos) && !CONFIG.block_in_hitbox
-    {
+    if (block_pos == ctx.player.pos.block_pos() || block_pos == top_pos) && !ctx.block_in_hitbox {
         return false;
     }
     let can_place = item.item_type.is_block() && world.block(block_pos).can_place_block_in();
