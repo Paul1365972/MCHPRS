@@ -883,6 +883,7 @@ impl Plot {
             packet_sender.send_error_message("Whitelist is not enabled!");
             return;
         }
+        packet_sender.send_system_message(&format!("Adding {} to whitelist...", username));
         let sender = self.message_sender.clone();
         thread::spawn(move || match PlayerProfile::lookup_by_username(&username) {
             Ok(profile) => {
