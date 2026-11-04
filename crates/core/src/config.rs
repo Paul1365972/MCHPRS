@@ -1,6 +1,5 @@
-use mchprs_commands::flag::{FlagValue, FlagValues};
 use mchprs_redpiler::backend::Backend;
-use mchprs_redpiler_backends::BACKENDS;
+use mchprs_redpiler_backends::{BackendSetup, BACKENDS};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -53,80 +52,66 @@ pub struct VelocityConfig {
 
 #[derive(Serialize, Deserialize)]
 pub struct RedpilerConfig {
-    pub default_engine: String,
+    pub default_backend: String,
     #[serde(default)]
-    pub backends: BTreeMap<String, toml::Table>,
+    pub flags: BTreeMap<String, String>,
 }
 
 impl Default for RedpilerConfig {
     fn default() -> Self {
         RedpilerConfig {
-            default_engine: BACKENDS[0].name().to_owned(),
-            backends: BTreeMap::new(),
+            default_backend: BACKENDS[0].name().to_owned(),
+            flags: BTreeMap::new(),
         }
     }
 }
 
-pub struct Engines {
-    pub default: &'static dyn Backend,
-    pub flags: Vec<(&'static dyn Backend, FlagValues)>,
+pub struct Backends {
+    pub default: BackendSetup,
+    pub all: Vec<BackendSetup>,
 }
 
 impl RedpilerConfig {
-    pub fn engines(&self) -> Result<Engines, Vec<String>> {
-        for name in self.backends.keys() {
+    pub fn backends(&self) -> Result<Backends, Vec<String>> {
+        for name in self.flags.keys() {
             if mchprs_redpiler_backends::named(name).is_err() {
-                warn!("Ignoring `redpiler.backends.{name}` in {PATH}: unknown engine");
+                warn!("Ignoring `redpiler.flags.{name}` in {PATH}: unknown backend");
             }
         }
         let mut problems = Vec::new();
-        let default = mchprs_redpiler_backends::named(&self.default_engine)
-            .map_err(|error| {
-                problems.push(format!(
-                    "Invalid `redpiler.default_engine` in {PATH}: {error}"
-                ))
-            })
-            .ok();
-        let mut flags = Vec::new();
+        let mut all = Vec::new();
         for &backend in BACKENDS {
-            match self.flags(backend) {
-                Ok(values) => flags.push((backend, values)),
-                Err(problem) => problems.push(problem),
+            match self.setup(backend) {
+                Ok(setup) => all.push(setup),
+                Err(error) => problems.push(format!(
+                    "Invalid `redpiler.flags.{}` in {PATH}: {error}",
+                    backend.name()
+                )),
             }
         }
+        let default = match mchprs_redpiler_backends::named(&self.default_backend) {
+            Ok(backend) => all
+                .iter()
+                .find(|setup| setup.backend().name() == backend.name())
+                .cloned(),
+            Err(error) => {
+                problems.push(format!(
+                    "Invalid `redpiler.default_backend` in {PATH}: {error}"
+                ));
+                None
+            }
+        };
         match default {
-            Some(default) if problems.is_empty() => Ok(Engines { default, flags }),
+            Some(default) if problems.is_empty() => Ok(Backends { default, all }),
             _ => Err(problems),
         }
     }
 
-    fn flags(&self, backend: &dyn Backend) -> Result<FlagValues, String> {
-        let mut flags = FlagValues::default();
-        let Some(table) = self.backends.get(backend.name()) else {
-            return Ok(flags);
-        };
-        for (name, value) in table {
-            let key = format!("redpiler.backends.{}.{name}", backend.name());
-            let Some(&flag) = backend.flags().iter().find(|flag| flag.name() == name) else {
-                warn!("Ignoring `{key}` in {PATH}: unknown flag");
-                continue;
-            };
-            let value = match (flag.value_name(), value) {
-                (None, toml::Value::Boolean(on)) => FlagValue::Switch(*on),
-                (Some(_), toml::Value::String(text)) => FlagValue::Text(text.clone()),
-                (Some(_), toml::Value::Integer(number)) => FlagValue::Text(number.to_string()),
-                (None, _) => {
-                    return Err(format!("Invalid `{key}` in {PATH}: expected true or false"))
-                }
-                (Some(_), _) => {
-                    return Err(format!(
-                        "Invalid `{key}` in {PATH}: expected text or a number"
-                    ))
-                }
-            };
-            flags.set(flag, value);
-        }
-        Ok(flags)
+    fn setup(&self, backend: &'static dyn Backend) -> Result<BackendSetup, String> {
+        let flags = self.flags.get(backend.name()).map_or("", String::as_str);
+        let setup = BackendSetup::new(backend, flags)?;
+        setup.configure()?;
+        Ok(setup)
     }
 }
 

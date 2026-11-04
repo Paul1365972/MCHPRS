@@ -33,7 +33,7 @@ Each node's outgoing links are ordered by target type, then by target index, whi
 
 # The Pass System
 
-Passes receive mutable access to the compile graph. Each engine chooses which passes run, in order; without `--optimize`, none do.
+Passes receive mutable access to the compile graph. Each backend chooses which passes run, in order; without `--optimize`, none do.
 
 ## The `DedupLinks` Pass
 
@@ -87,13 +87,13 @@ It only removes nodes with `--io-only`; otherwise every node is observed.
 
 # Circuit Files
 
-`/redpiler export` writes the compiled circuit to a file. `rilc compile` writes one from a schematic for an engine and its flags, like `rilc compile plot.schem -e "direct -o"`. The file holds the nodes and links of the circuit in a versioned binary format which can be read by other programs. This can be greatly useful for people who wish to experiment with Redstone and might want a directed weighted graph just like what Redpiler creates.
+`/redpiler export` writes the compiled circuit to a file. `rilc compile` writes one from a schematic for a backend and its flags, like `rilc compile plot.schem -b "direct -o"`. The file holds the nodes and links of the circuit in a versioned binary format which can be read by other programs. This can be greatly useful for people who wish to experiment with Redstone and might want a directed weighted graph just like what Redpiler creates.
 
-# Engines
+# Backends
 
-An engine runs a circuit. It may implement redstone execution in any way, whether that is by just-in-time compiling redstone or by interpreting the graph.
+A backend runs a circuit. It may implement redstone execution in any way, whether that is by just-in-time compiling redstone or by interpreting the graph.
 
-`rilc diff` runs a circuit on two engines tick by tick and explains the first difference. `rilc diff plot.schem --engines "direct" "direct -o" --ticks 1000` checks the optimized circuit against the plain one. Given a schematic, each engine compiles it as it would in game. Engines that end up with the same circuit are compared node by node, including pending ticks; others by the blocks at the positions both show. Note blocks have to play equally often on both, and both engines have to show every port of either circuit.
+`rilc diff` runs a circuit on two backends tick by tick and explains the first difference. `rilc diff plot.schem --backends "direct" "direct -o" --ticks 1000` checks the optimized circuit against the plain one. Given a schematic, each backend compiles it as it would in game. Backends that end up with the same circuit are compared node by node, including pending ticks; others by the blocks at the positions both show. Note blocks have to play equally often on both, and both backends have to show every port of either circuit.
 
 ## How Redstone Works
 
@@ -166,9 +166,9 @@ The order in which one change reaches the nodes it links to is not specified.
 Vanilla derives it from block positions: a fixed neighbor update order, each component's update pattern, and the iteration order of a Java hash set for redstone wire. Rotating or moving a build can therefore change its behavior.
 Redpiler uses the order of each node's outgoing links instead, which matches vanilla only by chance. The other passes keep this order, but the `Coalesce` pass can move a tick that ran between two merged nodes after both of them.
 
-## The Direct Engine
+## The Direct Backend
 
-While the [Direct engine](../crates/redpiler_direct) does not have a JIT compiler, it does implement several optimizations when compared to vanilla:
+While the [Direct backend](../crates/redpiler_direct) does not have a JIT compiler, it does implement several optimizations when compared to vanilla:
 
 - Small buffer optimization (SBO) - This not only reduces allocations, but it also helps with memory fragmentation that can lead to cache misses.
 - Node sizes are kept as small as possible in memory to allow the node list to fit into small CPU caches.

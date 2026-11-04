@@ -97,15 +97,14 @@ secret = "<secret>"
 
 ### Redpiler
 
-`default_engine` sets the engine `/redpiler compile` uses. A `redpiler.backends.<engine>` table sets default [flags](docs/Commands.md#compiler-flags) for that engine by their long names. Flags given to the command override them.
+`default_backend` sets the backend `/redpiler compile` uses. The `redpiler.flags` table sets default [flags](docs/Commands.md#compiler-flags) for each backend, written as in the command. Flags given to the command override them.
 
 ```toml
 [redpiler]
-default_engine = "direct"
+default_backend = "direct"
 
-[redpiler.backends.direct]
-optimize = true
-io-only = true
+[redpiler.flags]
+direct = "--optimize --io-only"
 ```
 
 ## Usage

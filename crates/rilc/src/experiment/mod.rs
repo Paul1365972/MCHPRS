@@ -2,16 +2,13 @@ mod diff;
 
 use crate::read_schematic_at_origin;
 use mchprs_blocks::block_volume::BlockVolume;
-use mchprs_commands::flag::{self, FlagValues};
-use mchprs_commands::reader::Reader;
-use mchprs_redpiler::backend::{Backend, CompilePlan};
+use mchprs_redpiler::backend::CompilePlan;
 use mchprs_redpiler::circuit::{Circuit, CircuitFormatError, NodeId};
 use mchprs_redpiler::compile::compile;
 use mchprs_redpiler::engine::Engine;
 use mchprs_redpiler::ports::Role;
-use mchprs_redpiler_backends::BACKENDS;
+use mchprs_redpiler_backends::BackendSetup;
 use std::error::Error;
-use std::fmt;
 use std::fs;
 use std::ops::ControlFlow;
 use std::path::Path;
@@ -22,57 +19,16 @@ pub use diff::diff;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
-#[derive(Clone)]
-pub struct EngineSpec {
-    backend: &'static dyn Backend,
-    flags: FlagValues,
-}
-
-impl EngineSpec {
-    pub fn parse(spec: &str) -> Result<EngineSpec, String> {
-        let spec = spec.trim();
-        let (name, flags) = spec.split_once(char::is_whitespace).unwrap_or((spec, ""));
-        let backend = mchprs_redpiler_backends::named(name)?;
-        let flags = flag::parse(&mut Reader::new(flags), backend.flags())
-            .map_err(|error| error.contextual(flags))?;
-        Ok(EngineSpec { backend, flags })
-    }
-
-    pub fn configure(&self) -> Result<CompilePlan, String> {
-        self.backend.configure(&self.flags)
-    }
-}
-
-impl Default for EngineSpec {
-    fn default() -> Self {
-        EngineSpec {
-            backend: BACKENDS[0],
-            flags: FlagValues::default(),
-        }
-    }
-}
-
-impl fmt::Display for EngineSpec {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let flags = self.flags.to_string();
-        if flags.is_empty() {
-            write!(f, "{}", self.backend.name())
-        } else {
-            write!(f, "{} {flags}", self.backend.name())
-        }
-    }
-}
-
 pub struct Configured {
     label: String,
     plan: CompilePlan,
 }
 
 impl Configured {
-    pub fn new(spec: EngineSpec) -> Result<Configured, String> {
+    pub fn new(setup: BackendSetup) -> Result<Configured, String> {
         Ok(Configured {
-            label: spec.to_string(),
-            plan: spec.configure()?,
+            label: setup.to_string(),
+            plan: setup.configure()?,
         })
     }
 
@@ -118,9 +74,9 @@ impl Source {
     }
 }
 
-pub fn run(source: &Source, engine: Configured, ticks: u64) -> Result<(), BoxError> {
-    let name = engine.label.clone();
-    let mut engine = engine.start(source)?;
+pub fn run(source: &Source, backend: Configured, ticks: u64) -> Result<(), BoxError> {
+    let name = backend.label.clone();
+    let mut engine = backend.start(source)?;
     let circuit = engine.circuit().clone();
     let start = Instant::now();
     engine.run(ticks)?;

@@ -802,13 +802,11 @@ impl Plot {
         let redpiler = match &self.redpiler {
             None => RedpilerStatus::Stopped,
             Some(redpiler) if compiling => RedpilerStatus::Compiling {
-                backend: redpiler.backend,
-                flags: redpiler.flags.clone(),
+                setup: redpiler.setup.clone(),
                 stage: redpiler.stage,
             },
             Some(redpiler) => RedpilerStatus::Running {
-                backend: redpiler.backend,
-                flags: redpiler.flags.clone(),
+                setup: redpiler.setup.clone(),
             },
         };
         let worker_ran = match &self.redpiler {

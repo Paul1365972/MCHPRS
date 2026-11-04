@@ -1,11 +1,11 @@
 use super::Plot;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
-use mchprs_commands::flag::FlagValues;
-use mchprs_redpiler::backend::{Backend, CompilePlan};
+use mchprs_redpiler::backend::CompilePlan;
 use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler::compile::Stage;
 use mchprs_redpiler::simulation::Simulation;
+use mchprs_redpiler_backends::BackendSetup;
 use mchprs_redstone::tick_queue::{TickEntry, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
@@ -16,8 +16,7 @@ use std::time::Instant;
 use tracing::{debug, error, trace, warn};
 
 pub struct Redpiler {
-    pub backend: &'static dyn Backend,
-    pub flags: FlagValues,
+    pub setup: BackendSetup,
     pub worker: Worker,
     pub stage: Option<Stage>,
     pub circuit: Option<Arc<Circuit>>,
@@ -85,9 +84,9 @@ impl Plot {
             }
             Event::Started(circuit) => {
                 let message = format!(
-                    "Redpiler compiled {} nodes for the {} engine in {:?}.",
+                    "Redpiler compiled {} nodes for the {} backend in {:?}.",
                     circuit.len(),
-                    redpiler.backend.name(),
+                    redpiler.setup.backend().name(),
                     redpiler.started.elapsed()
                 );
                 redpiler.stage = None;
@@ -198,8 +197,7 @@ impl Plot {
 
     pub fn start_redpiler(
         &mut self,
-        backend: &'static dyn Backend,
-        flags: FlagValues,
+        setup: BackendSetup,
         plan: CompilePlan,
     ) -> Result<(), &'static str> {
         self.reset_pressure_plates();
@@ -207,7 +205,7 @@ impl Plot {
         if self.world.unsaved_since.is_some() {
             return Err("Redpiler didn't start because the plot couldn't be saved.");
         }
-        debug!("Starting redpiler with the {} engine", backend.name());
+        debug!("Starting redpiler with {setup}");
         let region = self.world.region();
         let blocks = self.world.copy_blocks();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
@@ -228,8 +226,7 @@ impl Plot {
             },
         );
         self.redpiler = Some(Redpiler {
-            backend,
-            flags,
+            setup,
             worker,
             stage: None,
             circuit: None,

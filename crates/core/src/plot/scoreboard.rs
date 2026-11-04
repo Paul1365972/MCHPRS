@@ -1,13 +1,12 @@
 use super::advance::Progress;
 use crate::player::{PacketSender, Player};
-use mchprs_commands::flag::FlagValues;
 use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
 use mchprs_network::text::{TextColor, TextComponent};
-use mchprs_redpiler::backend::Backend;
 use mchprs_redpiler::compile::Stage;
+use mchprs_redpiler_backends::BackendSetup;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use mchprs_worker::Goal;
 use std::time::Duration;
@@ -30,13 +29,11 @@ const MUTED: &str = "#4B5563";
 pub enum RedpilerStatus {
     Stopped,
     Compiling {
-        backend: &'static dyn Backend,
-        flags: FlagValues,
+        setup: BackendSetup,
         stage: Option<Stage>,
     },
     Running {
-        backend: &'static dyn Backend,
-        flags: FlagValues,
+        setup: BackendSetup,
     },
 }
 
@@ -163,18 +160,14 @@ fn layout(status: &PlotStatus) -> Vec<Line> {
         RedpilerStatus::Stopped => {
             lines.push(Line::new("Redpiler", colored("● Stopped", LABEL)));
         }
-        RedpilerStatus::Compiling {
-            backend,
-            flags,
-            stage,
-        } => {
+        RedpilerStatus::Compiling { setup, stage } => {
             lines.push(Line::new("Redpiler", colored("● Compiling", BUSY)));
-            push_setup(&mut lines, *backend, flags);
+            push_setup(&mut lines, setup);
             push_progress(&mut lines, *stage);
         }
-        RedpilerStatus::Running { backend, flags } => {
+        RedpilerStatus::Running { setup } => {
             lines.push(Line::new("Redpiler", colored("● Running", GOOD)));
-            push_setup(&mut lines, *backend, flags);
+            push_setup(&mut lines, setup);
         }
     }
 
@@ -206,9 +199,12 @@ fn layout(status: &PlotStatus) -> Vec<Line> {
     lines
 }
 
-fn push_setup(lines: &mut Vec<Line>, backend: &dyn Backend, flags: &FlagValues) {
-    lines.push(Line::new("Engine", colored(backend.name(), ACCENT)));
-    let flags = flags.to_string();
+fn push_setup(lines: &mut Vec<Line>, setup: &BackendSetup) {
+    lines.push(Line::new(
+        "Backend",
+        colored(setup.backend().name(), ACCENT),
+    ));
+    let flags = setup.flags().to_string();
     if !flags.is_empty() {
         lines.push(Line::new("Flags", colored(&flags, ACCENT)));
     }

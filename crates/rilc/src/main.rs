@@ -4,14 +4,14 @@ mod test;
 
 use clap::{Parser, Subcommand};
 use compile::Compilation;
-use experiment::{Configured, EngineSpec, Source};
+use experiment::{Configured, Source};
 use line_index::{LineIndex, TextSize};
 use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::extract::{extract, ExtractOptions};
 use mchprs_redpiler::graph::Graph;
 use mchprs_redpiler::passes::{self, Pass};
-use mchprs_redpiler_backends::BACKENDS;
+use mchprs_redpiler_backends::{BackendSetup, BACKENDS};
 use mchprs_ril::{DumpGraph, RILModule};
 use std::error::Error;
 use std::fs;
@@ -38,7 +38,7 @@ enum Command {
         update: bool,
     },
     /// Compile a RIL file to RIL, or a schematic to a circuit file
-    #[command(after_help = engines_help())]
+    #[command(after_help = backends_help())]
     Compile {
         /// Path to the input file
         input_path: PathBuf,
@@ -47,37 +47,37 @@ enum Command {
         #[arg(long = "output")]
         output_path: Option<PathBuf>,
 
-        /// Engine and flags to compile for, like "direct -o"; defaults to the first engine
-        #[arg(short, long, value_parser = EngineSpec::parse)]
-        engine: Option<EngineSpec>,
+        /// Backend and flags to compile for, like "direct -o"; defaults to the first backend
+        #[arg(short, long, value_parser = BackendSetup::parse)]
+        backend: Option<BackendSetup>,
         /// Print out the RIL circuit after every redpiler pass
         #[arg(long)]
         print_after_all: bool,
-        /// Comma-separated passes to run instead of the engine's
+        /// Comma-separated passes to run instead of the backend's
         #[arg(long, value_delimiter = ',')]
         passes: Option<Vec<String>>,
     },
-    /// Run a circuit file or schematic on an engine and measure it
-    #[command(after_help = engines_help())]
+    /// Run a circuit file or schematic on a backend and measure it
+    #[command(after_help = backends_help())]
     Run {
         /// Path to the circuit file or schematic
         input_path: PathBuf,
 
-        /// Engine and flags to run on, like "direct -o"; defaults to the first engine
-        #[arg(short, long, value_parser = EngineSpec::parse)]
-        engine: Option<EngineSpec>,
+        /// Backend and flags to run on, like "direct -o"; defaults to the first backend
+        #[arg(short, long, value_parser = BackendSetup::parse)]
+        backend: Option<BackendSetup>,
         #[arg(long)]
         ticks: u64,
     },
-    /// Run a circuit file or schematic on two engines and explain the first difference
-    #[command(after_help = engines_help())]
+    /// Run a circuit file or schematic on two backends and explain the first difference
+    #[command(after_help = backends_help())]
     Diff {
         /// Path to the circuit file or schematic
         input_path: PathBuf,
 
-        /// The two engines and their flags, like "direct" "direct -o"
-        #[arg(long, num_args = 2, action = clap::ArgAction::Set, required = true, value_parser = EngineSpec::parse)]
-        engines: Vec<EngineSpec>,
+        /// The two backends and their flags, like "direct" "direct -o"
+        #[arg(long, num_args = 2, action = clap::ArgAction::Set, required = true, value_parser = BackendSetup::parse)]
+        backends: Vec<BackendSetup>,
         #[arg(long)]
         ticks: u64,
         /// Drive the inputs one at a time, one every DRIVE_INTERVAL ticks
@@ -87,13 +87,13 @@ enum Command {
     Version,
 }
 
-fn engines_help() -> String {
+fn backends_help() -> String {
     let flags = || BACKENDS.iter().flat_map(|backend| backend.flags());
     let width = flags()
         .map(|flag| flag.to_string().len())
         .max()
         .unwrap_or(0);
-    let mut help = "Engines and their flags:".to_owned();
+    let mut help = "Backends and their flags:".to_owned();
     for backend in BACKENDS {
         help.push_str(&format!("\n  {}", backend.name()));
         for flag in backend.flags() {
@@ -180,11 +180,11 @@ fn named_passes(names: &[String]) -> Result<Vec<&'static dyn Pass>, String> {
 fn compile_command(
     input_path: &Path,
     output_path: &Option<PathBuf>,
-    engine: EngineSpec,
+    backend: BackendSetup,
     print_after_all: bool,
     passes: Option<Vec<String>>,
 ) -> Outcome {
-    let plan = engine.configure()?;
+    let plan = backend.configure()?;
     let passes = match passes {
         Some(names) => named_passes(&names)?,
         None => plan.passes,
@@ -198,28 +198,28 @@ fn compile_command(
     Ok(true)
 }
 
-fn run_command(input_path: &Path, engine: EngineSpec, ticks: u64) -> Outcome {
-    let engine = Configured::new(engine)?;
+fn run_command(input_path: &Path, backend: BackendSetup, ticks: u64) -> Outcome {
+    let backend = Configured::new(backend)?;
     let source = Source::read(input_path)?;
-    experiment::run(&source, engine, ticks)?;
+    experiment::run(&source, backend, ticks)?;
     Ok(true)
 }
 
 fn diff_command(
     input_path: &Path,
-    engines: Vec<EngineSpec>,
+    backends: Vec<BackendSetup>,
     ticks: u64,
     drive_interval: Option<NonZeroU64>,
 ) -> Outcome {
-    let engines = engines
+    let backends = backends
         .into_iter()
         .map(Configured::new)
         .collect::<Result<Vec<_>, _>>()?;
-    let Ok(engines) = <[Configured; 2]>::try_from(engines) else {
-        panic!("clap takes two engines");
+    let Ok(backends) = <[Configured; 2]>::try_from(backends) else {
+        panic!("clap takes two backends");
     };
     let source = Source::read(input_path)?;
-    experiment::diff(&source, engines, ticks, drive_interval)
+    experiment::diff(&source, backends, ticks, drive_interval)
 }
 
 pub fn get_version_string() -> String {
@@ -247,27 +247,27 @@ fn main() -> ExitCode {
         Command::Compile {
             input_path,
             output_path,
-            engine,
+            backend,
             print_after_all,
             passes,
         } => compile_command(
             &input_path,
             &output_path,
-            engine.unwrap_or_default(),
+            backend.unwrap_or_default(),
             print_after_all,
             passes,
         ),
         Command::Run {
             input_path,
-            engine,
+            backend,
             ticks,
-        } => run_command(&input_path, engine.unwrap_or_default(), ticks),
+        } => run_command(&input_path, backend.unwrap_or_default(), ticks),
         Command::Diff {
             input_path,
-            engines,
+            backends,
             ticks,
             drive_interval,
-        } => diff_command(&input_path, engines, ticks, drive_interval),
+        } => diff_command(&input_path, backends, ticks, drive_interval),
         Command::Version => {
             println!("{}", get_version_string());
             Ok(true)
