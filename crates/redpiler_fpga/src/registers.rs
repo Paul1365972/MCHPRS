@@ -15,6 +15,13 @@ pub(crate) enum Field {
     PulseCountdown(NonZeroU8),
 }
 
+/// What a read returns per node: its appearance for reports, or its full state for snapshots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Contents {
+    Appearance,
+    State,
+}
+
 impl Field {
     pub(crate) fn width(self) -> usize {
         match self {
@@ -23,22 +30,40 @@ impl Field {
             _ => 1,
         }
     }
+
+    fn is_read_for(self, contents: Contents) -> bool {
+        contents == Contents::State
+            || !matches!(self, Field::Countdown(_) | Field::PulseCountdown(_))
+    }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct NodeLayout {
-    pub(crate) offset: usize,
-    pub(crate) width: usize,
-    pub(crate) fields: Vec<Field>,
+    offset: usize,
+    fields: Vec<Field>,
 }
 
 impl NodeLayout {
-    pub(crate) fn field_offsets(&self) -> impl Iterator<Item = (Field, usize)> {
+    pub(crate) fn field_offsets(&self) -> impl Iterator<Item = (Field, usize)> + '_ {
         self.fields.iter().scan(self.offset, |offset, &field| {
             let start = *offset;
             *offset += field.width();
             Some((field, start))
         })
+    }
+
+    pub(crate) fn read_fields(
+        &self,
+        contents: Contents,
+    ) -> impl Iterator<Item = (Field, usize)> + '_ {
+        self.field_offsets()
+            .filter(move |(field, _)| field.is_read_for(contents))
+    }
+
+    fn width(&self, contents: Contents) -> usize {
+        self.read_fields(contents)
+            .map(|(field, _)| field.width())
+            .sum()
     }
 }
 
@@ -52,14 +77,11 @@ impl ReadbackLayout {
         let mut offset = 0;
         let nodes = (0..registers.circuit.nodes().len())
             .map(|index| {
-                let fields = registers.fields(index);
-                let width = fields.iter().map(|field| field.width()).sum();
                 let layout = NodeLayout {
                     offset,
-                    width,
-                    fields,
+                    fields: registers.fields(index),
                 };
-                offset += width;
+                offset += layout.width(Contents::State);
                 layout
             })
             .collect();
@@ -70,12 +92,19 @@ impl ReadbackLayout {
         &self.nodes[index]
     }
 
-    pub(crate) fn bits(&self, nodes: impl IntoIterator<Item = usize>) -> usize {
-        nodes.into_iter().map(|index| self.nodes[index].width).sum()
+    pub(crate) fn bits(&self, contents: Contents, nodes: impl IntoIterator<Item = usize>) -> usize {
+        nodes
+            .into_iter()
+            .map(|index| self.nodes[index].width(contents))
+            .sum()
     }
 
-    pub(crate) fn bytes(&self, nodes: impl IntoIterator<Item = usize>) -> usize {
-        self.bits(nodes).div_ceil(8).max(1)
+    pub(crate) fn bytes(
+        &self,
+        contents: Contents,
+        nodes: impl IntoIterator<Item = usize>,
+    ) -> usize {
+        self.bits(contents, nodes).div_ceil(8).max(1)
     }
 }
 

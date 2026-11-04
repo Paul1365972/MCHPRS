@@ -5,10 +5,10 @@ use crate::cache;
 use crate::circuit::{Circuit, State};
 use crate::engine::Observer;
 use crate::readback::{Readback, ReadbackError};
-use crate::registers::Registers;
+use crate::registers::{Contents, Registers};
 use crate::rtl;
 use crate::stage::Stage;
-use device::{Board, Command, Data, DeviceError};
+use device::{Board, Command, DeviceError};
 use mchprs_redpiler::{
     Engine, EngineError, EngineSnapshot, Input, NodeChanges, NodeId, Progress, Reporting, Resume,
 };
@@ -38,23 +38,18 @@ pub(crate) enum BoardError {
 }
 
 struct View {
-    data: Data,
+    contents: Contents,
     nodes: Vec<usize>,
 }
 
 impl View {
-    fn new(every_block: bool, circuit: &Circuit) -> View {
-        if every_block {
-            View {
-                data: Data::States,
-                nodes: (0..circuit.nodes().len()).collect(),
-            }
+    fn new(contents: Contents, every_block: bool, circuit: &Circuit) -> View {
+        let nodes = if every_block {
+            (0..circuit.nodes().len()).collect()
         } else {
-            View {
-                data: Data::Outputs,
-                nodes: circuit.io_nodes().to_vec(),
-            }
-        }
+            circuit.io_nodes().to_vec()
+        };
+        View { contents, nodes }
     }
 
     fn read(
@@ -62,8 +57,8 @@ impl View {
         board: &mut Board,
         readback: &Readback,
     ) -> Result<impl Iterator<Item = (usize, State)> + '_, BoardError> {
-        let payload = board.request(Command::Read(self.data))?.payload;
-        let states = readback.decode(self.nodes.iter().copied(), &payload)?;
+        let payload = board.request(Command::Read(self.contents))?.payload;
+        let states = readback.decode(self.contents, self.nodes.iter().copied(), &payload)?;
         Ok(self.nodes.iter().copied().zip(states))
     }
 }
@@ -106,8 +101,12 @@ impl BoardEngine {
             board,
             observer: Observer::new(circuit, reporting),
             readback: Readback::new(&registers),
-            snapshot: View::new(reporting.snapshots_every_block(), circuit),
-            report: View::new(reporting.reports_every_block_while_running(), circuit),
+            snapshot: View::new(Contents::State, reporting.snapshots_every_block(), circuit),
+            report: View::new(
+                Contents::Appearance,
+                reporting.reports_every_block_while_running(),
+                circuit,
+            ),
             rate: TickRate::Paused,
             target: 0,
             ticks_counted: 0,

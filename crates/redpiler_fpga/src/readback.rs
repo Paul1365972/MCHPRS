@@ -1,5 +1,5 @@
 use crate::circuit::{Kind, PendingTick, State, PULSE_PRIORITY};
-use crate::registers::{Field, ReadbackLayout, Registers};
+use crate::registers::{Contents, Field, ReadbackLayout, Registers};
 use mchprs_redpiler::compile_graph::SignalStrength;
 use std::num::NonZeroU8;
 
@@ -59,16 +59,21 @@ impl Readback {
         }
     }
 
-    pub(crate) fn bytes(&self, nodes: impl IntoIterator<Item = usize>) -> usize {
-        self.layout.bytes(nodes)
+    pub(crate) fn bytes(
+        &self,
+        contents: Contents,
+        nodes: impl IntoIterator<Item = usize>,
+    ) -> usize {
+        self.layout.bytes(contents, nodes)
     }
 
     pub(crate) fn decode(
         &self,
+        contents: Contents,
         nodes: impl IntoIterator<Item = usize> + Clone,
         bytes: &[u8],
     ) -> Result<Vec<State>, ReadbackError> {
-        let expected = self.bytes(nodes.clone());
+        let expected = self.bytes(contents, nodes.clone());
         if bytes.len() != expected {
             return Err(ReadbackError::Length {
                 actual: bytes.len(),
@@ -78,18 +83,23 @@ impl Readback {
         let mut bits = Bits { bytes, position: 0 };
         nodes
             .into_iter()
-            .map(|index| self.decode_node(index, &mut bits))
+            .map(|index| self.decode_node(contents, index, &mut bits))
             .collect()
     }
 
-    fn decode_node(&self, index: usize, bits: &mut Bits) -> Result<State, ReadbackError> {
+    fn decode_node(
+        &self,
+        contents: Contents,
+        index: usize,
+        bits: &mut Bits,
+    ) -> Result<State, ReadbackError> {
         let node = &self.nodes[index];
         let mut state = State {
             pending: None,
             ..node.initial
         };
         let mut countdown = None;
-        for &field in &self.layout.node(index).fields {
+        for (field, _) in self.layout.node(index).read_fields(contents) {
             let value = bits.read(field.width());
             match field {
                 Field::Powered => state.set_powered(value != 0),
@@ -138,38 +148,38 @@ mod tests {
     use crate::random_circuits::{input_nodes, random_circuit, Random};
     use crate::reference::Reference;
 
-    fn countdown(state: State, has_pulse_countdown: bool, pulse_field: bool) -> u32 {
-        match state.pending {
+    fn field_value(state: State, field: Field, has_pulse_countdown: bool) -> u32 {
+        let pending_countdown = |pulse_field: bool| match state.pending {
             Some(pending)
                 if (has_pulse_countdown && pending.priority == PULSE_PRIORITY) == pulse_field =>
             {
                 1 << (pending.delay.get() - 1)
             }
             _ => 0,
+        };
+        match field {
+            Field::Powered => u32::from(state.is_powered()),
+            Field::High { high, .. } => u32::from(state.strength == high),
+            Field::Strength => u32::from(state.strength.get()),
+            Field::Locked => u32::from(state.locked),
+            Field::Countdown(_) => pending_countdown(false),
+            Field::PulseCountdown(_) => pending_countdown(true),
         }
     }
 
-    fn encode(layout: &ReadbackLayout, states: &[State]) -> Vec<u8> {
-        let mut bytes = vec![0; layout.bytes(0..states.len())];
+    fn encode(layout: &ReadbackLayout, contents: Contents, states: &[State]) -> Vec<u8> {
+        let mut bytes = vec![0; layout.bytes(contents, 0..states.len())];
+        let mut position = 0;
         for (index, &state) in states.iter().enumerate() {
             let node = layout.node(index);
             let has_pulse_countdown = node
-                .fields
-                .iter()
-                .any(|field| matches!(field, Field::PulseCountdown(_)));
-            for (field, offset) in node.field_offsets() {
-                let value = match field {
-                    Field::Powered => u32::from(state.is_powered()),
-                    Field::High { high, .. } => u32::from(state.strength == high),
-                    Field::Strength => u32::from(state.strength.get()),
-                    Field::Locked => u32::from(state.locked),
-                    Field::Countdown(_) => countdown(state, has_pulse_countdown, false),
-                    Field::PulseCountdown(_) => countdown(state, has_pulse_countdown, true),
-                };
+                .field_offsets()
+                .any(|(field, _)| matches!(field, Field::PulseCountdown(_)));
+            for (field, _) in node.read_fields(contents) {
+                let value = field_value(state, field, has_pulse_countdown);
                 for bit in 0..field.width() {
-                    if value >> bit & 1 != 0 {
-                        bytes[(offset + bit) / 8] |= 1 << ((offset + bit) % 8);
-                    }
+                    bytes[position / 8] |= ((value >> bit & 1) as u8) << (position % 8);
+                    position += 1;
                 }
             }
         }
@@ -193,8 +203,19 @@ mod tests {
                 }
                 reference.advance(1).unwrap();
                 let states = reference.states().unwrap();
-                let bytes = encode(&layout, &states);
-                assert_eq!(readback.decode(0..states.len(), &bytes).unwrap(), states);
+                let bytes = encode(&layout, Contents::State, &states);
+                let decoded = readback.decode(Contents::State, 0..states.len(), &bytes);
+                assert_eq!(decoded.unwrap(), states);
+                let bytes = encode(&layout, Contents::Appearance, &states);
+                let decoded = readback.decode(Contents::Appearance, 0..states.len(), &bytes);
+                let appearances: Vec<_> = states
+                    .iter()
+                    .map(|&state| State {
+                        pending: None,
+                        ..state
+                    })
+                    .collect();
+                assert_eq!(decoded.unwrap(), appearances);
             }
         }
     }
@@ -203,9 +224,9 @@ mod tests {
     fn decoding_rejects_a_wrong_length() {
         let circuit = random_circuit(0, 50);
         let readback = Readback::new(&Registers::new(&circuit));
-        let expected = readback.bytes(0..50);
+        let expected = readback.bytes(Contents::State, 0..50);
         assert!(matches!(
-            readback.decode(0..50, &vec![0; expected + 1]),
+            readback.decode(Contents::State, 0..50, &vec![0; expected + 1]),
             Err(ReadbackError::Length { actual, .. }) if actual == expected + 1
         ));
     }

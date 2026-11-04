@@ -1,3 +1,4 @@
+use crate::registers::Contents;
 use mchprs_world::TickRate;
 use serialport::{ClearBuffer, SerialPort};
 use std::io::{self, BufRead, BufReader, Write};
@@ -33,18 +34,12 @@ pub(crate) enum DeviceError {
     Rejected { command: Command, fault: u8 },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Data {
-    Outputs,
-    States,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Command {
     Status,
     Input { node: u32, powered: bool },
     Run(TickRate),
-    Read(Data),
+    Read(Contents),
 }
 
 impl Command {
@@ -58,8 +53,8 @@ impl Command {
             Self::Run(TickRate::PerSecond(per_second)) => {
                 (5, (CLOCK_HERTZ / per_second).round().max(1.0) as u64)
             }
-            Self::Read(Data::Outputs) => (6, 0),
-            Self::Read(Data::States) => (7, 0),
+            Self::Read(Contents::Appearance) => (6, 0),
+            Self::Read(Contents::State) => (7, 0),
         };
         let mut bytes = [code; 9];
         bytes[1..].copy_from_slice(&argument.to_le_bytes());

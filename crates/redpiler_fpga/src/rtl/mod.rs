@@ -4,7 +4,7 @@ mod instance;
 mod node_modules;
 
 use crate::circuit::Circuit;
-use crate::registers::{ReadbackLayout, Registers};
+use crate::registers::{Contents, ReadbackLayout, Registers};
 use expression::signal_name;
 use include_dir::{include_dir, Dir};
 use instance::{Instance, StatesSlice};
@@ -72,17 +72,22 @@ impl<'a> Writer<'a> {
     }
 
     fn verilog(mut self) -> String {
-        let all = 0..self.circuit.nodes().len();
+        let all: Vec<usize> = (0..self.circuit.nodes().len()).collect();
         let io_nodes = self.circuit.io_nodes();
+        let reported = if self.reporting.reports_every_block_while_running() {
+            &all
+        } else {
+            io_nodes
+        };
         let layout = self.registers.readback_layout();
-        let state_bits = layout.bytes(all.clone()) * 8;
-        let output_bits = layout.bytes(io_nodes.iter().copied()) * 8;
-        let readback_state_bits = if self.reporting.snapshots_every_block() {
+        let state_bits = layout.bytes(Contents::State, all.iter().copied()) * 8;
+        let appearance_bits = layout.bytes(Contents::Appearance, reported.iter().copied()) * 8;
+        let snapshot_bits = if self.reporting.snapshots_every_block() {
             state_bits
         } else {
-            0
+            layout.bytes(Contents::State, io_nodes.iter().copied()) * 8
         };
-        self.header(state_bits, output_bits, readback_state_bits + output_bits);
+        self.header(state_bits, appearance_bits, appearance_bits + snapshot_bits);
         let (instances, read) = self.instances(&layout);
         self.signal_declarations(&read);
         self.output.push('\n');
@@ -90,23 +95,24 @@ impl<'a> Writer<'a> {
             self.line(instance.to_string());
         }
         self.output.push('\n');
-        let used = layout.bits(all);
+        let used = layout.bits(Contents::State, all.iter().copied());
         if used != state_bits {
             self.line(format!("assign states[{}:{used}] = 0;", state_bits - 1));
         }
-        let output_states = self.packed(&layout, io_nodes, output_bits);
-        self.line(format!("assign output_states = {output_states};"));
-        if readback_state_bits == 0 {
-            self.line("assign readback = output_states;");
+        let appearance = self.packed(&layout, Contents::Appearance, reported, appearance_bits);
+        self.line(format!("assign appearance = {appearance};"));
+        if self.reporting.snapshots_every_block() {
+            self.line("assign readback = {appearance, states};");
         } else {
-            self.line("assign readback = {output_states, states};");
+            let snapshot = self.packed(&layout, Contents::State, io_nodes, snapshot_bits);
+            self.line(format!("assign readback = {{appearance, {snapshot}}};"));
         }
         self.output.push_str("endmodule\n");
-        self.system(readback_state_bits / 8, output_bits / 8);
+        self.system(snapshot_bits / 8, appearance_bits / 8);
         self.output
     }
 
-    fn header(&mut self, state_bits: usize, output_bits: usize, readback_bits: usize) {
+    fn header(&mut self, state_bits: usize, appearance_bits: usize, readback_bits: usize) {
         writeln!(
             self.output,
             "module compiled_circuit(
@@ -119,7 +125,7 @@ impl<'a> Writer<'a> {
     output wire [{}:0] readback
 );
     wire [{}:0] states;
-    wire [{}:0] output_states;
+    wire [{}:0] appearance;
     function [3:0] maximum(input [3:0] left, input [3:0] right);
         maximum = left > right ? left : right;
     endfunction
@@ -137,7 +143,7 @@ impl<'a> Writer<'a> {
 ",
             readback_bits - 1,
             state_bits - 1,
-            output_bits - 1
+            appearance_bits - 1
         )
         .unwrap();
     }
@@ -170,20 +176,25 @@ impl<'a> Writer<'a> {
         }
     }
 
-    fn packed(&self, layout: &ReadbackLayout, nodes: &[usize], bits: usize) -> String {
-        let mut parts: Vec<_> = nodes
-            .iter()
-            .map(|&index| layout.node(index))
-            .filter(|node| node.width != 0)
-            .map(|node| {
-                StatesSlice {
-                    offset: node.offset,
-                    width: node.width,
+    fn packed(
+        &self,
+        layout: &ReadbackLayout,
+        contents: Contents,
+        nodes: &[usize],
+        bits: usize,
+    ) -> String {
+        let mut slices: Vec<StatesSlice> = Vec::new();
+        for &index in nodes {
+            for (field, offset) in layout.node(index).read_fields(contents) {
+                let width = field.width();
+                match slices.last_mut() {
+                    Some(last) if last.offset + last.width == offset => last.width += width,
+                    _ => slices.push(StatesSlice { offset, width }),
                 }
-                .to_string()
-            })
-            .collect();
-        let padding = bits - layout.bits(nodes.iter().copied());
+            }
+        }
+        let mut parts: Vec<_> = slices.iter().map(StatesSlice::to_string).collect();
+        let padding = bits - layout.bits(contents, nodes.iter().copied());
         if padding != 0 {
             parts.push(format!("{padding}'d0"));
         }
@@ -195,7 +206,7 @@ impl<'a> Writer<'a> {
         format!("{{\n        {}\n    }}", rows.join(",\n        "))
     }
 
-    fn system(&mut self, state_bytes: usize, output_bytes: usize) {
+    fn system(&mut self, state_bytes: usize, appearance_bytes: usize) {
         let node_count = self.circuit.nodes().len();
         let identity = self.circuit.identity();
         writeln!(
@@ -208,7 +219,7 @@ module circuit_system #(parameter CLOCKS_PER_BIT = 25)(
     output wire [3:0] fault_code
 );
     protocol_controller #(
-        .NODE_COUNT({node_count}), .STATE_BYTES({state_bytes}), .OUTPUT_BYTES({output_bytes}),
+        .NODE_COUNT({node_count}), .STATE_BYTES({state_bytes}), .APPEARANCE_BYTES({appearance_bytes}),
         .CIRCUIT_ID(64'h{identity:016x}), .CLOCKS_PER_BIT(CLOCKS_PER_BIT)
     ) controller (
         .clock(clock), .serial_receive(serial_receive), .clear_fault(clear_fault),

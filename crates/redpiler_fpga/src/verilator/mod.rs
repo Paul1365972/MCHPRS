@@ -3,7 +3,7 @@ mod compile;
 use crate::circuit::{Circuit, State};
 use crate::engine::Simulator;
 use crate::readback::{Readback, ReadbackError};
-use crate::registers::Registers;
+use crate::registers::{Contents, Registers};
 use crate::stage::Stage;
 use crate::subprocess::{Process, SubprocessError};
 use mchprs_redpiler::Reporting;
@@ -185,7 +185,7 @@ impl Verilator {
         } else {
             circuit.io_nodes().to_vec()
         };
-        let snapshot_bytes = readback.bytes(snapshot_nodes.iter().copied());
+        let snapshot_bytes = readback.bytes(Contents::State, snapshot_nodes.iter().copied());
         let directory = compile::cached_simulator(&registers, reporting, snapshot_bytes, progress)?;
         progress(Stage::StartVerilatorCircuit);
         let mut verilator = Self {
@@ -237,7 +237,7 @@ impl Verilator {
         }
         Ok(self
             .readback
-            .decode(self.snapshot_nodes.iter().copied(), states)?)
+            .decode(Contents::State, self.snapshot_nodes.iter().copied(), states)?)
     }
 }
 
