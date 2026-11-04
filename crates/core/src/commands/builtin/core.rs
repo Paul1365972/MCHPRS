@@ -206,7 +206,6 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                     .executes(|ctx| {
                         let username: String = ctx.arg("username")?;
                         let packet_sender = PlayerPacketSender::new(&ctx.player()?.client);
-                        ctx.reply(&format!("Adding {} to whitelist...", username))?;
                         ctx.plot_mut().whitelist_add(username, packet_sender);
                         Ok(())
                     }),
