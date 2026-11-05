@@ -13,7 +13,7 @@ module basys3 (
     localparam CLOCKS_PER_SECOND = 100_000_000;
     localparam CLOCKS_PER_REFRESH = CLOCKS_PER_SECOND / 10;
     localparam ACTIVITY_CLOCKS = CLOCKS_PER_SECOND / 20;
-    localparam [1:0] TICK_COUNT_VIEW = 0, TICK_RATE_VIEW = 1, FAULT_VIEW = 2;
+    localparam [1:0] TICK_RATE_VIEW = 0, TICK_COUNT_VIEW = 1, FAULT_VIEW = 2;
     localparam [7:0] DASH = 8'h40, LETTER_E = 8'h79;
 
     wire ticking, halted, clear_fault, previous_view, next_view;
@@ -23,14 +23,14 @@ module basys3 (
     wire [79:0] digits;
     wire [31:0] number;
     reg [26:0] heartbeat = 0;
-    reg [1:0] view = TICK_COUNT_VIEW;
+    reg [1:0] view = TICK_RATE_VIEW;
     reg [26:0] second_clocks = 0;
     reg [63:0] second_start = 0;
     reg [63:0] tick_rate = 0;
     reg [23:0] refresh_clocks = 0;
     wire refresh = refresh_clocks == CLOCKS_PER_REFRESH - 1;
-    wire [63:0] shown_value = view == TICK_COUNT_VIEW ? tick_count
-        : view == TICK_RATE_VIEW ? tick_rate
+    wire [63:0] shown_value = view == TICK_RATE_VIEW ? tick_rate
+        : view == TICK_COUNT_VIEW ? tick_count
         : fault_code;
     wire [31:0] glyphs = view != FAULT_VIEW ? number
         : fault_code == 0 ? {4{DASH}}
@@ -47,13 +47,13 @@ module basys3 (
             second_clocks <= second_clocks + 1;
         end
         if (previous_view)
-            view <= view == TICK_COUNT_VIEW ? FAULT_VIEW : view - 1;
+            view <= view == TICK_RATE_VIEW ? FAULT_VIEW : view - 1;
         else if (next_view)
-            view <= view == FAULT_VIEW ? TICK_COUNT_VIEW : view + 1;
+            view <= view == FAULT_VIEW ? TICK_RATE_VIEW : view + 1;
     end
 
     assign led = {
-        fault_code != 0, view == TICK_COUNT_VIEW, view == TICK_RATE_VIEW, view == FAULT_VIEW,
+        fault_code != 0, view == TICK_RATE_VIEW, view == TICK_COUNT_VIEW, view == FAULT_VIEW,
         7'b0, transmitting, receiving, halted, ticking_shown, heartbeat[26]
     };
 
