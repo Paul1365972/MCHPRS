@@ -891,7 +891,6 @@ dependencies = [
  "mchprs_redstone",
  "mchprs_save_data",
  "mchprs_schematic",
- "mchprs_worker",
  "mchprs_world",
  "md5",
  "rand",
@@ -1001,15 +1000,6 @@ dependencies = [
  "serde",
  "thiserror",
  "tracing",
-]
-
-[[package]]
-name = "mchprs_worker"
-version = "0.5.2-dev"
-dependencies = [
- "mchprs_blocks",
- "mchprs_redpiler",
- "mchprs_redstone",
 ]
 
 [[package]]

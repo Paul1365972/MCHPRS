@@ -8,4 +8,6 @@ pub mod extract;
 pub mod graph;
 pub mod passes;
 pub mod ports;
+#[cfg(feature = "session")]
+pub mod session;
 pub mod simulation;
