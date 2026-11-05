@@ -34,9 +34,20 @@ struct RegistryEntry {
 }
 
 #[derive(Deserialize)]
+struct ItemJson {
+    components: ItemComponents,
+}
+
+#[derive(Deserialize)]
+struct ItemComponents {
+    #[serde(rename = "minecraft:max_stack_size")]
+    max_stack_size: u32,
+}
+
+#[derive(Deserialize)]
 struct InfoYaml {
     blocks: IndexMap<String, String>,
-    items: IndexMap<String, String>,
+    block_items: Vec<String>,
     prop_types: IndexMap<String, Vec<String>>,
     registries: Vec<String>,
 }
@@ -77,9 +88,8 @@ struct ProcessedBlock {
     base_id: u32,
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 struct ItemAttrs {
-    max_stack: u32,
     block: bool,
     simple_placement: bool,
 }
@@ -89,16 +99,18 @@ struct ProcessedItem {
     name: String,
     pascal_name: String,
     id: u32,
+    max_stack_size: u32,
     attrs: ItemAttrs,
 }
 
 impl ProcessedItem {
-    fn new(name: &str, id: u32, attrs: ItemAttrs) -> Self {
+    fn new(name: &str, id: u32, max_stack_size: u32, attrs: ItemAttrs) -> Self {
         let (_, unnamespaced) = name.split_once(':').unwrap();
         Self {
             name: name.to_owned(),
             pascal_name: unnamespaced.to_case(Case::Pascal),
             id,
+            max_stack_size,
             attrs,
         }
     }
@@ -858,7 +870,7 @@ fn generate_item_is_block(items: &[ProcessedItem]) -> TokenStream {
 fn generate_item_max_stack_size(items: &[ProcessedItem]) -> TokenStream {
     let match_arms = items.iter().map(|item| {
         let name_ident = ident(&item.pascal_name);
-        let lit = Literal::u32_unsuffixed(item.attrs.max_stack);
+        let lit = Literal::u32_unsuffixed(item.max_stack_size);
         quote! {
             Item::#name_ident => #lit,
         }
@@ -1040,6 +1052,9 @@ fn main() {
     let registries_json: RegistriesJson =
         serde_json::from_str(&fs::read_to_string(mc_data_path.join("registries.json")).unwrap())
             .unwrap();
+    let items_json: HashMap<String, ItemJson> =
+        serde_json::from_str(&fs::read_to_string(mc_data_path.join("items.json")).unwrap())
+            .unwrap();
 
     let mut prop_types = yaml.prop_types.into_iter().collect::<Vec<_>>();
     prop_types.push((
@@ -1059,45 +1074,39 @@ fn main() {
         .map(|(name, attrs)| process_block(name, attrs, &blocks_json, &prop_types))
         .collect::<Vec<_>>();
 
-    let mut items = Vec::new();
+    let mut item_attrs: HashMap<&str, ItemAttrs> = HashMap::new();
     for block in &processed_blocks {
         if block.attrs.simple_item | block.attrs.item {
-            let attrs = ItemAttrs {
-                block: true,
-                max_stack: 64,
-                simple_placement: block.attrs.simple_item,
-            };
-            let id = registries_json["minecraft:item"]
-                .entries
-                .get(&block.name)
-                .expect(&block.name)
-                .protocol_id;
-            items.push(ProcessedItem::new(&block.name, id, attrs));
+            item_attrs.insert(
+                &block.name,
+                ItemAttrs {
+                    block: true,
+                    simple_placement: block.attrs.simple_item,
+                },
+            );
         }
     }
-
-    for (name, attrs_str) in &yaml.items {
-        let mut attrs = ItemAttrs {
-            block: false,
-            max_stack: 64,
-            simple_placement: false,
-        };
-        attrs_str
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .for_each(|attr_str| {
-                if let Some(num_str) = attr_str.strip_prefix("max_stack:") {
-                    attrs.max_stack = num_str.parse().unwrap();
-                } else if attr_str == "block" {
-                    attrs.block = true;
-                }
-            });
-        items.push(ProcessedItem::new(
+    for name in &yaml.block_items {
+        item_attrs.insert(
             name,
-            registries_json["minecraft:item"].entries[name].protocol_id,
-            attrs,
-        ));
+            ItemAttrs {
+                block: true,
+                simple_placement: false,
+            },
+        );
     }
+
+    let mut registry_items: Vec<_> = registries_json["minecraft:item"].entries.iter().collect();
+    registry_items.sort_by_key(|(_, entry)| entry.protocol_id);
+    let items: Vec<_> = registry_items
+        .into_iter()
+        .map(|(name, entry)| {
+            let attrs = item_attrs.remove(name.as_str()).unwrap_or_default();
+            let max_stack_size = items_json[name].components.max_stack_size;
+            ProcessedItem::new(name, entry.protocol_id, max_stack_size, attrs)
+        })
+        .collect();
+    assert!(item_attrs.is_empty(), "unknown items: {item_attrs:?}");
 
     let gen_src = generate_module(&processed_blocks, &prop_types, &items).to_string();
     write_formatted(&output_path, &gen_src);

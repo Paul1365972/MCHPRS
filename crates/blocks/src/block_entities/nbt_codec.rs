@@ -29,12 +29,15 @@ impl BlockEntity {
             let slot = i8::try_from(nbt_get_int(item_compound, "Slot")?).ok()?;
             let namespaced_name =
                 nbt_unwrap_val!(nbt_case_insensitive(item_compound, "Id")?, Value::String);
-            let item_type = Item::from_name(namespaced_name);
             if count < 0 || slot < 0 || slot as u8 >= num_slots || occupied_slots & (1 << slot) != 0
             {
                 return None;
             }
             occupied_slots |= 1 << slot;
+            let Some(item) = Item::from_name(namespaced_name).filter(|&item| item != Item::Air)
+            else {
+                continue;
+            };
 
             let tag = match item_compound.get("tag") {
                 Some(Value::Compound(tag)) => Some(fastnbt::to_bytes(tag).ok()?),
@@ -43,11 +46,11 @@ impl BlockEntity {
             inventory.push(InventoryEntry {
                 slot,
                 count,
-                id: item_type.unwrap_or(Item::Redstone).get_id(),
+                id: item.get_id(),
                 nbt: tag,
             });
 
-            fullness_sum += count as f32 / item_type.map_or(64, Item::max_stack_size) as f32;
+            fullness_sum += count as f32 / item.max_stack_size() as f32;
         }
         Some(BlockEntity::Container {
             comparator_override: SignalStrength::saturating_from(

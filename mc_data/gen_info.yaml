@@ -244,22 +244,9 @@ prop_types:
     - compare
     - subtract
 
-# Items defined here are those that could not have been defined by the block `item` or
-# `simple_item` attributes. This is either because the item has a non-standard stack
-# size, does not have the same name as its block, or does not correspond to a block at
-# all.
-
-# Items can have the following attributes
-# max_stack:##: the maximum number of this item that fits in one inventory slot
-# block: this item can be placed
-
-items:
-  "minecraft:wooden_axe": "max_stack:1"
-  "minecraft:snowball": "max_stack:16"
-  "minecraft:totem_of_undying": "max_stack:1"
-  "minecraft:milk_bucket": "max_stack:1"
-  "minecraft:redstone": "block"
-  "minecraft:ender_eye": ""
+# Items that place a block of a different name
+block_items:
+  - "minecraft:redstone"
 
 # Registries whose protocol ids are generated into crates/blocks/src/registries.rs
 registries:

@@ -13,6 +13,7 @@ If a block has properties or otherwise has complex placement logic, you cannot u
 ### Running the block data generator
 
 Running the block data generator will produce the [generated.rs](../crates/blocks/src/generated.rs) file containing the `Block` and `Item` enums, and the [registries.rs](../crates/blocks/src/registries.rs) file with the protocol ids of the registries that `gen_info.yaml` lists.
+Every item gets its max stack size from [items.json](../mc_data/items.json), which was dumped from vanilla 1.20.4's item registry.
 
 ```sh
 cd crates/block_data_gen
