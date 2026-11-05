@@ -2,8 +2,6 @@ mod opt;
 
 use crate::graph::Graph;
 use mchprs_commands::flag::Flag;
-use std::ops::ControlFlow;
-use tracing::trace;
 
 pub use opt::coalesce::Coalesce;
 pub use opt::constant_fold::ConstantFold;
@@ -35,22 +33,4 @@ pub trait Pass: Sync {
 
 pub fn named(name: &str) -> Option<&'static dyn Pass> {
     ALL.into_iter().find(|pass| pass.name() == name)
-}
-
-pub fn run_passes(
-    passes: &[&dyn Pass],
-    graph: &mut Graph,
-    after_each: &mut dyn FnMut(&dyn Pass, &Graph) -> ControlFlow<()>,
-) -> ControlFlow<()> {
-    for &pass in passes {
-        trace!("Running pass: {}", pass.name());
-        pass.run(graph);
-        trace!(
-            "{} nodes and {} links remain",
-            graph.node_count(),
-            graph.edge_count()
-        );
-        after_each(pass, graph)?;
-    }
-    ControlFlow::Continue(())
 }

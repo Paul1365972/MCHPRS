@@ -1,8 +1,9 @@
 use crate::engine::DirectEngine;
 use mchprs_commands::flag::{Flag, FlagValues};
-use mchprs_redpiler::backend::{Backend, CompilePlan};
+use mchprs_redpiler::backend::{Backend, BuildError, CompilePlan};
 use mchprs_redpiler::circuit::Circuit;
-use mchprs_redpiler::engine::{Engine, EngineError};
+use mchprs_redpiler::compile::{BuildContext, Stage};
+use mchprs_redpiler::engine::Engine;
 use mchprs_redpiler::extract::{
     ExtractOptions, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
 };
@@ -69,7 +70,17 @@ impl Backend for DirectBackend {
         })
     }
 
-    fn build(&self, circuit: &Circuit, _: &FlagValues) -> Result<Box<dyn Engine>, EngineError> {
+    fn build(
+        &self,
+        circuit: &Circuit,
+        _: &FlagValues,
+        context: &mut BuildContext<'_>,
+    ) -> Result<Box<dyn Engine>, BuildError> {
+        context.report(Stage::Building {
+            step: "Building the engine",
+            completed: 0,
+            total: 1,
+        })?;
         Ok(Box::new(DirectEngine::new(circuit)?))
     }
 }

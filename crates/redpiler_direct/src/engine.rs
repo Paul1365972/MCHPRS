@@ -6,6 +6,7 @@ use crate::node::{ForwardLinks, Node, NodeId, NodeInput, NodeKind, Nodes};
 use crate::scheduler::{check_delays, TickScheduler};
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_redpiler::backend::BuildError;
 use mchprs_redpiler::circuit::{self, Circuit};
 use mchprs_redpiler::engine::{Changes, Engine, EngineError, Input, Snapshot};
 use mchprs_redpiler::graph::PendingTick;
@@ -54,10 +55,10 @@ pub struct DirectEngine {
 }
 
 impl DirectEngine {
-    pub fn new(circuit: &Circuit) -> Result<DirectEngine, EngineError> {
+    pub fn new(circuit: &Circuit) -> Result<DirectEngine, BuildError> {
         let (nodes, forward_links) = compile::lower(circuit)?;
         let initial = circuit.initial();
-        check_delays(&initial.pending_ticks)?;
+        check_delays(&initial.pending_ticks).map_err(BuildError::Unsupported)?;
         let mut engine = DirectEngine {
             nodes: Nodes::new(nodes),
             forward_links,

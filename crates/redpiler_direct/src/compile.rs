@@ -1,11 +1,11 @@
 use crate::node::{ForwardLink, ForwardLinks, Node, NodeId, NodeInput, NodeKind};
+use mchprs_redpiler::backend::BuildError;
 use mchprs_redpiler::circuit::{self, Circuit};
-use mchprs_redpiler::engine::EngineError;
 use mchprs_redpiler::graph::{self, LinkKind};
 
 const MAX_LINKS_PER_KIND: usize = u8::MAX as usize;
 
-pub fn lower(circuit: &Circuit) -> Result<(Box<[Node]>, ForwardLinks), EngineError> {
+pub fn lower(circuit: &Circuit) -> Result<(Box<[Node]>, ForwardLinks), BuildError> {
     for id in circuit.ids() {
         for kind in [LinkKind::Default, LinkKind::Side] {
             let count = circuit
@@ -14,12 +14,11 @@ pub fn lower(circuit: &Circuit) -> Result<(Box<[Node]>, ForwardLinks), EngineErr
                 .filter(|link| link.kind == kind)
                 .count();
             if count > MAX_LINKS_PER_KIND {
-                return Err(format!(
+                return Err(BuildError::Unsupported(format!(
                     "node {} has {count} {kind:?} inputs (at most {} supported)",
                     id.index(),
                     MAX_LINKS_PER_KIND
-                )
-                .into());
+                )));
             }
         }
     }

@@ -30,6 +30,7 @@ use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::backend::CompilePlan;
+use mchprs_redpiler::compile::BuildContext;
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
 use mchprs_redpiler_backends::BackendSetup;
@@ -45,13 +46,12 @@ use scoreboard::RedpilerState;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::mem;
-use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 /// The width of a plot (2^n)
 pub const PLOT_SCALE: u32 = 5;
@@ -767,18 +767,16 @@ impl Plot {
         let result = thread::scope(|s| {
             let handle = s.spawn(|| -> Result<Simulation, EngineError> {
                 let start = Instant::now();
+                let context = &mut BuildContext::silent();
                 let circuit = mchprs_redpiler::compile::compile(
                     &self.world,
                     region,
                     &ticks,
                     &plan.extract,
                     &plan.passes,
-                    &mut |stage| {
-                        trace!("Redpiler compile stage {stage:?}");
-                        ControlFlow::Continue(())
-                    },
+                    context,
                 )?;
-                let engine = setup.backend().build(&circuit, setup.flags())?;
+                let engine = setup.backend().build(&circuit, setup.flags(), context)?;
                 debug!("Compile completed in {:?}", start.elapsed());
                 Ok(Simulation::new(Arc::new(circuit), engine))
             });

@@ -2,13 +2,13 @@ use clap::{Parser, Subcommand};
 use compile::Compilation;
 use line_index::{LineIndex, TextSize};
 use mchprs_blocks::BlockPos;
+use mchprs_redpiler::compile::{optimize, BuildContext};
 use mchprs_redpiler::extract::{extract, ExtractOptions};
 use mchprs_redpiler::graph::Graph;
 use mchprs_redpiler::passes::{self, Pass};
 use mchprs_redpiler_backends::{BackendSetup, BACKENDS};
 use mchprs_ril::{DumpGraph, RILModule};
 use std::fs;
-use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -102,13 +102,14 @@ fn extract_schematic(
 }
 
 fn run_passes(passes: &[&dyn Pass], mut graph: Graph, print_after_all: bool) -> Graph {
-    let _ = passes::run_passes(passes, &mut graph, &mut |pass, graph| {
+    for &pass in passes {
+        optimize(&mut graph, &[pass], &mut BuildContext::silent())
+            .expect("a silent build is never cancelled");
         if print_after_all {
             println!("Circuit after pass: {}", pass.name());
             graph.dump();
         }
-        ControlFlow::Continue(())
-    });
+    }
     graph
 }
 

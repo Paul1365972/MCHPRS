@@ -5,13 +5,13 @@ use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_commands::flag::{FlagValue, FlagValues};
 use mchprs_redpiler::backend::Backend;
+use mchprs_redpiler::compile::BuildContext;
 use mchprs_redpiler::engine::Input;
 use mchprs_redpiler::passes::OPTIMIZE;
 use mchprs_redpiler::simulation::Simulation;
 use mchprs_redpiler_direct::DirectBackend;
 use mchprs_redstone::interpreter::Interpreter;
 use mchprs_redstone::wire::make_cross;
-use std::ops::ControlFlow;
 use std::sync::Arc;
 
 struct RedpilerInstance {
@@ -37,11 +37,11 @@ impl RedpilerInstance {
             world.pending_ticks(),
             &plan.extract,
             &plan.passes,
-            &mut |_| ControlFlow::Continue(()),
+            &mut BuildContext::silent(),
         )
         .expect("the test circuit compiles");
         let engine = backend
-            .build(&circuit, &flags)
+            .build(&circuit, &flags, &mut BuildContext::silent())
             .expect("the engine holds the test circuit");
         RedpilerInstance {
             label: format!("{} {flags}", backend.name()).trim_end().to_owned(),

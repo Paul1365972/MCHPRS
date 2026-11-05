@@ -1,6 +1,5 @@
 use crate::node::NodeId;
 use mchprs_redpiler::circuit;
-use mchprs_redpiler::engine::EngineError;
 use mchprs_redpiler::graph::PendingTick;
 use mchprs_redstone::tick_queue::TickPriority;
 use std::mem;
@@ -83,7 +82,7 @@ impl TickScheduler {
     }
 }
 
-pub fn check_delays(pending_ticks: &[(circuit::NodeId, PendingTick)]) -> Result<(), EngineError> {
+pub fn check_delays(pending_ticks: &[(circuit::NodeId, PendingTick)]) -> Result<(), String> {
     for &(node, tick) in pending_ticks {
         if tick.delay as usize > TickScheduler::NUM_QUEUES {
             return Err(format!(
@@ -91,8 +90,7 @@ pub fn check_delays(pending_ticks: &[(circuit::NodeId, PendingTick)]) -> Result<
                 node.index(),
                 tick.delay,
                 TickScheduler::NUM_QUEUES
-            )
-            .into());
+            ));
         }
     }
     Ok(())
