@@ -8,6 +8,8 @@ Blocks and items in MCHPRS are defined in the [gen_info.yaml](../mc_data/gen_inf
 
 Add the block under `blocks`, by its name in `blocks.json`, with its attributes. The comments at the top of `gen_info.yaml` describe the attributes.
 
+An item places a block only if the block has the attribute `simple_item` or `item`, or if the item is listed under `block_items`, which is for an item named differently from its block.
+
 Some attributes need code in [`crates/blocks/src/blocks`](../crates/blocks/src/blocks):
 
 | Attribute | Needs |
@@ -46,6 +48,8 @@ It also produces [registries.rs](../crates/blocks/src/registries.rs) with the pr
 | --- | --- |
 | `gen_info.yaml` | The blocks of MCHPRS and their attributes |
 | `blocks.json` | The properties and state ids of each of these blocks |
+| `registries.json` | The protocol ids. Every entry of `minecraft:item` becomes a variant of `Item`. |
+| `items.json` | The stack size of each item |
 
 ```sh
 cd crates/block_data_gen
