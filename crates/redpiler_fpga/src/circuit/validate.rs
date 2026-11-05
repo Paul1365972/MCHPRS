@@ -82,7 +82,7 @@ fn validate_reachable_state(node: &Node) -> Result<(), NodeError> {
         });
     }
     let scheduled = node.kind.priority(state.is_powered()) == Some(pending.priority)
-        || node.kind.has_pulse_countdown() && pending.priority == PULSE_PRIORITY;
+        || node.kind.tracks_pulsing() && pending.priority == PULSE_PRIORITY;
     if !scheduled {
         return Err(NodeError::Priority {
             kind: node.kind,

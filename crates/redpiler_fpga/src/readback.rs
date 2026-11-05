@@ -37,8 +37,8 @@ pub(crate) enum ReadbackError {
     Length { actual: usize, expected: usize },
     #[error("node {node}: countdown {value:#b} is not one-hot")]
     Countdown { node: usize, value: u32 },
-    #[error("node {node}: more than one countdown is running")]
-    Countdowns { node: usize },
+    #[error("node {node}: pulsing without a pending tick")]
+    Pulsing { node: usize },
 }
 
 impl Readback {
@@ -98,45 +98,47 @@ impl Readback {
             pending: None,
             ..node.initial
         };
-        let mut countdown = None;
+        let mut countdown = 0;
+        let mut pulsing = false;
         for (field, _) in self.layout.node(index).read_fields(contents) {
             let value = bits.read(field.width());
             match field {
                 Field::Powered => state.set_powered(value != 0),
-                Field::High { low, high } => state.strength = if value != 0 { high } else { low },
                 Field::Strength => {
                     state.strength =
                         SignalStrength::try_from(value).expect("a strength field has four bits");
                 }
                 Field::Locked => state.locked = value != 0,
-                Field::Countdown(_) | Field::PulseCountdown(_) if value == 0 => {}
-                Field::Countdown(_) | Field::PulseCountdown(_) => {
-                    if value.count_ones() != 1 {
-                        return Err(ReadbackError::Countdown { node: index, value });
-                    }
-                    if countdown.is_some() {
-                        return Err(ReadbackError::Countdowns { node: index });
-                    }
-                    countdown = Some((value, matches!(field, Field::PulseCountdown(_))));
-                }
+                Field::Countdown(_) => countdown = value,
+                Field::Pulsing => pulsing = value != 0,
             }
         }
         if let Some(strength) = node.literal {
             state.strength = strength;
         }
-        if let Some((value, pulse)) = countdown {
-            let priority = if pulse {
-                PULSE_PRIORITY
-            } else {
-                node.kind
-                    .priority(state.is_powered())
-                    .expect("a countdown means a timed node")
-            };
-            state.pending = Some(PendingTick {
-                delay: NonZeroU8::MIN.saturating_add(value.trailing_zeros() as u8),
-                priority,
+        if countdown == 0 {
+            if pulsing {
+                return Err(ReadbackError::Pulsing { node: index });
+            }
+            return Ok(state);
+        }
+        if countdown.count_ones() != 1 {
+            return Err(ReadbackError::Countdown {
+                node: index,
+                value: countdown,
             });
         }
+        let priority = if pulsing {
+            PULSE_PRIORITY
+        } else {
+            node.kind
+                .priority(state.is_powered())
+                .expect("a countdown means a timed node")
+        };
+        state.pending = Some(PendingTick {
+            delay: NonZeroU8::MIN.saturating_add(countdown.trailing_zeros() as u8),
+            priority,
+        });
         Ok(state)
     }
 }
@@ -148,22 +150,19 @@ mod tests {
     use crate::random_circuits::{input_nodes, random_circuit, Random};
     use crate::reference::Reference;
 
-    fn field_value(state: State, field: Field, has_pulse_countdown: bool) -> u32 {
-        let pending_countdown = |pulse_field: bool| match state.pending {
-            Some(pending)
-                if (has_pulse_countdown && pending.priority == PULSE_PRIORITY) == pulse_field =>
-            {
-                1 << (pending.delay.get() - 1)
-            }
-            _ => 0,
-        };
+    fn field_value(state: State, field: Field) -> u32 {
         match field {
             Field::Powered => u32::from(state.is_powered()),
-            Field::High { high, .. } => u32::from(state.strength == high),
             Field::Strength => u32::from(state.strength.get()),
             Field::Locked => u32::from(state.locked),
-            Field::Countdown(_) => pending_countdown(false),
-            Field::PulseCountdown(_) => pending_countdown(true),
+            Field::Countdown(_) => state
+                .pending
+                .map_or(0, |pending| 1 << (pending.delay.get() - 1)),
+            Field::Pulsing => u32::from(
+                state
+                    .pending
+                    .is_some_and(|pending| pending.priority == PULSE_PRIORITY),
+            ),
         }
     }
 
@@ -171,12 +170,8 @@ mod tests {
         let mut bytes = vec![0; layout.bytes(contents, 0..states.len())];
         let mut position = 0;
         for (index, &state) in states.iter().enumerate() {
-            let node = layout.node(index);
-            let has_pulse_countdown = node
-                .field_offsets()
-                .any(|(field, _)| matches!(field, Field::PulseCountdown(_)));
-            for (field, _) in node.read_fields(contents) {
-                let value = field_value(state, field, has_pulse_countdown);
+            for (field, _) in layout.node(index).read_fields(contents) {
+                let value = field_value(state, field);
                 for bit in 0..field.width() {
                     bytes[position / 8] |= ((value >> bit & 1) as u8) << (position % 8);
                     position += 1;

@@ -109,7 +109,9 @@ impl Kind {
         matches!(self, Kind::Lever | Kind::Button | Kind::PressurePlate)
     }
 
-    pub(crate) fn has_pulse_countdown(self) -> bool {
+    /// A repeater facing a diode ends a pulse at a lower priority than it ticks at, so it records
+    /// whether its pending tick ends a pulse.
+    pub(crate) fn tracks_pulsing(self) -> bool {
         matches!(
             self,
             Kind::Repeater {

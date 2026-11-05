@@ -79,7 +79,7 @@ fn random_state(random: &mut Random, kind: Kind, has_sides: bool) -> State {
         .filter(|_| random.chance(1, 4))
     {
         let delay = random.below(usize::from(scheduled.delay.get())) as u8;
-        let priority = if kind.has_pulse_countdown() && random.chance(1, 2) {
+        let priority = if kind.tracks_pulsing() && random.chance(1, 2) {
             PULSE_PRIORITY
         } else {
             scheduled.priority

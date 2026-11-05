@@ -14,20 +14,18 @@ module node_button #(
     output wire [9:0] countdown,
     output wire [3:0] next_signal
 );
-    reg due = 1'b0;
+    wire due;
     wire fire = due && firing[3];
     wire selected = input_nodes && input_index[INDEX_WIDTH-1:0] == INDEX;
     wire pressed = selected && input_value && !powered;
     wire next_powered = pressed || powered && !fire;
     assign next_signal = {4{next_powered}};
 
-    always @(posedge clock) begin
+    always @(posedge clock)
         powered <= next_powered;
-        if (fire) due <= 1'b0;
-        else if (begin_tick) due <= countdown[0];
-    end
 
-    node_countdown #(.DELAY(10), .PENDING(PENDING)) tick (
-        .clock(clock), .begin_tick(begin_tick), .schedule(pressed), .countdown(countdown)
+    node_timer #(.DELAY(10), .PENDING(PENDING)) tick (
+        .clock(clock), .begin_tick(begin_tick), .fire(fire), .schedule(pressed),
+        .countdown(countdown), .due(due)
     );
 endmodule

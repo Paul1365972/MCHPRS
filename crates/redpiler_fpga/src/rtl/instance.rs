@@ -130,10 +130,9 @@ impl fmt::Display for Instance {
 fn field_port(field: Field) -> &'static str {
     match field {
         Field::Powered => "powered",
-        Field::High { .. } => "high",
         Field::Strength => "strength",
         Field::Locked => "locked",
         Field::Countdown(_) => "countdown",
-        Field::PulseCountdown(_) => "pulse_countdown",
+        Field::Pulsing => "pulsing",
     }
 }
