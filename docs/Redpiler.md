@@ -44,6 +44,14 @@ Sometimes, the breadth-first search done by extraction can result in two differe
 While nodes that are never updated in theory have no affect on the number of instructions that are run at runtime, therefore the time taken to perform a tick at runtime, keeping the size of the graph small helps to avoid cache misses that to end up taking time at runtime. This optimization pass reduces the size of the final graph by recognizing situations where a node only has constant inputs and tranforming that node into a constant node, breaking the links to the other constant nodes.
 Nodes with pending ticks are not folded. A folded node keeps its current output strength and, for a repeater, its lock, because a node whose inputs are all constant is never updated again.
 
+## The `UnifyConstants` Pass
+
+Two nodes fed by different constants never share an input, even when they receive the same strength. This pass adds one strength-15 constant without blocks and moves the outgoing links of every other constant onto it, each weight raised by 15 minus the old constant's strength, so every target receives the same strength as before. A link whose new weight would reach 15 delivered nothing and is dropped.
+The old constants keep their state and blocks, so the world shows them as before. A constant left without links stays if it is observed and is removed by `PruneOrphans` otherwise; the new constant has no blocks and isn't observed.
+Constants never update their targets, so moving their links keeps the order of updates.
+
+`DedupLinks` runs after this pass, to merge the links a target now receives from the new constant, and before `UnreachableOutput`, whose analysis treats parallel links as independent inputs. `Coalesce` can then merge nodes that read the same strength from different constants.
+
 ## The `UnreachableOutput` Pass
 
 A link only carries a signal if its source can output a strength above the link's weight.

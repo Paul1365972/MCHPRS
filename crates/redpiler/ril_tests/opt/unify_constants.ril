@@ -1,0 +1,58 @@
+test_args "--passes=unify-constants"
+
+# Every target receives the strength it received before, now from one strength-15 constant. The
+# old constants keep their state, and the link into the lamp delivered nothing
+circuit @strengths_input {
+  %redstone_block = constant 15 -> [%comparator:2]
+  %composter = constant 7 -> [side %comparator:1, %lamp:7]
+  %locked_repeater = constant 15, true -> [%repeater:3]
+  %lever = lever false -> [side %repeater:0]
+  %comparator = comparator subtract, none, false, 7
+  %repeater = repeater 1, false, false, true -> [%lamp:0]
+  %lamp = lamp true
+}
+
+test(@strengths_input) circuit @strengths {
+  %redstone_block = constant 15
+  %composter = constant 7
+  %locked_repeater = constant 15, true
+  %lever = lever false -> [side %repeater:0]
+  %comparator = comparator subtract, none, false, 7
+  %repeater = repeater 1, false, false, true -> [%lamp:0]
+  %lamp = lamp true
+  %7 = constant 15 -> [%comparator:2, side %comparator:9, %repeater:3]
+}
+
+# Nothing reaches a target, so no constant is added
+circuit @nothing_delivered_input {
+  %cauldron = constant 0 -> [%lamp:0]
+  %composter = constant 3 -> [%lamp:3]
+  %lamp = lamp false
+}
+
+test(@nothing_delivered_input) circuit @nothing_delivered {
+  %cauldron = constant 0
+  %composter = constant 3
+  %lamp = lamp false
+}
+
+# Both comparators read the lever and a side input of 10 from their own constant. Sharing one
+# source lets DedupLinks keep the stronger side link of the first comparator and Coalesce merge
+# the comparators
+circuit @shared_source_input {
+  %lever = lever false -> [%comparator_a:0, %comparator_b:0]
+  %cake = constant 14 -> [side %comparator_a:4]
+  %barrel = constant 12 -> [side %comparator_b:2]
+  %composter = constant 8 -> [side %comparator_a:0]
+  %comparator_a = comparator compare, none, false, 0
+  %comparator_b = comparator compare, none, false, 0
+}
+
+test(@shared_source_input, "--passes=unify-constants,dedup-links,coalesce") circuit @shared_source {
+  %lever = lever false -> [%comparator_a:0]
+  %cake = constant 14
+  %barrel = constant 12
+  %composter = constant 8
+  %comparator_a = comparator compare, none, false, 0
+  %6 = constant 15 -> [side %comparator_a:5]
+}

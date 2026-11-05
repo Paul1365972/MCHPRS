@@ -14,7 +14,8 @@ use mchprs_redpiler::extract::{
 };
 use mchprs_redpiler::graph::{self, LinkKind, NodeState, PendingTick};
 use mchprs_redpiler::passes::{
-    Coalesce, ConstantFold, DedupLinks, Pass, PruneOrphans, UnreachableOutput, OPTIMIZE,
+    Coalesce, ConstantFold, DedupLinks, Pass, PruneOrphans, UnifyConstants, UnreachableOutput,
+    OPTIMIZE,
 };
 use mchprs_redstone::tick_queue::TickPriority;
 use node::{ForwardLink, ForwardLinks, Node, NodeId, NodeInput, NodeKind, Nodes};
@@ -169,7 +170,12 @@ impl Backend for DirectBackend {
         let optimize = flags.is_on(&OPTIMIZE);
         let mut passes: Vec<&'static dyn Pass> = Vec::new();
         if optimize {
-            passes = vec![&DedupLinks, &ConstantFold, &UnreachableOutput];
+            passes = vec![
+                &ConstantFold,
+                &UnifyConstants,
+                &DedupLinks,
+                &UnreachableOutput,
+            ];
             if flags.is_on(&REORDER) {
                 passes.push(&Coalesce);
             }
