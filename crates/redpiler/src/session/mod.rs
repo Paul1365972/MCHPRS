@@ -1,11 +1,11 @@
 mod runner;
 
+use crate::block_map::BlockChanges;
+use crate::circuit::Circuit;
+use crate::compile::{BuildContext, Stage};
+use crate::engine::{DriveError, EngineError, Input};
+use crate::simulation::Simulation;
 use mchprs_blocks::BlockPos;
-use mchprs_redpiler::block_map::BlockChanges;
-use mchprs_redpiler::circuit::Circuit;
-use mchprs_redpiler::compile::{BuildContext, Stage};
-use mchprs_redpiler::engine::{DriveError, EngineError, Input};
-use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::pace::{Advanced, Goal, SendRate, TickRate};
 use mchprs_redstone::tick_queue::TickEntry;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};

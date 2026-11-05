@@ -1,8 +1,8 @@
-use crate::{Command, Event, TickReport};
+use super::{Command, Event, TickReport};
+use crate::compile::BuildContext;
+use crate::engine::{DriveError, EngineError, Input};
+use crate::simulation::Simulation;
 use mchprs_blocks::BlockPos;
-use mchprs_redpiler::compile::BuildContext;
-use mchprs_redpiler::engine::{DriveError, EngineError, Input};
-use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::pace::{Pacer, SendRate, SendSchedule, TickRate};
 use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicBool, Ordering};
