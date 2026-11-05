@@ -1,186 +1,83 @@
-mod runner;
+mod worker;
 
-use crate::block_map::BlockChanges;
-use crate::circuit::Circuit;
-use crate::compile::{BuildContext, Stage};
-use crate::engine::{DriveError, EngineError, Input};
-use crate::simulation::Simulation;
-use mchprs_blocks::BlockPos;
-use mchprs_redstone::pace::{Advanced, Goal, SendRate, TickRate};
-use mchprs_redstone::tick_queue::TickEntry;
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::Arc;
-use std::thread::{self, JoinHandle};
+pub use worker::Worker;
+
+use crate::engine::{Changes, Drive, EngineError, Snapshot};
+use mchprs_redstone::pace::{Advanced, Goal, TickRate};
+use std::fmt;
 use std::time::Duration;
 
-/// The ticks run since the previous report, and how long running them took.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TickReport {
+pub trait Session: Send {
+    fn set_tick_rate(&mut self, rate: TickRate);
+
+    /// An advance runs until it reaches its goal or the next call ends it.
+    fn advance(&mut self, goal: Option<Goal>);
+
+    fn drive(&mut self, drive: Drive);
+
+    /// Never waits, so the changes may come from different ticks. After an error the session is
+    /// gone.
+    fn poll(&mut self) -> Result<Update, SessionError>;
+
+    /// Waits for a tick boundary, and the changes carry every node's state. After
+    /// [`SessionError::Unresponsive`] the session still runs.
+    fn flush(&mut self, timeout: Duration) -> Result<Update, SessionError>;
+
+    /// Waits for a tick boundary. With `reset`, the snapshot is the state the engine was built in.
+    fn stop(self: Box<Self>, reset: bool, timeout: Duration) -> Result<Stopped, SessionError>;
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Update {
+    pub changes: Changes,
     pub ticks: u64,
     pub ticking: Duration,
-    /// The time since the previous report
-    pub period: Duration,
-    /// How far the running advance has come
-    pub advanced: u64,
-    /// Whether ticking falls behind the tick rate
     pub behind: bool,
+    pub advancing: u64,
+    pub advanced: Option<Advanced>,
+    pub driven: bool,
 }
 
-pub enum Event {
-    Progress(Stage),
-    Started(Arc<Circuit>),
-    Ticked(TickReport),
-    Batch(BlockChanges),
-    /// Every advance ends with one.
-    Advanced(Advanced),
-    Rejected {
-        position: BlockPos,
-        error: DriveError,
-    },
-    Synced(BlockChanges),
-    Stopped {
-        changes: BlockChanges,
-        ticks: Vec<TickEntry>,
-    },
-    Cancelled,
+impl Update {
+    fn append(&mut self, later: Update) {
+        self.changes.states.extend(later.changes.states);
+        self.changes.notes.extend(later.changes.notes);
+        self.ticks += later.ticks;
+        self.ticking += later.ticking;
+        self.behind = later.behind;
+        self.advancing = later.advancing;
+        self.advanced = later.advanced.or(self.advanced);
+        self.driven |= later.driven;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stopped {
+    pub update: Update,
+    pub snapshot: Snapshot,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionContext {
+    pub name: String,
+    pub tick_rate: TickRate,
+}
+
+#[derive(Debug)]
+pub enum SessionError {
     Failed(EngineError),
+    Panicked(String),
+    Unresponsive,
 }
 
-impl Event {
-    pub fn is_last(&self) -> bool {
-        matches!(
-            self,
-            Event::Stopped { .. } | Event::Cancelled | Event::Failed(_)
-        )
-    }
-}
-
-enum Command {
-    SetTickRate(TickRate),
-    SetSendRate(SendRate),
-    Drive { position: BlockPos, input: Input },
-    Advance(Goal),
-    StopAdvancing,
-    ReportTicks,
-    Sync,
-    Stop { restore: bool },
-}
-
-/// Dropping the worker stops it without waiting for it.
-pub struct Worker {
-    commands: Sender<Command>,
-    events: Receiver<Event>,
-    thread: Option<JoinHandle<()>>,
-    finished: bool,
-}
-
-impl Worker {
-    pub fn spawn<F>(tick_rate: TickRate, send_rate: SendRate, build: F) -> Worker
-    where
-        F: FnOnce(&mut BuildContext<'_>) -> Result<Simulation, EngineError> + Send + 'static,
-    {
-        let (commands, command_receiver) = mpsc::channel();
-        let (event_sender, events) = mpsc::channel();
-        let thread = thread::Builder::new()
-            .name("redpiler worker".to_owned())
-            .spawn(move || runner::run(build, tick_rate, send_rate, command_receiver, event_sender))
-            .expect("the worker thread starts");
-        Worker {
-            commands,
-            events,
-            thread: Some(thread),
-            finished: false,
-        }
-    }
-
-    /// The events sent since the last call. A worker that went away without its last event ends
-    /// with [`Event::Failed`].
-    pub fn poll(&mut self) -> Vec<Event> {
-        let mut events = Vec::new();
-        loop {
-            match self.events.try_recv() {
-                Ok(event) => self.record(&mut events, event),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    self.fail_unless_finished(&mut events);
-                    break;
-                }
-            }
-        }
-        events
-    }
-
-    /// Asks for an [`Event::Ticked`] about the ticks run since the previous one.
-    pub fn report_ticks(&self) {
-        self.send(Command::ReportTicks);
-    }
-
-    pub fn set_tick_rate(&self, rate: TickRate) {
-        self.send(Command::SetTickRate(rate));
-    }
-
-    pub fn set_send_rate(&self, rate: SendRate) {
-        self.send(Command::SetSendRate(rate));
-    }
-
-    pub fn drive(&self, position: BlockPos, input: Input) {
-        self.send(Command::Drive { position, input });
-    }
-
-    pub fn advance(&self, goal: Goal) {
-        self.send(Command::Advance(goal));
-    }
-
-    pub fn stop_advancing(&self) {
-        self.send(Command::StopAdvancing);
-    }
-
-    pub fn sync(&mut self) -> Vec<Event> {
-        self.send(Command::Sync);
-        self.collect_until(|event| matches!(event, Event::Synced(_)))
-    }
-
-    pub fn stop(&mut self, restore: bool) -> Vec<Event> {
-        self.send(Command::Stop { restore });
-        let events = self.collect_until(|_| false);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-        events
-    }
-
-    fn send(&self, command: Command) {
-        // The worker only goes away after its last event or by panicking, which ends the events
-        let _ = self.commands.send(command);
-    }
-
-    fn collect_until(&mut self, done: impl Fn(&Event) -> bool) -> Vec<Event> {
-        let mut collected = Vec::new();
-        loop {
-            let Ok(event) = self.events.recv() else {
-                self.fail_unless_finished(&mut collected);
-                break;
-            };
-            let finished = done(&event) || event.is_last();
-            self.record(&mut collected, event);
-            if finished {
-                break;
-            }
-        }
-        collected
-    }
-
-    fn record(&mut self, events: &mut Vec<Event>, event: Event) {
-        self.finished |= event.is_last();
-        events.push(event);
-    }
-
-    fn fail_unless_finished(&mut self, events: &mut Vec<Event>) {
-        if !self.finished {
-            self.finished = true;
-            events.push(Event::Failed(
-                "the worker thread stopped unexpectedly".into(),
-            ));
+impl fmt::Display for SessionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SessionError::Failed(error) => error.fmt(f),
+            SessionError::Panicked(message) => write!(f, "it panicked: {message}"),
+            SessionError::Unresponsive => write!(f, "it stopped responding"),
         }
     }
 }
+
+impl std::error::Error for SessionError {}

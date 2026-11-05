@@ -1,32 +1,92 @@
+use super::compile::{CompileJob, Started};
 use super::Plot;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::region::Region;
+use mchprs_blocks::BlockPos;
 use mchprs_redpiler::backend::CompilePlan;
+use mchprs_redpiler::block_map::BlockMap;
 use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler::compile::Stage;
-use mchprs_redpiler::session::{Event, TickReport, Worker};
-use mchprs_redpiler::simulation::Simulation;
+use mchprs_redpiler::session::{Session, SessionContext, SessionError, Update};
 use mchprs_redpiler_backends::BackendSetup;
-use mchprs_redstone::pace::{SendRate, TickRate};
+use mchprs_redstone::pace::{Goal, SendRate, TickRate};
 use mchprs_redstone::tick_queue::{TickEntry, TickQueue};
-use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
 use std::mem;
-use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{debug, error, trace, warn};
+
+const SESSION_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct Redpiler {
     pub setup: BackendSetup,
-    pub worker: Worker,
-    pub stage: Option<Stage>,
-    pub circuit: Option<Arc<Circuit>>,
-    pub plot_ticks: Vec<TickEntry>,
-    pub started: Instant,
-    pub paused: bool,
-    pub report_requested: bool,
-    pub advanced: u64,
-    pub behind: bool,
+    state: State,
+    plot_ticks: Vec<TickEntry>,
+    started: Instant,
+    paused: bool,
+    pub(super) behind: bool,
+    pub(super) advancing: u64,
+}
+
+enum State {
+    Compiling(CompileJob),
+    Running {
+        blocks: BlockMap,
+        session: Box<dyn Session>,
+    },
+}
+
+impl Redpiler {
+    pub fn is_compiling(&self) -> bool {
+        matches!(self.state, State::Compiling(_))
+    }
+
+    pub fn stage(&self) -> Option<Stage> {
+        match &self.state {
+            State::Compiling(job) => job.stage(),
+            State::Running { .. } => None,
+        }
+    }
+
+    pub fn circuit(&self) -> Option<&Circuit> {
+        match &self.state {
+            State::Compiling(_) => None,
+            State::Running { blocks, .. } => Some(blocks.circuit()),
+        }
+    }
+
+    pub fn use_block(&mut self, position: BlockPos) -> bool {
+        let State::Running { blocks, session } = &mut self.state else {
+            return false;
+        };
+        let Some(drive) = blocks.use_block(position) else {
+            return false;
+        };
+        session.drive(drive);
+        true
+    }
+
+    pub fn set_pressure_plate(&mut self, position: BlockPos, pressed: bool) {
+        if let State::Running { blocks, session } = &mut self.state
+            && let Some(drive) = blocks.pressure_plate(position, pressed)
+        {
+            session.drive(drive);
+        }
+    }
+
+    pub fn advance(&mut self, goal: Option<Goal>) {
+        if let State::Running { session, .. } = &mut self.state {
+            session.advance(goal);
+        }
+    }
+
+    pub fn set_tps(&mut self, tps: Tps) {
+        if let State::Running { session, .. } = &mut self.state
+            && !self.paused
+        {
+            session.set_tick_rate(tick_rate(tps));
+        }
+    }
 }
 
 pub fn tick_rate(tps: Tps) -> TickRate {
@@ -44,130 +104,146 @@ pub fn send_rate(rate: WorldSendRate) -> SendRate {
 
 impl Plot {
     pub fn sync_redpiler(&mut self) {
-        let Some(redpiler) = &mut self.redpiler else {
+        let Some(Redpiler {
+            state: State::Running { session, .. },
+            ..
+        }) = &mut self.redpiler
+        else {
             return;
         };
-        if redpiler.circuit.is_none() {
-            return;
-        }
-        for event in redpiler.worker.sync() {
-            self.apply_redpiler_event(event);
+        match session.flush(SESSION_TIMEOUT) {
+            Ok(update) => self.apply_update(update),
+            Err(SessionError::Unresponsive) => {
+                warn!("Redpiler didn't reach a tick boundary in time, so the world lags behind it");
+            }
+            Err(error) => self.fail_redpiler(error),
         }
     }
 
-    pub(super) fn handle_redpiler_events(&mut self) {
+    pub(super) fn poll_redpiler(&mut self) {
+        let rate = self.session_tick_rate();
         let Some(redpiler) = &mut self.redpiler else {
             return;
         };
-        let paused = self.players.is_empty();
-        if redpiler.paused != paused {
-            redpiler.paused = paused;
-            let rate = match paused {
-                true => TickRate::Paused,
-                false => tick_rate(self.tps),
-            };
-            redpiler.worker.set_tick_rate(rate);
-        }
-        for event in redpiler.worker.poll() {
-            self.apply_redpiler_event(event);
-        }
-    }
-
-    fn apply_redpiler_event(&mut self, event: Event) {
-        let Some(redpiler) = &mut self.redpiler else {
-            return;
-        };
-        match event {
-            Event::Progress(stage) => {
-                trace!("Redpiler compile stage {stage:?}");
-                redpiler.stage = Some(stage);
-                self.refresh_scoreboard();
-            }
-            Event::Started(circuit) => {
-                let message = format!(
-                    "Redpiler compiled {} nodes for the {} backend in {:?}.",
-                    circuit.len(),
-                    redpiler.setup.backend().name(),
-                    redpiler.started.elapsed()
-                );
-                redpiler.stage = None;
-                redpiler.circuit = Some(circuit);
-                debug!("{message}");
-                self.broadcast(&message);
-                self.reset_timings();
-                self.refresh_scoreboard();
-            }
-            Event::Ticked(report) => self.apply_tick_report(report),
-            Event::Batch(changes) => {
-                changes.apply(&mut self.world);
-                self.publish_world();
-            }
-            Event::Advanced(advanced) => {
-                redpiler.advanced = 0;
-                self.advances.ran(advanced);
-            }
-            Event::Rejected { position, error } => {
-                warn!("Redpiler rejected the input at {position}: {error}");
-            }
-            Event::Synced(changes) => changes.apply(&mut self.world),
-            Event::Stopped { changes, ticks } => {
-                if !redpiler.plot_ticks.is_empty() {
-                    self.world.mark_unsaved();
+        match &mut redpiler.state {
+            State::Compiling(job) => {
+                let progressed = job.progressed();
+                let finished = job.finished();
+                if progressed {
+                    trace!("Redpiler compile stage {:?}", redpiler.stage());
+                    self.refresh_scoreboard();
                 }
-                changes.apply(&mut self.world);
-                for tick in ticks {
-                    self.world
-                        .schedule_tick(tick.position, tick.ticks_left, tick.priority);
+                match finished {
+                    None => {}
+                    Some(Ok(started)) => self.run_redpiler(started),
+                    Some(Err(error)) => self.fail_compile(&error),
                 }
-                self.end_redpiler();
             }
-            Event::Cancelled => {
-                self.abandon_compile();
-                self.end_redpiler();
-            }
-            Event::Failed(error) => {
-                let compiling = redpiler.circuit.is_none();
-                error!("Redpiler failed: {error}");
-                let mut message = format!("Redpiler failed and was stopped: {error}.");
-                if compiling {
-                    self.abandon_compile();
-                } else {
-                    match self.restore_saved_world() {
-                        Ok(()) => message
-                            .push_str(" The plot was restored to its state before compiling."),
-                        Err(error) => {
-                            error!("Failed to restore the plot after redpiler failed: {error:?}");
-                            message.push_str(" The plot couldn't be restored.");
-                        }
-                    }
+            State::Running { session, .. } => {
+                let paused = rate == TickRate::Paused;
+                if redpiler.paused != paused {
+                    redpiler.paused = paused;
+                    session.set_tick_rate(rate);
                 }
-                self.broadcast(&message);
-                self.end_redpiler();
+                match session.poll() {
+                    Ok(update) => self.apply_update(update),
+                    Err(error) => self.fail_redpiler(error),
+                }
             }
         }
     }
 
-    fn apply_tick_report(&mut self, report: TickReport) {
-        let Some(redpiler) = &mut self.redpiler else {
-            return;
-        };
-        redpiler.report_requested = false;
-        redpiler.advanced = report.advanced;
-        redpiler.behind = report.behind;
-        if report.ticks > 0 {
-            self.tick_time = Some(report.ticking.div_f64(report.ticks as f64));
-        }
-        if !self.players.is_empty() {
-            self.tick_history
-                .add(Instant::now(), report.period, report.ticks);
+    fn session_tick_rate(&self) -> TickRate {
+        if self.players.is_empty() {
+            TickRate::Paused
+        } else {
+            tick_rate(self.tps)
         }
     }
 
-    fn abandon_compile(&mut self) {
+    fn apply_update(&mut self, update: Update) {
+        let Some(Redpiler {
+            state: State::Running { blocks, .. },
+            behind,
+            advancing,
+            ..
+        }) = &mut self.redpiler
+        else {
+            return;
+        };
+        blocks.apply(&update.changes, &mut self.world);
+        *behind = update.behind;
+        *advancing = update.advancing;
+        self.tick_history.record(update.ticks);
+        if update.ticks > 0 {
+            self.tick_time = Some(update.ticking.div_f64(update.ticks as f64));
+        }
+        if let Some(advanced) = update.advanced {
+            self.advances.ran(advanced);
+        }
+        if update.driven || update.advanced.is_some() {
+            self.publish_world();
+        }
+    }
+
+    fn run_redpiler(&mut self, started: Started) {
+        let Started {
+            blocks,
+            mut session,
+        } = started;
+        let rate = self.session_tick_rate();
+        session.set_tick_rate(rate);
+        for (position, pressed) in blocks.pressure_plates() {
+            let stood_on = self.are_players_on_block(position);
+            if pressed != stood_on
+                && let Some(drive) = blocks.pressure_plate(position, stood_on)
+            {
+                session.drive(drive);
+            }
+        }
         let Some(redpiler) = &mut self.redpiler else {
             return;
         };
-        self.world.ticks = TickQueue::new(mem::take(&mut redpiler.plot_ticks));
+        let message = format!(
+            "Redpiler compiled {} nodes for the {} backend in {:?}.",
+            blocks.circuit().len(),
+            redpiler.setup.backend().name(),
+            redpiler.started.elapsed()
+        );
+        redpiler.state = State::Running { blocks, session };
+        redpiler.paused = rate == TickRate::Paused;
+        debug!("{message}");
+        self.broadcast(&message);
+        self.reset_timings();
+        self.refresh_scoreboard();
+    }
+
+    fn fail_compile(&mut self, error: &anyhow::Error) {
+        error!("Redpiler failed to compile: {error}");
+        if let Some(redpiler) = self.redpiler.take() {
+            self.abandon_compile(redpiler.plot_ticks);
+        }
+        self.broadcast(&format!("Redpiler failed and was stopped: {error}."));
+        self.end_redpiler();
+    }
+
+    fn fail_redpiler(&mut self, error: SessionError) {
+        error!("Redpiler failed: {error}");
+        self.redpiler = None;
+        let mut message = format!("Redpiler failed and was stopped: {error}.");
+        match self.restore_saved_world() {
+            Ok(()) => message.push_str(" The plot was restored to its state before compiling."),
+            Err(error) => {
+                error!("Failed to restore the plot after redpiler failed: {error:?}");
+                message.push_str(" The plot couldn't be restored.");
+            }
+        }
+        self.broadcast(&message);
+        self.end_redpiler();
+    }
+
+    fn abandon_compile(&mut self, plot_ticks: Vec<TickEntry>) {
+        self.world.ticks = TickQueue::new(plot_ticks);
         self.reset_pressure_plates();
     }
 
@@ -208,39 +284,27 @@ impl Plot {
         }
         self.end_world_advance();
         debug!("Starting redpiler with {setup}");
-        let region = self.world.region();
-        let blocks = self.world.copy_blocks();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
-        let compile_ticks = ticks.clone();
-        let backend = setup.backend();
-        let flags = setup.flags().clone();
-        let worker = Worker::spawn(
-            tick_rate(self.tps),
-            send_rate(self.world.world_send_rate),
-            move |context| {
-                let circuit = mchprs_redpiler::compile::compile(
-                    &blocks,
-                    region,
-                    &compile_ticks,
-                    &plan.extract,
-                    &plan.passes,
-                    context,
-                )?;
-                let engine = backend.build(&circuit, &flags, context)?;
-                Ok(Simulation::new(Arc::new(circuit), engine))
-            },
+        let session = SessionContext {
+            name: format!("p{},{}", self.world.x, self.world.z),
+            tick_rate: self.session_tick_rate(),
+        };
+        let job = CompileJob::spawn(
+            self.world.copy_blocks(),
+            self.world.region(),
+            ticks.clone(),
+            setup.clone(),
+            plan,
+            session,
         );
         self.redpiler = Some(Redpiler {
             setup,
-            worker,
-            stage: None,
-            circuit: None,
+            state: State::Compiling(job),
             plot_ticks: ticks,
             started: Instant::now(),
             paused: false,
-            report_requested: false,
-            advanced: 0,
             behind: false,
+            advancing: 0,
         });
         self.reset_timings();
         self.refresh_scoreboard();
@@ -248,20 +312,38 @@ impl Plot {
     }
 
     pub fn stop_redpiler(&mut self, restore: bool, update: bool) {
-        let Some(redpiler) = &mut self.redpiler else {
+        let Some(redpiler) = self.redpiler.take() else {
             return;
         };
-        if redpiler.circuit.is_none() {
-            debug!("Cancelling the redpiler compile");
-            self.abandon_compile();
-            self.end_redpiler();
-        } else {
-            debug!("Stopping redpiler");
-            for event in redpiler.worker.stop(restore) {
-                self.apply_redpiler_event(event);
+        match redpiler.state {
+            State::Compiling(job) => {
+                debug!("Cancelling the redpiler compile");
+                drop(job);
+                self.abandon_compile(redpiler.plot_ticks);
+                self.end_redpiler();
             }
-            if restore {
-                self.reset_pressure_plates();
+            State::Running {
+                mut blocks,
+                session,
+            } => {
+                debug!("Stopping redpiler");
+                match session.stop(restore, SESSION_TIMEOUT) {
+                    Ok(stopped) => {
+                        if !redpiler.plot_ticks.is_empty() {
+                            self.world.mark_unsaved();
+                        }
+                        blocks.record(&stopped.update.changes);
+                        blocks.finish(&stopped.snapshot, &mut self.world);
+                        if let Some(advanced) = stopped.update.advanced {
+                            self.advances.ran(advanced);
+                        }
+                        self.end_redpiler();
+                        if restore {
+                            self.reset_pressure_plates();
+                        }
+                    }
+                    Err(error) => self.fail_redpiler(error),
+                }
             }
         }
         if update {
@@ -284,8 +366,6 @@ impl Plot {
     }
 
     pub fn is_compiling_redpiler(&self) -> bool {
-        self.redpiler
-            .as_ref()
-            .is_some_and(|redpiler| redpiler.circuit.is_none())
+        self.redpiler.as_ref().is_some_and(Redpiler::is_compiling)
     }
 }

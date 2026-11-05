@@ -2,7 +2,7 @@
 
 At a high level, Redpiler transforms the redstone in a Minecraft world into a directed weighted graph. The weights represent the distance taken by a redstone signal when travelling through a wire. Since Redpiler was inspired by the design of modern compilers such as LLVM, the graph then goes through several passes which are run depending on how Redpiler was configured. Every pass is an optional optimization.
 
-The final graph becomes a `Circuit`, which an engine runs. A `Simulation` wraps the engine: it takes inputs by block position and turns the engine's changes back into blocks.
+The final graph becomes a `Circuit`, which an engine runs. A `BlockMap` maps the circuit's nodes to their blocks: it turns block positions into inputs and the engine's changes back into blocks.
 
 # Extraction
 
@@ -88,6 +88,18 @@ It only removes nodes with `--io-only`; otherwise every node is observed.
 # Circuit Files
 
 `/redpiler export` writes the compiled circuit to a file. `rilc compile` writes one from a schematic for a backend and its flags, like `rilc compile plot.schem -b "direct -o"`. The file holds the nodes and links of the circuit in a versioned binary format which can be read by other programs. This can be greatly useful for people who wish to experiment with Redstone and might want a directed weighted graph just like what Redpiler creates.
+
+# Running Circuits
+
+A backend builds an engine for a compiled circuit. The engine runs the circuit from its own data, as many ticks as it is asked to, and reports the observed nodes whose state changed. It never reads a clock. A `Simulation` pairs it with a `BlockMap` on the caller's thread, which is how `rilc`, the tests and other programs run circuits.
+
+The server runs a circuit as a session, which owns how its ticks happen; the plot thread never ticks. A backend can host its circuits itself, otherwise its engine runs on a worker thread that paces it by the plot's tick rate and runs `/radvance` on top. The worker sends its changes as frames: one each time the plot asks for the next, and one right away after an input or when an advance ends. The plot keeps the `BlockMap` and writes the frames into the world.
+
+The plot reads a session in two ways. Polling, at every plot update, never waits, and a backend may hand over changes from different ticks at once. A flush waits for a tick boundary and carries every node's state; commands that read the world flush first, and stopping waits for a boundary too. If a session doesn't reach one within 10 seconds, a flush gives up and the world lags behind, while a stop abandons the session and restores the plot as it was saved before compiling.
+
+The world can't be edited while Redpiler runs, so the engine's state only reaches the world this way. While running, the world shows the nodes the circuit observes, which are only the ports with `--io-only`; players joining see that. Stopping writes every node's state and the pending ticks back, and `/redpiler reset -r` returns every component to its compiled state first.
+
+Each backend declares how deterministic it is. Direct runs a circuit the same way every time, while a backend that runs parts of a circuit in parallel may leave the order of some updates open. Backends differ by design: like `--reorder`, each is an optimization level, and `rilc diff` shows where two of them part.
 
 # Backends
 

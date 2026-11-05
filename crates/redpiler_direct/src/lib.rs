@@ -8,7 +8,7 @@ use mchprs_commands::flag::{Flag, FlagValues};
 use mchprs_redpiler::backend::{Backend, BuildError, CompilePlan};
 use mchprs_redpiler::circuit::{self, Circuit};
 use mchprs_redpiler::compile::{BuildContext, Stage};
-use mchprs_redpiler::engine::{Changes, Engine, EngineError, Input, Snapshot};
+use mchprs_redpiler::engine::{Changes, Drive, Engine, EngineError, Input, Snapshot};
 use mchprs_redpiler::extract::{
     ExtractOptions, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
 };
@@ -303,9 +303,9 @@ impl DirectEngine {
 }
 
 impl Engine for DirectEngine {
-    fn drive(&mut self, node: circuit::NodeId, input: Input) -> Result<(), EngineError> {
-        let node_id = self.nodes.get(node.index());
-        match input {
+    fn drive(&mut self, drive: Drive) -> Result<(), EngineError> {
+        let node_id = self.nodes.get(drive.node().index());
+        match drive.input() {
             Input::Press => {
                 let node = &mut self.nodes[node_id];
                 if !node.is_powered() {

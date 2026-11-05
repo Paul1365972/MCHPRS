@@ -96,7 +96,7 @@ pub fn extract(
         let Some(&node) = nodes_by_position.get(&position) else {
             return Err(ExtractError::NoComponent(position));
         };
-        if role == Role::Input && graph[node].kind.drive().is_none() {
+        if role == Role::Input && graph[node].kind.drive_kind().is_none() {
             return Err(ExtractError::NotDrivable(position));
         }
     }

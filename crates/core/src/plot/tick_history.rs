@@ -61,7 +61,7 @@ impl TickHistory {
         );
     }
 
-    pub fn add(&mut self, end: Instant, length: Duration, ticks: u64) {
+    fn add(&mut self, end: Instant, length: Duration, ticks: u64) {
         self.sample_start = end;
         self.sample_ticks = 0;
         if length.is_zero() {

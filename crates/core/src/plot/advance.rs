@@ -143,8 +143,8 @@ impl Plot {
         if self.advances.is_empty() {
             return false;
         }
-        match &self.redpiler {
-            Some(redpiler) if self.advances.is_handed() => redpiler.worker.stop_advancing(),
+        match &mut self.redpiler {
+            Some(redpiler) if self.advances.is_handed() => redpiler.advance(None),
             _ => {
                 self.end_world_advance();
                 self.publish_world();
@@ -155,12 +155,15 @@ impl Plot {
     }
 
     pub(super) fn continue_advancing(&mut self) {
+        if self.is_compiling_redpiler() {
+            return;
+        }
         let Some(goal) = self.advances.hand() else {
             return;
         };
-        match &self.redpiler {
+        match &mut self.redpiler {
             Some(redpiler) => {
-                redpiler.worker.advance(goal);
+                redpiler.advance(Some(goal));
                 self.publish_world();
             }
             None => {
