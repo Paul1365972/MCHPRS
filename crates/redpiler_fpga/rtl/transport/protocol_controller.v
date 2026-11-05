@@ -12,11 +12,18 @@ module protocol_controller #(
     input wire clock,
     input wire serial_receive,
     input wire clear_fault,
+    input wire circuit_busy,
+    input wire tick_started,
+    input wire [63:0] tick_count,
+    input wire [(STATE_BYTES + APPEARANCE_BYTES) * 8 - 1:0] readback,
     output wire serial_transmit,
-    output wire ticking,
     output wire halted,
-    output wire [63:0] tick_count,
-    output reg [3:0] fault_code = 0
+    output reg [3:0] fault_code = 0,
+    output wire set_input,
+    output wire [31:0] input_index,
+    output wire input_value,
+    output reg run = 0,
+    output wire [63:0] tick_limit
 );
     localparam [7:0] STATUS = 0, INPUT = 1, PAUSE = 2, RUN_UNLIMITED = 3, RUN_TICKS = 4,
         RUN_PERIODIC = 5, READ_APPEARANCE = 6, READ_STATES = 7;
@@ -25,13 +32,12 @@ module protocol_controller #(
     localparam POSITION_WIDTH =
         $clog2(HEADER_BYTES + IDENTITY_BYTES + STATE_BYTES + APPEARANCE_BYTES + 3);
 
-    wire received, engine_busy, tick_started, sending;
+    wire received, sending;
     wire [COMMAND_BYTES * 8 - 1:0] command;
     wire [7:0] received_code = command[7:0];
     wire [63:0] received_argument = command[71:8];
     wire [3:0] receive_fault;
     wire [POSITION_WIDTH - 1:0] position;
-    wire [(STATE_BYTES + APPEARANCE_BYTES) * 8 - 1:0] readback;
     reg [POSITION_WIDTH - 1:0] readback_byte = 0;
     reg [7:0] content = 0;
 
@@ -44,19 +50,21 @@ module protocol_controller #(
     reg [63:0] period = 1;
     reg [63:0] clocks_left = 0;
     reg [31:0] ticks_due = 0;
-    reg allowed = 0;
     reg reading = 0;
     reg [7:0] answered = STATUS;
     reg [HEADER_BYTES * 8 - 1:0] header = 0;
     reg [POSITION_WIDTH - 1:0] length = 0;
 
-    wire executing = pending && !engine_busy && !allowed && !sending;
+    wire executing = pending && !circuit_busy && !run && !sending;
     wire period_elapsed = mode == RUN_PERIODIC && clocks_left == 0;
     wire tick_paid = mode == RUN_PERIODIC && tick_started;
     wire [POSITION_WIDTH - 1:0] payload_position = position - HEADER_BYTES;
 
-    assign ticking = engine_busy;
-    assign halted = (mode == PAUSE || mode == RUN_TICKS && tick_count == target) && !engine_busy;
+    assign halted = (mode == PAUSE || mode == RUN_TICKS && tick_count == target) && !circuit_busy;
+    assign set_input = executing && code == INPUT && status == 0;
+    assign input_index = {1'b0, argument[30:0]};
+    assign input_value = argument[31];
+    assign tick_limit = mode == RUN_TICKS ? target : 64'hffff_ffff_ffff_ffff;
 
     frame_receiver #(.CONTENT_BYTES(COMMAND_BYTES), .CLOCKS_PER_BIT(CLOCKS_PER_BIT)) receiver (
         .clock(clock), .serial(serial_receive), .received(received), .content(command),
@@ -68,13 +76,6 @@ module protocol_controller #(
     ) transmitter (
         .clock(clock), .start(executing), .length(length), .content(content),
         .position(position), .busy(sending), .serial(serial_transmit)
-    );
-    compiled_circuit circuit (
-        .clock(clock), .set_input(executing && code == INPUT && status == 0),
-        .input_index({1'b0, argument[30:0]}), .input_value(argument[31]),
-        .run(allowed), .tick_limit(mode == RUN_TICKS ? target : 64'hffff_ffff_ffff_ffff),
-        .busy(engine_busy), .tick_started(tick_started), .tick_count(tick_count),
-        .readback(readback)
     );
 
     function [POSITION_WIDTH - 1:0] payload_bytes(input [7:0] answered_code);
@@ -89,7 +90,7 @@ module protocol_controller #(
         content <= position < HEADER_BYTES ? header[position * 8 +: 8]
             : answered == STATUS ? CIRCUIT_ID[payload_position * 8 +: 8]
             : readback[readback_byte * 8 +: 8];
-        allowed <= (mode == RUN_UNLIMITED || mode == RUN_TICKS || mode == RUN_PERIODIC && ticks_due != 0)
+        run <= (mode == RUN_UNLIMITED || mode == RUN_TICKS || mode == RUN_PERIODIC && ticks_due != 0)
             && !pending && !(reading && sending);
         if (clear_fault)
             fault_code <= 0;

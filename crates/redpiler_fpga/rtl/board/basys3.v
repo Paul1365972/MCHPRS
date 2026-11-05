@@ -8,7 +8,12 @@ module basys3 (
     output wire [15:0] led,
     output wire [6:0] segment,
     output wire [3:0] anode,
-    output wire decimal_point
+    output wire decimal_point,
+    output wire [3:0] vga_red,
+    output wire [3:0] vga_green,
+    output wire [3:0] vga_blue,
+    output wire vga_horizontal_sync,
+    output wire vga_vertical_sync
 );
     localparam CLOCKS_PER_SECOND = 100_000_000;
     localparam CLOCKS_PER_REFRESH = CLOCKS_PER_SECOND / 10;
@@ -60,7 +65,9 @@ module basys3 (
     circuit_system system (
         .clock(clock), .serial_receive(serial_receive), .clear_fault(clear_fault),
         .serial_transmit(serial_transmit), .ticking(ticking), .halted(halted),
-        .tick_count(tick_count), .fault_code(fault_code)
+        .tick_count(tick_count), .fault_code(fault_code),
+        .vga_color({vga_red, vga_green, vga_blue}), .vga_horizontal_sync(vga_horizontal_sync),
+        .vga_vertical_sync(vga_vertical_sync)
     );
     push_button center (.clock(clock), .button(button_center), .pressed(clear_fault));
     push_button left (.clock(clock), .button(button_left), .pressed(previous_view));

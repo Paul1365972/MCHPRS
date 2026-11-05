@@ -10,6 +10,7 @@ mod readback;
 mod reference;
 mod registers;
 mod rtl;
+mod screen;
 mod stage;
 mod subprocess;
 mod verilator;
