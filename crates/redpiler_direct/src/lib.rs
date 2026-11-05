@@ -18,7 +18,6 @@ use mchprs_redpiler::passes::{
 use mchprs_redstone::tick_queue::TickPriority;
 use node::{ForwardLink, ForwardLinks, Node, NodeId, NodeInput, NodeKind, Nodes};
 use std::mem;
-use std::sync::Arc;
 
 const REORDER: Flag = Flag::switch(
     "reorder",
@@ -147,11 +146,11 @@ impl TickScheduler {
 }
 
 pub struct DirectEngine {
-    circuit: Arc<Circuit>,
     nodes: Nodes,
     forward_links: ForwardLinks,
     scheduler: TickScheduler,
     notes: NoteActivations,
+    initial: Snapshot,
 }
 
 pub struct DirectBackend;
@@ -189,7 +188,7 @@ impl Backend for DirectBackend {
 impl DirectEngine {
     const MAX_LINKS_PER_KIND: usize = u8::MAX as usize;
 
-    pub fn new(circuit: Arc<Circuit>) -> Result<DirectEngine, EngineError> {
+    pub fn new(circuit: &Circuit) -> Result<DirectEngine, EngineError> {
         for id in circuit.ids() {
             for kind in [LinkKind::Default, LinkKind::Side] {
                 let count = circuit
@@ -212,16 +211,17 @@ impl DirectEngine {
         let mut forward_links = ForwardLinks::default();
         let nodes = circuit
             .ids()
-            .map(|id| build_node(&circuit, id, &mut forward_links))
+            .map(|id| build_node(circuit, id, &mut forward_links))
             .collect();
         let mut engine = DirectEngine {
             nodes: Nodes::new(nodes),
             forward_links,
             scheduler: TickScheduler::default(),
             notes: NoteActivations::new(circuit.len()),
-            circuit,
+            initial: Snapshot::default(),
         };
         engine.schedule(&initial.pending_ticks);
+        engine.initial = initial;
         Ok(engine)
     }
 
@@ -290,12 +290,7 @@ impl DirectEngine {
 }
 
 impl Engine for DirectEngine {
-    fn circuit(&self) -> &Arc<Circuit> {
-        &self.circuit
-    }
-
     fn drive(&mut self, node: circuit::NodeId, input: Input) -> Result<(), EngineError> {
-        debug_assert!(self.circuit.check_input(node, input).is_ok());
         let node_id = self.nodes.get(node.index());
         match input {
             Input::Press => {
@@ -327,12 +322,17 @@ impl Engine for DirectEngine {
         Ok(())
     }
 
-    fn is_idle(&mut self) -> Result<bool, EngineError> {
-        Ok(!self.scheduler.has_pending_ticks())
+    fn settle(&mut self, limit: u64) -> Result<Option<u64>, EngineError> {
+        for ticks in 0..limit {
+            if !self.scheduler.has_pending_ticks() {
+                return Ok(Some(ticks));
+            }
+            self.tick();
+        }
+        Ok((!self.scheduler.has_pending_ticks()).then_some(limit))
     }
 
-    fn changes(&mut self) -> Result<Changes, EngineError> {
-        let mut changes = Changes::default();
+    fn changes(&mut self, changes: &mut Changes) -> Result<(), EngineError> {
         for (index, node) in self.nodes.inner_mut().iter_mut().enumerate() {
             if node.changed && node.visible {
                 node.changed = false;
@@ -348,7 +348,7 @@ impl Engine for DirectEngine {
                     .push((circuit::NodeId::new(node.index()), count));
             }
         }
-        Ok(changes)
+        Ok(())
     }
 
     fn snapshot(&mut self) -> Result<Snapshot, EngineError> {
@@ -363,26 +363,47 @@ impl Engine for DirectEngine {
     }
 
     fn restore(&mut self, snapshot: &Snapshot) -> Result<(), EngineError> {
-        self.circuit.check_snapshot(snapshot)?;
+        if snapshot.states.len() != self.nodes.inner().len() {
+            return Err(format!(
+                "snapshot has {} node states (expected {})",
+                snapshot.states.len(),
+                self.nodes.inner().len()
+            )
+            .into());
+        }
         check_delays(&snapshot.pending_ticks)?;
         for (node, state) in self.nodes.inner_mut().iter_mut().zip(&snapshot.states) {
             node.power = state.power;
             node.repeater_locked = state.repeater_locked;
             node.pending_tick = false;
             node.changed = true;
+            node.default_inputs = NodeInput::new();
+            node.side_inputs = NodeInput::new();
         }
-        for id in self.circuit.ids() {
-            let (default_inputs, side_inputs) = input_powers(&self.circuit, id, |source| {
-                snapshot.states[source.index()].power
-            });
-            let node = &mut self.nodes.inner_mut()[id.index()];
-            node.default_inputs = default_inputs;
-            node.side_inputs = side_inputs;
+        for source in 0..self.nodes.inner().len() {
+            let power = self.nodes.inner()[source].power;
+            let links = self.nodes.inner()[source].fwd_link_range.clone();
+            for link in self.forward_links.get(&links) {
+                let target = &mut self.nodes[link.node()];
+                let inputs = if link.side() {
+                    &mut target.side_inputs
+                } else {
+                    &mut target.default_inputs
+                };
+                inputs.update_power(SignalStrength::Zero, power.saturating_sub(link.weight()));
+            }
         }
         self.scheduler.clear();
         self.notes.clear();
         self.schedule(&snapshot.pending_ticks);
         Ok(())
+    }
+
+    fn reset(&mut self) -> Result<(), EngineError> {
+        let initial = mem::take(&mut self.initial);
+        let reset = self.restore(&initial);
+        self.initial = initial;
+        reset
     }
 }
 
@@ -421,16 +442,10 @@ fn build_node(circuit: &Circuit, id: circuit::NodeId, forward_links: &mut Forwar
     let node = circuit.node(id);
     let (default_inputs, side_inputs) =
         input_powers(circuit, id, |source| circuit.node(source).state.power);
-
-    // A constant never changes, so its outputs only count towards the initial inputs
-    let fwd_link_range = if node.kind == graph::NodeKind::Constant {
-        Default::default()
-    } else {
-        forward_links.extend(circuit.outputs(id).iter().map(|link| {
-            let target = NodeId::new(link.target.index(), circuit.len());
-            ForwardLink::new(target, link.kind == LinkKind::Side, link.weight)
-        }))
-    };
+    let fwd_link_range = forward_links.extend(circuit.outputs(id).iter().map(|link| {
+        let target = NodeId::new(link.target.index(), circuit.len());
+        ForwardLink::new(target, link.kind == LinkKind::Side, link.weight)
+    }));
 
     let kind = match node.kind {
         graph::NodeKind::Repeater { delay, prioritized } => {

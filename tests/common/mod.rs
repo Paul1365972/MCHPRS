@@ -40,10 +40,10 @@ impl RedpilerInstance {
             &mut |_| ControlFlow::Continue(()),
         )
         .expect("the test circuit compiles");
-        let engine = (plan.build)(Arc::new(circuit)).expect("the engine holds the test circuit");
+        let engine = (plan.build)(&circuit).expect("the engine holds the test circuit");
         RedpilerInstance {
             label: format!("{} {flags}", backend.name()).trim_end().to_owned(),
-            simulation: Simulation::new(engine),
+            simulation: Simulation::new(Arc::new(circuit), engine),
         }
     }
 

@@ -224,7 +224,8 @@ impl Plot {
                     &plan.passes,
                     progress,
                 )?;
-                Ok(Simulation::new((plan.build)(Arc::new(circuit))?))
+                let engine = (plan.build)(&circuit)?;
+                Ok(Simulation::new(Arc::new(circuit), engine))
             },
         );
         self.redpiler = Some(Redpiler {

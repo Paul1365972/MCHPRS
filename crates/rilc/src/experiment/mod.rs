@@ -32,9 +32,10 @@ impl Configured {
         })
     }
 
-    fn start(self, source: &Source) -> Result<Box<dyn Engine>, BoxError> {
+    fn start(self, source: &Source) -> Result<(Arc<Circuit>, Box<dyn Engine>), BoxError> {
         let circuit = source.circuit(&self.plan)?;
-        (self.plan.build)(circuit)
+        let engine = (self.plan.build)(&circuit)?;
+        Ok((circuit, engine))
     }
 }
 
@@ -76,8 +77,7 @@ impl Source {
 
 pub fn run(source: &Source, backend: Configured, ticks: u64) -> Result<(), BoxError> {
     let name = backend.label.clone();
-    let mut engine = backend.start(source)?;
-    let circuit = engine.circuit().clone();
+    let (circuit, mut engine) = backend.start(source)?;
     let start = Instant::now();
     engine.run(ticks)?;
     let elapsed = start.elapsed();
