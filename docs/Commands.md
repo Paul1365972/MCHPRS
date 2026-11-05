@@ -14,6 +14,7 @@ Flags go after all other arguments. Short flags can be combined, and `=false` tu
 | `/teleport (<position> \| <player>)` | `/tp` | Teleport to coordinates or to a player. |
 | `/speed <speed>` | | Set your flying speed, from 0 to 10. |
 | `/gamemode (creative \| spectator)` | `/gmc`, `/gmsp`, `/gamemode 1`, `/gamemode 3` | Change your game mode. |
+| `/container <type> <power>` | | Give yourself a barrel, furnace or hopper that a comparator reads as signal strength `<power>`, from 0 to 1779. A container type cannot produce every strength above 15. |
 | `/whitelist add <username>` | | Add a player to the whitelist. |
 | `/whitelist remove <username>` | | Remove a player from the whitelist. |
 | `/version` | | Show the server version. |

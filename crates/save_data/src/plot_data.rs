@@ -1,5 +1,6 @@
 mod v2_to_v3;
 mod v3_to_v4;
+mod v4_to_v5;
 
 use crate::replace_file;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -21,6 +22,7 @@ use std::{fmt, io};
 use thiserror::Error;
 use v2_to_v3::PlotDataV2;
 use v3_to_v4::PlotDataV3;
+use v4_to_v5::PlotDataV4;
 
 /// Version History:
 /// 0: Initial plot data file with header (MC 1.18.2)
@@ -28,7 +30,8 @@ use v3_to_v4::PlotDataV3;
 /// 2: Update to MC 1.20.4
 /// 3: Change Tps and WorldSendRate to support real values (f32)
 /// 4: Save the block each pending tick is for
-pub const VERSION: u32 = 4;
+/// 5: Keep comparator outputs above 15, and store no container strength: the items give it
+pub const VERSION: u32 = 5;
 
 const WRITE_BUFFER_SIZE: usize = 1 << 20;
 
@@ -258,8 +261,12 @@ impl PlotData<'_> {
             0..=1 => return Err(PlotLoadError::ConversionUnavailable(version)),
             2 => bincode::deserialize::<PlotDataV2>(&buf)?
                 .upgrade()
-                .upgrade(),
-            3 => bincode::deserialize::<PlotDataV3>(&buf)?.upgrade(),
+                .upgrade()
+                .upgrade(path),
+            3 => bincode::deserialize::<PlotDataV3>(&buf)?
+                .upgrade()
+                .upgrade(path),
+            4 => bincode::deserialize::<PlotDataV4>(&buf)?.upgrade(path),
             VERSION => bincode::deserialize(&buf)?,
             _ => return Err(PlotLoadError::TooNew(version)),
         };

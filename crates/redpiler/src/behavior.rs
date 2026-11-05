@@ -255,9 +255,5 @@ pub fn comparator_output(
         Some(far_input) if inputs.default < SignalStrength::Fifteen => far_input,
         _ => inputs.default,
     };
-    match mode {
-        ComparatorMode::Compare if rear >= inputs.side => rear,
-        ComparatorMode::Compare => SignalStrength::Zero,
-        ComparatorMode::Subtract => rear.saturating_sub(inputs.side.get()),
-    }
+    mode.output(rear.into(), inputs.side.into()).capped()
 }

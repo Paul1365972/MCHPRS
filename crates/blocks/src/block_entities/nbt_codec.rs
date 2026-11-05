@@ -1,5 +1,6 @@
 use super::{BlockEntity, ContainerType, InventoryEntry, SignBlockEntity};
 use crate::items::Item;
+use crate::signal_strength::UncappedSignalStrength;
 use fastnbt::Value;
 use std::array;
 use std::collections::HashMap;
@@ -11,7 +12,9 @@ impl BlockEntity {
     pub fn from_nbt(id: &str, nbt: &HashMap<String, Value>) -> Option<BlockEntity> {
         match id.trim_start_matches("minecraft:") {
             "comparator" => Some(BlockEntity::Comparator {
-                output_strength: nbt_get_int(nbt, "OutputSignal").unwrap_or(0).clamp(0, 15) as u8,
+                output_strength: UncappedSignalStrength::saturating_from(
+                    nbt_get_int(nbt, "OutputSignal").unwrap_or(0),
+                ),
             }),
             // Lenient: tools write sign NBT in many wrong ways.
             "sign" => {
@@ -54,11 +57,7 @@ impl BlockEntity {
     fn load_container(items: Option<&Value>, ty: ContainerType) -> BlockEntity {
         let mut inventory: Vec<InventoryEntry> = Vec::new();
         let Some(Value::List(items)) = items else {
-            return BlockEntity::Container {
-                inventory,
-                ty,
-                comparator_override: 0,
-            };
+            return BlockEntity::Container { inventory, ty };
         };
         for item in items {
             let Value::Compound(item) = item else {
@@ -72,18 +71,7 @@ impl BlockEntity {
             inventory.retain(|entry| entry.slot != slot);
             inventory.extend(load_stack(item, slot));
         }
-        let num_slots = ty.num_slots();
-        let fullness_sum: f32 = inventory
-            .iter()
-            .map(|entry| entry.count as f32 / Item::from_id(entry.id).max_stack_size() as f32)
-            .sum();
-        BlockEntity::Container {
-            comparator_override: (if fullness_sum > 0.0 { 1.0 } else { 0.0 }
-                + (fullness_sum / num_slots as f32) * 14.0)
-                .floor() as u8,
-            inventory,
-            ty,
-        }
+        BlockEntity::Container { inventory, ty }
     }
 
     pub fn to_nbt(&self, sign_only: bool) -> Option<HashMap<String, Value>> {
@@ -127,7 +115,7 @@ impl BlockEntity {
             BlockEntity::Comparator { output_strength } => Some(HashMap::from([
                 (
                     "OutputSignal".to_owned(),
-                    Value::Int((*output_strength).into()),
+                    Value::Int(output_strength.get().into()),
                 ),
                 (
                     "id".to_owned(),

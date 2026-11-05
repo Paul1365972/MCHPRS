@@ -5,7 +5,7 @@ use crate::commands::argument_parser::{
 };
 use crate::commands::context::ExecutionContext;
 use crate::commands::define::{alt, Command};
-use crate::commands::error::CommandResult;
+use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::{PlayerTarget, PositionCoordinates};
 use crate::item_stack::ItemStack;
@@ -13,6 +13,7 @@ use crate::player::{Gamemode, PlayerPos};
 use crate::server::{get_version_string, Message};
 use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::ContainerType;
+use mchprs_blocks::signal_strength::UncappedSignalStrength;
 #[cfg(feature = "whitelist")]
 use mchprs_network::PlayerPacketSender;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
@@ -98,7 +99,8 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
 
     let mut container = Command::new("container");
     let container_type = container.required("type", ContainerParser);
-    let power = container.required("power", IntegerParser::new(0, 15));
+    let max_power = ContainerType::MAX_SIGNAL_STRENGTH.get().into();
+    let power = container.required("power", IntegerParser::new(0, max_power));
     registry.register(container.executes(move |ctx| {
         let (container_type, power) = (ctx.get(container_type), ctx.get(power));
         exec_container(ctx, container_type, power)
@@ -196,7 +198,14 @@ fn exec_container(
     container_type: ContainerType,
     power: i32,
 ) -> CommandResult<()> {
-    let item = ItemStack::container_with_ss(container_type, power as u8);
+    let inventory = container_type
+        .inventory_for(UncappedSignalStrength::saturating_from(power))
+        .ok_or_else(|| {
+            CommandError::runtime(format!(
+                "This container can't produce signal strength {power}."
+            ))
+        })?;
+    let item = ItemStack::container(container_type, inventory);
     let player = ctx.player_mut()?;
     let slot = 36 + player.selected_slot;
     player.set_inventory_slot(slot, Some(item));
