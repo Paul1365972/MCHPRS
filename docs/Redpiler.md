@@ -105,7 +105,7 @@ Each backend declares how deterministic it is. Direct runs a circuit the same wa
 
 A backend runs a circuit. It may implement redstone execution in any way, whether that is by just-in-time compiling redstone or by interpreting the graph.
 
-`rilc diff` runs a circuit on two backends tick by tick and explains the first difference. `rilc diff plot.schem --backends "direct" "direct -o" --ticks 1000` checks the optimized circuit against the plain one. Given a schematic, each backend compiles it as it would in game. Backends that end up with the same circuit are compared node by node, including pending ticks; others by the blocks at the positions both show. Note blocks have to play equally often on both, and both backends have to show every port of either circuit.
+`rilc diff` runs a circuit on two backends tick by tick and explains the first difference. `rilc diff plot.schem --backends "direct" "direct -o" --ticks 1000` checks the optimized circuit against the plain one. Given a schematic, each backend compiles it as it would in game. Backends that end up with the same circuit are compared node by node, including pending ticks and the order they run in; others by the blocks at the positions both show. Note blocks have to play equally often on both, and both backends have to show every port of either circuit.
 
 ## How Redstone Works
 

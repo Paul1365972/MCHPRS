@@ -384,10 +384,13 @@ fn describe_inputs(circuit: &Circuit, node: NodeId, before: &Snapshot, indent: &
     }
 }
 
-fn pending_by_node(snapshot: &Snapshot) -> Vec<Option<PendingTick>> {
+fn pending_by_node(snapshot: &Snapshot) -> Vec<Option<(PendingTick, usize)>> {
     let mut pending = vec![None; snapshot.states.len()];
+    let mut queued: FxHashMap<PendingTick, usize> = FxHashMap::default();
     for &(node, tick) in &snapshot.pending_ticks {
-        pending[node.index()] = Some(tick);
+        let ahead = queued.entry(tick).or_default();
+        pending[node.index()] = Some((tick, *ahead));
+        *ahead += 1;
     }
     pending
 }
@@ -406,13 +409,9 @@ fn describe_state(snapshot: &Snapshot, node: NodeId) -> String {
     if state.repeater_locked {
         description.push_str(", locked");
     }
-    if let Some((_, tick)) = snapshot
-        .pending_ticks
-        .iter()
-        .find(|&&(pending, _)| pending == node)
-    {
+    if let Some((tick, ahead)) = pending_by_node(snapshot)[node.index()] {
         description.push_str(&format!(
-            ", pending in {} at {:?}",
+            ", pending in {} at {:?} with {ahead} ahead",
             tick.delay, tick.priority
         ));
     }
