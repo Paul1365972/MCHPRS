@@ -1,10 +1,9 @@
 use crate::circuit::{Circuit, NodeId};
-use crate::engine::{Changes, Snapshot};
-use crate::graph::{NodeKind, NodeState, PendingTick};
+use crate::engine::{Changes, Drive, Input, Snapshot};
+use crate::graph::{NodeKind, NodeState};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::BlockPos;
-use mchprs_redstone::tick_queue::TickEntry;
 use mchprs_redstone::RedstoneWorld;
 use smallvec::SmallVec;
 use std::mem;
@@ -45,6 +44,7 @@ pub struct PlayedNote {
 }
 
 pub struct BlockMap {
+    circuit: Circuit,
     blocks: Box<[NodeBlocks]>,
     states: Box<[NodeState]>,
     dirty: Box<[bool]>,
@@ -54,7 +54,7 @@ pub struct BlockMap {
 }
 
 impl BlockMap {
-    pub fn new(circuit: &Circuit) -> BlockMap {
+    pub fn new(circuit: Circuit) -> BlockMap {
         BlockMap {
             blocks: circuit
                 .ids()
@@ -69,14 +69,54 @@ impl BlockMap {
             dirty_nodes: Vec::new(),
             plays: vec![0; circuit.len()].into_boxed_slice(),
             played: Vec::new(),
+            circuit,
         }
     }
 
-    pub fn record(&mut self, changes: Changes) {
-        for (node, state) in changes.states {
+    pub fn circuit(&self) -> &Circuit {
+        &self.circuit
+    }
+
+    pub fn use_block(&self, pos: BlockPos) -> Option<Drive> {
+        let node = self.circuit.node_at(pos)?;
+        let input = match self.circuit.node(node).kind {
+            NodeKind::Lever => Input::Toggle,
+            NodeKind::Button => Input::Press,
+            _ => return None,
+        };
+        self.circuit.check_input(node, input).ok()
+    }
+
+    pub fn pressure_plate(&self, pos: BlockPos, pressed: bool) -> Option<Drive> {
+        let node = self.circuit.node_at(pos)?;
+        if self.circuit.node(node).kind != NodeKind::PressurePlate {
+            return None;
+        }
+        self.circuit
+            .check_input(node, Input::Set(pressed.into()))
+            .ok()
+    }
+
+    pub fn pressure_plates(&self) -> impl Iterator<Item = (BlockPos, bool)> + '_ {
+        self.circuit
+            .ids()
+            .filter(|&id| {
+                let node = self.circuit.node(id);
+                node.kind == NodeKind::PressurePlate && node.is_input()
+            })
+            .flat_map(|id| {
+                let pressed = self.states[id.index()].is_powered();
+                self.blocks[id.index()]
+                    .iter()
+                    .map(move |&(pos, _)| (pos, pressed))
+            })
+    }
+
+    pub fn record(&mut self, changes: &Changes) {
+        for &(node, state) in &changes.states {
             self.set_state(node, state);
         }
-        for (node, count) in changes.notes {
+        for &(node, count) in &changes.notes {
             let plays = &mut self.plays[node.index()];
             if *plays == 0 {
                 self.played.push(node);
@@ -110,7 +150,7 @@ impl BlockMap {
         }
     }
 
-    pub fn take_changes(&mut self, circuit: &Circuit) -> BlockChanges {
+    pub fn take_changes(&mut self) -> BlockChanges {
         let mut changes = BlockChanges::default();
         for node in self.dirty_nodes.drain(..) {
             self.dirty[node.index()] = false;
@@ -126,7 +166,7 @@ impl BlockMap {
         }
         for node in self.played.drain(..) {
             let count = mem::take(&mut self.plays[node.index()]);
-            let NodeKind::NoteBlock { instrument, note } = circuit.node(node).kind else {
+            let NodeKind::NoteBlock { instrument, note } = self.circuit.node(node).kind else {
                 panic!(
                     "node {} played a note but is not a note block",
                     node.index()
@@ -144,15 +184,19 @@ impl BlockMap {
         changes
     }
 
-    pub fn tick_entries(&self, pending_ticks: &[(NodeId, PendingTick)]) -> Vec<TickEntry> {
-        pending_ticks
-            .iter()
-            .flat_map(|&(node, tick)| {
-                self.blocks[node.index()]
-                    .iter()
-                    .map(move |&(pos, block)| TickEntry::new(pos, tick.delay, tick.priority, block))
-            })
-            .collect()
+    pub fn apply(&mut self, changes: &Changes, world: &mut impl RedstoneWorld) {
+        self.record(changes);
+        self.take_changes().apply(world);
+    }
+
+    pub fn finish(mut self, snapshot: &Snapshot, world: &mut impl RedstoneWorld) {
+        self.record_snapshot(snapshot);
+        self.take_changes().apply(world);
+        for &(node, tick) in &snapshot.pending_ticks {
+            for &(pos, _) in &self.blocks[node.index()] {
+                world.schedule_tick(pos, tick.delay, tick.priority);
+            }
+        }
     }
 }
 

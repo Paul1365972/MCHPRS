@@ -1,4 +1,4 @@
-use super::{Plot, PLOT_BLOCK_HEIGHT};
+use super::{Plot, ERROR_REDPILER_ACTIVE, PLOT_BLOCK_HEIGHT};
 use crate::commands::schematic::schematic_names;
 use crate::commands::suggestions::SuggestionSource;
 use crate::item_stack::ItemStack;
@@ -413,7 +413,7 @@ impl ServerBoundPacketHandler for Plot {
         self.players[player].selected_slot = held_item_change.slot as u32;
     }
 
-    fn handle_update_sign(&mut self, packet: SUpdateSign, _player: usize) {
+    fn handle_update_sign(&mut self, packet: SUpdateSign, player: usize) {
         let pos = BlockPos::new(packet.x, packet.y, packet.z);
         if !Plot::in_plot_bounds(self.world.x, self.world.z, pos.x, pos.z)
             || !(0..PLOT_BLOCK_HEIGHT).contains(&pos.y)
@@ -422,6 +422,29 @@ impl ServerBoundPacketHandler for Plot {
         }
         let block = self.world.block(pos);
         if !(block.is_sign() || block.is_wall_sign()) {
+            return;
+        }
+        if self.redpiler.is_active() {
+            let player = &self.players[player];
+            player.send_error_message(ERROR_REDPILER_ACTIVE);
+            let blank;
+            let sign = match self.world.block_entity(pos) {
+                Some(sign @ BlockEntity::Sign(_)) => sign,
+                _ => {
+                    blank = BlockEntity::Sign(Box::default());
+                    &blank
+                }
+            };
+            if let Some(nbt) = sign.to_nbt(true) {
+                let correction = CBlockEntityData {
+                    x: pos.x,
+                    y: pos.y,
+                    z: pos.z,
+                    ty: sign.ty(),
+                    nbt,
+                };
+                player.client.send_packet(&correction.encode());
+            }
             return;
         }
         let mut rows = packet

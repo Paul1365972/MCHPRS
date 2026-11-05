@@ -73,7 +73,7 @@ impl BackendSetup {
         let context = &mut BuildContext::silent();
         let circuit = compile(world, region, ticks, &plan.extract, &plan.passes, context)?;
         let engine = self.backend.build(&circuit, &self.flags, context)?;
-        Ok(Simulation::new(circuit.into(), engine))
+        Ok(Simulation::new(circuit, engine))
     }
 }
 

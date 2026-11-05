@@ -205,8 +205,12 @@ fn exec_gamemode(ctx: &mut ExecutionContext<'_>, gamemode: Gamemode) -> CommandR
 
 fn exec_radvance(ctx: &mut ExecutionContext<'_>, goal: Goal) -> CommandResult<()> {
     let requester = PlayerPacketSender::new(&ctx.player()?.client);
-    if !ctx.plot_mut().start_advancing(goal, requester) {
+    let plot = ctx.plot_mut();
+    if !plot.start_advancing(goal, requester) {
         return ctx.reply("The plot is already advancing. Use /radv stop first.");
+    }
+    if plot.is_compiling_redpiler() {
+        return ctx.reply("The plot will advance once redpiler has compiled.");
     }
     Ok(())
 }

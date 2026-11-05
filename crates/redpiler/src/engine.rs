@@ -14,6 +14,26 @@ pub enum Input {
     Press,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Drive {
+    node: NodeId,
+    input: Input,
+}
+
+impl Drive {
+    pub(crate) fn new(node: NodeId, input: Input) -> Drive {
+        Drive { node, input }
+    }
+
+    pub fn node(self) -> NodeId {
+        self.node
+    }
+
+    pub fn input(self) -> Input {
+        self.input
+    }
+}
+
 #[derive(Debug)]
 pub enum DriveError {
     NoNode(BlockPos),
@@ -52,8 +72,8 @@ pub struct Snapshot {
 
 /// Keeps at most one pending tick per node between ticks.
 pub trait Engine: Send {
-    /// The input must pass [`Circuit::check_input`](crate::circuit::Circuit::check_input).
-    fn drive(&mut self, node: NodeId, input: Input) -> Result<(), EngineError>;
+    /// The drive must come from the circuit the engine was built from.
+    fn drive(&mut self, drive: Drive) -> Result<(), EngineError>;
 
     fn run(&mut self, ticks: u64) -> Result<(), EngineError>;
 
@@ -75,8 +95,8 @@ pub trait Engine: Send {
 }
 
 impl<E: Engine + ?Sized> Engine for Box<E> {
-    fn drive(&mut self, node: NodeId, input: Input) -> Result<(), EngineError> {
-        (**self).drive(node, input)
+    fn drive(&mut self, drive: Drive) -> Result<(), EngineError> {
+        (**self).drive(drive)
     }
 
     fn run(&mut self, ticks: u64) -> Result<(), EngineError> {

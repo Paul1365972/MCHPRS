@@ -96,7 +96,7 @@ secret = "<secret>"
 
 ### Redpiler
 
-`default_backend` sets the backend `/redpiler compile` uses. The `redpiler.flags` table sets default [flags](docs/Commands.md#compiler-flags) other than `--update` for each backend, written as in the command. Flags given to the command override them.
+`default_backend` sets the backend `/redpiler compile` uses. The `redpiler.flags` table sets default [flags](docs/Commands.md#compiler-flags) for each backend, written as in the command. Flags given to the command override them.
 
 ```toml
 [redpiler]

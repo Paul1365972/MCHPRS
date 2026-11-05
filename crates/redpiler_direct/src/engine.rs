@@ -8,7 +8,7 @@ use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::backend::BuildError;
 use mchprs_redpiler::circuit::{self, Circuit};
-use mchprs_redpiler::engine::{Changes, Engine, EngineError, Input, Snapshot};
+use mchprs_redpiler::engine::{Changes, Drive, Engine, EngineError, Input, Snapshot};
 use mchprs_redpiler::graph::PendingTick;
 use mchprs_redstone::tick_queue::TickPriority;
 use std::mem;
@@ -159,9 +159,9 @@ impl DirectEngine {
 }
 
 impl Engine for DirectEngine {
-    fn drive(&mut self, node: circuit::NodeId, input: Input) -> Result<(), EngineError> {
-        let node_id = self.nodes.get(node.index());
-        match input {
+    fn drive(&mut self, drive: Drive) -> Result<(), EngineError> {
+        let node_id = self.nodes.get(drive.node().index());
+        match drive.input() {
             Input::Press => {
                 let node = &mut self.nodes[node_id];
                 if !node.is_powered() {

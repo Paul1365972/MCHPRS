@@ -3,6 +3,8 @@ use crate::compile::{BuildContext, Cancelled};
 use crate::engine::{Engine, EngineError};
 use crate::extract::ExtractOptions;
 use crate::passes::Pass;
+#[cfg(feature = "session")]
+use crate::session::{Session, SessionContext, Worker};
 use mchprs_commands::flag::{Flag, FlagValues};
 use std::fmt;
 
@@ -19,6 +21,20 @@ pub trait Backend: Sync {
         flags: &FlagValues,
         context: &mut BuildContext<'_>,
     ) -> Result<Box<dyn Engine>, BuildError>;
+
+    #[cfg(feature = "session")]
+    fn start(
+        &self,
+        circuit: &Circuit,
+        flags: &FlagValues,
+        context: &mut BuildContext<'_>,
+        session: SessionContext,
+    ) -> Result<Box<dyn Session>, BuildError> {
+        let engine = self.build(circuit, flags, context)?;
+        let worker =
+            Worker::spawn(engine, session).map_err(|error| BuildError::Failed(error.into()))?;
+        Ok(Box::new(worker))
+    }
 }
 
 pub struct CompilePlan {

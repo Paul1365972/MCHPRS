@@ -102,7 +102,7 @@ fn exec_stack(
             continue;
         }
         let destination = (first_pos + offset * i, second_pos + offset * i);
-        paste_clipboard(ctx.world_mut(), &clipboard, destination.0, ignore_air);
+        paste_clipboard(ctx.world_mut()?, &clipboard, destination.0, ignore_air);
         last_copy = Some(destination);
     }
 

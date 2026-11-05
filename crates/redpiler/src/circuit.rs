@@ -1,4 +1,4 @@
-use crate::engine::{DriveError, Input, Snapshot};
+use crate::engine::{Drive, DriveError, Input, Snapshot};
 use crate::graph::{Direction, DriveKind, Graph, LinkKind, Node, NodeIdx, QueuedTick};
 use crate::ports::Role;
 use mchprs_blocks::blocks::Block;
@@ -29,6 +29,7 @@ pub struct Link {
     pub weight: u8,
 }
 
+#[derive(Clone)]
 pub struct Circuit {
     nodes: Box<[Node]>,
     inputs: LinkTable,
@@ -123,7 +124,7 @@ impl Circuit {
         }
     }
 
-    pub fn check_input(&self, id: NodeId, input: Input) -> Result<(), DriveError> {
+    pub fn check_input(&self, id: NodeId, input: Input) -> Result<Drive, DriveError> {
         let node = self.node(id);
         if !node.is_input() {
             return Err(DriveError::NotAnInput(id));
@@ -137,10 +138,10 @@ impl Circuit {
             (Some(DriveKind::Press), Input::Press) => true,
             _ => false,
         };
-        match accepted {
-            true => Ok(()),
-            false => Err(DriveError::Unsupported { node: id, input }),
+        if !accepted {
+            return Err(DriveError::Unsupported { node: id, input });
         }
+        Ok(Drive::new(id, input))
     }
 
     pub fn check_snapshot(&self, snapshot: &Snapshot) -> Result<(), SnapshotError> {
@@ -272,6 +273,7 @@ fn check(nodes: &[Node], links: &[Link]) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Clone)]
 struct LinkTable {
     links: Vec<Link>,
     offsets: Vec<usize>,

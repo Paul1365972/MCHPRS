@@ -133,18 +133,19 @@ File names can use letters, digits, `_`, `-`, `.` and `+`, and end in `.schem` o
 
 ## Redpiler Commands
 
-Redpiler compiles the plot's redstone circuits for faster simulation.
-Placing or breaking blocks stops Redpiler and returns the plot to normal redstone ticking.
+Redpiler compiles the plot's redstone for faster simulation.
+While it compiles or runs, the plot can't be changed. Levers, buttons and pressure plates still work once it runs.
+Compiling saves the plot, and nothing more is saved while Redpiler runs: the run is saved once `/redpiler reset`, an unload or a server stop ends it. If the run fails or the server crashes, the plot goes back to the compile save.
 
 | Command | Alias | Description |
 | --- | --- | --- |
 | `/redpiler compile [direct]` | `/rp c` | Compile the plot and run it on the `direct` backend, or on the [default backend](../README.md#redpiler) if none is given. |
-| `/redpiler reset` | `/rp r` | Stop compiled simulation and return to normal redstone ticking. |
+| `/redpiler reset` | `/rp r` | Stop Redpiler, or cancel a compile, and return to normal redstone ticking. Flags: `-r`/`--restore` (return every component to its state at compile time), `-u`/`--update` (update every block in the plot afterwards). |
 
 ### Compiler Flags
 
 `/help redpiler compile <backend>` lists the flags a backend takes.
-The [config](../README.md#redpiler) can set default flags per backend, except `--update`; flags given to the command override them, and `--<flag>=false` turns one off.
+The [config](../README.md#redpiler) can set default flags per backend; flags given to the command override them, and `--<flag>=false` turns one off.
 
 | Flag | Short | Description |
 | --- | --- | --- |
@@ -154,7 +155,6 @@ The [config](../README.md#redpiler) can set default flags per backend, except `-
 | `--wire-dot-out` | `-d` | Treat redstone dots as outputs, so they still update with `--io-only` or `--optimize`; useful for color displays. |
 | `--illegal-states-out` | `-l` | Treat redstone wires in illegal states (one connected side) as outputs, so they still update with `--io-only` or `--optimize`; useful for sprite displays. |
 | `--wire-cross-out` | `-c` | Treat redstone crosses as outputs, so they still update with `--io-only` or `--optimize`; useful for sprite displays without illegal wire states. |
-| `--update` | `-u` | Update all blocks after Redpiler resets. |
 
 ## Command Aliases
 

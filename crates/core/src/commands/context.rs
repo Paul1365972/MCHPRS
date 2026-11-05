@@ -142,13 +142,13 @@ impl<'a> ExecutionContext<'a> {
         self.world_access == WorldAccess::Mutable
     }
 
-    pub(super) fn world_mut(&mut self) -> &mut PlotWorld {
-        self.begin_edit();
-        &mut self.plot.world
+    pub(super) fn world_mut(&mut self) -> Result<&mut PlotWorld, RuntimeError> {
+        self.begin_edit()?;
+        Ok(&mut self.plot.world)
     }
 
     pub(super) fn world_and_player_mut(&mut self) -> CommandResult<(&mut PlotWorld, &mut Player)> {
-        self.begin_edit();
+        self.begin_edit()?;
         let index = self.player_idx;
         let plot = &mut *self.plot;
         let player = plot
@@ -158,12 +158,12 @@ impl<'a> ExecutionContext<'a> {
         Ok((&mut plot.world, player))
     }
 
-    fn begin_edit(&mut self) {
-        if self.world_access != WorldAccess::Mutable {
-            self.world();
-            self.plot.reset_redpiler();
-            self.world_access = WorldAccess::Mutable;
+    fn begin_edit(&mut self) -> Result<(), RuntimeError> {
+        if self.plot.redpiler.is_active() {
+            return Err(RuntimeError::RedpilerActive);
         }
+        self.world_access = WorldAccess::Mutable;
+        Ok(())
     }
 
     pub(super) fn player(&self) -> Result<&Player, InternalError> {

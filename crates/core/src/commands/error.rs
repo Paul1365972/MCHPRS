@@ -1,3 +1,4 @@
+use crate::plot::ERROR_REDPILER_ACTIVE;
 use thiserror::Error;
 
 pub(super) type CommandResult<T> = Result<T, CommandError>;
@@ -24,6 +25,8 @@ pub(super) enum RuntimeError {
     UndoFromDifferentPlot,
     #[error("Redo is from a different plot")]
     RedoFromDifferentPlot,
+    #[error("{}", ERROR_REDPILER_ACTIVE)]
+    RedpilerActive,
     #[error("{0}")]
     Message(String),
 }

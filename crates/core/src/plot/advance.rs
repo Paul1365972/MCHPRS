@@ -1,3 +1,4 @@
+use super::redpiler::Redpiler;
 use super::Plot;
 use crate::player::PacketSender;
 use mchprs_network::PlayerPacketSender;
@@ -16,6 +17,7 @@ pub(super) struct Advance {
 enum Phase {
     Waiting,
     Running,
+    Stopping,
 }
 
 impl Advance {
@@ -68,16 +70,30 @@ impl Plot {
     }
 
     pub fn stop_advancing(&mut self) -> bool {
-        if self.advance.is_none() {
+        let Some(advance) = &mut self.advance else {
             return false;
+        };
+        match advance.phase {
+            Phase::Waiting => self.end_advance(false),
+            Phase::Running => {
+                advance.phase = Phase::Stopping;
+                match &mut self.redpiler {
+                    Redpiler::Running(running) => running.advance(None),
+                    _ => {
+                        self.end_world_advance();
+                        self.publish_world();
+                    }
+                }
+            }
+            Phase::Stopping => {}
         }
-        self.end_world_advance();
-        self.publish_world();
-        self.end_advance(false);
         true
     }
 
     pub(super) fn continue_advancing(&mut self) {
+        if self.is_compiling_redpiler() {
+            return;
+        }
         let Some(advance) = &mut self.advance else {
             return;
         };
@@ -86,7 +102,15 @@ impl Plot {
         }
         advance.phase = Phase::Running;
         let goal = advance.remaining_goal();
-        self.pacer.advance(Some(goal), self.now());
+        match &mut self.redpiler {
+            Redpiler::Running(running) => {
+                running.advance(Some(goal));
+                self.publish_world();
+            }
+            _ => {
+                self.pacer.advance(Some(goal), self.now());
+            }
+        }
     }
 
     pub(super) fn end_world_advance(&mut self) {
@@ -102,8 +126,20 @@ impl Plot {
         advance.ran += advanced.ran;
         if advance.has_reached(advanced.settled) {
             self.end_advance(true);
+        } else if advance.phase == Phase::Stopping {
+            self.end_advance(false);
         } else {
             advance.phase = Phase::Waiting;
+        }
+    }
+
+    pub(super) fn release_advance(&mut self) {
+        let Some(advance) = &mut self.advance else {
+            return;
+        };
+        match advance.phase {
+            Phase::Stopping => self.end_advance(false),
+            Phase::Waiting | Phase::Running => advance.phase = Phase::Waiting,
         }
     }
 
