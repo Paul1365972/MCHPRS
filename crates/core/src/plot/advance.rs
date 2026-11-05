@@ -1,7 +1,7 @@
 use super::Plot;
 use crate::player::PacketSender;
 use mchprs_network::PlayerPacketSender;
-use mchprs_worker::Goal;
+use mchprs_redstone::pace::{Advanced, Goal};
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -57,7 +57,7 @@ pub struct Progress {
 #[derive(Default)]
 pub struct Advances {
     queue: VecDeque<Advance>,
-    on_worker: bool,
+    handed: bool,
 }
 
 impl Advances {
@@ -75,27 +75,24 @@ impl Advances {
         self.queue.is_empty()
     }
 
-    pub fn is_on_worker(&self) -> bool {
-        self.on_worker
+    pub fn is_handed(&self) -> bool {
+        self.handed
     }
 
-    pub fn next(&self) -> Option<Goal> {
-        if self.on_worker {
+    pub fn hand(&mut self) -> Option<Goal> {
+        if self.handed {
             return None;
         }
-        self.queue.front().map(Advance::rest)
-    }
-
-    pub fn hand_to_worker(&mut self) -> Option<Goal> {
-        let goal = self.next()?;
-        self.on_worker = true;
+        let goal = self.queue.front().map(Advance::rest)?;
+        self.handed = true;
         Some(goal)
     }
 
-    pub fn ran(&mut self, ticks: u64, settled: bool) {
+    pub fn ran(&mut self, advanced: Advanced) {
+        self.handed = false;
         if let Some(advance) = self.queue.front_mut() {
-            advance.ran += ticks;
-            if advance.has_reached(settled) {
+            advance.ran += advanced.ran;
+            if advance.has_reached(advanced.settled) {
                 advance.reply(true);
                 self.queue.pop_front();
             }
@@ -103,13 +100,8 @@ impl Advances {
         self.end_stopped();
     }
 
-    pub fn worker_ran(&mut self, ticks: u64, settled: bool) {
-        self.on_worker = false;
-        self.ran(ticks, settled);
-    }
-
-    pub fn worker_ended(&mut self) {
-        self.on_worker = false;
+    pub fn release(&mut self) {
+        self.handed = false;
         self.end_stopped();
     }
 
@@ -121,7 +113,7 @@ impl Advances {
     }
 
     fn end_stopped(&mut self) {
-        if self.on_worker {
+        if self.handed {
             return;
         }
         while let Some(advance) = self.queue.front()
@@ -132,11 +124,11 @@ impl Advances {
         }
     }
 
-    pub fn progress(&self, worker_ran: u64) -> Option<Progress> {
+    pub fn progress(&self, advancing: u64) -> Option<Progress> {
         let advance = self.queue.front()?;
         Some(Progress {
             goal: advance.goal,
-            ran: advance.ran + worker_ran,
+            ran: advance.ran + advancing,
             waiting: self.queue.len() - 1,
         })
     }
@@ -152,47 +144,34 @@ impl Plot {
             return false;
         }
         match &self.redpiler {
-            Some(redpiler) if self.advances.is_on_worker() => redpiler.worker.stop_advancing(),
-            _ => self.publish_world(),
+            Some(redpiler) if self.advances.is_handed() => redpiler.worker.stop_advancing(),
+            _ => {
+                self.end_world_advance();
+                self.publish_world();
+            }
         }
         self.advances.stop();
         true
     }
 
     pub(super) fn continue_advancing(&mut self) {
-        if let Some(redpiler) = &self.redpiler {
-            if let Some(goal) = self.advances.hand_to_worker() {
+        let Some(goal) = self.advances.hand() else {
+            return;
+        };
+        match &self.redpiler {
+            Some(redpiler) => {
                 redpiler.worker.advance(goal);
                 self.publish_world();
             }
-            return;
-        }
-        let Some(goal) = self.advances.next() else {
-            return;
-        };
-        let (limit, until_settled) = match goal {
-            Goal::Ticks(ticks) => (ticks, false),
-            Goal::Settled => (u64::MAX, true),
-        };
-        let start = Instant::now();
-        let batch_time = self.batch_time();
-        let mut ran = 0;
-        let mut settled = false;
-        while ran < limit && (ran == 0 || start.elapsed() < batch_time) {
-            if until_settled && self.world.ticks.entries().is_empty() {
-                settled = true;
-                break;
+            None => {
+                self.pacer.advance(Some(goal), self.now());
             }
-            self.tick();
-            ran += 1;
         }
-        if ran > 0 {
-            self.tick_time = Some(start.elapsed().div_f64(ran as f64));
-            self.tick_schedule.skip_overdue(Instant::now());
+    }
+
+    pub(super) fn end_world_advance(&mut self) {
+        if let Some(advanced) = self.pacer.advance(None, self.now()) {
+            self.advances.ran(advanced);
         }
-        if settled || ran == limit {
-            self.publish_world();
-        }
-        self.advances.ran(ran, settled);
     }
 }

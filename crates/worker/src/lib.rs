@@ -1,5 +1,4 @@
 mod runner;
-mod schedule;
 
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::block_map::BlockChanges;
@@ -7,20 +6,13 @@ use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler::compile::Stage;
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
+use mchprs_redstone::pace::{Advanced, Goal, SendRate, TickRate};
 use mchprs_redstone::tick_queue::TickEntry;
 use std::ops::ControlFlow;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-
-pub use schedule::{SendRate, SendSchedule, TickRate, TickSchedule};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Goal {
-    Ticks(u64),
-    Settled,
-}
 
 /// The ticks run since the previous report, and how long running them took.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,10 +33,7 @@ pub enum Event {
     Ticked(TickReport),
     Batch(BlockChanges),
     /// Every advance ends with one.
-    Advanced {
-        ran: u64,
-        settled: bool,
-    },
+    Advanced(Advanced),
     Rejected {
         position: BlockPos,
         error: DriveError,

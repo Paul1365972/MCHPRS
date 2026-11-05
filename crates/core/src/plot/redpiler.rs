@@ -6,10 +6,11 @@ use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler::compile::Stage;
 use mchprs_redpiler::simulation::Simulation;
 use mchprs_redpiler_backends::BackendSetup;
+use mchprs_redstone::pace::{SendRate, TickRate};
 use mchprs_redstone::tick_queue::{TickEntry, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use mchprs_worker::{Event, SendRate, TickRate, TickReport, Worker};
+use mchprs_worker::{Event, TickReport, Worker};
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
@@ -101,9 +102,9 @@ impl Plot {
                 changes.apply(&mut self.world);
                 self.publish_world();
             }
-            Event::Advanced { ran, settled } => {
+            Event::Advanced(advanced) => {
                 redpiler.advanced = 0;
-                self.advances.worker_ran(ran, settled);
+                self.advances.ran(advanced);
             }
             Event::Rejected { position, error } => {
                 warn!("Redpiler rejected the input at {position}: {error}");
@@ -189,7 +190,7 @@ impl Plot {
     fn end_redpiler(&mut self) {
         self.redpiler = None;
         self.world.postpone_autosave();
-        self.advances.worker_ended();
+        self.advances.release();
         self.publish_world();
         self.reset_timings();
         self.refresh_scoreboard();
@@ -205,6 +206,7 @@ impl Plot {
         if self.world.unsaved_since.is_some() {
             return Err("Redpiler didn't start because the plot couldn't be saved.");
         }
+        self.end_world_advance();
         debug!("Starting redpiler with {setup}");
         let region = self.world.region();
         let blocks = self.world.copy_blocks();

@@ -1,8 +1,9 @@
-use crate::{Command, Event, Goal, SendRate, SendSchedule, TickRate, TickReport, TickSchedule};
+use crate::{Command, Event, TickReport};
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::compile::Stage;
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
+use mchprs_redstone::pace::{Pacer, SendRate, SendSchedule, TickRate};
 use std::ops::ControlFlow;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::time::{Duration, Instant};
@@ -23,19 +24,19 @@ pub(super) fn run<F>(
         return;
     };
     events.send(Event::Started(simulation.circuit().clone()));
-    let now = Instant::now();
+    let origin = Instant::now();
     let mut runner = Runner {
         simulation,
         events,
-        ticks: TickSchedule::new(tick_rate, now),
-        sends: SendSchedule::new(send_rate, now),
-        advance: None,
+        origin,
+        pacer: Pacer::new(tick_rate, Duration::ZERO),
+        sends: SendSchedule::new(send_rate, Duration::ZERO),
         unsent_ticks: 0,
-        tally: Tally::new(now),
+        tally: Tally::new(origin),
         publish_now: false,
     };
     if let Err(error) = runner.run(deferred, &commands) {
-        runner.finish_advance(false);
+        runner.end_advance();
         runner.events.send(Event::Failed(error));
     }
 }
@@ -85,11 +86,6 @@ where
     }
 }
 
-struct Advance {
-    goal: Goal,
-    ran: u64,
-}
-
 struct Ran {
     ticks: u64,
     settled: bool,
@@ -114,9 +110,9 @@ impl Tally {
 struct Runner {
     simulation: Simulation,
     events: Events,
-    ticks: TickSchedule,
+    origin: Instant,
+    pacer: Pacer,
     sends: SendSchedule,
-    advance: Option<Advance>,
     unsent_ticks: u64,
     tally: Tally,
     publish_now: bool,
@@ -162,22 +158,22 @@ impl Runner {
     fn handle(&mut self, command: Command) -> Result<ControlFlow<()>, EngineError> {
         match command {
             Command::SetTickRate(rate) => {
-                let now = Instant::now();
-                if (rate == TickRate::Paused) != (self.ticks.rate() == TickRate::Paused) {
-                    self.tally = Tally::new(now);
+                if (rate == TickRate::Paused) != (self.pacer.rate() == TickRate::Paused) {
+                    self.tally = Tally::new(Instant::now());
                 }
-                self.ticks.set_rate(rate, now);
+                self.pacer.set_rate(rate, self.now());
             }
-            Command::SetSendRate(rate) => self.sends.set_rate(rate, Instant::now()),
+            Command::SetSendRate(rate) => self.sends.set_rate(rate, self.now()),
             Command::Drive { position, input } => self.drive(position, input)?,
             Command::Advance(goal) => {
-                self.finish_advance(false);
-                self.advance = Some(Advance { goal, ran: 0 });
+                if let Some(advanced) = self.pacer.advance(Some(goal), self.now()) {
+                    self.events.send(Event::Advanced(advanced));
+                }
             }
             Command::StopAdvancing => {
-                if self.advance.is_some() {
+                if self.pacer.is_advancing() {
                     self.publish()?;
-                    self.finish_advance(false);
+                    self.end_advance();
                 }
             }
             Command::ReportTicks => self.report_ticks(),
@@ -186,7 +182,7 @@ impl Runner {
                 self.events.send(Event::Synced(changes));
             }
             Command::Stop { restore } => {
-                self.finish_advance(false);
+                self.end_advance();
                 self.report_ticks();
                 if restore {
                     self.simulation.reset()?;
@@ -210,51 +206,38 @@ impl Runner {
     }
 
     /// Sending is only due once ticks have run, so an idle worker waits for commands.
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
+    }
+
     fn next_deadline(&self) -> Option<Instant> {
-        if self.advance.is_some() || self.publish_now {
+        if self.pacer.is_advancing() || self.publish_now {
             return Some(Instant::now());
         }
         let send = self.sends.next_send().filter(|_| self.unsent_ticks > 0);
-        match (self.ticks.next_tick(), send) {
-            (Some(tick), Some(send)) => Some(tick.min(send)),
-            (tick, send) => tick.or(send),
-        }
+        [self.pacer.next_tick(), send]
+            .into_iter()
+            .flatten()
+            .min()
+            .map(|due| self.origin + due)
     }
 
     fn run_ticks(&mut self) -> Result<(), EngineError> {
-        if let Some(advance) = &self.advance {
-            let (limit, until_settled) = match advance.goal {
-                Goal::Ticks(ticks) => (ticks - advance.ran, false),
-                Goal::Settled => (u64::MAX, true),
-            };
-            let ran = self.run_batch(limit, until_settled)?;
-            let advance = self.advance.as_mut().expect("an advance is running");
-            advance.ran += ran.ticks;
-            if ran.settled || ran.ticks == limit {
-                self.publish()?;
-                self.finish_advance(ran.settled);
-            }
+        let Some(due) = self.pacer.due(self.now()) else {
             return Ok(());
-        }
-        let due = self.ticks.due(Instant::now());
-        if due > 0 {
-            let ran = self.run_batch(due, false)?;
-            self.ticks.ran(ran.ticks);
+        };
+        let ran = self.run_batch(due.limit, due.until_settled)?;
+        if let Some(advanced) = self.pacer.ran(ran.ticks, ran.settled, self.now()) {
+            self.publish()?;
+            self.events.send(Event::Advanced(advanced));
         }
         Ok(())
     }
 
-    fn finish_advance(&mut self, settled: bool) {
-        let Some(advance) = self.advance.take() else {
-            return;
-        };
-        if advance.ran > 0 {
-            self.ticks.skip_overdue(Instant::now());
+    fn end_advance(&mut self) {
+        if let Some(advanced) = self.pacer.advance(None, self.now()) {
+            self.events.send(Event::Advanced(advanced));
         }
-        self.events.send(Event::Advanced {
-            ran: advance.ran,
-            settled,
-        });
     }
 
     fn run_batch(&mut self, limit: u64, until_settled: bool) -> Result<Ran, EngineError> {
@@ -293,7 +276,7 @@ impl Runner {
     }
 
     fn publish_if_due(&mut self) -> Result<(), EngineError> {
-        let due = self.unsent_ticks > 0 && self.sends.is_due(Instant::now());
+        let due = self.unsent_ticks > 0 && self.sends.is_due(self.now());
         if self.publish_now || due {
             self.publish()?;
         }
@@ -307,7 +290,7 @@ impl Runner {
         if !changes.is_empty() {
             self.events.send(Event::Batch(changes));
         }
-        self.sends.sent(Instant::now());
+        self.sends.sent(self.now());
         Ok(())
     }
 
@@ -317,8 +300,8 @@ impl Runner {
             ticks: self.tally.ticks,
             ticking: self.tally.ticking,
             period: now - self.tally.since,
-            advanced: self.advance.as_ref().map_or(0, |advance| advance.ran),
-            behind: self.advance.is_none() && self.ticks.is_behind(),
+            advanced: self.pacer.advancing(),
+            behind: self.pacer.is_behind(),
         }));
         self.tally = Tally::new(now);
     }

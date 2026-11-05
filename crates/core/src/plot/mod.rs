@@ -32,10 +32,10 @@ use mchprs_network::packets::serverbound::SUseItemOn;
 
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler::engine::Input;
+use mchprs_redstone::pace::{Pacer, SendSchedule};
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
 use mchprs_redstone::RedstoneWorld;
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
-use mchprs_worker::{SendSchedule, TickSchedule};
 use mchprs_world::occupied_regions;
 use mchprs_world::storage::Chunk;
 use rustc_hash::FxHashMap;
@@ -90,7 +90,8 @@ pub struct Plot {
 
     // Timings
     tps: Tps,
-    tick_schedule: TickSchedule,
+    origin: Instant,
+    pacer: Pacer,
     send_schedule: SendSchedule,
     tick_time: Option<Duration>,
     tick_history: TickHistory,
@@ -399,17 +400,28 @@ impl Plot {
         mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world, |world| &mut world.ticks);
     }
 
-    fn run_due_ticks(&mut self, now: Instant) {
-        let due = self.tick_schedule.due(now);
+    fn run_world_ticks(&mut self) {
+        let Some(due) = self.pacer.due(self.now()) else {
+            return;
+        };
+        let start = Instant::now();
         let batch_time = self.batch_time();
         let mut ran = 0;
-        while ran < due && (ran == 0 || now.elapsed() < batch_time) {
+        let mut settled = false;
+        while ran < due.limit && (ran == 0 || start.elapsed() < batch_time) {
+            if due.until_settled && self.world.ticks.entries().is_empty() {
+                settled = true;
+                break;
+            }
             self.tick();
             ran += 1;
         }
         if ran > 0 {
-            self.tick_schedule.ran(ran);
-            self.tick_time = Some(now.elapsed().div_f64(ran as f64));
+            self.tick_time = Some(start.elapsed().div_f64(ran as f64));
+        }
+        if let Some(advanced) = self.pacer.ran(ran, settled, self.now()) {
+            self.publish_world();
+            self.advances.ran(advanced);
         }
     }
 
@@ -758,19 +770,23 @@ impl Plot {
     /// After an expensive operation or change in timings, it's important to
     /// call this function so we don't try to catch up on the ticks it held up.
     pub fn reset_timings(&mut self) {
-        self.tick_schedule.skip_overdue(Instant::now());
+        self.pacer.skip_overdue(self.now());
         self.tick_time = None;
     }
 
     pub fn publish_world(&mut self) {
         self.world.flush_block_changes();
-        self.send_schedule.sent(Instant::now());
+        self.send_schedule.sent(self.now());
     }
 
     fn broadcast(&self, message: &str) {
         for player in &self.players {
             player.send_system_message(message);
         }
+    }
+
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
     }
 
     fn batch_time(&self) -> Duration {
@@ -789,11 +805,12 @@ impl Plot {
         }
         let tick = match self.redpiler {
             Some(_) => None,
-            None => self.tick_schedule.next_tick(),
+            None => self.pacer.next_tick(),
         };
         [tick, self.send_schedule.next_send()]
             .into_iter()
             .flatten()
+            .map(|due| self.origin + due)
             .fold(now + UPDATE_INTERVAL, Instant::min)
     }
 
@@ -809,13 +826,13 @@ impl Plot {
                 setup: redpiler.setup.clone(),
             },
         };
-        let worker_ran = match &self.redpiler {
-            Some(redpiler) if self.advances.is_on_worker() => redpiler.advanced,
-            _ => 0,
+        let advancing = match &self.redpiler {
+            Some(redpiler) => redpiler.advanced,
+            None => self.pacer.advancing(),
         };
         PlotStatus {
             redpiler,
-            advance: self.advances.progress(worker_ran),
+            advance: self.advances.progress(advancing),
             tps: self
                 .tick_history
                 .recent_rate(Instant::now())
@@ -826,7 +843,7 @@ impl Plot {
             running_behind: match &self.redpiler {
                 Some(_) if compiling => false,
                 Some(redpiler) => redpiler.behind,
-                None => self.tick_schedule.is_behind(),
+                None => self.pacer.is_behind(),
             },
         }
     }
@@ -857,7 +874,7 @@ impl Plot {
         }
         self.tps = tps;
         self.world.mark_unsaved();
-        self.tick_schedule.set_rate(tick_rate(tps), Instant::now());
+        self.pacer.set_rate(tick_rate(tps), self.now());
         self.reset_timings();
     }
 
@@ -872,7 +889,7 @@ impl Plot {
         self.world.world_send_rate = rate;
         self.world.mark_unsaved();
         self.world.pending_sounds.clear();
-        self.send_schedule.set_rate(send_rate(rate), Instant::now());
+        self.send_schedule.set_rate(send_rate(rate), self.now());
     }
 
     pub fn add_locked_player(&mut self, entity_id: EntityId) -> bool {
@@ -1193,19 +1210,18 @@ impl Plot {
     fn update(&mut self) {
         self.handle_messages();
         self.handle_redpiler_events();
+        self.continue_advancing();
 
         // Only tick if there are players in the plot
         if !self.players.is_empty() {
-            let now = Instant::now();
-            self.last_player_time = now;
+            self.last_player_time = Instant::now();
 
-            if self.redpiler.is_none() && self.advances.is_empty() {
-                self.run_due_ticks(now);
+            if self.redpiler.is_none() {
+                self.run_world_ticks();
             }
 
-            let now = Instant::now();
-            self.sample_ticks(now);
-            if self.send_schedule.is_due(now) {
+            self.sample_ticks(Instant::now());
+            if self.send_schedule.is_due(self.now()) {
                 self.publish_world();
             }
 
@@ -1213,9 +1229,11 @@ impl Plot {
                 self.refresh_scoreboard();
             }
         } else {
-            let now = Instant::now();
-            self.tick_schedule.skip_overdue(now);
-            self.tick_history.restart(now);
+            self.pacer.skip_overdue(self.now());
+            self.tick_history.restart(Instant::now());
+            if self.redpiler.is_none() && self.pacer.is_advancing() {
+                self.run_world_ticks();
+            }
             // Unload plot after 600 seconds unless the plot should be always loaded
             if self.last_player_time.elapsed().as_secs() > 600
                 && !self.always_running
@@ -1225,7 +1243,6 @@ impl Plot {
                 self.unload_once_saved();
             }
         }
-        self.continue_advancing();
         self.autosave_if_due();
 
         self.update_players();
@@ -1286,8 +1303,9 @@ impl Plot {
         Plot {
             last_player_time: now,
             last_scoreboard_time: now,
-            tick_schedule: TickSchedule::new(tick_rate(tps), now),
-            send_schedule: SendSchedule::new(send_rate(plot_data.world_send_rate), now),
+            origin: now,
+            pacer: Pacer::new(tick_rate(tps), Duration::ZERO),
+            send_schedule: SendSchedule::new(send_rate(plot_data.world_send_rate), Duration::ZERO),
             tick_time: None,
             message_receiver: channels.broadcasts,
             message_sender: channels.server,

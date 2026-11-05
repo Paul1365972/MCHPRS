@@ -18,8 +18,8 @@ use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redpiler_backends::BackendSetup;
+use mchprs_redstone::pace::Goal;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use mchprs_worker::Goal;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry, backends: Backends) {
     registry.register(
