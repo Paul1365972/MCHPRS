@@ -5,8 +5,9 @@ mod update;
 use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_commands::flag::{Flag, FlagValues};
-use mchprs_redpiler::backend::{Backend, CompilePlan};
+use mchprs_redpiler::backend::{Backend, BuildError, CompilePlan};
 use mchprs_redpiler::circuit::{self, Circuit};
+use mchprs_redpiler::compile::{BuildContext, Stage};
 use mchprs_redpiler::engine::{Changes, Engine, EngineError, Input, Snapshot};
 use mchprs_redpiler::extract::{
     ExtractOptions, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
@@ -180,15 +181,28 @@ impl Backend for DirectBackend {
                 ..ExtractOptions::from_flags(flags)
             },
             passes,
-            build: Box::new(|circuit| Ok(Box::new(DirectEngine::new(circuit)?))),
         })
+    }
+
+    fn build(
+        &self,
+        circuit: &Circuit,
+        _: &FlagValues,
+        context: &mut BuildContext<'_>,
+    ) -> Result<Box<dyn Engine>, BuildError> {
+        context.report(Stage::Building {
+            step: "Building the engine",
+            completed: 0,
+            total: 1,
+        })?;
+        Ok(Box::new(DirectEngine::new(circuit)?))
     }
 }
 
 impl DirectEngine {
     const MAX_LINKS_PER_KIND: usize = u8::MAX as usize;
 
-    pub fn new(circuit: &Circuit) -> Result<DirectEngine, EngineError> {
+    pub fn new(circuit: &Circuit) -> Result<DirectEngine, BuildError> {
         for id in circuit.ids() {
             for kind in [LinkKind::Default, LinkKind::Side] {
                 let count = circuit
@@ -197,17 +211,16 @@ impl DirectEngine {
                     .filter(|link| link.kind == kind)
                     .count();
                 if count > Self::MAX_LINKS_PER_KIND {
-                    return Err(format!(
+                    return Err(BuildError::Unsupported(format!(
                         "node {} has {count} {kind:?} inputs (at most {} supported)",
                         id.index(),
                         Self::MAX_LINKS_PER_KIND
-                    )
-                    .into());
+                    )));
                 }
             }
         }
         let initial = circuit.initial();
-        check_delays(&initial.pending_ticks)?;
+        check_delays(&initial.pending_ticks).map_err(BuildError::Unsupported)?;
         let mut forward_links = ForwardLinks::default();
         let nodes = circuit
             .ids()
@@ -411,7 +424,7 @@ impl Engine for DirectEngine {
     }
 }
 
-fn check_delays(pending_ticks: &[(circuit::NodeId, PendingTick)]) -> Result<(), EngineError> {
+fn check_delays(pending_ticks: &[(circuit::NodeId, PendingTick)]) -> Result<(), String> {
     for &(node, tick) in pending_ticks {
         if tick.delay as usize > TickScheduler::NUM_QUEUES {
             return Err(format!(
@@ -419,8 +432,7 @@ fn check_delays(pending_ticks: &[(circuit::NodeId, PendingTick)]) -> Result<(), 
                 node.index(),
                 tick.delay,
                 TickScheduler::NUM_QUEUES
-            )
-            .into());
+            ));
         }
     }
     Ok(())

@@ -212,19 +212,21 @@ impl Plot {
         let blocks = self.world.copy_blocks();
         let ticks = mem::take(&mut self.world.ticks).into_entries();
         let compile_ticks = ticks.clone();
+        let backend = setup.backend();
+        let flags = setup.flags().clone();
         let worker = Worker::spawn(
             tick_rate(self.tps),
             send_rate(self.world.world_send_rate),
-            move |progress| {
+            move |context| {
                 let circuit = mchprs_redpiler::compile::compile(
                     &blocks,
                     region,
                     &compile_ticks,
                     &plan.extract,
                     &plan.passes,
-                    progress,
+                    context,
                 )?;
-                let engine = (plan.build)(&circuit)?;
+                let engine = backend.build(&circuit, &flags, context)?;
                 Ok(Simulation::new(Arc::new(circuit), engine))
             },
         );

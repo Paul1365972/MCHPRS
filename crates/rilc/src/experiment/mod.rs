@@ -4,13 +4,12 @@ use crate::read_schematic_at_origin;
 use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_redpiler::backend::CompilePlan;
 use mchprs_redpiler::circuit::{Circuit, CircuitFormatError, NodeId};
-use mchprs_redpiler::compile::compile;
+use mchprs_redpiler::compile::{compile, BuildContext};
 use mchprs_redpiler::engine::Engine;
 use mchprs_redpiler::ports::Role;
 use mchprs_redpiler_backends::BackendSetup;
 use std::error::Error;
 use std::fs;
-use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -20,21 +19,25 @@ pub use diff::diff;
 type BoxError = Box<dyn Error + Send + Sync>;
 
 pub struct Configured {
-    label: String,
+    setup: BackendSetup,
     plan: CompilePlan,
 }
 
 impl Configured {
     pub fn new(setup: BackendSetup) -> Result<Configured, String> {
         Ok(Configured {
-            label: setup.to_string(),
             plan: setup.configure()?,
+            setup,
         })
     }
 
     fn start(self, source: &Source) -> Result<(Arc<Circuit>, Box<dyn Engine>), BoxError> {
         let circuit = source.circuit(&self.plan)?;
-        let engine = (self.plan.build)(&circuit)?;
+        let engine = self.setup.backend().build(
+            &circuit,
+            self.setup.flags(),
+            &mut BuildContext::silent(),
+        )?;
         Ok((circuit, engine))
     }
 }
@@ -67,7 +70,7 @@ impl Source {
                     &[],
                     &plan.extract,
                     &plan.passes,
-                    &mut |_| ControlFlow::Continue(()),
+                    &mut BuildContext::silent(),
                 )?;
                 Ok(Arc::new(circuit))
             }
@@ -76,7 +79,7 @@ impl Source {
 }
 
 pub fn run(source: &Source, backend: Configured, ticks: u64) -> Result<(), BoxError> {
-    let name = backend.label.clone();
+    let name = backend.setup.to_string();
     let (circuit, mut engine) = backend.start(source)?;
     let start = Instant::now();
     engine.run(ticks)?;
