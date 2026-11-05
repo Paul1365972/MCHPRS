@@ -48,6 +48,7 @@ impl NoteActivations {
 
 pub struct DirectEngine {
     nodes: Nodes,
+    visible_nodes: Box<[NodeId]>,
     forward_links: ForwardLinks,
     scheduler: TickScheduler,
     notes: NoteActivations,
@@ -59,8 +60,13 @@ impl DirectEngine {
         let (nodes, forward_links) = compile::lower(circuit)?;
         let initial = circuit.initial();
         check_delays(&initial.pending_ticks).map_err(BuildError::Unsupported)?;
+        let visible_nodes = (0..nodes.len())
+            .filter(|&index| nodes[index].visible)
+            .map(|index| NodeId::new(index, nodes.len()))
+            .collect();
         let mut engine = DirectEngine {
             nodes: Nodes::new(nodes),
+            visible_nodes,
             forward_links,
             scheduler: TickScheduler::default(),
             notes: NoteActivations::new(circuit.len()),
@@ -201,12 +207,13 @@ impl Engine for DirectEngine {
     }
 
     fn changes(&mut self, changes: &mut Changes) -> Result<(), EngineError> {
-        for (index, node) in self.nodes.inner_mut().iter_mut().enumerate() {
-            if node.changed && node.visible {
+        for &node_id in &self.visible_nodes {
+            let node = &mut self.nodes[node_id];
+            if node.changed {
                 node.changed = false;
                 changes
                     .states
-                    .push((circuit::NodeId::new(index), node.state()));
+                    .push((circuit::NodeId::new(node_id.index()), node.state()));
             }
         }
         for (node, count) in self.notes.drain() {
