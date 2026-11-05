@@ -1,41 +1,36 @@
 use crate::block_map::{BlockChanges, BlockMap};
 use crate::circuit::{Circuit, NodeId};
 use crate::engine::{Changes, DriveError, Engine, EngineError, Input, Snapshot};
-use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
-use mchprs_redstone::tick_queue::TickEntry;
-use std::sync::Arc;
 
 pub struct Simulation<E: Engine = Box<dyn Engine>> {
-    circuit: Arc<Circuit>,
-    engine: E,
     blocks: BlockMap,
+    engine: E,
 }
 
 impl<E: Engine> Simulation<E> {
-    pub fn new(circuit: Arc<Circuit>, engine: E) -> Simulation<E> {
+    pub fn new(circuit: Circuit, engine: E) -> Simulation<E> {
         Simulation {
-            blocks: BlockMap::new(&circuit),
-            circuit,
+            blocks: BlockMap::new(circuit),
             engine,
         }
     }
 
-    pub fn circuit(&self) -> &Arc<Circuit> {
-        &self.circuit
+    pub fn circuit(&self) -> &Circuit {
+        self.blocks.circuit()
     }
 
     pub fn drive(&mut self, position: BlockPos, input: Input) -> Result<(), DriveError> {
         let node = self
-            .circuit
+            .circuit()
             .node_at(position)
             .ok_or(DriveError::NoNode(position))?;
         self.drive_node(node, input)
     }
 
     pub fn drive_node(&mut self, node: NodeId, input: Input) -> Result<(), DriveError> {
-        self.circuit.check_input(node, input)?;
-        self.engine.drive(node, input).map_err(DriveError::Engine)
+        let drive = self.circuit().check_input(node, input)?;
+        self.engine.drive(drive).map_err(DriveError::Engine)
     }
 
     pub fn run(&mut self, ticks: u64) -> Result<(), EngineError> {
@@ -48,29 +43,13 @@ impl<E: Engine> Simulation<E> {
 
     pub fn sync(&mut self) -> Result<BlockChanges, EngineError> {
         self.record_changes()?;
-        Ok(self.blocks.take_changes(&self.circuit))
+        Ok(self.blocks.take_changes())
     }
 
     pub fn sync_all(&mut self) -> Result<BlockChanges, EngineError> {
         self.record_changes()?;
         self.blocks.record_snapshot(&self.engine.snapshot()?);
-        Ok(self.blocks.take_changes(&self.circuit))
-    }
-
-    pub fn signal_at(&mut self, position: BlockPos) -> Result<Option<SignalStrength>, EngineError> {
-        let Some(node) = self.circuit.node_at(position) else {
-            return Ok(None);
-        };
-        if !self.circuit.node(node).observed {
-            return Ok(None);
-        }
-        self.record_changes()?;
-        Ok(Some(self.blocks.state(node).power))
-    }
-
-    pub fn pending_ticks(&mut self) -> Result<Vec<TickEntry>, EngineError> {
-        let snapshot = self.engine.snapshot()?;
-        Ok(self.blocks.tick_entries(&snapshot.pending_ticks))
+        Ok(self.blocks.take_changes())
     }
 
     pub fn snapshot(&mut self) -> Result<Snapshot, EngineError> {
@@ -78,7 +57,7 @@ impl<E: Engine> Simulation<E> {
     }
 
     pub fn restore(&mut self, snapshot: &Snapshot) -> Result<(), EngineError> {
-        self.circuit.check_snapshot(snapshot)?;
+        self.circuit().check_snapshot(snapshot)?;
         self.record_changes()?;
         self.engine.restore(snapshot)
     }
@@ -91,7 +70,7 @@ impl<E: Engine> Simulation<E> {
     fn record_changes(&mut self) -> Result<(), EngineError> {
         let mut changes = Changes::default();
         self.engine.changes(&mut changes)?;
-        self.blocks.record(changes);
+        self.blocks.record(&changes);
         Ok(())
     }
 }

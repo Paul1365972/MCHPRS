@@ -8,10 +8,10 @@ use mchprs_redpiler::compile::{compile, BuildContext};
 use mchprs_redpiler::engine::Engine;
 use mchprs_redpiler::ports::Role;
 use mchprs_redpiler_backends::BackendSetup;
+use std::borrow::Cow;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Instant;
 
 pub use diff::diff;
@@ -31,7 +31,7 @@ impl Configured {
         })
     }
 
-    fn start(self, source: &Source) -> Result<(Arc<Circuit>, Box<dyn Engine>), BoxError> {
+    fn start(self, source: &Source) -> Result<(Cow<'_, Circuit>, Box<dyn Engine>), BoxError> {
         let circuit = source.circuit(&self.plan)?;
         let engine = self.setup.backend().build(
             &circuit,
@@ -43,7 +43,7 @@ impl Configured {
 }
 
 pub enum Source {
-    Circuit(Arc<Circuit>),
+    Circuit(Circuit),
     Schematic(BlockVolume),
 }
 
@@ -52,7 +52,7 @@ impl Source {
         let bytes = fs::read(path)
             .map_err(|error| format!("couldn't read `{}`: {error}", path.display()))?;
         match Circuit::from_bytes(&bytes) {
-            Ok(circuit) => Ok(Source::Circuit(Arc::new(circuit))),
+            Ok(circuit) => Ok(Source::Circuit(circuit)),
             Err(CircuitFormatError::NotACircuit) => {
                 Ok(Source::Schematic(read_schematic_at_origin(&bytes)?))
             }
@@ -60,9 +60,9 @@ impl Source {
         }
     }
 
-    fn circuit(&self, plan: &CompilePlan) -> Result<Arc<Circuit>, BoxError> {
+    fn circuit(&self, plan: &CompilePlan) -> Result<Cow<'_, Circuit>, BoxError> {
         match self {
-            Source::Circuit(circuit) => Ok(circuit.clone()),
+            Source::Circuit(circuit) => Ok(Cow::Borrowed(circuit)),
             Source::Schematic(volume) => {
                 let circuit = compile(
                     volume,
@@ -72,7 +72,7 @@ impl Source {
                     &plan.passes,
                     &mut BuildContext::silent(),
                 )?;
-                Ok(Arc::new(circuit))
+                Ok(Cow::Owned(circuit))
             }
         }
     }

@@ -10,13 +10,14 @@ use crate::{
     config::Backends,
     item_stack::ItemStack,
     player::{Gamemode, PlayerPos},
-    plot::Plot,
+    plot::{redpiler::Redpiler, Plot},
     server::{get_version_string, Message},
     utils::HyphenatedUUID,
 };
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_network::PlayerPacketSender;
+use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler_backends::BackendSetup;
 use mchprs_redstone::pace::Goal;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
@@ -355,17 +356,18 @@ pub(super) fn register_commands(registry: &mut CommandRegistry, backends: Backen
             .alias("rp")
             .subcommand(compile)
             .subcommand(Command::new("export").alias("e").executes(|ctx| {
-                let circuit = ctx
+                let bytes = ctx
                     .plot_mut()
                     .redpiler
                     .as_ref()
-                    .and_then(|redpiler| redpiler.circuit.clone());
-                let Some(circuit) = circuit else {
+                    .and_then(Redpiler::circuit)
+                    .map(Circuit::to_bytes);
+                let Some(bytes) = bytes else {
                     return ctx.reply("Redpiler is not running.");
                 };
                 let world = &ctx.plot_mut().world;
                 let path = format!("redpiler-p{},{}.circuit", world.x, world.z);
-                std::fs::write(&path, circuit.to_bytes()).map_err(|error| {
+                std::fs::write(&path, bytes).map_err(|error| {
                     CommandError::runtime(format!("Failed to export the circuit: {error}"))
                 })?;
                 ctx.reply(&format!("The circuit was exported to {path}."))
@@ -380,9 +382,9 @@ pub(super) fn register_commands(registry: &mut CommandRegistry, backends: Backen
                     )
                     .flag('u', "update", "Update every block in the plot afterwards")
                     .executes(|ctx| {
-                        let restore = ctx.flag("restore");
+                        let reset = ctx.flag("restore");
                         let update = ctx.flag("update");
-                        ctx.plot_mut().stop_redpiler(restore, update);
+                        ctx.plot_mut().stop_redpiler(reset, update);
                         ctx.reply("Redpiler has been reset.")
                     }),
             ),

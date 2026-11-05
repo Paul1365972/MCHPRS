@@ -1,5 +1,5 @@
-use crate::engine::{DriveError, Input, Snapshot};
-use crate::graph::{Direction, Drive, Graph, LinkKind, Node, NodeIdx, QueuedTick};
+use crate::engine::{Drive, DriveError, Input, Snapshot};
+use crate::graph::{Direction, DriveKind, Graph, LinkKind, Node, NodeIdx, QueuedTick};
 use crate::ports::Role;
 use bincode::Options;
 use mchprs_blocks::blocks::Block;
@@ -33,6 +33,7 @@ pub struct Link {
     pub weight: u8,
 }
 
+#[derive(Clone)]
 pub struct Circuit {
     nodes: Box<[Node]>,
     inputs: LinkTable,
@@ -127,24 +128,24 @@ impl Circuit {
         }
     }
 
-    pub fn check_input(&self, id: NodeId, input: Input) -> Result<(), DriveError> {
+    pub fn check_input(&self, id: NodeId, input: Input) -> Result<Drive, DriveError> {
         let node = self.node(id);
         if !node.is_input() {
             return Err(DriveError::NotAnInput(id));
         }
-        let accepted = match (node.kind.drive(), input) {
-            (Some(Drive::OnOff), Input::Set(strength)) => {
+        let accepted = match (node.kind.drive_kind(), input) {
+            (Some(DriveKind::OnOff), Input::Set(strength)) => {
                 matches!(strength, SignalStrength::Zero | SignalStrength::Fifteen)
             }
-            (Some(Drive::OnOff), Input::Toggle) => true,
-            (Some(Drive::Strength), Input::Set(_)) => true,
-            (Some(Drive::Press), Input::Press) => true,
+            (Some(DriveKind::OnOff), Input::Toggle) => true,
+            (Some(DriveKind::Strength), Input::Set(_)) => true,
+            (Some(DriveKind::Press), Input::Press) => true,
             _ => false,
         };
-        match accepted {
-            true => Ok(()),
-            false => Err(DriveError::Unsupported { node: id, input }),
+        if !accepted {
+            return Err(DriveError::Unsupported { node: id, input });
         }
+        Ok(Drive::new(id, input))
     }
 
     pub fn check_snapshot(&self, snapshot: &Snapshot) -> Result<(), SnapshotError> {
@@ -346,7 +347,7 @@ fn check(nodes: &[Node], links: &[Link]) -> Result<(), String> {
                 return Err(format!("invalid block state {id} at {position}"));
             }
         }
-        if node.is_input() && node.kind.drive().is_none() {
+        if node.is_input() && node.kind.drive_kind().is_none() {
             return Err(format!("input {index} can't be driven"));
         }
         if let Some(QueuedTick { tick, .. }) = node.pending_tick {
@@ -364,6 +365,7 @@ fn check(nodes: &[Node], links: &[Link]) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Clone)]
 struct LinkTable {
     links: Vec<Link>,
     offsets: Vec<usize>,

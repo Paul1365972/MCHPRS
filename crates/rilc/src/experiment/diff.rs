@@ -6,7 +6,7 @@ use mchprs_blocks::BlockPos;
 use mchprs_redpiler::block_map::PlayedNote;
 use mchprs_redpiler::circuit::{Circuit, NodeId};
 use mchprs_redpiler::engine::{Input, Snapshot};
-use mchprs_redpiler::graph::{Drive, PendingTick};
+use mchprs_redpiler::graph::{DriveKind, PendingTick};
 use mchprs_redpiler::ports::Role;
 use mchprs_redpiler::simulation::Simulation;
 use rustc_hash::FxHashMap;
@@ -134,7 +134,7 @@ impl Subject {
     fn start(backend: Configured, source: &Source) -> Result<Subject, BoxError> {
         let name = backend.setup.to_string();
         let (circuit, engine) = backend.start(source)?;
-        let mut simulation = Simulation::new(circuit, engine);
+        let mut simulation = Simulation::new(circuit.into_owned(), engine);
         let circuit = simulation.circuit();
         let shown = circuit
             .ids()
@@ -240,13 +240,13 @@ fn input_ports(circuit: &Circuit, same_circuit: bool) -> Vec<InputPort> {
 fn next_input(subject: &Subject, port: InputPort) -> Result<Input, BoxError> {
     let circuit = subject.circuit();
     let node = port.node(circuit);
-    Ok(match circuit.node(node).kind.drive() {
-        Some(Drive::OnOff) => Input::Toggle,
-        Some(Drive::Press) => Input::Press,
-        Some(Drive::Strength) if subject.state.states[node.index()].power.is_zero() => {
+    Ok(match circuit.node(node).kind.drive_kind() {
+        Some(DriveKind::OnOff) => Input::Toggle,
+        Some(DriveKind::Press) => Input::Press,
+        Some(DriveKind::Strength) if subject.state.states[node.index()].power.is_zero() => {
             Input::Set(SignalStrength::Fifteen)
         }
-        Some(Drive::Strength) => Input::Set(SignalStrength::Zero),
+        Some(DriveKind::Strength) => Input::Set(SignalStrength::Zero),
         None => return Err(format!("{} can't be driven", describe_node(circuit, node)).into()),
     })
 }

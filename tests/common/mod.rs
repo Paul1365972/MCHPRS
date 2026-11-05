@@ -12,7 +12,6 @@ use mchprs_redpiler::simulation::Simulation;
 use mchprs_redpiler_direct::DirectBackend;
 use mchprs_redstone::interpreter::Interpreter;
 use mchprs_redstone::wire::make_cross;
-use std::sync::Arc;
 
 struct RedpilerInstance {
     label: String,
@@ -45,7 +44,7 @@ impl RedpilerInstance {
             .expect("the engine holds the test circuit");
         RedpilerInstance {
             label: format!("{} {flags}", backend.name()).trim_end().to_owned(),
-            simulation: Simulation::new(Arc::new(circuit), engine),
+            simulation: Simulation::new(circuit, engine),
         }
     }
 

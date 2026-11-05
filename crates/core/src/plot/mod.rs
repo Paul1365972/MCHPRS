@@ -1,6 +1,7 @@
 mod advance;
 #[cfg(feature = "claims")]
 pub mod claims;
+mod compile;
 pub mod data;
 mod packet_handlers;
 pub mod redpiler;
@@ -31,7 +32,6 @@ use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 
 use mchprs_network::PlayerPacketSender;
-use mchprs_redpiler::engine::Input;
 use mchprs_redstone::pace::{Pacer, SendSchedule};
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
 use mchprs_redstone::RedstoneWorld;
@@ -429,14 +429,7 @@ impl Plot {
         if self.is_compiling_redpiler() {
             self.tick_history.restart(now);
         } else if self.tick_history.is_sample_due(now) {
-            match &mut self.redpiler {
-                Some(redpiler) if !redpiler.report_requested => {
-                    redpiler.worker.report_ticks();
-                    redpiler.report_requested = true;
-                }
-                Some(_) => {}
-                None => self.tick_history.sample(now),
-            }
+            self.tick_history.sample(now);
         }
     }
 
@@ -495,7 +488,7 @@ impl Plot {
             return;
         }
         match &mut self.redpiler {
-            Some(redpiler) => redpiler.worker.drive(pos, Input::Set(pressed.into())),
+            Some(redpiler) => redpiler.set_pressure_plate(pos, pressed),
             None => {
                 mchprs_redstone::set_pressure_plate(&mut self.world, pos, pressed);
                 self.publish_world();
@@ -510,7 +503,6 @@ impl Plot {
     }
 
     fn enter_plot(&mut self, player: Player) {
-        self.sync_redpiler();
         if self.players.is_empty() {
             self.world.pending_sounds.clear();
         }
@@ -658,22 +650,8 @@ impl Plot {
             return;
         }
 
-        if let Some(redpiler) = &self.redpiler {
-            let input = match self.world.block(block_pos) {
-                Block::Lever { .. } => Some(Input::Toggle),
-                Block::StoneButton { .. } => Some(Input::Press),
-                _ => None,
-            };
-            let is_input = redpiler.circuit.as_ref().is_some_and(|circuit| {
-                circuit
-                    .node_at(block_pos)
-                    .is_some_and(|node| circuit.node(node).is_input())
-            });
-            if let Some(input) = input
-                && is_input
-                && !self.players[player].crouching
-            {
-                redpiler.worker.drive(block_pos, input);
+        if let Some(redpiler) = &mut self.redpiler {
+            if !self.players[player].crouching && redpiler.use_block(block_pos) {
                 return;
             }
             if use_item_on.hand == 0 {
@@ -820,14 +798,14 @@ impl Plot {
             None => RedpilerStatus::Stopped,
             Some(redpiler) if compiling => RedpilerStatus::Compiling {
                 setup: redpiler.setup.clone(),
-                stage: redpiler.stage,
+                stage: redpiler.stage(),
             },
             Some(redpiler) => RedpilerStatus::Running {
                 setup: redpiler.setup.clone(),
             },
         };
         let advancing = match &self.redpiler {
-            Some(redpiler) => redpiler.advanced,
+            Some(redpiler) => redpiler.advancing,
             None => self.pacer.advancing(),
         };
         PlotStatus {
@@ -867,11 +845,6 @@ impl Plot {
     }
 
     pub fn set_tps(&mut self, tps: Tps) {
-        if let Some(redpiler) = &self.redpiler
-            && !redpiler.paused
-        {
-            redpiler.worker.set_tick_rate(tick_rate(tps));
-        }
         self.tps = tps;
         self.world.mark_unsaved();
         self.pacer.set_rate(tick_rate(tps), self.now());
@@ -883,9 +856,6 @@ impl Plot {
     }
 
     pub fn set_world_send_rate(&mut self, rate: WorldSendRate) {
-        if let Some(redpiler) = &self.redpiler {
-            redpiler.worker.set_send_rate(send_rate(rate));
-        }
         self.world.world_send_rate = rate;
         self.world.mark_unsaved();
         self.world.pending_sounds.clear();
@@ -1209,7 +1179,7 @@ impl Plot {
 
     fn update(&mut self) {
         self.handle_messages();
-        self.handle_redpiler_events();
+        self.poll_redpiler();
         self.continue_advancing();
 
         // Only tick if there are players in the plot

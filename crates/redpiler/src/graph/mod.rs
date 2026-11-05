@@ -40,7 +40,7 @@ pub enum NodeKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Drive {
+pub enum DriveKind {
     OnOff,
     Strength,
     Press,
@@ -59,14 +59,14 @@ impl NodeKind {
         }
     }
 
-    pub fn drive(&self) -> Option<Drive> {
+    pub fn drive_kind(&self) -> Option<DriveKind> {
         match self {
             NodeKind::Lever
             | NodeKind::PressurePlate
             | NodeKind::Repeater { .. }
-            | NodeKind::Torch => Some(Drive::OnOff),
-            NodeKind::Comparator { .. } => Some(Drive::Strength),
-            NodeKind::Button => Some(Drive::Press),
+            | NodeKind::Torch => Some(DriveKind::OnOff),
+            NodeKind::Comparator { .. } => Some(DriveKind::Strength),
+            NodeKind::Button => Some(DriveKind::Press),
             NodeKind::Lamp
             | NodeKind::Trapdoor
             | NodeKind::Wire
