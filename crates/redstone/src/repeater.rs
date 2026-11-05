@@ -96,9 +96,9 @@ pub(crate) fn use_block(world: &mut impl RedstoneWorld, pos: BlockPos, repeater:
 }
 
 fn is_locked(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> bool {
-    diode::side_signal(world, pos, facing, true) > 0
+    !diode::side_signal(world, pos, facing, true).is_zero()
 }
 
 fn should_turn_on(world: &impl BlockView, pos: BlockPos, repeater: Repeater) -> bool {
-    diode::input_signal(world, pos, repeater.facing) > 0
+    !diode::input_signal(world, pos, repeater.facing).is_zero()
 }

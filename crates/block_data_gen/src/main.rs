@@ -8,6 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const SIGNAL_STRENGTH: &str = "SignalStrength";
+
 type RegistriesJson = HashMap<String, Registry>;
 
 #[derive(Deserialize)]
@@ -167,9 +169,14 @@ fn process_block(
             .find_map(|(name, values)| (values == prop_values).then_some((name, values.len())));
         match prop_type {
             Some((prop_type, num_values)) => {
+                let is_signal_strength = prop_name == "power" && num_values == 16;
                 props.push(Prop {
                     name: prop_name.clone(),
-                    ty: prop_type.clone(),
+                    ty: if is_signal_strength {
+                        SIGNAL_STRENGTH.to_owned()
+                    } else {
+                        prop_type.clone()
+                    },
                     default: default_props[prop_name].clone(),
                     num_values,
                     values: prop_values.clone(),
@@ -230,6 +237,10 @@ fn prop_literal(ty: &str, val: &str) -> TokenStream {
             let val = val.parse().unwrap();
             let lit = Literal::u8_unsuffixed(val);
             quote! { #lit }
+        }
+        SIGNAL_STRENGTH => {
+            let lit = Literal::u8_suffixed(val.parse().unwrap());
+            quote! { SignalStrength::try_from(#lit).unwrap() }
         }
         "bool" => {
             // bools are idents for some reason
@@ -566,6 +577,7 @@ fn get_prop_id(name: &str, ty: &str, u8_offset: u8) -> TokenStream {
     match ty {
         "bool" => quote! { !#name_ident as u32 },
         "u8" => quote! { #name_ident as u32 - #offset_lit },
+        SIGNAL_STRENGTH => quote! { #name_ident.get() as u32 },
         _ => quote! { #name_ident.get_id() },
     }
 }
@@ -576,6 +588,7 @@ fn from_prop_id(ty: &str, id: TokenStream, u8_offset: u8) -> TokenStream {
     match ty {
         "bool" => quote! { (#id & 1) == 0 },
         "u8" => quote! { #id as u8 + #offset_lit },
+        SIGNAL_STRENGTH => quote! { SignalStrength::try_from(#id).unwrap() },
         _ => quote! { #ty_ident::from_id(#id) },
     }
 }
@@ -944,6 +957,7 @@ fn generate_module(
         #![allow(warnings)]
 
         use crate::{*, blocks::*};
+        use crate::signal_strength::SignalStrength;
 
         #block_enum
 

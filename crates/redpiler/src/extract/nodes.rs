@@ -92,12 +92,7 @@ fn identify_block(
         Block::RedstoneTorch { lit, .. } | Block::RedstoneWallTorch { lit, .. } => {
             (NodeKind::Torch, NodeState::from_powered(lit))
         }
-        Block::RedstoneWire(wire) => (
-            NodeKind::Wire,
-            NodeState::from_power(
-                SignalStrength::try_from(wire.power).expect("invalid wire power"),
-            ),
-        ),
+        Block::RedstoneWire(wire) => (NodeKind::Wire, NodeState::from_power(wire.power)),
         _ if let Some(button) = block.button() => (
             NodeKind::Button {
                 press_ticks: mchprs_redstone::button_press_ticks(block),

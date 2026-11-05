@@ -5,6 +5,7 @@ use fastnbt::Value;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::items::Item;
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
@@ -218,7 +219,9 @@ pub fn get_state_for_placement(
             facing: BlockFacing::Up,
             open: false,
         },
-        Item::Target => Block::Target { power: 0 },
+        Item::Target => Block::Target {
+            power: SignalStrength::Zero,
+        },
         Item::SmoothStoneSlab => Block::SmoothStoneSlab {
             ty: SlabType::Top,
             waterlogged: false,

@@ -1,6 +1,7 @@
-use crate::{attached, bool_to_ss, comparator, diode, wire, DIRECTIONS};
+use crate::{attached, comparator, diode, wire, DIRECTIONS};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::signal_strength::{SignalStrength, UncappedSignalStrength};
 use mchprs_blocks::{BlockFace, BlockPos};
 
 /// Dust mutes itself while it computes its own power, as vanilla's `shouldSignal` does
@@ -57,7 +58,7 @@ pub(crate) fn received(
     pos: BlockPos,
     direction: BlockFace,
     dust: Dust,
-) -> u8 {
+) -> UncappedSignalStrength {
     let state = world.block(pos);
     let own = emitted(world, pos, state, direction, dust);
     if state.is_conductor() {
@@ -68,7 +69,7 @@ pub(crate) fn received(
 }
 
 pub(crate) fn has_signal(world: &impl BlockView, pos: BlockPos, direction: BlockFace) -> bool {
-    received(world, pos, direction, Dust::Emits) > 0
+    !received(world, pos, direction, Dust::Emits).is_zero()
 }
 
 pub(crate) fn has_neighbor_signal(world: &impl BlockView, pos: BlockPos) -> bool {
@@ -77,12 +78,17 @@ pub(crate) fn has_neighbor_signal(world: &impl BlockView, pos: BlockPos) -> bool
         .any(|&direction| has_signal(world, pos.offset(direction), direction))
 }
 
-pub(crate) fn best_neighbor_signal(world: &impl BlockView, pos: BlockPos, dust: Dust) -> u8 {
+pub(crate) fn best_neighbor_signal(
+    world: &impl BlockView,
+    pos: BlockPos,
+    dust: Dust,
+) -> SignalStrength {
     DIRECTIONS
         .iter()
         .map(|&direction| received(world, pos.offset(direction), direction, dust))
         .max()
-        .unwrap_or(0)
+        .unwrap_or(UncappedSignalStrength::ZERO)
+        .capped()
 }
 
 pub(crate) fn control_input(
@@ -90,35 +96,39 @@ pub(crate) fn control_input(
     pos: BlockPos,
     direction: BlockFace,
     diodes_only: bool,
-) -> u8 {
+) -> UncappedSignalStrength {
     let state = world.block(pos);
     match state {
         _ if diodes_only => {
             if diode::is_diode(state) {
                 emitted_direct(world, pos, state, direction, Dust::Emits)
             } else {
-                0
+                UncappedSignalStrength::ZERO
             }
         }
-        Block::RedstoneBlock => 15,
-        Block::RedstoneWire(wire) => wire.power,
+        Block::RedstoneBlock => SignalStrength::Fifteen.into(),
+        Block::RedstoneWire(wire) => wire.power.into(),
         _ if is_signal_source(state) => emitted_direct(world, pos, state, direction, Dust::Emits),
-        _ => 0,
+        _ => UncappedSignalStrength::ZERO,
     }
 }
 
-fn output_power(world: &impl BlockView, pos: BlockPos, state: Block) -> u8 {
+fn output_power(world: &impl BlockView, pos: BlockPos, state: Block) -> UncappedSignalStrength {
     match state {
-        Block::RedstoneTorch { lit } | Block::RedstoneWallTorch { lit, .. } => bool_to_ss(lit),
-        Block::RedstoneBlock => 15,
-        Block::TripwireHook { powered, .. } => bool_to_ss(powered),
-        Block::Repeater(repeater) => bool_to_ss(repeater.powered),
+        Block::RedstoneTorch { lit } | Block::RedstoneWallTorch { lit, .. } => {
+            SignalStrength::from(lit).into()
+        }
+        Block::RedstoneBlock => SignalStrength::Fifteen.into(),
+        Block::TripwireHook { powered, .. } => SignalStrength::from(powered).into(),
+        Block::Repeater(repeater) => SignalStrength::from(repeater.powered).into(),
         Block::Comparator(comparator) if comparator.powered => {
             comparator::output_signal(world, pos)
         }
-        Block::Target { power } => power,
-        _ if let Some((_, _, powered)) = attached::attachment(state) => bool_to_ss(powered),
-        _ => bool_to_ss(state.pressure_plate_powered() == Some(true)),
+        Block::Target { power } => power.into(),
+        _ if let Some((_, _, powered)) = attached::attachment(state) => {
+            SignalStrength::from(powered).into()
+        }
+        _ => SignalStrength::from(state.pressure_plate_powered() == Some(true)).into(),
     }
 }
 
@@ -128,14 +138,14 @@ fn emitted(
     state: Block,
     direction: BlockFace,
     dust: Dust,
-) -> u8 {
+) -> UncappedSignalStrength {
     match state {
         Block::RedstoneWire(wire) if dust == Dust::Emits => {
-            wire::emitted(world, pos, wire, direction)
+            wire::emitted(world, pos, wire, direction).into()
         }
-        Block::RedstoneWire(_) => 0,
+        Block::RedstoneWire(_) => UncappedSignalStrength::ZERO,
         _ if provides_weak_power(state, direction) => output_power(world, pos, state),
-        _ => 0,
+        _ => UncappedSignalStrength::ZERO,
     }
 }
 
@@ -145,15 +155,15 @@ fn emitted_direct(
     state: Block,
     direction: BlockFace,
     dust: Dust,
-) -> u8 {
+) -> UncappedSignalStrength {
     match state {
         Block::RedstoneWire(_) => emitted(world, pos, state, direction, dust),
         _ if provides_strong_power(state, direction) => output_power(world, pos, state),
-        _ => 0,
+        _ => UncappedSignalStrength::ZERO,
     }
 }
 
-fn direct_signal_to(world: &impl BlockView, pos: BlockPos, dust: Dust) -> u8 {
+fn direct_signal_to(world: &impl BlockView, pos: BlockPos, dust: Dust) -> UncappedSignalStrength {
     DIRECTIONS
         .iter()
         .map(|&direction| {
@@ -167,5 +177,5 @@ fn direct_signal_to(world: &impl BlockView, pos: BlockPos, dust: Dust) -> u8 {
             )
         })
         .max()
-        .unwrap_or(0)
+        .unwrap_or(UncappedSignalStrength::ZERO)
 }

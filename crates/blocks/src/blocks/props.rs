@@ -1,4 +1,5 @@
 use crate::registries::sound_event;
+use crate::signal_strength::SignalStrength;
 use serde::{Deserialize, Serialize};
 
 use super::{Block, BlockDirection, BlockTransform, FlipDirection};
@@ -131,7 +132,7 @@ pub struct RedstoneWire {
     pub south: RedstoneWireSide,
     pub east: RedstoneWireSide,
     pub west: RedstoneWireSide,
-    pub power: u8,
+    pub power: SignalStrength,
 }
 
 impl RedstoneWire {
@@ -140,7 +141,7 @@ impl RedstoneWire {
         south: RedstoneWireSide,
         east: RedstoneWireSide,
         west: RedstoneWireSide,
-        power: u8,
+        power: SignalStrength,
     ) -> RedstoneWire {
         RedstoneWire {
             north,

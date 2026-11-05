@@ -2,6 +2,7 @@ use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::{Block, LeverFace, Repeater};
 use mchprs_blocks::region::Region;
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redpiler::engine::Input;
 use mchprs_redpiler::simulation::Simulation;
@@ -214,5 +215,9 @@ pub fn make_repeater(
 
 /// Creates a wire at `wire_pos` with a block of sandstone below it
 pub fn make_wire(world: &mut impl BlockStore, wire_pos: BlockPos) {
-    place_on_block(world, wire_pos, Block::RedstoneWire(make_cross(0)));
+    place_on_block(
+        world,
+        wire_pos,
+        Block::RedstoneWire(make_cross(SignalStrength::Zero)),
+    );
 }

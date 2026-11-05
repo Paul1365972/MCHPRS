@@ -1,6 +1,7 @@
 mod props;
 
 pub use crate::generated::Block;
+use crate::signal_strength::SignalStrength;
 use crate::{BlockDirection, BlockFace, BlockFacing};
 pub use props::*;
 use std::mem;
@@ -64,6 +65,7 @@ noop_block_transform!(
     ComparatorMode,
     Instrument,
     SlabType,
+    SignalStrength,
 );
 
 impl BlockTransform for BlockDirection {

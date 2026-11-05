@@ -231,7 +231,7 @@ fn apply_state(block: &mut Block, state: NodeState) {
     }
     match block {
         Block::IronTrapdoor { open, .. } => *open = state.is_powered(),
-        Block::RedstoneWire(wire) => wire.power = state.power.get(),
+        Block::RedstoneWire(wire) => wire.power = state.power,
         Block::Repeater(repeater) => repeater.locked = state.repeater_locked,
         _ => {}
     }

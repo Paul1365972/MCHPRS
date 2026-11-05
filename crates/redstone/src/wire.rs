@@ -3,9 +3,10 @@ use crate::update::{self, Notify};
 use crate::{RedstoneWorld, DIRECTIONS, HORIZONTAL};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, RedstoneWire, RedstoneWireSide};
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 
-pub fn make_cross(power: u8) -> RedstoneWire {
+pub fn make_cross(power: SignalStrength) -> RedstoneWire {
     RedstoneWire {
         north: RedstoneWireSide::Side,
         south: RedstoneWireSide::Side,
@@ -36,7 +37,7 @@ pub fn is_illegal(wire: RedstoneWire) -> bool {
 }
 
 pub(crate) fn state_for_placement(world: &impl BlockView, pos: BlockPos) -> RedstoneWire {
-    connection_state(world, pos, make_cross(0))
+    connection_state(world, pos, make_cross(SignalStrength::Zero))
 }
 
 pub fn connection_state(world: &impl BlockView, pos: BlockPos, wire: RedstoneWire) -> RedstoneWire {
@@ -174,7 +175,7 @@ pub(crate) fn use_block(world: &mut impl RedstoneWorld, pos: BlockPos, wire: Red
     let toggled = if is_cross(wire) {
         RedstoneWire::default()
     } else {
-        make_cross(0)
+        make_cross(SignalStrength::Zero)
     };
     let new_wire = connection_state(
         world,
@@ -199,10 +200,10 @@ pub(crate) fn emitted(
     pos: BlockPos,
     wire: RedstoneWire,
     direction: BlockFace,
-) -> u8 {
+) -> SignalStrength {
     match direction {
-        _ if wire.power == 0 => 0,
-        BlockFace::Bottom => 0,
+        _ if wire.power.is_zero() => SignalStrength::Zero,
+        BlockFace::Bottom => SignalStrength::Zero,
         BlockFace::Top => wire.power,
         _ => {
             let toward_reader = direction.opposite().unwrap_direction();
@@ -210,7 +211,7 @@ pub(crate) fn emitted(
                 .side(toward_reader)
                 .is_none()
             {
-                0
+                SignalStrength::Zero
             } else {
                 wire.power
             }
@@ -270,17 +271,17 @@ fn is_wire(state: Block) -> bool {
     matches!(state, Block::RedstoneWire(_))
 }
 
-fn wire_power(state: Block) -> u8 {
+fn wire_power(state: Block) -> SignalStrength {
     match state {
         Block::RedstoneWire(wire) => wire.power,
-        _ => 0,
+        _ => SignalStrength::Zero,
     }
 }
 
-fn calculate_target_strength(world: &impl BlockView, pos: BlockPos) -> u8 {
+fn calculate_target_strength(world: &impl BlockView, pos: BlockPos) -> SignalStrength {
     let strong = signal::best_neighbor_signal(world, pos, Dust::Muted);
-    let mut wire = 0;
-    if strong < 15 {
+    let mut wire = SignalStrength::Zero;
+    if strong < SignalStrength::Fifteen {
         let above_conductor = world.block(pos.offset(BlockFace::Top)).is_conductor();
         for direction in HORIZONTAL {
             let neighbor_pos = pos.offset(direction.block_face());
@@ -409,7 +410,8 @@ mod tests {
         let mut world = Interpreter::new(BlockVolume::empty(region), Vec::new());
         world.set_block(dust.offset(BlockFace::Bottom), Block::Stone);
         world.set_block(lever.offset(BlockFace::Bottom), Block::Stone);
-        let cross = make_cross(0).with_side(BlockDirection::North, RedstoneWireSide::Up);
+        let cross =
+            make_cross(SignalStrength::Zero).with_side(BlockDirection::North, RedstoneWireSide::Up);
         world.set_block(dust, Block::RedstoneWire(cross));
         world.set_block(
             lever,
@@ -425,7 +427,7 @@ mod tests {
         let line = RedstoneWire {
             east: RedstoneWireSide::None,
             west: RedstoneWireSide::None,
-            ..make_cross(15)
+            ..make_cross(SignalStrength::Fifteen)
         };
         assert_eq!(world.block(dust), Block::RedstoneWire(line));
     }

@@ -107,13 +107,6 @@ impl Aabb {
     }
 }
 
-pub fn bool_to_ss(b: bool) -> u8 {
-    match b {
-        true => 15,
-        false => 0,
-    }
-}
-
 pub fn button_press_ticks(button: Block) -> u8 {
     match button {
         Block::StoneButton(_) | Block::PolishedBlackstoneButton(_) => 10,

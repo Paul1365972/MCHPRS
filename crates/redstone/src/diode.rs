@@ -3,6 +3,7 @@ use crate::update::{self, Notify};
 use crate::{RedstoneWorld, DIRECTIONS};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::signal_strength::{SignalStrength, UncappedSignalStrength};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 
 pub fn is_diode(block: Block) -> bool {
@@ -22,14 +23,18 @@ pub(crate) fn remove_unsupported(world: &mut impl RedstoneWorld, pos: BlockPos) 
     }
 }
 
-pub(crate) fn input_signal(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> u8 {
+pub(crate) fn input_signal(
+    world: &impl BlockView,
+    pos: BlockPos,
+    facing: BlockDirection,
+) -> UncappedSignalStrength {
     let input_pos = pos.offset(facing.block_face());
     let signal = signal::received(world, input_pos, facing.block_face(), Dust::Emits);
-    if signal >= 15 {
+    if signal >= SignalStrength::Fifteen.into() {
         return signal;
     }
     match world.block(input_pos) {
-        Block::RedstoneWire(wire) => signal.max(wire.power),
+        Block::RedstoneWire(wire) => signal.max(wire.power.into()),
         _ => signal,
     }
 }
@@ -39,7 +44,7 @@ pub(crate) fn side_signal(
     pos: BlockPos,
     facing: BlockDirection,
     diodes_only: bool,
-) -> u8 {
+) -> UncappedSignalStrength {
     [facing.rotate(), facing.rotate_ccw()]
         .iter()
         .map(|side| {
@@ -47,7 +52,7 @@ pub(crate) fn side_signal(
             signal::control_input(world, pos.offset(face), face, diodes_only)
         })
         .max()
-        .unwrap_or(0)
+        .unwrap_or(UncappedSignalStrength::ZERO)
 }
 
 pub fn diode_should_be_prioritized(

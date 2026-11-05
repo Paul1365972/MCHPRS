@@ -4,49 +4,51 @@ use crate::{diode, RedstoneWorld};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode};
-use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_blocks::signal_strength::{SignalStrength, UncappedSignalStrength};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use tracing::warn;
 
-pub(crate) fn output_signal(world: &impl BlockView, pos: BlockPos) -> u8 {
+pub(crate) fn output_signal(world: &impl BlockView, pos: BlockPos) -> UncappedSignalStrength {
     match world.block_entity(pos) {
-        Some(BlockEntity::Comparator { output_strength }) => output_strength.get(),
-        _ => 0,
+        Some(BlockEntity::Comparator { output_strength }) => (*output_strength).into(),
+        _ => UncappedSignalStrength::ZERO,
     }
 }
 
-pub fn analog_output(world: &impl BlockView, pos: BlockPos, state: Block) -> Option<u8> {
+pub fn analog_output(
+    world: &impl BlockView,
+    pos: BlockPos,
+    state: Block,
+) -> Option<UncappedSignalStrength> {
     Some(match state {
         Block::Barrel { .. } | Block::Furnace { .. } | Block::Hopper { .. } => {
             match world.block_entity(pos) {
                 Some(BlockEntity::Container {
                     comparator_override,
                     ..
-                }) => comparator_override.get(),
+                }) => (*comparator_override).into(),
                 Some(other) => {
                     warn!("Backing container blockentity type is invalid: {other:?}");
-                    0
+                    UncappedSignalStrength::ZERO
                 }
                 // Empty containers may not have any block entity data
-                None => 0,
+                None => UncappedSignalStrength::ZERO,
             }
         }
-        Block::Cauldron => 0,
-        Block::WaterCauldron { level } => level,
-        Block::Composter { level } => level,
-        Block::Cake { bites } => 14 - 2 * bites,
-        Block::EndPortalFrame { eye, .. } => {
-            if eye {
-                15
-            } else {
-                0
-            }
-        }
+        Block::Cauldron => UncappedSignalStrength::ZERO,
+        Block::WaterCauldron { level } => UncappedSignalStrength::new(level.into()),
+        Block::Composter { level } => UncappedSignalStrength::new(level.into()),
+        Block::Cake { bites } => UncappedSignalStrength::new((14 - 2 * bites).into()),
+        Block::EndPortalFrame { eye, .. } => SignalStrength::from(eye).into(),
         _ => return None,
     })
 }
 
-pub fn get_far_input(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> Option<u8> {
+pub fn get_far_input(
+    world: &impl BlockView,
+    pos: BlockPos,
+    facing: BlockDirection,
+) -> Option<UncappedSignalStrength> {
     let face = facing.block_face();
     let input_pos = pos.offset(face);
     let input_block = world.block(input_pos);
@@ -130,12 +132,16 @@ pub(crate) fn use_block(world: &mut impl RedstoneWorld, pos: BlockPos, comparato
     tick(world, pos, toggled);
 }
 
-fn calculate_output(world: &impl BlockView, pos: BlockPos, comparator: Comparator) -> u8 {
+fn calculate_output(
+    world: &impl BlockView,
+    pos: BlockPos,
+    comparator: Comparator,
+) -> UncappedSignalStrength {
     let input = input_signal(world, pos, comparator.facing);
     let side = diode::side_signal(world, pos, comparator.facing, false);
     match comparator.mode {
-        _ if input == 0 || side > input => 0,
-        ComparatorMode::Subtract => input - side,
+        _ if input.is_zero() || side > input => UncappedSignalStrength::ZERO,
+        ComparatorMode::Subtract => input.saturating_sub(side),
         ComparatorMode::Compare => input,
     }
 }
@@ -143,16 +149,21 @@ fn calculate_output(world: &impl BlockView, pos: BlockPos, comparator: Comparato
 fn should_turn_on(world: &impl BlockView, pos: BlockPos, comparator: Comparator) -> bool {
     let input = input_signal(world, pos, comparator.facing);
     let side = diode::side_signal(world, pos, comparator.facing, false);
-    input > 0 && (input > side || (input == side && comparator.mode == ComparatorMode::Compare))
+    !input.is_zero()
+        && (input > side || (input == side && comparator.mode == ComparatorMode::Compare))
 }
 
-fn input_signal(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> u8 {
+fn input_signal(
+    world: &impl BlockView,
+    pos: BlockPos,
+    facing: BlockDirection,
+) -> UncappedSignalStrength {
     let signal = diode::input_signal(world, pos, facing);
     let input_pos = pos.offset(facing.block_face());
     let input = world.block(input_pos);
     if let Some(analog) = analog_output(world, input_pos, input) {
         analog
-    } else if signal < 15 && input.is_conductor() {
+    } else if signal < SignalStrength::Fifteen.into() && input.is_conductor() {
         get_far_input(world, pos, facing).unwrap_or(signal)
     } else {
         signal
