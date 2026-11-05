@@ -1,10 +1,11 @@
 use crate::{Command, Event, TickReport};
 use mchprs_blocks::BlockPos;
-use mchprs_redpiler::compile::Stage;
+use mchprs_redpiler::compile::BuildContext;
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::pace::{Pacer, SendRate, SendSchedule, TickRate};
 use std::ops::ControlFlow;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -17,7 +18,7 @@ pub(super) fn run<F>(
     commands: Receiver<Command>,
     event_sender: Sender<Event>,
 ) where
-    F: FnOnce(&mut dyn FnMut(Stage) -> ControlFlow<()>) -> Result<Simulation, EngineError>,
+    F: FnOnce(&mut BuildContext<'_>) -> Result<Simulation, EngineError>,
 {
     let mut events = Events(event_sender);
     let Some((simulation, deferred)) = build_simulation(build, &commands, &mut events) else {
@@ -56,24 +57,25 @@ fn build_simulation<F>(
     events: &mut Events,
 ) -> Option<(Simulation, Vec<Command>)>
 where
-    F: FnOnce(&mut dyn FnMut(Stage) -> ControlFlow<()>) -> Result<Simulation, EngineError>,
+    F: FnOnce(&mut BuildContext<'_>) -> Result<Simulation, EngineError>,
 {
-    let mut stopped = false;
+    let cancelled = AtomicBool::new(false);
     let mut deferred = Vec::new();
-    let result = build(&mut |stage| {
+    let mut progress = |stage| {
         events.send(Event::Progress(stage));
         loop {
             match commands.try_recv() {
                 Ok(Command::Stop { .. }) | Err(TryRecvError::Disconnected) => {
-                    stopped = true;
-                    return ControlFlow::Break(());
+                    cancelled.store(true, Ordering::Relaxed);
+                    return;
                 }
                 Ok(command) => deferred.push(command),
-                Err(TryRecvError::Empty) => return ControlFlow::Continue(()),
+                Err(TryRecvError::Empty) => return,
             }
         }
-    });
-    if stopped {
+    };
+    let result = build(&mut BuildContext::new(&mut progress, &cancelled));
+    if cancelled.load(Ordering::Relaxed) {
         events.send(Event::Cancelled);
         return None;
     }

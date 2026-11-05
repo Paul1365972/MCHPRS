@@ -3,12 +3,11 @@ mod runner;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::block_map::BlockChanges;
 use mchprs_redpiler::circuit::Circuit;
-use mchprs_redpiler::compile::Stage;
+use mchprs_redpiler::compile::{BuildContext, Stage};
 use mchprs_redpiler::engine::{DriveError, EngineError, Input};
 use mchprs_redpiler::simulation::Simulation;
 use mchprs_redstone::pace::{Advanced, Goal, SendRate, TickRate};
 use mchprs_redstone::tick_queue::TickEntry;
-use std::ops::ControlFlow;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -78,9 +77,7 @@ pub struct Worker {
 impl Worker {
     pub fn spawn<F>(tick_rate: TickRate, send_rate: SendRate, build: F) -> Worker
     where
-        F: FnOnce(&mut dyn FnMut(Stage) -> ControlFlow<()>) -> Result<Simulation, EngineError>
-            + Send
-            + 'static,
+        F: FnOnce(&mut BuildContext<'_>) -> Result<Simulation, EngineError> + Send + 'static,
     {
         let (commands, command_receiver) = mpsc::channel();
         let (event_sender, events) = mpsc::channel();

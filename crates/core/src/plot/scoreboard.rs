@@ -214,19 +214,29 @@ fn push_progress(lines: &mut Vec<Line>, stage: Option<Stage>) {
     match stage {
         None => lines.push(Line::text("Extracting components", VALUE)),
         Some(Stage::Extracted { .. }) => lines.push(Line::text("Optimizing the circuit", VALUE)),
-        Some(Stage::Building) => lines.push(Line::text("Building the engine", VALUE)),
         Some(Stage::Optimizing {
-            pass,
+            pass: step,
             completed,
             total,
-        }) => {
-            lines.push(Line {
-                label: colored(pass, VALUE),
-                value: Some(colored(&format!("{completed}/{total}"), LABEL)),
-            });
-            push_bar(lines, completed as u64, total as u64);
-        }
+        })
+        | Some(Stage::Building {
+            step,
+            completed,
+            total,
+        }) => push_step(lines, step, completed, total),
     }
+}
+
+fn push_step(lines: &mut Vec<Line>, step: &str, completed: usize, total: usize) {
+    if total <= 1 {
+        lines.push(Line::text(step, VALUE));
+        return;
+    }
+    lines.push(Line {
+        label: colored(step, VALUE),
+        value: Some(colored(&format!("{completed}/{total}"), LABEL)),
+    });
+    push_bar(lines, completed as u64, total as u64);
 }
 
 fn push_advance(lines: &mut Vec<Line>, progress: Progress) {
