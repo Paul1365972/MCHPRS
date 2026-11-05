@@ -7,8 +7,8 @@ use mchprs_network::packets::clientbound::{
 use mchprs_network::text::{TextColor, TextComponent};
 use mchprs_redpiler::compile::Stage;
 use mchprs_redpiler_backends::BackendSetup;
+use mchprs_redstone::pace::Goal;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use mchprs_worker::Goal;
 use std::time::Duration;
 
 const OBJECTIVE: &str = "plot_status";
