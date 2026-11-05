@@ -69,7 +69,7 @@ fn build_node(circuit: &Circuit, id: circuit::NodeId, forward_links: &mut Forwar
         power: node.state.power,
         repeater_locked: node.state.repeater_locked,
         changed: false,
-        pending_tick: false,
+        due_tick: None,
         visible: node.observed,
     }
 }

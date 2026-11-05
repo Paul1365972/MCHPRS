@@ -5,7 +5,7 @@ use mchprs_redstone::tick_queue::TickPriority;
 use std::mem;
 
 #[derive(Default, Clone)]
-pub struct Queues(pub [Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
+pub struct Queues([Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
 
 impl Queues {
     #[inline(always)]
@@ -22,24 +22,34 @@ impl Queues {
 #[derive(Default)]
 pub struct TickScheduler {
     queues_deque: [Queues; Self::NUM_QUEUES],
-    pos: usize,
+    tick: u32,
 }
 
 impl TickScheduler {
     const NUM_PRIORITIES: usize = 4;
     const NUM_QUEUES: usize = 16;
 
-    pub fn schedule_tick(&mut self, node: NodeId, delay: usize, priority: TickPriority) {
-        self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES].0[priority as usize].push(node);
+    fn queue_index(tick: u32) -> usize {
+        tick as usize % Self::NUM_QUEUES
+    }
+
+    pub fn current_tick(&self) -> u32 {
+        self.tick
+    }
+
+    pub fn schedule_tick(&mut self, node: NodeId, delay: u32, priority: TickPriority) -> u32 {
+        let tick = self.tick.wrapping_add(delay);
+        self.queues_deque[Self::queue_index(tick)].0[priority as usize].push(node);
+        tick
     }
 
     pub fn queues_this_tick(&mut self) -> Queues {
-        self.pos = (self.pos + 1) % Self::NUM_QUEUES;
-        mem::take(&mut self.queues_deque[self.pos])
+        self.tick = self.tick.wrapping_add(1);
+        mem::take(&mut self.queues_deque[Self::queue_index(self.tick)])
     }
 
     pub fn end_tick(&mut self, queues: Queues) {
-        self.queues_deque[self.pos % Self::NUM_QUEUES] = queues;
+        self.queues_deque[Self::queue_index(self.tick)] = queues;
     }
 
     fn priorities() -> [TickPriority; Self::NUM_PRIORITIES] {
@@ -58,17 +68,16 @@ impl TickScheduler {
     }
 
     pub fn pending_ticks(&self) -> impl Iterator<Item = (NodeId, PendingTick)> + '_ {
-        (1..=Self::NUM_QUEUES).flat_map(move |delay| {
-            let queues = &self.queues_deque[(self.pos + delay) % Self::NUM_QUEUES];
+        (1..=Self::NUM_QUEUES as u32).flat_map(move |delay| {
+            let queues = &self.queues_deque[Self::queue_index(self.tick.wrapping_add(delay))];
             queues
                 .0
                 .iter()
                 .zip(Self::priorities())
                 .flat_map(move |(queue, priority)| {
-                    queue.iter().map(move |&node| {
-                        let delay = delay as u32;
-                        (node, PendingTick { delay, priority })
-                    })
+                    queue
+                        .iter()
+                        .map(move |&node| (node, PendingTick { delay, priority }))
                 })
         })
     }

@@ -15,7 +15,7 @@ pub(super) fn update_node(
             if should_be_locked != node.repeater_locked {
                 node.set_repeater_locked(should_be_locked);
             }
-            if node.repeater_locked || node.pending_tick {
+            if node.repeater_locked || node.has_pending_tick() {
                 return;
             }
 
@@ -28,11 +28,11 @@ pub(super) fn update_node(
                 } else {
                     TickPriority::High
                 };
-                schedule_tick(scheduler, node_id, node, delay as usize, priority);
+                schedule_tick(scheduler, node_id, node, delay.into(), priority);
             }
         }
         NodeKind::Torch => {
-            if node.pending_tick {
+            if node.has_pending_tick() {
                 return;
             }
             let should_be_powered = !node.default_inputs.is_powered();
@@ -45,7 +45,7 @@ pub(super) fn update_node(
             far_input,
             prioritized,
         } => {
-            if node.pending_tick {
+            if node.has_pending_tick() {
                 return;
             }
             let power = comparator_output_power(node, mode, far_input);
@@ -61,7 +61,7 @@ pub(super) fn update_node(
         NodeKind::Lamp => {
             let should_be_lit = node.default_inputs.is_powered();
             let lit = node.is_powered();
-            if lit && !should_be_lit && !node.pending_tick {
+            if lit && !should_be_lit && !node.has_scheduled_tick(scheduler.current_tick()) {
                 schedule_tick(scheduler, node_id, node, 2, TickPriority::Normal);
             } else if !lit && should_be_lit {
                 node.set_powered(true);

@@ -100,26 +100,21 @@ impl DirectEngine {
 
     fn schedule(&mut self, pending_ticks: &[(circuit::NodeId, PendingTick)]) {
         for &(node, tick) in pending_ticks {
-            let node = self.nodes.get(node.index());
-            self.scheduler
-                .schedule_tick(node, tick.delay as usize, tick.priority);
-            self.nodes[node].pending_tick = true;
+            let node_id = self.nodes.get(node.index());
+            let node = &mut self.nodes[node_id];
+            schedule_tick(
+                &mut self.scheduler,
+                node_id,
+                node,
+                tick.delay,
+                tick.priority,
+            );
         }
     }
 
     #[inline(always)]
     fn tick(&mut self) {
         let mut queues = self.scheduler.queues_this_tick();
-        // Like vanilla, a Lamp may schedule a new tick before its tick in this tick has run
-        for queue in &queues.0 {
-            for &node_id in queue {
-                let node = &mut self.nodes[node_id];
-                if matches!(node.kind, NodeKind::Lamp) {
-                    node.pending_tick = false;
-                }
-            }
-        }
-
         queues.drain_each(|node_id| {
             self.tick_node(node_id);
         });
@@ -170,7 +165,7 @@ impl Engine for DirectEngine {
             Input::Press => {
                 let node = &mut self.nodes[node_id];
                 if !node.is_powered() {
-                    if !node.pending_tick {
+                    if !node.has_pending_tick() {
                         schedule_tick(&mut self.scheduler, node_id, node, 10, TickPriority::Normal);
                     }
                     self.set_power_and_propagate(node_id, SignalStrength::Fifteen);
@@ -250,7 +245,7 @@ impl Engine for DirectEngine {
         for (node, state) in self.nodes.inner_mut().iter_mut().zip(&snapshot.states) {
             node.power = state.power;
             node.repeater_locked = state.repeater_locked;
-            node.pending_tick = false;
+            node.due_tick = None;
             node.changed = true;
         }
         self.rebuild_inputs();
@@ -272,11 +267,10 @@ fn schedule_tick(
     scheduler: &mut TickScheduler,
     node_id: NodeId,
     node: &mut Node,
-    delay: usize,
+    delay: u32,
     priority: TickPriority,
 ) {
-    node.pending_tick = true;
-    scheduler.schedule_tick(node_id, delay, priority);
+    node.due_tick = Some(scheduler.schedule_tick(node_id, delay, priority));
 }
 
 #[inline]

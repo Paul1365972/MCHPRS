@@ -206,10 +206,19 @@ pub struct Node {
     /// Only for repeaters
     pub repeater_locked: bool,
     pub changed: bool,
-    pub pending_tick: bool,
+    pub due_tick: Option<u32>,
 }
 
 impl Node {
+    pub fn has_pending_tick(&self) -> bool {
+        self.due_tick.is_some()
+    }
+
+    /// Like vanilla's `hasScheduledTick`, which no longer counts a tick collected to run in `tick`
+    pub fn has_scheduled_tick(&self, tick: u32) -> bool {
+        self.due_tick.is_some_and(|due| due != tick)
+    }
+
     pub fn is_powered(&self) -> bool {
         !self.power.is_zero()
     }

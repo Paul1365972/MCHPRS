@@ -5,9 +5,8 @@ impl DirectEngine {
     #[inline(never)]
     pub fn tick_node(&mut self, node_id: NodeId) {
         let node = &mut self.nodes[node_id];
-        // Lamps clear their pending tick when it is collected, see `DirectEngine::tick`
-        if !matches!(node.kind, NodeKind::Lamp) {
-            node.pending_tick = false;
+        if node.due_tick == Some(self.scheduler.current_tick()) {
+            node.due_tick = None;
         }
 
         match node.kind {
@@ -25,7 +24,7 @@ impl DirectEngine {
                             &mut self.scheduler,
                             node_id,
                             node,
-                            delay as usize,
+                            delay.into(),
                             TickPriority::Higher,
                         );
                     }
