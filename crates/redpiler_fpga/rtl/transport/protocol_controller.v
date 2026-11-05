@@ -21,19 +21,24 @@ module protocol_controller #(
     localparam [7:0] STATUS = 0, INPUT = 1, PAUSE = 2, RUN_UNLIMITED = 3, RUN_TICKS = 4,
         RUN_PERIODIC = 5, READ_APPEARANCE = 6, READ_STATES = 7;
     localparam [3:0] COMMAND_FAULT = 4, INPUT_FAULT = 5, OVERRUN_FAULT = 6;
-    localparam COMMAND_BYTES = 9, HEADER_BYTES = 9, IDENTITY_BYTES = 8;
+    localparam COMMAND_BYTES = 9, HEADER_BYTES = 9, IDENTITY_BYTES = 8, CONTENT_LATENCY = 2;
     localparam POSITION_WIDTH =
         $clog2(HEADER_BYTES + IDENTITY_BYTES + STATE_BYTES + APPEARANCE_BYTES + 3);
 
     wire received, engine_busy, tick_started, sending;
     wire [COMMAND_BYTES * 8 - 1:0] command;
+    wire [7:0] received_code = command[7:0];
+    wire [63:0] received_argument = command[71:8];
     wire [3:0] receive_fault;
     wire [POSITION_WIDTH - 1:0] position;
     wire [(STATE_BYTES + APPEARANCE_BYTES) * 8 - 1:0] readback;
+    reg [POSITION_WIDTH - 1:0] readback_byte = 0;
+    reg [7:0] content = 0;
 
     reg pending = 0;
     reg [7:0] code = STATUS;
     reg [63:0] argument = 0;
+    reg [3:0] status = 0;
     reg [7:0] mode = PAUSE;
     reg [63:0] target = 0;
     reg [63:0] period = 1;
@@ -45,16 +50,10 @@ module protocol_controller #(
     reg [HEADER_BYTES * 8 - 1:0] header = 0;
     reg [POSITION_WIDTH - 1:0] length = 0;
 
-    wire [3:0] status = code > READ_STATES ? COMMAND_FAULT
-        : code == INPUT && argument[30:0] >= NODE_COUNT ? INPUT_FAULT
-        : 4'd0;
     wire executing = pending && !engine_busy && !allowed && !sending;
     wire period_elapsed = mode == RUN_PERIODIC && clocks_left == 0;
     wire tick_paid = mode == RUN_PERIODIC && tick_started;
     wire [POSITION_WIDTH - 1:0] payload_position = position - HEADER_BYTES;
-    wire [7:0] content = position < HEADER_BYTES ? header[position * 8 +: 8]
-        : answered == STATUS ? CIRCUIT_ID[payload_position * 8 +: 8]
-        : readback[(payload_position + (answered == READ_APPEARANCE ? STATE_BYTES : 0)) * 8 +: 8];
 
     assign ticking = engine_busy;
     assign halted = (mode == PAUSE || mode == RUN_TICKS && tick_count == target) && !engine_busy;
@@ -63,7 +62,10 @@ module protocol_controller #(
         .clock(clock), .serial(serial_receive), .received(received), .content(command),
         .fault(receive_fault)
     );
-    frame_transmitter #(.POSITION_WIDTH(POSITION_WIDTH), .CLOCKS_PER_BIT(CLOCKS_PER_BIT)) transmitter (
+    frame_transmitter #(
+        .POSITION_WIDTH(POSITION_WIDTH), .CONTENT_LATENCY(CONTENT_LATENCY),
+        .CLOCKS_PER_BIT(CLOCKS_PER_BIT)
+    ) transmitter (
         .clock(clock), .start(executing), .length(length), .content(content),
         .position(position), .busy(sending), .serial(serial_transmit)
     );
@@ -83,6 +85,10 @@ module protocol_controller #(
     endfunction
 
     always @(posedge clock) begin
+        readback_byte <= payload_position + (answered == READ_APPEARANCE ? STATE_BYTES : 0);
+        content <= position < HEADER_BYTES ? header[position * 8 +: 8]
+            : answered == STATUS ? CIRCUIT_ID[payload_position * 8 +: 8]
+            : readback[readback_byte * 8 +: 8];
         allowed <= (mode == RUN_UNLIMITED || mode == RUN_TICKS || mode == RUN_PERIODIC && ticks_due != 0)
             && !pending && !(reading && sending);
         if (clear_fault)
@@ -96,8 +102,11 @@ module protocol_controller #(
 
         if (received && !pending) begin
             pending <= 1;
-            code <= command[7:0];
-            argument <= command[71:8];
+            code <= received_code;
+            argument <= received_argument;
+            status <= received_code > READ_STATES ? COMMAND_FAULT
+                : received_code == INPUT && received_argument[30:0] >= NODE_COUNT ? INPUT_FAULT
+                : 4'd0;
         end
         if (mode == RUN_PERIODIC)
             clocks_left <= period_elapsed ? period - 1 : clocks_left - 1;
