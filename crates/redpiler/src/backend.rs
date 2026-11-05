@@ -3,9 +3,8 @@ use crate::engine::{Engine, EngineError};
 use crate::extract::ExtractOptions;
 use crate::passes::Pass;
 use mchprs_commands::flag::{Flag, FlagValues};
-use std::sync::Arc;
 
-pub type Build = Box<dyn FnOnce(Arc<Circuit>) -> Result<Box<dyn Engine>, EngineError> + Send>;
+pub type Build = Box<dyn FnOnce(&Circuit) -> Result<Box<dyn Engine>, EngineError> + Send>;
 
 pub trait Backend: Sync {
     fn name(&self) -> &'static str;

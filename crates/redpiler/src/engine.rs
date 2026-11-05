@@ -1,10 +1,9 @@
-use crate::circuit::{Circuit, NodeId};
+use crate::circuit::NodeId;
 use crate::graph::{NodeState, PendingTick};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
 use std::error::Error;
 use std::fmt;
-use std::sync::Arc;
 
 pub type EngineError = Box<dyn Error + Send + Sync>;
 
@@ -44,18 +43,16 @@ pub struct Changes {
     pub notes: Vec<(NodeId, u32)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub states: Vec<NodeState>,
     /// Ticks due together with the same priority run in this order
     pub pending_ticks: Vec<(NodeId, PendingTick)>,
 }
 
-/// Runs a [`Circuit`], keeping at most one pending tick per node between ticks.
+/// Keeps at most one pending tick per node between ticks.
 pub trait Engine: Send {
-    fn circuit(&self) -> &Arc<Circuit>;
-
-    /// The input must pass [`Circuit::check_input`].
+    /// The input must pass [`Circuit::check_input`](crate::circuit::Circuit::check_input).
     fn drive(&mut self, node: NodeId, input: Input) -> Result<(), EngineError>;
 
     fn run(&mut self, ticks: u64) -> Result<(), EngineError>;
@@ -72,21 +69,21 @@ pub trait Engine: Send {
         Ok(self.is_idle()?.then_some(limit))
     }
 
-    /// The observed nodes whose state changed, and the note blocks played, since the last call.
-    fn changes(&mut self) -> Result<Changes, EngineError>;
+    /// Appends the observed nodes whose state changed, and the note blocks played, since the last
+    /// call.
+    fn changes(&mut self, changes: &mut Changes) -> Result<(), EngineError>;
 
     fn snapshot(&mut self) -> Result<Snapshot, EngineError>;
 
-    /// Rejects what [`Circuit::check_snapshot`] rejects. Afterwards, [`Self::changes`] reports
-    /// every observed node.
+    /// The snapshot must pass [`Circuit::check_snapshot`](crate::circuit::Circuit::check_snapshot).
+    /// Afterwards, [`Self::changes`] reports every observed node.
     fn restore(&mut self, snapshot: &Snapshot) -> Result<(), EngineError>;
+
+    /// Returns to the state the engine was built in.
+    fn reset(&mut self) -> Result<(), EngineError>;
 }
 
 impl<E: Engine + ?Sized> Engine for Box<E> {
-    fn circuit(&self) -> &Arc<Circuit> {
-        (**self).circuit()
-    }
-
     fn drive(&mut self, node: NodeId, input: Input) -> Result<(), EngineError> {
         (**self).drive(node, input)
     }
@@ -103,8 +100,8 @@ impl<E: Engine + ?Sized> Engine for Box<E> {
         (**self).settle(limit)
     }
 
-    fn changes(&mut self) -> Result<Changes, EngineError> {
-        (**self).changes()
+    fn changes(&mut self, changes: &mut Changes) -> Result<(), EngineError> {
+        (**self).changes(changes)
     }
 
     fn snapshot(&mut self) -> Result<Snapshot, EngineError> {
@@ -113,5 +110,9 @@ impl<E: Engine + ?Sized> Engine for Box<E> {
 
     fn restore(&mut self, snapshot: &Snapshot) -> Result<(), EngineError> {
         (**self).restore(snapshot)
+    }
+
+    fn reset(&mut self) -> Result<(), EngineError> {
+        (**self).reset()
     }
 }

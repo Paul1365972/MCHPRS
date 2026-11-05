@@ -1,6 +1,6 @@
 use crate::block_map::{BlockChanges, BlockMap};
 use crate::circuit::{Circuit, NodeId};
-use crate::engine::{DriveError, Engine, EngineError, Input, Snapshot};
+use crate::engine::{Changes, DriveError, Engine, EngineError, Input, Snapshot};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::tick_queue::TickEntry;
@@ -13,8 +13,7 @@ pub struct Simulation<E: Engine = Box<dyn Engine>> {
 }
 
 impl<E: Engine> Simulation<E> {
-    pub fn new(engine: E) -> Simulation<E> {
-        let circuit = engine.circuit().clone();
+    pub fn new(circuit: Arc<Circuit>, engine: E) -> Simulation<E> {
         Simulation {
             blocks: BlockMap::new(&circuit),
             circuit,
@@ -52,12 +51,12 @@ impl<E: Engine> Simulation<E> {
     }
 
     pub fn sync(&mut self) -> Result<BlockChanges, EngineError> {
-        self.blocks.record(self.engine.changes()?);
+        self.record_changes()?;
         Ok(self.blocks.take_changes(&self.circuit))
     }
 
     pub fn sync_all(&mut self) -> Result<BlockChanges, EngineError> {
-        self.blocks.record(self.engine.changes()?);
+        self.record_changes()?;
         self.blocks.record_snapshot(&self.engine.snapshot()?);
         Ok(self.blocks.take_changes(&self.circuit))
     }
@@ -69,7 +68,7 @@ impl<E: Engine> Simulation<E> {
         if !self.circuit.node(node).observed {
             return Ok(None);
         }
-        self.blocks.record(self.engine.changes()?);
+        self.record_changes()?;
         Ok(Some(self.blocks.state(node).power))
     }
 
@@ -83,11 +82,20 @@ impl<E: Engine> Simulation<E> {
     }
 
     pub fn restore(&mut self, snapshot: &Snapshot) -> Result<(), EngineError> {
-        self.blocks.record(self.engine.changes()?);
+        self.circuit.check_snapshot(snapshot)?;
+        self.record_changes()?;
         self.engine.restore(snapshot)
     }
 
     pub fn reset(&mut self) -> Result<(), EngineError> {
-        self.restore(&self.circuit.initial())
+        self.record_changes()?;
+        self.engine.reset()
+    }
+
+    fn record_changes(&mut self) -> Result<(), EngineError> {
+        let mut changes = Changes::default();
+        self.engine.changes(&mut changes)?;
+        self.blocks.record(changes);
+        Ok(())
     }
 }

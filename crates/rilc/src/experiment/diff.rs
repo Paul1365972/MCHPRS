@@ -133,7 +133,8 @@ struct Ticked {
 impl Subject {
     fn start(backend: Configured, source: &Source) -> Result<Subject, BoxError> {
         let name = backend.label.clone();
-        let mut simulation = Simulation::new(backend.start(source)?);
+        let (circuit, engine) = backend.start(source)?;
+        let mut simulation = Simulation::new(circuit, engine);
         let circuit = simulation.circuit();
         let shown = circuit
             .ids()
