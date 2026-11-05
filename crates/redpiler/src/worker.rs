@@ -180,6 +180,10 @@ impl WorkerThread {
                 break exit;
             }
         };
+        // Releasing the engine can block on a device that stopped answering, so the plot learns
+        // first that the worker has ended.
+        drop(self.requests);
+        drop(self.batches);
         match exit {
             Exit::Stopped | Exit::Abandoned => {}
             Exit::Failed(error) => error!("the redpiler engine failed: {error}"),
@@ -189,6 +193,7 @@ impl WorkerThread {
     fn serve_slice(&mut self) -> ControlFlow<Exit> {
         while let Some(request) = self.try_receive()? {
             self.handle(request)?;
+            self.resume = Resume::Now;
         }
         let now = Instant::now();
         let wait = match self.resume {
@@ -327,5 +332,115 @@ impl WorkerThread {
         self.owed_ticks_finished = false;
         self.publish_pending = false;
         batch
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compile_graph::CompileGraph;
+    use crate::engine::{EngineSnapshot, Progress};
+    use crate::netlist::{Netlist, NodeId};
+
+    const WAIT: Duration = Duration::from_secs(10);
+
+    /// Reports each run and returns what the test answers for it; releasing it waits until the
+    /// test lets it go, like a board whose serial device stopped answering.
+    struct ControlledEngine {
+        runs: Sender<()>,
+        answers: Receiver<Result<Progress, EngineError>>,
+        released: Receiver<()>,
+    }
+
+    struct Control {
+        worker: Worker,
+        runs: Receiver<()>,
+        answers: Sender<Result<Progress, EngineError>>,
+        release: Sender<()>,
+    }
+
+    impl Control {
+        fn start() -> Control {
+            let (runs, worker_runs) = mpsc::channel();
+            let (answers, engine_answers) = mpsc::channel();
+            let (release, released) = mpsc::channel();
+            let engine = ControlledEngine {
+                runs,
+                answers: engine_answers,
+                released,
+            };
+            let block_map = BlockMap::new(&Netlist::from(CompileGraph::default()));
+            Control {
+                worker: Worker::start(block_map, Box::new(engine)),
+                runs: worker_runs,
+                answers,
+                release,
+            }
+        }
+
+        fn answer_run(&self, answer: Result<Progress, EngineError>) {
+            self.runs.recv_timeout(WAIT).expect("the engine runs");
+            self.answers.send(answer).unwrap();
+        }
+    }
+
+    impl Drop for ControlledEngine {
+        fn drop(&mut self) {
+            let _ = self.released.recv();
+        }
+    }
+
+    impl Engine for ControlledEngine {
+        fn set_tick_rate(&mut self, _rate: TickRate) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        fn set_send_rate(&mut self, _rate: SendRate) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        fn run(&mut self, _deadline: Instant) -> Result<Progress, EngineError> {
+            self.runs.send(())?;
+            self.answers.recv()?
+        }
+
+        fn input(&mut self, _node: NodeId, _input: Input) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        fn take_changes(&mut self) -> Result<NodeChanges, EngineError> {
+            Ok(NodeChanges::default())
+        }
+
+        fn snapshot(&mut self) -> Result<EngineSnapshot, EngineError> {
+            Ok(EngineSnapshot::default())
+        }
+    }
+
+    #[test]
+    fn a_failed_engine_does_not_hold_the_plot_while_it_is_released() {
+        let mut control = Control::start();
+        control.worker.set_tick_rate(TickRate::Unlimited).unwrap();
+        control.answer_run(Err("the device did not answer".into()));
+        let failure = control.worker.next_batch(WAIT);
+        assert!(matches!(failure, Err(BackendFailure)));
+        assert!(control.worker.snapshot().is_err());
+        control.release.send(()).unwrap();
+    }
+
+    #[test]
+    fn a_request_that_arrives_during_a_run_lets_the_engine_run_again() {
+        let mut control = Control::start();
+        control.worker.set_tick_rate(TickRate::Unlimited).unwrap();
+        control.runs.recv_timeout(WAIT).expect("the engine runs");
+        control.worker.set_send_rate(SendRate::Never).unwrap();
+        let paused = Progress {
+            ticks_completed: 0,
+            ticks_owed: 0,
+            resume: Resume::OnRequest,
+        };
+        control.answers.send(Ok(paused)).unwrap();
+        control.answer_run(Err("stop".into()));
+        control.release.send(()).unwrap();
     }
 }
