@@ -2,7 +2,7 @@ use crate::extract::ExtractError;
 use crate::graph::{NodeKind, NodeState};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
-use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_blocks::signal_strength::{SignalStrength, UncappedSignalStrength};
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::{attached, comparator, diode, noteblock};
 use mchprs_simulation::component::strength_of;
@@ -57,7 +57,10 @@ pub(crate) fn component_of(
     Ok(Some((kind, state)))
 }
 
-fn within_fifteen(strength: u8, pos: BlockPos) -> Result<SignalStrength, ExtractError> {
+fn within_fifteen(
+    strength: UncappedSignalStrength,
+    pos: BlockPos,
+) -> Result<SignalStrength, ExtractError> {
     SignalStrength::try_from(strength).map_err(|_| ExtractError::AboveFifteen(pos))
 }
 

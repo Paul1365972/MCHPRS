@@ -1,7 +1,7 @@
 use crate::{attached, comparator, diode, wire, DIRECTIONS};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
-use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_blocks::signal_strength::{SignalStrength, UncappedSignalStrength};
 use mchprs_blocks::{BlockFace, BlockPos};
 
 /// Vanilla's `RedStoneWireBlock.shouldSignal`
@@ -104,9 +104,14 @@ fn emits(
     }
 }
 
-pub fn received(world: &impl BlockView, pos: BlockPos, direction: BlockFace, dust: Dust) -> u8 {
-    let mut own = 0;
-    let mut conducted = 0;
+pub fn received(
+    world: &impl BlockView,
+    pos: BlockPos,
+    direction: BlockFace,
+    dust: Dust,
+) -> UncappedSignalStrength {
+    let mut own = UncappedSignalStrength::ZERO;
+    let mut conducted = UncappedSignalStrength::ZERO;
     for emitter in emitters(world, pos, direction, dust) {
         let strength = match emitter.state {
             Block::RedstoneWire(wire) => wire.power.into(),
@@ -117,7 +122,7 @@ pub fn received(world: &impl BlockView, pos: BlockPos, direction: BlockFace, dus
             continue;
         }
         conducted = conducted.max(strength);
-        if conducted >= 15 {
+        if conducted >= SignalStrength::Fifteen.into() {
             break;
         }
     }
@@ -125,7 +130,7 @@ pub fn received(world: &impl BlockView, pos: BlockPos, direction: BlockFace, dus
 }
 
 pub fn has_signal(world: &impl BlockView, pos: BlockPos, direction: BlockFace) -> bool {
-    received(world, pos, direction, Dust::Emits) != 0
+    !received(world, pos, direction, Dust::Emits).is_zero()
 }
 
 pub fn has_neighbor_signal(world: &impl BlockView, pos: BlockPos) -> bool {
@@ -135,31 +140,34 @@ pub fn has_neighbor_signal(world: &impl BlockView, pos: BlockPos) -> bool {
 }
 
 pub fn best_neighbor_signal(world: &impl BlockView, pos: BlockPos, dust: Dust) -> SignalStrength {
-    let power = DIRECTIONS
+    DIRECTIONS
         .iter()
         .map(|&direction| received(world, pos.offset(direction), direction, dust))
         .max()
-        .unwrap_or(0)
-        .min(15);
-    SignalStrength::try_from(power).unwrap()
+        .unwrap_or(UncappedSignalStrength::ZERO)
+        .capped()
 }
 
-pub fn control_input(world: &impl BlockView, pos: BlockPos, direction: BlockFace) -> u8 {
+pub fn control_input(
+    world: &impl BlockView,
+    pos: BlockPos,
+    direction: BlockFace,
+) -> UncappedSignalStrength {
     let state = world.block(pos);
     match state {
-        Block::RedstoneBlock => 15,
+        Block::RedstoneBlock => SignalStrength::Fifteen.into(),
         Block::RedstoneWire(wire) => wire.power.into(),
         _ if is_signal_source(state) => emitted_direct(world, pos, state, direction),
-        _ => 0,
+        _ => UncappedSignalStrength::ZERO,
     }
 }
 
-fn output_power(world: &impl BlockView, pos: BlockPos, state: Block) -> u8 {
+fn output_power(world: &impl BlockView, pos: BlockPos, state: Block) -> UncappedSignalStrength {
     match state {
         Block::RedstoneTorch { lit } | Block::RedstoneWallTorch { lit, .. } => {
             SignalStrength::from(lit).into()
         }
-        Block::RedstoneBlock => 15,
+        Block::RedstoneBlock => SignalStrength::Fifteen.into(),
         Block::TripwireHook { powered, .. } => SignalStrength::from(powered).into(),
         Block::Repeater(repeater) => SignalStrength::from(repeater.powered).into(),
         Block::Comparator(comparator) if comparator.powered => {
@@ -178,10 +186,10 @@ pub fn emitted_direct(
     pos: BlockPos,
     state: Block,
     direction: BlockFace,
-) -> u8 {
+) -> UncappedSignalStrength {
     if provides_strong_power(state, direction) {
         output_power(world, pos, state)
     } else {
-        0
+        UncappedSignalStrength::ZERO
     }
 }

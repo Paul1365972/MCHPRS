@@ -1,16 +1,20 @@
 use crate::ports::Role;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
-use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_blocks::signal_strength::{SignalStrength, UncappedSignalStrength};
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::comparator;
 use mchprs_redstone::input::is_drivable;
 
-pub fn strength_at(world: &impl BlockView, pos: BlockPos) -> Option<u8> {
+pub fn strength_at(world: &impl BlockView, pos: BlockPos) -> Option<UncappedSignalStrength> {
     strength_of(world, pos, world.block(pos))
 }
 
-pub fn strength_of(world: &impl BlockView, pos: BlockPos, block: Block) -> Option<u8> {
+pub fn strength_of(
+    world: &impl BlockView,
+    pos: BlockPos,
+    block: Block,
+) -> Option<UncappedSignalStrength> {
     if let Some(on) = switched_on(block) {
         return Some(SignalStrength::from(on).into());
     }
@@ -26,7 +30,7 @@ pub fn strength_of(world: &impl BlockView, pos: BlockPos, block: Block) -> Optio
 }
 
 pub fn powered_at(world: &impl BlockView, pos: BlockPos) -> Option<bool> {
-    strength_at(world, pos).map(|strength| strength != 0)
+    strength_at(world, pos).map(|strength| !strength.is_zero())
 }
 
 pub fn default_role(block: Block) -> Option<Role> {

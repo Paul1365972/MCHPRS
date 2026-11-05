@@ -1,5 +1,5 @@
 use crate::registries::sound_event;
-use crate::signal_strength::SignalStrength;
+use crate::signal_strength::{SignalStrength, UncappedSignalStrength};
 use serde::{Deserialize, Serialize};
 
 use super::{Block, BlockDirection, BlockTransform, FlipDirection};
@@ -46,6 +46,19 @@ impl ComparatorMode {
         match self {
             ComparatorMode::Subtract => ComparatorMode::Compare,
             ComparatorMode::Compare => ComparatorMode::Subtract,
+        }
+    }
+
+    #[inline]
+    pub fn output(
+        self,
+        rear: UncappedSignalStrength,
+        side: UncappedSignalStrength,
+    ) -> UncappedSignalStrength {
+        match self {
+            _ if side > rear => UncappedSignalStrength::ZERO,
+            ComparatorMode::Compare => rear,
+            ComparatorMode::Subtract => rear.saturating_sub(side),
         }
     }
 }

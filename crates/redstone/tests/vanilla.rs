@@ -4,6 +4,7 @@ use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
+use mchprs_blocks::signal_strength::UncappedSignalStrength;
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::interpreter::Interpreter;
 use std::fs;
@@ -44,7 +45,7 @@ impl Observed {
 
     fn at(world: &Interpreter<BlockVolume>, pos: BlockPos) -> Observed {
         let comparator_output = match world.block_entity(pos) {
-            Some(BlockEntity::Comparator { output_strength }) => Some(u16::from(*output_strength)),
+            Some(BlockEntity::Comparator { output_strength }) => Some(output_strength.get()),
             _ => None,
         };
         Observed {
@@ -136,7 +137,7 @@ impl Replay {
         for (pos, observed) in self.observed.positions().zip(&self.vanilla) {
             self.world.set_block(pos, observed.block);
             if let Some(output) = observed.comparator_output {
-                let output_strength = u8::try_from(output).expect("a comparator output fitting u8");
+                let output_strength = UncappedSignalStrength::new(output);
                 let comparator = BlockEntity::Comparator { output_strength };
                 self.world.set_block_entity(pos, Some(comparator));
             }

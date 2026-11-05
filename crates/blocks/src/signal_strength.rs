@@ -102,6 +102,15 @@ impl TryFrom<u32> for SignalStrength {
     }
 }
 
+impl TryFrom<UncappedSignalStrength> for SignalStrength {
+    type Error = InvalidSignalStrength;
+
+    #[inline]
+    fn try_from(value: UncappedSignalStrength) -> Result<Self, Self::Error> {
+        Self::try_from(u32::from(value.get()))
+    }
+}
+
 impl FromStr for SignalStrength {
     type Err = ();
 
@@ -114,6 +123,51 @@ impl FromStr for SignalStrength {
 impl fmt::Display for SignalStrength {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.get().fmt(formatter)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UncappedSignalStrength(u16);
+
+impl UncappedSignalStrength {
+    pub const ZERO: Self = Self(0);
+
+    #[inline]
+    pub const fn new(value: u16) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+
+    #[inline]
+    pub const fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+
+    #[inline]
+    pub fn saturating_from(value: i32) -> Self {
+        Self(value.clamp(0, u16::MAX.into()) as u16)
+    }
+
+    #[inline]
+    pub fn capped(self) -> SignalStrength {
+        SignalStrength::try_from(u32::from(self.0.min(15))).unwrap()
+    }
+
+    #[inline]
+    pub fn saturating_sub(self, other: Self) -> Self {
+        Self(self.0.saturating_sub(other.0))
+    }
+}
+
+impl From<SignalStrength> for UncappedSignalStrength {
+    #[inline]
+    fn from(power: SignalStrength) -> Self {
+        Self(power.get().into())
     }
 }
 

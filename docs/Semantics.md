@@ -78,6 +78,7 @@ If the lamp's input turns on in the same redstone tick as that update, the resul
 A plot is not compiled into a graph in the following cases:
 
 - A component is stale.
+- A container or comparator has a signal strength above 15.
 
 ### Shown Blocks
 

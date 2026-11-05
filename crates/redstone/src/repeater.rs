@@ -103,10 +103,10 @@ fn is_locked(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> b
         let face = side.block_face();
         let side_pos = pos.offset(face);
         let state = world.block(side_pos);
-        diode::is_diode(state) && signal::emitted_direct(world, side_pos, state, face) != 0
+        diode::is_diode(state) && !signal::emitted_direct(world, side_pos, state, face).is_zero()
     })
 }
 
 fn should_turn_on(world: &impl BlockView, pos: BlockPos, repeater: Repeater) -> bool {
-    diode::input_signal(world, pos, repeater.facing) != 0
+    !diode::input_signal(world, pos, repeater.facing).is_zero()
 }
