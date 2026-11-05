@@ -14,6 +14,8 @@ Extraction iterates through all the blocks in the plot and tries to identify the
 
 Blocks that have a comparator override such as Barrels, Furnaces, Hoppers, Cauldron, Composters, and Cake are also added into the graph as constant nodes, and so are Redstone Blocks.
 
+Redpiler runs signal strengths up to 15, while containers can hold up to 1779 and comparators pass on what they read. Extraction refuses a circuit with a container or comparator holding more than 15, or a comparator reading more than 15 through a block.
+
 Some nodes are ports: inputs set from outside the circuit, and outputs watched from outside it. Levers, buttons and pressure plates are inputs; lamps, trapdoors and note blocks are outputs, and the `--wire-*-out` flags make matching wires outputs too. Observed nodes report their changes while the circuit runs: every node, or with `--io-only` only the ports.
 
 The plot's pending ticks become the pending ticks of their nodes. Ticks due together with the same priority keep their order from the plot's tick queue.

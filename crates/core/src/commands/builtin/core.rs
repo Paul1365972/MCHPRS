@@ -1,7 +1,7 @@
 use crate::commands::argument::ArgumentType;
 use crate::commands::context::ExecutionContext;
 use crate::commands::define::{alt, arg, Command};
-use crate::commands::error::{CommandResult, RuntimeError};
+use crate::commands::error::{CommandError, CommandResult, RuntimeError};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::PlayerTarget;
 use crate::item_stack::ItemStack;
@@ -9,7 +9,7 @@ use crate::player::{Gamemode, PlayerPos};
 use crate::server::{get_version_string, Message};
 use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::ContainerType;
-use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_blocks::signal_strength::UncappedSignalStrength;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redstone::pace::Goal;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
@@ -109,20 +109,11 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
     registry.register(
         Command::new("container")
             .arg("type", ArgumentType::ContainerType)
-            .arg("power", ArgumentType::integer(0, 15))
-            .executes(|ctx| {
-                let container_type: ContainerType = ctx.arg("type")?;
-                let power: i32 = ctx.arg("power")?;
-
-                let item = ItemStack::container_with_ss(
-                    container_type,
-                    SignalStrength::saturating_from(power),
-                );
-                let player = ctx.player_mut()?;
-                let slot = 36 + player.selected_slot;
-                player.set_inventory_slot(slot, Some(item));
-                ctx.reply("Container created.")
-            }),
+            .arg(
+                "power",
+                ArgumentType::integer(0, ContainerType::MAX_SIGNAL_STRENGTH.get().into()),
+            )
+            .executes(exec_container),
     );
 
     #[cfg(feature = "whitelist")]
@@ -213,4 +204,22 @@ fn exec_radvance(ctx: &mut ExecutionContext<'_>, goal: Goal) -> CommandResult<()
         return ctx.reply("The plot will advance once redpiler has compiled.");
     }
     Ok(())
+}
+
+fn exec_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
+    let container_type: ContainerType = ctx.arg("type")?;
+    let power: i32 = ctx.arg("power")?;
+
+    let inventory = container_type
+        .inventory_for(UncappedSignalStrength::saturating_from(power))
+        .ok_or_else(|| {
+            CommandError::runtime(format!(
+                "This container can't produce signal strength {power}."
+            ))
+        })?;
+    let item = ItemStack::container(container_type, inventory);
+    let player = ctx.player_mut()?;
+    let slot = 36 + player.selected_slot;
+    player.set_inventory_slot(slot, Some(item));
+    ctx.reply("Container created.")
 }

@@ -11,12 +11,12 @@ use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
 use crate::worldedit::{clear_area, create_clipboard, paste_clipboard, update};
 use itertools::Itertools;
-use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
+use mchprs_blocks::block_entities::{BlockEntity, ContainerType};
 use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::{Block, HopperFacing};
 use mchprs_blocks::items::Item;
 use mchprs_blocks::region::Region;
-use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_blocks::signal_strength::UncappedSignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use rustc_hash::FxHashMap;
@@ -262,6 +262,7 @@ fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     };
 
     let world = ctx.world_mut()?;
+    let mut unchanged = 0;
     for pos in Region::new(first_pos, second_pos).positions() {
         let block_ty = match world.block(pos) {
             Block::Furnace { .. } => ContainerType::Furnace,
@@ -270,42 +271,30 @@ fn exec_replace_container(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
             _ => continue,
         };
 
-        let (current_ty, ss) = match world.block_entity(pos) {
-            Some(BlockEntity::Container {
-                comparator_override,
-                ty,
-                ..
-            }) => (*ty, *comparator_override),
-            _ => (block_ty, SignalStrength::Zero),
+        let (current_ty, strength) = match world.block_entity(pos) {
+            Some(BlockEntity::Container { inventory, ty }) => (*ty, ty.signal_strength(inventory)),
+            _ => (block_ty, UncappedSignalStrength::ZERO),
         };
 
         if from.is_some_and(|from| from != current_ty) {
             continue;
         }
 
-        let items_needed = to.items_needed_for_signal_strength(ss);
-        let inventory = (0..items_needed)
-            .step_by(64)
-            .enumerate()
-            .map(|(slot, items_added)| InventoryEntry {
-                id: Item::Redstone.get_id(),
-                slot: slot as i8,
-                count: (items_needed - items_added).min(64) as i8,
-                nbt: None,
-            })
-            .collect();
-
-        let new_entity = BlockEntity::Container {
-            comparator_override: ss,
-            inventory,
-            ty: to,
+        let Some(inventory) = to.inventory_for(strength) else {
+            unchanged += 1;
+            continue;
         };
+        let new_entity = BlockEntity::Container { inventory, ty: to };
         world.set_block_entity(pos, Some(new_entity));
         world.set_block(pos, new_block);
     }
 
+    let unchanged = match unchanged {
+        0 => String::new(),
+        _ => format!(" Kept {unchanged} containers whose strength the new type can't produce."),
+    };
     ctx.worldedit_message(&format!(
-        "Your selection was replaced successfully. ({:?})",
+        "Your selection was replaced successfully.{unchanged} ({:?})",
         start_time.elapsed()
     ))
 }

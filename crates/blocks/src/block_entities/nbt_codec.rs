@@ -1,6 +1,6 @@
 use super::{BlockEntity, ContainerType, InventoryEntry, SignBlockEntity};
 use crate::items::Item;
-use crate::signal_strength::SignalStrength;
+use crate::signal_strength::UncappedSignalStrength;
 use fastnbt::Value;
 use std::collections::HashMap;
 
@@ -20,7 +20,6 @@ macro_rules! nbt_unwrap_val {
 impl BlockEntity {
     fn load_container(slots_nbt: &[Value], ty: ContainerType) -> Option<BlockEntity> {
         let num_slots = ty.num_slots();
-        let mut fullness_sum: f32 = 0.0;
         let mut inventory = Vec::new();
         let mut occupied_slots = 0u32;
         for item in slots_nbt {
@@ -49,18 +48,8 @@ impl BlockEntity {
                 id: item.get_id(),
                 nbt: tag,
             });
-
-            fullness_sum += count as f32 / item.max_stack_size() as f32;
         }
-        Some(BlockEntity::Container {
-            comparator_override: SignalStrength::saturating_from(
-                ((if fullness_sum > 0.0 { 1.0 } else { 0.0 })
-                    + (fullness_sum / num_slots as f32) * 14.0)
-                    .floor() as i32,
-            ),
-            inventory,
-            ty,
-        })
+        Some(BlockEntity::Container { inventory, ty })
     }
 
     pub fn is_supported(id: &str) -> bool {
@@ -73,7 +62,7 @@ impl BlockEntity {
     pub fn from_nbt(id: &str, nbt: &HashMap<String, Value>) -> Option<BlockEntity> {
         match id.trim_start_matches("minecraft:") {
             "comparator" => Some(BlockEntity::Comparator {
-                output_strength: SignalStrength::saturating_from(
+                output_strength: UncappedSignalStrength::saturating_from(
                     nbt_get_int(nbt, "OutputSignal").unwrap_or(0),
                 ),
             }),

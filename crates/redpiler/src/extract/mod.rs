@@ -76,6 +76,7 @@ pub enum LinkOrder {
 pub enum ExtractError {
     NoComponent(BlockPos),
     NotDrivable(BlockPos),
+    AboveFifteen(BlockPos),
 }
 
 impl fmt::Display for ExtractError {
@@ -86,6 +87,9 @@ impl fmt::Display for ExtractError {
             }
             ExtractError::NotDrivable(pos) => {
                 write!(f, "declared input at {pos} can't be driven")
+            }
+            ExtractError::AboveFifteen(pos) => {
+                write!(f, "signal strength above 15 at {pos}")
             }
         }
     }
@@ -100,7 +104,7 @@ pub fn extract(
     options: &ExtractOptions,
 ) -> Result<Graph, ExtractError> {
     let mut graph = Graph::default();
-    let nodes_by_position = nodes::add_nodes(&mut graph, world, region, options);
+    let nodes_by_position = nodes::add_nodes(&mut graph, world, region, options)?;
 
     for (pos, role) in options.ports.declared() {
         let Some(&node) = nodes_by_position.get(&pos) else {

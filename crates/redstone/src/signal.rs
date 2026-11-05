@@ -164,18 +164,15 @@ fn emitted_direct(
 }
 
 fn direct_signal_to(world: &impl BlockView, pos: BlockPos, dust: Dust) -> UncappedSignalStrength {
-    DIRECTIONS
-        .iter()
-        .map(|&direction| {
-            let neighbor_pos = pos.offset(direction);
-            emitted_direct(
-                world,
-                neighbor_pos,
-                world.block(neighbor_pos),
-                direction,
-                dust,
-            )
-        })
-        .max()
-        .unwrap_or(UncappedSignalStrength::ZERO)
+    let mut strongest = UncappedSignalStrength::ZERO;
+    for direction in DIRECTIONS {
+        let neighbor_pos = pos.offset(direction);
+        let state = world.block(neighbor_pos);
+        strongest = strongest.max(emitted_direct(world, neighbor_pos, state, direction, dust));
+        // Vanilla's `getDirectSignalTo` ignores the faces after the first one reaching 15
+        if strongest >= SignalStrength::Fifteen.into() {
+            break;
+        }
+    }
+    strongest
 }

@@ -1,10 +1,10 @@
-use super::ExtractOptions;
+use super::{ExtractError, ExtractOptions};
 use crate::graph::{Graph, Node, NodeIdx, NodeKind, NodeState};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
-use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_blocks::signal_strength::{SignalStrength, UncappedSignalStrength};
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::{self, comparator, noteblock};
 use rustc_hash::FxHashMap;
@@ -15,18 +15,18 @@ pub fn add_nodes(
     world: &impl BlockView,
     region: Region,
     options: &ExtractOptions,
-) -> FxHashMap<BlockPos, NodeIdx> {
+) -> Result<FxHashMap<BlockPos, NodeIdx>, ExtractError> {
     let mut nodes_by_position = FxHashMap::default();
     for pos in world
         .occupied_regions(region)
         .into_iter()
         .flat_map(Region::positions)
     {
-        if let Some(node) = add_node(graph, world, pos, options) {
+        if let Some(node) = add_node(graph, world, pos, options)? {
             nodes_by_position.insert(pos, node);
         }
     }
-    nodes_by_position
+    Ok(nodes_by_position)
 }
 
 fn add_node(
@@ -34,14 +34,16 @@ fn add_node(
     world: &impl BlockView,
     pos: BlockPos,
     options: &ExtractOptions,
-) -> Option<NodeIdx> {
+) -> Result<Option<NodeIdx>, ExtractError> {
     let block = world.block(pos);
-    let (kind, state) = identify_block(block, pos, world)?;
+    let Some((kind, state)) = identify_block(block, pos, world)? else {
+        return Ok(None);
+    };
     let port = options.ports.role(pos, block, &kind);
     if kind == NodeKind::Wire && port.is_none() && !options.keeps_dust {
-        return None;
+        return Ok(None);
     }
-    Some(graph.add_node(Node {
+    Ok(Some(graph.add_node(Node {
         kind,
         blocks: smallvec![(pos, block.get_id())],
         names: Vec::new(),
@@ -49,16 +51,19 @@ fn add_node(
         pending_tick: None,
         port,
         observed: options.observes(port),
-    }))
+    })))
 }
 
 fn identify_block(
     block: Block,
     pos: BlockPos,
     world: &impl BlockView,
-) -> Option<(NodeKind, NodeState)> {
+) -> Result<Option<(NodeKind, NodeState)>, ExtractError> {
     if let Some(powered) = block.pressure_plate_powered() {
-        return Some((NodeKind::PressurePlate, NodeState::from_powered(powered)));
+        return Ok(Some((
+            NodeKind::PressurePlate,
+            NodeState::from_powered(powered),
+        )));
     }
     let (kind, state) = match block {
         Block::Repeater(repeater) => (
@@ -75,9 +80,9 @@ fn identify_block(
         Block::Comparator(comparator) => (
             NodeKind::Comparator {
                 mode: comparator.mode,
-                far_input: comparator::get_far_input(world, pos, comparator.facing).map(|power| {
-                    SignalStrength::try_from(power).expect("invalid comparator far input")
-                }),
+                far_input: comparator::get_far_input(world, pos, comparator.facing)
+                    .map(|power| within_fifteen(power, pos))
+                    .transpose()?,
                 prioritized: mchprs_redstone::diode_should_be_prioritized(
                     world,
                     pos,
@@ -85,7 +90,9 @@ fn identify_block(
                 ),
             },
             NodeState::from_power(match world.block_entity(pos) {
-                Some(BlockEntity::Comparator { output_strength }) => *output_strength,
+                Some(BlockEntity::Comparator { output_strength }) => {
+                    within_fifteen(*output_strength, pos)?
+                }
                 _ => SignalStrength::Zero,
             }),
         ),
@@ -116,14 +123,21 @@ fn identify_block(
             )
         }
         _ => {
-            let power = comparator::analog_output(world, pos, block)?;
+            let Some(power) = comparator::analog_output(world, pos, block) else {
+                return Ok(None);
+            };
             (
                 NodeKind::Constant,
-                NodeState::from_power(
-                    SignalStrength::try_from(power).expect("invalid comparator override"),
-                ),
+                NodeState::from_power(within_fifteen(power, pos)?),
             )
         }
     };
-    Some((kind, state))
+    Ok(Some((kind, state)))
+}
+
+fn within_fifteen(
+    strength: UncappedSignalStrength,
+    pos: BlockPos,
+) -> Result<SignalStrength, ExtractError> {
+    SignalStrength::try_from(strength).map_err(|_| ExtractError::AboveFifteen(pos))
 }

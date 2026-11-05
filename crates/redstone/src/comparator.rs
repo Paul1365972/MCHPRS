@@ -10,7 +10,7 @@ use tracing::warn;
 
 pub(crate) fn output_signal(world: &impl BlockView, pos: BlockPos) -> UncappedSignalStrength {
     match world.block_entity(pos) {
-        Some(BlockEntity::Comparator { output_strength }) => (*output_strength).into(),
+        Some(BlockEntity::Comparator { output_strength }) => *output_strength,
         _ => UncappedSignalStrength::ZERO,
     }
 }
@@ -23,10 +23,7 @@ pub fn analog_output(
     Some(match state {
         Block::Barrel { .. } | Block::Furnace { .. } | Block::Hopper { .. } => {
             match world.block_entity(pos) {
-                Some(BlockEntity::Container {
-                    comparator_override,
-                    ..
-                }) => (*comparator_override).into(),
+                Some(BlockEntity::Container { inventory, ty }) => ty.signal_strength(inventory),
                 Some(other) => {
                     warn!("Backing container blockentity type is invalid: {other:?}");
                     UncappedSignalStrength::ZERO
@@ -93,8 +90,7 @@ pub(crate) fn tick(world: &mut impl RedstoneWorld, pos: BlockPos, comparator: Co
         world.set_block_entity(
             pos,
             Some(BlockEntity::Comparator {
-                output_strength: SignalStrength::try_from(output)
-                    .expect("a comparator outputs at most its input"),
+                output_strength: output,
             }),
         );
     } else if comparator.mode != ComparatorMode::Compare {

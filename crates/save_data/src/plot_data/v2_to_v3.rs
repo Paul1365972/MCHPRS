@@ -1,7 +1,8 @@
 //! Migration from version 2 to version 3, which turned Tps and WorldSendRate from u32 into f32
 
 use super::v3_to_v4::{PlotDataV3, TickEntryV3};
-use super::{ChunkData, Tps, WorldSendRate};
+use super::v4_to_v5::ChunkDataV4;
+use super::{Tps, WorldSendRate};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -17,7 +18,7 @@ struct WorldSendRateV2(u32);
 pub struct PlotDataV2 {
     tps: TpsV2,
     world_send_rate: WorldSendRateV2,
-    chunk_data: Vec<ChunkData<'static>>,
+    chunk_data: Vec<ChunkDataV4>,
     pending_ticks: Vec<TickEntryV3>,
 }
 

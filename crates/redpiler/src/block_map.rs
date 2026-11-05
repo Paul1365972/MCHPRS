@@ -174,7 +174,7 @@ impl BlockMap {
         };
         for node in self.dirty_nodes.drain(..) {
             self.dirty[node.index()] = false;
-            let output_strength = self.states[node.index()].power;
+            let output_strength = self.states[node.index()].power.into();
             for &(pos, block) in &self.blocks[node.index()] {
                 changes.blocks.push((pos, block));
                 if matches!(block, Block::Comparator(_)) {

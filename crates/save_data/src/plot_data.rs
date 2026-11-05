@@ -1,8 +1,10 @@
 mod v2_to_v3;
 mod v3_to_v4;
+mod v4_to_v5;
 
 use self::v2_to_v3::PlotDataV2;
 use self::v3_to_v4::PlotDataV3;
+use self::v4_to_v5::PlotDataV4;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::BlockStore;
@@ -27,7 +29,8 @@ use thiserror::Error;
 /// 2: Update to MC 1.20.4
 /// 3: Change Tps and WorldSendRate to support real values (f32)
 /// 4: Save the block each pending tick is for
-pub const VERSION: u32 = 4;
+/// 5: Keep block entity signal strengths above 15
+pub const VERSION: u32 = 5;
 
 const WRITE_BUFFER_SIZE: usize = 1 << 20;
 
@@ -203,8 +206,12 @@ impl PlotData<'_> {
             0..=1 => return Err(PlotLoadError::ConversionUnavailable(version)),
             2 => bincode::deserialize::<PlotDataV2>(&buf)?
                 .upgrade()
-                .upgrade(),
-            3 => bincode::deserialize::<PlotDataV3>(&buf)?.upgrade(),
+                .upgrade()
+                .upgrade(path),
+            3 => bincode::deserialize::<PlotDataV3>(&buf)?
+                .upgrade()
+                .upgrade(path),
+            4 => bincode::deserialize::<PlotDataV4>(&buf)?.upgrade(path),
             VERSION => bincode::deserialize(&buf)?,
             _ => return Err(PlotLoadError::TooNew(version)),
         })

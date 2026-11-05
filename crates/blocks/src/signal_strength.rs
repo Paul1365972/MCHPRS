@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
@@ -41,17 +41,6 @@ impl SignalStrength {
     #[inline]
     pub fn saturating_sub(self, amount: u8) -> Self {
         Self::try_from(self.get().saturating_sub(amount)).unwrap()
-    }
-
-    #[inline]
-    pub fn saturating_from(value: i32) -> Self {
-        Self::try_from(value.clamp(0, 15) as u32).unwrap()
-    }
-
-    pub fn deserialize_saturating<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self, D::Error> {
-        u8::deserialize(deserializer).map(|value| Self::saturating_from(value.into()))
     }
 }
 
@@ -133,7 +122,8 @@ impl fmt::Display for SignalStrength {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct UncappedSignalStrength(u16);
 
 impl UncappedSignalStrength {
@@ -152,6 +142,11 @@ impl UncappedSignalStrength {
     #[inline]
     pub const fn is_zero(self) -> bool {
         self.0 == 0
+    }
+
+    #[inline]
+    pub fn saturating_from(value: i32) -> Self {
+        Self(value.clamp(0, u16::MAX.into()) as u16)
     }
 
     #[inline]

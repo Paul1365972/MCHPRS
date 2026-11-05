@@ -1,10 +1,12 @@
 //! Migration from version 3 to version 4, which saves the block each pending tick is for
 
-use super::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
+use super::v4_to_v5::{ChunkDataV4, PlotDataV4};
+use super::{ChunkData, SavedTick, Tps, WorldSendRate};
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_world::storage::Chunk;
 use serde::Deserialize;
+use std::borrow::Cow;
 
 #[derive(Debug, Deserialize)]
 pub struct TickEntryV3 {
@@ -17,17 +19,24 @@ pub struct TickEntryV3 {
 pub struct PlotDataV3 {
     pub tps: Tps,
     pub world_send_rate: WorldSendRate,
-    pub chunk_data: Vec<ChunkData<'static>>,
+    pub chunk_data: Vec<ChunkDataV4>,
     pub pending_ticks: Vec<TickEntryV3>,
 }
 
 impl PlotDataV3 {
-    pub fn upgrade(self) -> PlotData<'static> {
+    pub fn upgrade(self) -> PlotDataV4 {
         let plot_width = self.chunk_data.len().isqrt() as i32;
         let chunks: Vec<Chunk> = self
             .chunk_data
             .iter()
-            .map(|chunk| chunk.clone().load(0, 0))
+            .map(|chunk| {
+                let sections = chunk.sections.clone();
+                ChunkData {
+                    sections,
+                    block_entities: Cow::default(),
+                }
+                .load(0, 0)
+            })
             .collect();
         let pending_ticks = self
             .pending_ticks
@@ -48,7 +57,7 @@ impl PlotDataV3 {
                 })
             })
             .collect();
-        PlotData {
+        PlotDataV4 {
             tps: self.tps,
             world_send_rate: self.world_send_rate,
             chunk_data: self.chunk_data,
