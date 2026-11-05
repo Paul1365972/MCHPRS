@@ -3,13 +3,9 @@ use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::{Block, LeverFace, Repeater};
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockPos};
-use mchprs_commands::flag::{FlagValue, FlagValues};
-use mchprs_redpiler::backend::Backend;
-use mchprs_redpiler::compile::BuildContext;
 use mchprs_redpiler::engine::Input;
-use mchprs_redpiler::passes::OPTIMIZE;
 use mchprs_redpiler::simulation::Simulation;
-use mchprs_redpiler_direct::DirectBackend;
+use mchprs_redpiler_backends::BackendSetup;
 use mchprs_redstone::interpreter::Interpreter;
 use mchprs_redstone::wire::make_cross;
 
@@ -19,32 +15,14 @@ struct RedpilerInstance {
 }
 
 impl RedpilerInstance {
-    fn new(
-        world: &Interpreter<BlockVolume>,
-        backend: &dyn Backend,
-        optimize: bool,
-    ) -> RedpilerInstance {
-        let mut flags = FlagValues::default();
-        flags.set(OPTIMIZE, FlagValue::Switch(optimize));
-        let plan = backend
-            .configure(&flags)
-            .expect("the backend takes the flags");
-        let region = world.blocks().region();
-        let circuit = mchprs_redpiler::compile::compile(
-            world,
-            region,
-            world.pending_ticks(),
-            &plan.extract,
-            &plan.passes,
-            &mut BuildContext::silent(),
-        )
-        .expect("the test circuit compiles");
-        let engine = backend
-            .build(&circuit, &flags, &mut BuildContext::silent())
-            .expect("the engine holds the test circuit");
+    fn new(world: &Interpreter<BlockVolume>, setup: &str) -> RedpilerInstance {
+        let setup = BackendSetup::parse(setup).expect("the test setup parses");
+        let simulation = setup
+            .simulate(world, world.blocks().region(), world.pending_ticks())
+            .expect("the test circuit simulates");
         RedpilerInstance {
-            label: format!("{} {flags}", backend.name()).trim_end().to_owned(),
-            simulation: Simulation::new(circuit, engine),
+            label: setup.to_string(),
+            simulation,
         }
     }
 
@@ -75,7 +53,10 @@ impl BackendRunner {
                 redpiler: None,
             },
             TestBackend::Direct { optimize } => BackendRunner {
-                redpiler: Some(RedpilerInstance::new(&world, &DirectBackend, optimize)),
+                redpiler: Some(RedpilerInstance::new(
+                    &world,
+                    if optimize { "direct -o" } else { "direct" },
+                )),
                 world,
             },
         }

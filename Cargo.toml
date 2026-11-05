@@ -44,7 +44,7 @@ tracing = { workspace = true }
 mchprs_blocks = { path = "./crates/blocks" }
 mchprs_commands = { path = "./crates/commands" }
 mchprs_redpiler = { path = "./crates/redpiler" }
-mchprs_redpiler_direct = { path = "./crates/redpiler_direct" }
+mchprs_redpiler_backends = { path = "./crates/redpiler_backends" }
 mchprs_redstone = { path = "./crates/redstone" }
 paste = { workspace = true }
 

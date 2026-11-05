@@ -11,6 +11,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+mchprs_blocks = { path = "../blocks" }
 mchprs_commands = { path = "../commands" }
-mchprs_redpiler = { path = "../redpiler" }
+mchprs_redpiler = { path = "../redpiler", default-features = false }
 mchprs_redpiler_direct = { path = "../redpiler_direct" }
+mchprs_redstone = { path = "../redstone" }

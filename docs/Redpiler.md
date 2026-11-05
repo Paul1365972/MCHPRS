@@ -91,7 +91,7 @@ It only removes nodes with `--io-only`; otherwise every node is observed.
 
 # Running Circuits
 
-A backend builds an engine for a compiled circuit. The engine runs the circuit from its own data, as many ticks as it is asked to, and reports the observed nodes whose state changed. It never reads a clock. A `Simulation` pairs it with a `BlockMap` on the caller's thread, which is how `rilc`, the tests and other programs run circuits.
+A backend builds an engine for a compiled circuit. The engine runs the circuit from its own data, as many ticks as it is asked to, and reports the observed nodes whose state changed. It never reads a clock. A `Simulation` pairs it with a `BlockMap` on the caller's thread, which is how `rilc`, the tests and other programs run circuits; `BackendSetup::simulate` builds one from blocks in a single call, without threads.
 
 The server runs a circuit as a session, which owns how its ticks happen; the plot thread never ticks. A backend can host its circuits itself, otherwise its engine runs on a worker thread that paces it by the plot's tick rate and runs `/radvance` on top. The worker sends its changes as frames: one each time the plot asks for the next, and one right away after an input or when an advance ends. The plot keeps the `BlockMap` and writes the frames into the world.
 
