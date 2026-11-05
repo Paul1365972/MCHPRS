@@ -832,10 +832,9 @@ name = "mchprs"
 version = "0.5.2-dev"
 dependencies = [
  "mchprs_blocks",
- "mchprs_commands",
  "mchprs_core",
  "mchprs_redpiler",
- "mchprs_redpiler_direct",
+ "mchprs_redpiler_backends",
  "mchprs_redstone",
  "paste",
  "tracing",
@@ -937,9 +936,11 @@ dependencies = [
 name = "mchprs_redpiler_backends"
 version = "0.5.2-dev"
 dependencies = [
+ "mchprs_blocks",
  "mchprs_commands",
  "mchprs_redpiler",
  "mchprs_redpiler_direct",
+ "mchprs_redstone",
 ]
 
 [[package]]

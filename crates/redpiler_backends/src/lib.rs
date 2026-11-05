@@ -1,7 +1,13 @@
+use mchprs_blocks::block_store::BlockView;
+use mchprs_blocks::region::Region;
 use mchprs_commands::flag::{self, FlagValues};
 use mchprs_commands::reader::Reader;
 use mchprs_redpiler::backend::{Backend, CompilePlan};
+use mchprs_redpiler::compile::{compile, BuildContext};
+use mchprs_redpiler::simulation::Simulation;
 use mchprs_redpiler_direct::DirectBackend;
+use mchprs_redstone::tick_queue::TickEntry;
+use std::error::Error;
 use std::fmt;
 
 pub static BACKENDS: &[&dyn Backend] = &[&DirectBackend];
@@ -55,6 +61,19 @@ impl BackendSetup {
 
     pub fn configure(&self) -> Result<CompilePlan, String> {
         self.backend.configure(&self.flags)
+    }
+
+    pub fn simulate(
+        &self,
+        world: &impl BlockView,
+        region: Region,
+        ticks: &[TickEntry],
+    ) -> Result<Simulation, Box<dyn Error + Send + Sync>> {
+        let plan = self.configure()?;
+        let context = &mut BuildContext::silent();
+        let circuit = compile(world, region, ticks, &plan.extract, &plan.passes, context)?;
+        let engine = self.backend.build(&circuit, &self.flags, context)?;
+        Ok(Simulation::new(circuit.into(), engine))
     }
 }
 
