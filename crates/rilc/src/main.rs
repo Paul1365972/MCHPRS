@@ -110,7 +110,7 @@ enum Command {
 
 fn report_output(path: Option<&Path>) -> std::io::Result<Box<dyn std::io::Write>> {
     Ok(match path {
-        Some(path) => Box::new(std::fs::File::create(path)?),
+        Some(path) => Box::new(std::io::BufWriter::new(std::fs::File::create(path)?)),
         None => Box::new(std::io::stdout().lock()),
     })
 }

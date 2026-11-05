@@ -378,6 +378,7 @@ pub fn write_report(
     };
     serde_json::to_writer(&mut *output, &report)?;
     writeln!(output)?;
+    output.flush()?;
     Ok(())
 }
 
