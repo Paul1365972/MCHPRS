@@ -396,8 +396,12 @@ pub fn list_inputs(path: &Path) -> Result<()> {
             let role = if node.is_input { "input" } else { "output" };
             for (position, _) in &node.block {
                 println!(
-                    "{role} {:?} at [{}, {}, {}]",
-                    node.ty, position.x, position.y, position.z
+                    "{role} {:?} node {} at [{}, {}, {}]",
+                    node.ty,
+                    id.index(),
+                    position.x,
+                    position.y,
+                    position.z
                 );
             }
         }
