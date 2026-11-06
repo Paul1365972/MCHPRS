@@ -100,7 +100,7 @@ impl<W: BlockView> LinkSearch<'_, W> {
         start_node: NodeIdx,
         search_wire: bool,
     ) {
-        if block.is_solid() {
+        if block.is_conductor() {
             for side in &BlockFace::values() {
                 let pos = pos.offset(*side);
                 let block = self.block_cache.block(pos);
@@ -201,14 +201,14 @@ impl<W: BlockView> LinkSearch<'_, W> {
                 }
 
                 if side.is_horizontal() {
-                    if !neighbor.is_solid() {
+                    if !neighbor.is_conductor() {
                         let neighbor_down_pos = neighbor_pos.offset(BlockFace::Bottom);
                         if is_wire(self.block_cache.block(neighbor_down_pos))
                             && !has_been_discovered(&discovered, neighbor_down_pos)
                         {
                             discovered.push((neighbor_down_pos, distance + 1));
                         }
-                    } else if !up_block.is_solid() && !neighbor.is_transparent() {
+                    } else if !up_block.is_conductor() && !neighbor.is_transparent() {
                         let neighbor_up_pos = neighbor_pos.offset(BlockFace::Top);
                         if is_wire(self.block_cache.block(neighbor_up_pos))
                             && !has_been_discovered(&discovered, neighbor_up_pos)

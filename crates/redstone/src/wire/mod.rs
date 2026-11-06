@@ -142,9 +142,11 @@ pub fn get_side(world: &impl BlockView, pos: BlockPos, side: BlockDirection) -> 
     let up_pos = pos.offset(BlockFace::Top);
     let up = world.block(up_pos);
 
-    if !up.is_solid() && can_connect_diagonal_to(world.block(neighbor_pos.offset(BlockFace::Top))) {
+    if !up.is_conductor()
+        && can_connect_diagonal_to(world.block(neighbor_pos.offset(BlockFace::Top)))
+    {
         RedstoneWireSide::Up
-    } else if !neighbor.is_solid()
+    } else if !neighbor.is_conductor()
         && can_connect_diagonal_to(world.block(neighbor_pos.offset(BlockFace::Bottom)))
     {
         RedstoneWireSide::Side
@@ -241,10 +243,10 @@ fn calculate_power(world: &impl BlockView, pos: BlockPos) -> u8 {
             *side,
         ));
         if side.is_horizontal() {
-            if !neighbor.is_solid() {
+            if !neighbor.is_conductor() {
                 wire_power =
                     max_wire_power(wire_power, world, neighbor_pos.offset(BlockFace::Bottom));
-            } else if !up_block.is_solid() && !neighbor.is_transparent() {
+            } else if !up_block.is_conductor() && !neighbor.is_transparent() {
                 wire_power = max_wire_power(wire_power, world, neighbor_pos.offset(BlockFace::Top));
             }
         }

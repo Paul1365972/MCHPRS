@@ -987,7 +987,7 @@ impl Block {
             _ => None,
         }
     }
-    pub fn is_solid(self) -> bool {
+    pub fn is_conductor(self) -> bool {
         match self {
             Block::Stone => true,
             Block::RedstoneLamp { .. } => true,
@@ -998,8 +998,8 @@ impl Block {
             Block::Furnace { .. } => true,
             Block::QuartzBlock => true,
             Block::SmoothQuartz => true,
-            Block::SmoothStoneSlab { .. } => self.is_solid_dynamic(),
-            Block::QuartzSlab { .. } => self.is_solid_dynamic(),
+            Block::SmoothStoneSlab { .. } => self.is_conductor_dynamic(),
+            Block::QuartzSlab { .. } => self.is_conductor_dynamic(),
             Block::WhiteConcrete => true,
             Block::OrangeConcrete => true,
             Block::MagentaConcrete => true,
@@ -1064,24 +1064,21 @@ impl Block {
             _ => false,
         }
     }
-    pub fn is_cube(self) -> bool {
+    pub fn is_full_cube(self) -> bool {
         match self {
             Block::Stone => true,
             Block::Glass => true,
             Block::Glowstone => true,
             Block::RedstoneLamp { .. } => true,
             Block::RedstoneBlock => true,
+            Block::Observer { .. } => true,
             Block::Target { .. } => true,
             Block::Barrel { .. } => true,
-            Block::Hopper { .. } => true,
             Block::Sandstone => true,
             Block::CoalBlock => true,
             Block::Furnace { .. } => true,
             Block::QuartzBlock => true,
             Block::SmoothQuartz => true,
-            Block::SmoothStoneSlab { .. } => self.is_cube_dynamic(),
-            Block::QuartzSlab { .. } => self.is_cube_dynamic(),
-            Block::Composter { .. } => true,
             Block::WhiteConcrete => true,
             Block::OrangeConcrete => true,
             Block::MagentaConcrete => true,
@@ -1147,7 +1144,6 @@ impl Block {
             Block::GreenWool => true,
             Block::RedWool => true,
             Block::BlackWool => true,
-            Block::IronTrapdoor { .. } => true,
             Block::NoteBlock { .. } => true,
             Block::Clay => true,
             Block::GoldBlock => true,
@@ -1160,7 +1156,6 @@ impl Block {
             Block::HayBlock { .. } => true,
             Block::Sand => true,
             Block::StoneBricks => true,
-            Block::EndPortalFrame { .. } => true,
             _ => false,
         }
     }

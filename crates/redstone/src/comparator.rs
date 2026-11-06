@@ -63,7 +63,7 @@ pub fn get_far_input(world: &impl BlockView, pos: BlockPos, facing: BlockDirecti
     let face = facing.block_face();
     let input_pos = pos.offset(face);
     let input_block = world.block(input_pos);
-    if !input_block.is_solid() || analog_output(input_block, world, input_pos).is_some() {
+    if !input_block.is_conductor() || analog_output(input_block, world, input_pos).is_some() {
         return None;
     }
 
@@ -78,7 +78,7 @@ fn calculate_input_strength(comp: Comparator, world: &impl BlockView, pos: Block
         return strength;
     }
     let base_input_strength = super::diode_get_input_strength(world, pos, comp.facing);
-    if base_input_strength < 15 && input_block.is_solid() {
+    if base_input_strength < 15 && input_block.is_conductor() {
         let far_input_pos = input_pos.offset(comp.facing.block_face());
         if let Some(strength) = analog_output(world.block(far_input_pos), world, far_input_pos) {
             return strength;

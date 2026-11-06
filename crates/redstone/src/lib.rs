@@ -169,7 +169,7 @@ pub fn get_redstone_power(
     pos: BlockPos,
     facing: BlockFace,
 ) -> u8 {
-    if block.is_solid() {
+    if block.is_conductor() {
         get_max_strong_power(world, pos, true)
     } else {
         get_weak_power(block, world, pos, facing, true)
@@ -182,7 +182,7 @@ fn get_redstone_power_no_dust(
     pos: BlockPos,
     facing: BlockFace,
 ) -> u8 {
-    if block.is_solid() {
+    if block.is_conductor() {
         get_max_strong_power(world, pos, false)
     } else {
         get_weak_power(block, world, pos, facing, false)

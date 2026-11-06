@@ -213,7 +213,7 @@ pub enum MaskParseError {
     Syntax(String),
 }
 
-// WorldEdit's #solid uses blocksMotion, which our block data lacks, and Block::is_solid means
+// WorldEdit's #solid uses blocksMotion, which our block data lacks, and Block::is_conductor means
 // conducting redstone. These are the supported blocks without blocksMotion in 1.20.4.
 fn is_movement_blocker(block: Block) -> bool {
     !matches!(

@@ -1,7 +1,7 @@
 mod props;
 
 pub use crate::generated::Block;
-use crate::{BlockDirection, BlockFacing};
+use crate::{BlockDirection, BlockFace, BlockFacing};
 pub use props::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -179,7 +179,7 @@ impl Block {
         })
     }
 
-    pub(crate) fn is_solid_dynamic(self) -> bool {
+    pub(crate) fn is_conductor_dynamic(self) -> bool {
         match self {
             Block::SmoothStoneSlab { ty, .. } | Block::QuartzSlab { ty, .. } => {
                 ty == SlabType::Double
@@ -197,13 +197,43 @@ impl Block {
         }
     }
 
-    pub(crate) fn is_cube_dynamic(self) -> bool {
+    pub fn is_face_sturdy(self, face: BlockFace) -> bool {
         match self {
-            Block::SmoothStoneSlab { ty, .. } | Block::QuartzSlab { ty, .. } => {
-                ty != SlabType::Bottom
+            _ if self.is_full_cube() => true,
+            Block::Repeater(_) | Block::Comparator(_) | Block::EndPortalFrame { .. } => {
+                face == BlockFace::Bottom
             }
-            _ => unreachable!(),
+            Block::Composter { .. } => face != BlockFace::Top,
+            Block::SmoothStoneSlab { ty, .. } | Block::QuartzSlab { ty, .. } => match ty {
+                SlabType::Top => face == BlockFace::Top,
+                SlabType::Bottom => face == BlockFace::Bottom,
+                SlabType::Double => true,
+            },
+            Block::IronTrapdoor {
+                facing, half, open, ..
+            } => match (open, half) {
+                (true, _) => face == facing.opposite().block_face(),
+                (false, TrapdoorHalf::Top) => face == BlockFace::Top,
+                (false, TrapdoorHalf::Bottom) => face == BlockFace::Bottom,
+            },
+            _ => false,
         }
+    }
+
+    pub fn can_support_rigid_block(self) -> bool {
+        self.is_face_sturdy(BlockFace::Top)
+            || matches!(
+                self,
+                Block::Hopper { .. }
+                    | Block::Cauldron
+                    | Block::WaterCauldron { .. }
+                    | Block::Composter { .. }
+            )
+    }
+
+    pub fn can_support_center(self) -> bool {
+        self.is_face_sturdy(BlockFace::Top)
+            || matches!(self, Block::EndPortalFrame { eye: true, .. })
     }
 
     pub fn get_pressure_plate_powered(&mut self) -> Option<&mut bool> {

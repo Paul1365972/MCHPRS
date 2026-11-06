@@ -390,13 +390,13 @@ pub fn is_valid_position(block: Block, world: &impl BlockView, pos: BlockPos) ->
 
     if check_bottom {
         let bottom_block = world.block(pos.offset(BlockFace::Bottom));
-        bottom_block.is_cube()
+        bottom_block.can_support_rigid_block()
     } else if check_top {
         let top_block = world.block(pos.offset(BlockFace::Top));
-        top_block.is_cube()
+        top_block.is_face_sturdy(BlockFace::Bottom)
     } else if let Some(facing) = check_parent {
         let parent_block = world.block(pos.offset(facing.opposite().block_face()));
-        parent_block.is_cube()
+        parent_block.is_face_sturdy(facing.block_face())
     } else {
         true
     }

@@ -43,11 +43,10 @@ struct InfoYaml {
 
 #[derive(Default, Debug)]
 struct BlockAttrs {
-    solid: bool,
-    cube: bool,
+    conductor: bool,
+    full_cube: bool,
     transparent: bool,
-    maybe_solid: bool,
-    maybe_cube: bool,
+    maybe_conductor: bool,
     maybe_transparent: bool,
     prop_struct: Option<String>,
     item: bool,
@@ -176,11 +175,10 @@ fn process_block(
     let mut attrs = BlockAttrs::default();
     for attr in attrs_str.split(',').filter(|s| !s.is_empty()) {
         match attr {
-            "solid" => attrs.solid = true,
-            "cube" => attrs.cube = true,
+            "conductor" => attrs.conductor = true,
+            "full_cube" => attrs.full_cube = true,
             "transparent" => attrs.transparent = true,
-            "maybe_solid" => attrs.maybe_solid = true,
-            "maybe_cube" => attrs.maybe_cube = true,
+            "maybe_conductor" => attrs.maybe_conductor = true,
             "maybe_transparent" => attrs.maybe_transparent = true,
             "prop_struct" => attrs.prop_struct = Some(pascal_name.clone()),
             "simple_item" => attrs.simple_item = true,
@@ -886,18 +884,14 @@ fn generate_module(
     let get_name = generate_get_name(blocks);
     let from_name = generate_from_name(blocks);
     let shared_property_accessors = generate_shared_property_accessors(blocks);
-    let is_solid = generate_is_attr(
+    let is_conductor = generate_is_attr(
         blocks,
-        "is_solid",
-        |block| block.attrs.solid,
-        Some(|block| block.attrs.maybe_solid),
+        "is_conductor",
+        |block| block.attrs.conductor,
+        Some(|block| block.attrs.maybe_conductor),
     );
-    let is_cube = generate_is_attr(
-        blocks,
-        "is_cube",
-        |block| block.attrs.cube,
-        Some(|block| block.attrs.maybe_cube),
-    );
+    let is_full_cube =
+        generate_is_attr(blocks, "is_full_cube", |block| block.attrs.full_cube, None);
     let is_transparent = generate_is_attr(
         blocks,
         "is_transparent",
@@ -946,8 +940,8 @@ fn generate_module(
             #get_name
             #from_name
             #shared_property_accessors
-            #is_solid
-            #is_cube
+            #is_conductor
+            #is_full_cube
             #is_transparent
             #set_props
             #property_values
