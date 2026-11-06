@@ -1,0 +1,41 @@
+origin 26 40 93
+size 8 4 6
+state 0 stone
+state 1 repeater[delay=2,facing=east,locked=false,powered=false]
+state 2 redstone_wall_torch[facing=north,lit=true]
+state 3 redstone_wall_torch[facing=south,lit=true]
+state 4 glass
+state 5 oak_button[face=floor,facing=east,powered=false]
+state 6 redstone_torch[lit=true]
+state 7 iron_trapdoor[facing=east,half=bottom,open=false,powered=false,waterlogged=false]
+state 8 repeater[delay=1,facing=south,locked=false,powered=false]
+state 9 repeater[delay=3,facing=east,locked=false,powered=false]
+state 10 redstone_wire[east=side,north=side,power=0,south=side,west=side]
+state 11 redstone_wire[east=side,north=none,power=0,south=none,west=side]
+state 12 redstone_lamp[lit=false]
+state 13 redstone_wire[east=none,north=side,power=0,south=side,west=none]
+state 14 comparator[facing=east,mode=compare,powered=false]{OutputSignal:0}
+state 15 redstone_wire[east=none,north=side,power=0,south=none,west=side]
+state 16 oak_button[face=floor,facing=east,powered=true]
+start 1,0,1=0 1,0,2=0 1,0,3=0 1,0,4=0 1,1,1=1 1,1,2=2 1,1,3=0 1,1,4=3 2,0,1=0 2,0,2=0 2,0,3=0 2,0,4=0 2,1,1=0 2,1,2=4 2,1,4=5 2,2,1=6 3,0,1=0 3,0,2=0 3,0,3=0 3,0,4=0 3,1,1=7 3,1,2=8 3,1,3=9 3,1,4=0 3,2,4=6 4,0,1=0 4,0,2=0 4,0,3=0 4,0,4=0 4,1,2=10 4,1,3=0 4,1,4=11 5,0,1=0 5,0,2=0 5,0,3=0 5,0,4=0 5,1,2=12 5,1,4=11 6,0,1=0 6,0,2=0 6,0,3=0 6,0,4=0 6,1,2=13 6,1,3=14 6,1,4=15
+use 2,1,4 2,1,4=16
+wait 14
+use 2,1,4
+wait 2
+use 2,1,4 2,1,4
+wait 12
+use 2,1,4
+wait 2 2,1,4=5
+wait 10
+use 2,1,4 2,1,4=16
+wait 26
+use 2,1,4 2,1,4
+wait 4 2,1,4=5
+wait 2
+use 2,1,4 2,1,4=16
+wait 2
+use 2,1,4 2,1,4
+wait 10
+use 2,1,4
+wait 18 2,1,4=5
+wait 18

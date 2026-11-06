@@ -128,6 +128,18 @@ fn button_click(button: Block, on: bool) -> i32 {
             sound_event::BLOCK_STONE_BUTTON_CLICK_OFF,
             sound_event::BLOCK_STONE_BUTTON_CLICK_ON,
         ),
+        Block::CherryButton(_) => (
+            sound_event::BLOCK_CHERRY_WOOD_BUTTON_CLICK_OFF,
+            sound_event::BLOCK_CHERRY_WOOD_BUTTON_CLICK_ON,
+        ),
+        Block::BambooButton(_) => (
+            sound_event::BLOCK_BAMBOO_WOOD_BUTTON_CLICK_OFF,
+            sound_event::BLOCK_BAMBOO_WOOD_BUTTON_CLICK_ON,
+        ),
+        Block::CrimsonButton(_) | Block::WarpedButton(_) => (
+            sound_event::BLOCK_NETHER_WOOD_BUTTON_CLICK_OFF,
+            sound_event::BLOCK_NETHER_WOOD_BUTTON_CLICK_ON,
+        ),
         _ => (
             sound_event::BLOCK_WOODEN_BUTTON_CLICK_OFF,
             sound_event::BLOCK_WOODEN_BUTTON_CLICK_ON,

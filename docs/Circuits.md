@@ -86,6 +86,7 @@ When the strength of a node changes, the node updates the targets of its links t
 | Trapdoor | Opens if the input is on, closes otherwise. | | | |
 | Wire | Takes the strength of its input. | | | |
 | Note block | Becomes powered if the input is on, unpowered otherwise. Plays its note when it becomes powered. | | | |
+| Button | | Turns off. | 10 for stone and polished blackstone, 15 for wood | `Normal` |
 | Pressure plate | | If it is on and still touched, it schedules another tick. Otherwise it turns off. | 10 | `Normal` |
 | Lever, Constant | | | | |
 

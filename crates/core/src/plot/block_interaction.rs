@@ -55,10 +55,7 @@ impl Plot {
 
         if self.redpiler.is_active() {
             let block = self.world.block(block_pos);
-            let lever_or_button = matches!(
-                block,
-                Block::Lever { .. } | Block::StoneButton(mchprs_blocks::blocks::Button { .. })
-            );
+            let lever_or_button = matches!(block, Block::Lever { .. }) || block.button().is_some();
             if lever_or_button && !self.players[player].crouching {
                 self.play_use_sound(player, block_pos, block);
                 if let Err(error) = self.redpiler.on_use_block(block_pos, block) {
