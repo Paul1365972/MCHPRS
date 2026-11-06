@@ -3,6 +3,7 @@ use crate::circuit::{
 };
 use crate::engine::Simulator;
 use crate::reference::{settled_initial_state, Reference};
+use crate::registers::Registers;
 use crate::verilator::Verilator;
 use mchprs_redpiler::compile_graph::SignalStrength;
 use mchprs_redpiler::Reporting;
@@ -261,13 +262,32 @@ fn random_circuits_are_valid() {
     }
 }
 
+fn compared_circuits() -> impl Iterator<Item = (u64, Circuit)> {
+    (0..8)
+        .map(|seed| (seed, random_circuit(seed, 1500)))
+        .chain((8..12).map(|seed| (seed, simulated_circuit(seed, 1500, 200))))
+}
+
+#[test]
+fn compared_circuits_hold_pulse_free_repeaters() {
+    let pulse_free: usize = compared_circuits()
+        .map(|(_, circuit)| {
+            let registers = Registers::new(&circuit);
+            (0..circuit.nodes().len())
+                .filter(|&index| registers.is_pulse_free(index))
+                .count()
+        })
+        .sum();
+    assert!(
+        pulse_free >= 10,
+        "the circuits compared in Verilator hold only {pulse_free} pulse-free repeaters"
+    );
+}
+
 #[test]
 #[ignore = "needs Verilator"]
 fn random_circuits_match_the_reference_in_verilator() {
-    let circuits = (0..8)
-        .map(|seed| (seed, random_circuit(seed, 1500)))
-        .chain((8..12).map(|seed| (seed, simulated_circuit(seed, 1500, 200))));
-    for (seed, circuit) in circuits {
+    for (seed, circuit) in compared_circuits() {
         let mut verilator = Verilator::compile(&circuit, Reporting::All, &|_| {}).unwrap();
         compare_with_reference(seed, &circuit, 2000, &mut verilator, Reporting::All);
     }

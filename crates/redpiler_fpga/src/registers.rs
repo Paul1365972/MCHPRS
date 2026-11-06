@@ -1,6 +1,8 @@
-use crate::circuit::{Circuit, Kind, StrengthSet};
+use crate::circuit::{initial_input_strength, Circuit, Kind, Link, StrengthSet, PULSE_PRIORITY};
 use mchprs_redpiler::compile_graph::SignalStrength;
+use mchprs_world::TickPriority;
 use std::num::NonZeroU8;
+use std::ops::RangeInclusive;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Field {
@@ -144,6 +146,45 @@ impl<'a> Registers<'a> {
         matches!(node.kind, Kind::Repeater { .. }) && !node.sides.is_empty()
     }
 
+    /// Whether a repeater can never start a pulse, which it does by firing unpowered with its input
+    /// off. One with delay one and a settled start fires unpowered only in the tick after its input
+    /// turned on or it was unlocked with the input on. Each source fires at most once a tick, so
+    /// the input cannot turn off again in time if its sources turn off no earlier than that tick's
+    /// priority and no later than the sides that unlock it; levers, pressure plates and wires change
+    /// at any time.
+    pub(crate) fn is_pulse_free(&self, index: usize) -> bool {
+        let nodes = self.circuit.nodes();
+        let node = &nodes[index];
+        let Kind::Repeater { delay: 1, .. } = node.kind else {
+            return false;
+        };
+        let turn_offs = |links: &[Link]| -> Option<Vec<RangeInclusive<TickPriority>>> {
+            links
+                .iter()
+                .map(|link| nodes[link.source].kind)
+                .filter(|&kind| kind != Kind::Constant)
+                .map(turn_off_priorities)
+                .collect()
+        };
+        let (Some(inputs), Some(sides)) = (turn_offs(&node.inputs), turn_offs(&node.sides)) else {
+            return false;
+        };
+        let initial = node.initial;
+        let locked = !initial_input_strength(nodes, &node.sides).is_zero();
+        let powered = !initial_input_strength(nodes, &node.inputs).is_zero();
+        let settled = initial.pending.is_none()
+            && initial.locked == locked
+            && (locked || initial.is_powered() == powered);
+        let unpowered_tick = node.kind.priority(false);
+        let off_after_tick = inputs
+            .iter()
+            .all(|input| Some(*input.start()) >= unpowered_tick);
+        let off_before_unlock = inputs
+            .iter()
+            .all(|input| sides.iter().all(|side| input.end() <= side.start()));
+        settled && off_after_tick && off_before_unlock
+    }
+
     pub(crate) fn readback_layout(&self) -> ReadbackLayout {
         ReadbackLayout::new(self)
     }
@@ -168,10 +209,27 @@ impl<'a> Registers<'a> {
         }
         if let Some(delay) = kind.delay() {
             fields.push(Field::Countdown(delay));
-            if kind.tracks_pulsing() {
+            if kind.tracks_pulsing() && !self.is_pulse_free(index) {
                 fields.push(Field::Pulsing);
             }
         }
         fields
     }
+}
+
+/// The priorities from which to which a source can turn off, or none if it can change at any time
+fn turn_off_priorities(kind: Kind) -> Option<RangeInclusive<TickPriority>> {
+    if !matches!(
+        kind,
+        Kind::Torch | Kind::Repeater { .. } | Kind::Comparator { .. }
+    ) {
+        return None;
+    }
+    let first = kind.priority(true)?;
+    let last = if matches!(kind, Kind::Repeater { .. }) {
+        first.max(PULSE_PRIORITY)
+    } else {
+        first
+    };
+    Some(first..=last)
 }

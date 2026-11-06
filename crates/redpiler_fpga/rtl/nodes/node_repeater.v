@@ -1,6 +1,7 @@
 // A repeater facing a diode ticks at priority 0, in the clock that starts the tick, unless its tick
 // ends a pulse, which fires at priority 1 once its countdown has run out. Any other repeater's tick
-// priority follows its output.
+// priority follows its output. PULSE_FREE requires that the repeater never fires unpowered with its
+// input off, so it never starts a pulse.
 module node_repeater #(
     parameter DELAY = 1,
     parameter FACING_DIODE = 0,
@@ -9,7 +10,8 @@ module node_repeater #(
     parameter LOCKABLE = 0,
     parameter LOCKED = 0,
     parameter PENDING = 0,
-    parameter PULSING = 0
+    parameter PULSING = 0,
+    parameter PULSE_FREE = 0
 ) (
     input wire clock,
     input wire begin_tick,
@@ -25,7 +27,7 @@ module node_repeater #(
     reg previous_input = PREVIOUS_INPUT;
     wire fire, tick_pending;
     wire unlocked_fire = fire && !locked;
-    wire starts_pulse = unlocked_fire && !powered && !previous_input;
+    wire starts_pulse = !PULSE_FREE && unlocked_fire && !powered && !previous_input;
     wire next_powered = unlocked_fire ? !powered || previous_input : powered;
     wire schedule = starts_pulse || !side_power && !tick_pending && next_powered != input_power;
     assign next_signal = {4{next_powered}};
