@@ -155,6 +155,9 @@ impl Scoreboard {
         if options.optimize {
             flags.push(("o", "- optimize".into()));
         }
+        if options.reorder {
+            flags.push(("r", "- reorder".into()));
+        }
         if options.export {
             flags.push(("e", "- export".into()));
         }

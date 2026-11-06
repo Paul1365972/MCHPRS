@@ -30,6 +30,8 @@ use tracing::{debug, info, warn};
 pub struct CompilerOptions {
     /// Enable optimization passes which may significantly increase compile times.
     pub optimize: bool,
+    /// Let optimizations reorder updates within a tick
+    pub reorder: bool,
     /// Export the graph to a binary format. See the [`redpiler_graph`] crate.
     pub export: bool,
     /// Which blocks report their changes while running and appear in snapshots, including the one
@@ -71,6 +73,7 @@ impl CompilerOptions {
 
             match option {
                 "--optimize" => self.optimize = true,
+                "--reorder" => self.reorder = true,
                 "--export" => self.export = true,
                 "--io-only" => self.limit_reporting(Reporting::InputsAndOutputsWhileRunning),
                 "--io-snapshots" => self.limit_reporting(Reporting::InputsAndOutputs),
@@ -88,6 +91,7 @@ impl CompilerOptions {
                 let lower = c.to_lowercase().to_string();
                 match lower.as_str() {
                     "o" => self.optimize = true,
+                    "r" => self.reorder = true,
                     "e" => self.export = true,
                     "i" => self.limit_reporting(Reporting::InputsAndOutputsWhileRunning),
                     "u" => self.update = true,
@@ -147,6 +151,7 @@ mod tests {
         let expected_options = CompilerOptions {
             reporting: Reporting::InputsAndOutputs,
             optimize: true,
+            reorder: false,
             export: true,
             update: true,
             wire_dot_out: false,
