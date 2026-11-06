@@ -1,7 +1,6 @@
 use super::{
     Circuit, CircuitError, ComparatorMode, Kind, Link, Node, NodeError, PendingTick, State,
 };
-use crate::screen::{Screen, ScreenNode};
 use mchprs_blocks::blocks::ComparatorMode as BlockComparatorMode;
 use mchprs_redpiler::compile_graph::{LinkType, NodeType};
 use mchprs_redpiler::{Netlist, NodeId};
@@ -25,35 +24,8 @@ impl Circuit {
                 return Err(NodeError::MarkedPending.at(id.index()));
             }
         }
-        Circuit::new(nodes, screen(netlist))
+        Circuit::new(nodes)
     }
-}
-
-fn screen(netlist: &Netlist) -> Screen {
-    let first_block = |id: NodeId| {
-        let node = netlist.node(id);
-        let block = node.block.first().map(|&(position, _)| position);
-        block.filter(|_| !node.is_input)
-    };
-    let nodes: Vec<ScreenNode> = netlist
-        .ids()
-        .filter(|&id| matches!(netlist.node(id).ty, NodeType::Lamp | NodeType::Trapdoor))
-        .map(|id| ScreenNode {
-            index: id.index(),
-            blocks: netlist
-                .node(id)
-                .block
-                .iter()
-                .map(|&(position, _)| position)
-                .collect(),
-            input_blocks: netlist
-                .inputs(id)
-                .iter()
-                .filter_map(|link| first_block(link.source))
-                .collect(),
-        })
-        .collect();
-    Screen::new(&nodes)
 }
 
 fn lower_node(netlist: &Netlist, id: NodeId) -> Result<Node, NodeError> {

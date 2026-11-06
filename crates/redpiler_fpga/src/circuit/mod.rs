@@ -7,7 +7,6 @@ mod validate;
 pub(crate) use error::{CircuitError, NodeError};
 pub(crate) use strength_set::StrengthSet;
 
-use crate::screen::Screen;
 use mchprs_redpiler::compile_graph::SignalStrength;
 use mchprs_world::TickPriority;
 use std::num::NonZeroU8;
@@ -219,7 +218,6 @@ const NO_FAR_INPUT: u8 = 16;
 pub(crate) struct Circuit {
     nodes: Vec<Node>,
     io_nodes: Vec<usize>,
-    screen: Screen,
     identity: u64,
 }
 
@@ -232,15 +230,11 @@ impl Circuit {
         &self.io_nodes
     }
 
-    pub(crate) fn screen(&self) -> &Screen {
-        &self.screen
-    }
-
     pub(crate) fn identity(&self) -> u64 {
         self.identity
     }
 
-    pub(crate) fn new(nodes: Vec<Node>, screen: Screen) -> Result<Self, CircuitError> {
+    pub(crate) fn new(nodes: Vec<Node>) -> Result<Self, CircuitError> {
         if nodes.is_empty() {
             return Err(CircuitError::Empty);
         }
@@ -256,7 +250,6 @@ impl Circuit {
         let mut circuit = Self {
             nodes,
             io_nodes,
-            screen,
             identity: 0,
         };
         circuit.validate()?;

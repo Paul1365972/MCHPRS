@@ -4,14 +4,13 @@ mod instance;
 mod node_modules;
 
 use crate::circuit::Circuit;
-use crate::registers::{Contents, Field, ReadbackLayout, Registers};
-use crate::screen::Screen;
+use crate::registers::{Contents, ReadbackLayout, Registers};
 use expression::signal_name;
 use include_dir::{include_dir, Dir};
 use instance::{Instance, StatesSlice};
 use mchprs_redpiler::Reporting;
 use node_modules::NodeModules;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::fs;
 use std::io;
@@ -109,8 +108,7 @@ impl<'a> Writer<'a> {
             self.line(format!("assign readback = {{appearance, {snapshot}}};"));
         }
         self.output.push_str("endmodule\n");
-        let powered_bits = powered_bits(&layout, reported, snapshot_bits);
-        self.system(snapshot_bits / 8, appearance_bits / 8, &powered_bits);
+        self.system(snapshot_bits / 8, appearance_bits / 8);
         self.output
     }
 
@@ -204,25 +202,17 @@ impl<'a> Writer<'a> {
         concatenation(&parts)
     }
 
-    fn system(
-        &mut self,
-        state_bytes: usize,
-        appearance_bytes: usize,
-        powered_bits: &HashMap<usize, usize>,
-    ) {
+    fn system(&mut self, state_bytes: usize, appearance_bytes: usize) {
         let node_count = self.circuit.nodes().len();
         let identity = self.circuit.identity();
-        let screen = self.circuit.screen();
         writeln!(
             self.output,
             "
-module circuit_system #(parameter CLOCKS_PER_BIT = 25, CLOCKS_PER_PIXEL = 4)(
+module circuit_system #(parameter CLOCKS_PER_BIT = 25)(
     input wire clock, serial_receive, clear_fault,
     output wire serial_transmit, ticking, halted,
     output wire [63:0] tick_count,
-    output wire [3:0] fault_code,
-    output wire [11:0] vga_color,
-    output wire vga_horizontal_sync, vga_vertical_sync
+    output wire [3:0] fault_code
 );
     wire set_input, input_value, run, tick_started;
     wire [31:0] input_index;
@@ -243,21 +233,8 @@ module circuit_system #(parameter CLOCKS_PER_BIT = 25, CLOCKS_PER_PIXEL = 4)(
         .input_value(input_value), .run(run), .tick_limit(tick_limit), .busy(ticking),
         .tick_started(tick_started), .tick_count(tick_count), .readback(readback)
     );
-    vga_screen #(
-        .COLUMNS({columns}), .ROWS({rows}), .CELL_PIXELS({cell_pixels}),
-        .CLOCKS_PER_PIXEL(CLOCKS_PER_PIXEL),
-        .OCCUPIED({occupied})
-    ) screen (
-        .clock(clock), .lit({screen_lit}), .color(vga_color),
-        .horizontal_sync(vga_horizontal_sync), .vertical_sync(vga_vertical_sync)
-    );
 endmodule",
             readback_high = (state_bytes + appearance_bytes) * 8 - 1,
-            columns = screen.columns(),
-            rows = screen.rows(),
-            cell_pixels = screen.cell_pixels(),
-            occupied = occupied(screen),
-            screen_lit = screen_lit(screen, powered_bits),
         )
         .unwrap();
     }
@@ -269,66 +246,4 @@ fn concatenation(parts: &[String]) -> String {
         .map(|row| row.join(", "))
         .collect();
     format!("{{\n        {}\n    }}", rows.join(",\n        "))
-}
-
-/// The readback bit of each reported node's powered field, counting from the appearance's start.
-fn powered_bits(
-    layout: &ReadbackLayout,
-    reported: &[usize],
-    start: usize,
-) -> HashMap<usize, usize> {
-    let mut bits = HashMap::new();
-    let mut position = start;
-    for &index in reported {
-        for (field, _) in layout.node(index).read_fields(Contents::Appearance) {
-            if field == Field::Powered {
-                bits.insert(index, position);
-            }
-            position += field.width();
-        }
-    }
-    bits
-}
-
-fn screen_lit(screen: &Screen, powered_bits: &HashMap<usize, usize>) -> String {
-    let mut parts = Vec::new();
-    let mut empty_cells = 0;
-    for cell in screen.cells().iter().rev() {
-        if cell.is_empty() {
-            empty_cells += 1;
-            continue;
-        }
-        if empty_cells != 0 {
-            parts.push(format!("{empty_cells}'d0"));
-            empty_cells = 0;
-        }
-        let bits: Vec<_> = cell
-            .iter()
-            .map(|node| format!("readback[{}]", powered_bits[node]))
-            .collect();
-        parts.push(bits.join(" | "));
-    }
-    if empty_cells != 0 {
-        parts.push(format!("{empty_cells}'d0"));
-    }
-    concatenation(&parts)
-}
-
-fn occupied(screen: &Screen) -> String {
-    let cells = screen.cells();
-    let digits: String = (0..cells.len().div_ceil(4))
-        .rev()
-        .map(|digit| {
-            let value = (0..4)
-                .filter(|bit| {
-                    cells
-                        .get(digit * 4 + bit)
-                        .is_some_and(|cell| !cell.is_empty())
-                })
-                .map(|bit| 1 << bit)
-                .sum();
-            char::from_digit(value, 16).expect("a hexadecimal digit")
-        })
-        .collect();
-    format!("{}'h{digits}", cells.len())
 }

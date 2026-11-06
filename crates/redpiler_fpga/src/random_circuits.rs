@@ -3,7 +3,6 @@ use crate::circuit::{
 };
 use crate::engine::Simulator;
 use crate::reference::{settled_initial_state, Reference};
-use crate::screen::Screen;
 use crate::verilator::Verilator;
 use mchprs_redpiler::compile_graph::SignalStrength;
 use mchprs_redpiler::Reporting;
@@ -145,7 +144,7 @@ pub(crate) fn random_circuit(seed: u64, count: usize) -> Circuit {
     for (node, state) in nodes.iter_mut().zip(settled) {
         node.initial = state;
     }
-    Circuit::new(nodes, Screen::default()).expect("random circuits are valid")
+    Circuit::new(nodes).expect("random circuits are valid")
 }
 
 fn assert_same_states(
@@ -221,7 +220,7 @@ fn simulated_circuit(seed: u64, count: usize, ticks: u64) -> Circuit {
             ..node.clone()
         })
         .collect();
-    Circuit::new(nodes, Screen::default()).expect("simulated circuits are valid")
+    Circuit::new(nodes).expect("simulated circuits are valid")
 }
 
 fn compare_with_reference(

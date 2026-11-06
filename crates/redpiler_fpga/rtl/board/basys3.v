@@ -10,12 +10,7 @@ module basys3 #(parameter CLOCK_DIVISOR = 1) (
     output wire [15:0] led,
     output wire [6:0] segment,
     output wire [3:0] anode,
-    output wire decimal_point,
-    output wire [3:0] vga_red,
-    output wire [3:0] vga_green,
-    output wire [3:0] vga_blue,
-    output wire vga_horizontal_sync,
-    output wire vga_vertical_sync
+    output wire decimal_point
 );
     localparam CLOCKS_PER_SECOND = 100_000_000 / CLOCK_DIVISOR;
     localparam CLOCKS_PER_REFRESH = CLOCKS_PER_SECOND / 10;
@@ -80,12 +75,10 @@ module basys3 #(parameter CLOCK_DIVISOR = 1) (
         7'b0, transmitting, receiving, halted, ticking_shown, heartbeat[26]
     };
 
-    circuit_system #(.CLOCKS_PER_PIXEL(4 / CLOCK_DIVISOR)) system (
+    circuit_system system (
         .clock(system_clock), .serial_receive(serial_receive), .clear_fault(clear_fault),
         .serial_transmit(serial_transmit), .ticking(ticking), .halted(halted),
-        .tick_count(tick_count), .fault_code(fault_code),
-        .vga_color({vga_red, vga_green, vga_blue}), .vga_horizontal_sync(vga_horizontal_sync),
-        .vga_vertical_sync(vga_vertical_sync)
+        .tick_count(tick_count), .fault_code(fault_code)
     );
     push_button center (.clock(system_clock), .button(button_center), .pressed(clear_fault));
     push_button left (.clock(system_clock), .button(button_left), .pressed(previous_view));
