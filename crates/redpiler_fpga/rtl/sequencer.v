@@ -20,7 +20,7 @@ module fpga_sequencer(
     assign busy = running;
     assign input_nodes = !running && set_input;
     assign begin_tick = start;
-    assign firing = active ? 4'b0001 << phase : 4'b0000;
+    assign firing = {running && phase == 3, running && phase == 2, running && phase == 1, start};
 
     always @(posedge clock) begin
         tick_count <= next_tick_count;
