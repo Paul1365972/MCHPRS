@@ -10,25 +10,21 @@ module value_crossing #(
     output reg updated = 0,
     output reg [WIDTH - 1:0] crossed = 0
 );
-    reg toggle = 0;
     reg [WIDTH - 1:0] held = 0;
-    reg previous_toggle = 0;
-    wire toggle_seen;
+    wire arrived;
 
-    synchronizer synchronizer (
-        .clock(destination_clock), .signal(toggle), .synchronized(toggle_seen)
+    pulse_crossing arrival (
+        .source_clock(source_clock), .pulse(update), .destination_clock(destination_clock),
+        .crossed(arrived)
     );
 
     always @(posedge source_clock)
-        if (update) begin
+        if (update)
             held <= value;
-            toggle <= !toggle;
-        end
 
     always @(posedge destination_clock) begin
-        previous_toggle <= toggle_seen;
-        updated <= toggle_seen != previous_toggle;
-        if (toggle_seen != previous_toggle)
+        updated <= arrived;
+        if (arrived)
             crossed <= held;
     end
 endmodule
