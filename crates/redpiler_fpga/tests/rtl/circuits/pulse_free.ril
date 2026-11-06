@@ -1,0 +1,27 @@
+# Repeaters that are pulse-free, behind each kind of source that leaves one so.
+circuit @pulse_free {
+  %lever = lever -> [%torch:0]
+  %torch = torch(powered)
+    -> [%chain:0, %plain:0, %joined:0, %latch:0, %plain_latch:0, %driven_latch:0]
+  %chain = repeater(delay=1, prioritized, powered) -> [%link:0]
+  %link = repeater(delay=1, prioritized, powered) -> [%out_link:0]
+  %out_link = trapdoor(powered)
+  %plain = repeater(delay=1, powered) -> [%out_plain:0, %after_plain:0]
+  %out_plain = trapdoor(powered)
+  %after_plain = repeater(delay=1, prioritized, powered) -> [%out_after_plain:0]
+  %out_after_plain = trapdoor(powered)
+
+  %other_lever = lever -> [%other_torch:0]
+  %other_torch = torch(powered) -> [%joined:0]
+  %joined = repeater(delay=1, powered) -> [%out_joined:0]
+  %out_joined = trapdoor(powered)
+
+  %lock_lever = lever -> [%lock:0, side %driven_latch:0]
+  %lock = comparator -> [side %latch:0, side %plain_latch:0]
+  %latch = repeater(delay=1, prioritized, powered) -> [%out_latch:0]
+  %out_latch = trapdoor(powered)
+  %plain_latch = repeater(delay=1, powered) -> [%out_plain_latch:0]
+  %out_plain_latch = trapdoor(powered)
+  %driven_latch = repeater(delay=1, prioritized, powered) -> [%out_driven_latch:0]
+  %out_driven_latch = trapdoor(powered)
+}

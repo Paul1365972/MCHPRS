@@ -36,6 +36,11 @@ fn default_input_is_on(circuit: &Circuit, snapshot: &Snapshot, node: NodeId) -> 
     links.any(|link| snapshot.states[link.source.index()].power.get() > link.weight)
 }
 
+fn is_pending_with_input_as_output(circuit: &Circuit, snapshot: &Snapshot, node: NodeId) -> bool {
+    let is_on = snapshot.states[node.index()].is_powered();
+    is_pending(snapshot, node) && default_input_is_on(circuit, snapshot, node) == is_on
+}
+
 fn assert_analysis_holds(circuit: &Circuit, analysis: &CircuitAnalysis, snapshot: &Snapshot) {
     let states = &snapshot.states;
     for node in circuit.ids() {
@@ -44,6 +49,11 @@ fn assert_analysis_holds(circuit: &Circuit, analysis: &CircuitAnalysis, snapshot
         assert!(
             analysis.strengths(node).contains(power.get()),
             "{names:?} has the strength {power}"
+        );
+        assert!(
+            !analysis.is_pulse_free(node)
+                || !is_pending_with_input_as_output(circuit, snapshot, node),
+            "a tick of {names:?} is pending while its input is as its output"
         );
         let NodeKind::Comparator {
             mode, far_input, ..

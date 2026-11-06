@@ -39,6 +39,11 @@ The analysis includes the initial state and every possible input.
 
 A comparator whose output can only be a low or a high strength stores which strength it has.
 
+A repeater can omit its pulse path when its input must differ from its output while a tick is pending.
+Its tick then toggles the output if it is unlocked.
+This holds for a repeater with a delay of 1 whose default sources are not inputs, of which at most one ticks or all tick with one priority, none before the repeater and none after a side source.
+A tick pending at compile time must be the one its inputs schedule.
+
 ## Flags
 
 | Flag | Short | Description |

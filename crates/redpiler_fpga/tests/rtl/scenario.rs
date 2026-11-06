@@ -55,6 +55,11 @@ macro_rules! cases {
             notes("circuits/notes.ril", "clock", "lever lever lever 1 lever lever 1 sounding sounding 1 sounding 6 lever 1 lever 1 lever \
          2 lever 5 lever x13 sounding x2") simulation[plain, io_only] board[plain, io_only];
             twins("circuits/twins.ril", "first_clock", "1 lever 1 1 lever 2 lever 1 lever 3 lever x5 lever x4") simulation[plain, io_only, optimized] board[optimized];
+            pulse_free("circuits/pulse_free.ril", "link", "1 lever 1 lever 2 lever lever 1 lever 3 lock_lever 2 lever 2 lock_lever 2 lever \
+         lock_lever 2 lever lock_lever 2 lock_lever lever 1 lock_lever 1 lever 1 lock_lever \
+         lock_lever 1 other_lever 2 lever 2 other_lever lever 2 lever other_lever 1 lever 1 \
+         other_lever 3 lock_lever 1 lever 1 lever 1 lock_lever 1 lever lock_lever 1 lever \
+         lock_lever lever 1 lock_lever lever lock_lever x5 lever x3 lock_lever x4") simulation[plain, io_only] board[plain];
         }
     };
 }
