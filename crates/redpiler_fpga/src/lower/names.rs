@@ -10,6 +10,7 @@ pub enum NodeModule {
     Torch,
     Repeater,
     RepeaterPrioritized,
+    ComparatorBinary,
     Comparator,
     Lamp,
     Trapdoor,
@@ -22,6 +23,7 @@ pub enum NodeModule {
 pub enum Parameter {
     Powered,
     Strength,
+    High,
     Locked,
     Touched,
     Delay,

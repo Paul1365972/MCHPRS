@@ -8,7 +8,7 @@ use mchprs_redpiler::graph::LinkKind;
 #[derive(Debug, Clone, Copy)]
 enum Output {
     Fixed(u8),
-    Binary,
+    Binary { low: u8, high: u8 },
     Strength,
 }
 
@@ -112,7 +112,11 @@ impl<'a> Expressions<'a> {
             .filter(|_| !strengths.is_single())
             .map(|instance| instance.power);
         match power {
-            Some(Register::Powered) => Output::Binary,
+            Some(Register::BinaryStrength { low, high }) => Output::Binary {
+                low: low.get(),
+                high: high.get(),
+            },
+            Some(Register::Powered) => Output::Binary { low: 0, high: 15 },
             Some(Register::Strength) => Output::Strength,
             _ => Output::Fixed(strengths.min()),
         }
@@ -143,8 +147,9 @@ impl<'a> Expressions<'a> {
         let strengths = self.analysis.strengths(link.source);
         match self.output(link.source) {
             Output::Fixed(strength) => Term::Fixed(strength >= floor),
-            Output::Binary if floor > 15 => Term::Fixed(false),
-            Output::Binary => Term::Signal(self.read_output_wire(link.source)),
+            Output::Binary { low, .. } if low >= floor => Term::Fixed(true),
+            Output::Binary { high, .. } if high < floor => Term::Fixed(false),
+            Output::Binary { .. } => Term::Signal(self.read_output_wire(link.source)),
             Output::Strength if strengths.min() >= floor => Term::Fixed(true),
             Output::Strength if strengths.max() < floor => Term::Fixed(false),
             Output::Strength if (1..floor).any(|weak| strengths.contains(weak)) => Term::Signal(
@@ -159,12 +164,10 @@ impl<'a> Expressions<'a> {
         match self.output(link.source) {
             Output::Fixed(strength) => Term::Fixed(carried(strength)),
             _ if self.carried_set(link).max() == 0 => Term::Fixed(0),
-            Output::Binary => {
-                let high = carried(15);
-                Term::Signal(format!(
-                    "({} ? 4'd{high} : 4'd0)",
-                    self.read_output_wire(link.source)
-                ))
+            Output::Binary { low, high } => {
+                let (low, high) = (carried(low), carried(high));
+                let wire = self.read_output_wire(link.source);
+                Term::Signal(format!("({wire} ? 4'd{high} : 4'd{low})"))
             }
             Output::Strength if link.weight == 0 => {
                 Term::Signal(self.read_output_wire(link.source))

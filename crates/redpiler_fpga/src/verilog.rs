@@ -26,7 +26,7 @@ impl Design {
         build_nonce: u32,
     ) -> Result<Design, CompileError> {
         let analysis = CircuitAnalysis::of(circuit);
-        let instances = lower(circuit)?;
+        let instances = lower(circuit, &analysis)?;
         let layout = StateLayout::new(circuit, &instances, scope);
         let shown_bits = layout.bits(Contents::Shown);
         let state_bits = layout.bits(Contents::All);

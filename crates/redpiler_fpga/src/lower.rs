@@ -2,8 +2,10 @@ mod names;
 
 use names::{FiringPort, NodeModule, Parameter};
 
+use crate::analysis::CircuitAnalysis;
 use crate::protocol::DRIVE_NODE_BITS;
 use mchprs_blocks::blocks::ComparatorMode;
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::circuit::{Circuit, NodeId};
 use mchprs_redpiler::graph::{LinkKind, Node, NodeKind, SignalKind};
 use mchprs_redstone::tick_queue::TickPriority;
@@ -33,10 +35,17 @@ impl CircuitSignal {
 pub enum Register {
     Powered,
     Strength,
+    BinaryStrength {
+        low: SignalStrength,
+        high: SignalStrength,
+    },
     Locked,
     Played,
     Touched,
-    Countdown { delay: u32, priority: PriorityRule },
+    Countdown {
+        delay: u32,
+        priority: PriorityRule,
+    },
     Pulsing,
 }
 
@@ -45,6 +54,7 @@ impl Register {
         match self {
             Register::Powered => "powered",
             Register::Strength => "strength",
+            Register::BinaryStrength { .. } => "high",
             Register::Locked => "locked",
             Register::Played => "played_since_read",
             Register::Touched => "touched",
@@ -74,6 +84,10 @@ impl Register {
         match self {
             Register::Powered => vec![(Parameter::Powered, node.state.is_powered().into())],
             Register::Strength => vec![(Parameter::Strength, power)],
+            Register::BinaryStrength { high, .. } => vec![
+                (Parameter::High, high.get().into()),
+                (Parameter::Strength, power),
+            ],
             Register::Locked => vec![(Parameter::Locked, node.state.repeater_locked.into())],
             Register::Played => Vec::new(),
             Register::Touched => vec![(Parameter::Touched, node.state.plate_touched.into())],
@@ -188,7 +202,10 @@ impl Instance {
     }
 }
 
-pub fn lower(circuit: &Circuit) -> Result<Vec<Option<Instance>>, CompileError> {
+pub fn lower(
+    circuit: &Circuit,
+    analysis: &CircuitAnalysis,
+) -> Result<Vec<Option<Instance>>, CompileError> {
     if circuit.len() > 1 << DRIVE_NODE_BITS {
         let count = circuit.len();
         return Err(CompileError::Unsupported(format!(
@@ -197,7 +214,7 @@ pub fn lower(circuit: &Circuit) -> Result<Vec<Option<Instance>>, CompileError> {
     }
     let instances: Vec<_> = circuit
         .ids()
-        .map(|id| instance(circuit, id))
+        .map(|id| instance(circuit, id, analysis))
         .collect::<Result<_, _>>()?;
     if instances.iter().all(Option::is_none) {
         return Err(CompileError::Unsupported(
@@ -207,9 +224,13 @@ pub fn lower(circuit: &Circuit) -> Result<Vec<Option<Instance>>, CompileError> {
     Ok(instances)
 }
 
-fn instance(circuit: &Circuit, id: NodeId) -> Result<Option<Instance>, CompileError> {
+fn instance(
+    circuit: &Circuit,
+    id: NodeId,
+    analysis: &CircuitAnalysis,
+) -> Result<Option<Instance>, CompileError> {
     use PriorityRule::{ByOutput, ByPulsing, Fixed};
-    use Register::{Locked, Played, Powered, Pulsing, Strength, Touched};
+    use Register::{BinaryStrength, Locked, Played, Powered, Pulsing, Strength, Touched};
     let refused = |problem: String| {
         let index = id.index();
         CompileError::Unsupported(format!("node {index} {problem}"))
@@ -259,6 +280,12 @@ fn instance(circuit: &Circuit, id: NodeId) -> Result<Option<Instance>, CompileEr
             far_input,
             prioritized,
         } => {
+            let comparator = match analysis.binary_strengths(id) {
+                Some((low, high)) => {
+                    Instance::new(NodeModule::ComparatorBinary, BinaryStrength { low, high })
+                }
+                None => Instance::new(NodeModule::Comparator, Strength),
+            };
             let far = far_input.map_or(0, |far| far.get().into());
             let rule = [
                 (
@@ -269,7 +296,7 @@ fn instance(circuit: &Circuit, id: NodeId) -> Result<Option<Instance>, CompileEr
                 (Parameter::Far, far),
             ];
             let priority = Fixed(comparator::tick_priority(prioritized));
-            Instance::new(NodeModule::Comparator, Strength)
+            comparator
                 .with_parameters(&rule)
                 .with_timer(comparator::DELAY_TICKS, priority)
         }

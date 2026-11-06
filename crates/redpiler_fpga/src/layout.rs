@@ -149,6 +149,7 @@ impl StateLayout {
                     state.power =
                         SignalStrength::try_from(value).expect("four bits hold a strength");
                 }
+                Register::BinaryStrength { low, high } => state.power = if on { high } else { low },
                 Register::Locked => state.repeater_locked = on,
                 Register::Played => registers.played = on,
                 Register::Touched => state.plate_touched = on,
