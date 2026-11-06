@@ -71,10 +71,18 @@ fn synthesize(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, Too
         .map(|source| yosys_path(&directory.join(source)))
         .collect::<Result<Vec<_>, _>>()?
         .join(" ");
+    // A slice's flip-flops share one enable and reset, so legalizing every flip-flop to a plain one
+    // before mapping keeps each node's own enable and reset in LUTs instead of a slice of its own.
+    let synth_xilinx = "synth_xilinx -flatten -abc9 -nosrl -arch xc7 -top basys3 -run";
     fs::write(
         &script,
         format!(
-            "read_verilog -sv {sources}\nsynth_xilinx -flatten -abc9 -nosrl -arch xc7 -top basys3\nwrite_json {}\n",
+            "read_verilog -sv {sources}
+{synth_xilinx} :map_ffs
+dfflegalize -cell $_DFF_P_ 01
+{synth_xilinx} map_ffs:
+write_json {}
+",
             yosys_path(&netlist)?
         ),
     )?;
