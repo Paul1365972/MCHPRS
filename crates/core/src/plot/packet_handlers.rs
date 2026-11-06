@@ -183,7 +183,6 @@ impl ServerBoundPacketHandler for Plot {
 
     fn handle_set_player_position(&mut self, player_position: SSetPlayerPosition, player: usize) {
         let old = self.players[player].pos;
-        let from = self.players[player].standing_on();
         let new = PlayerPos::new(player_position.x, player_position.y, player_position.z);
         self.players[player].pos = new;
         self.players[player].on_ground = player_position.on_ground;
@@ -220,7 +219,7 @@ impl ServerBoundPacketHandler for Plot {
             };
             self.players[other_player].client.send_packet(&packet);
         }
-        self.step(from, self.players[player].standing_on());
+        self.on_players_moved();
     }
 
     fn handle_set_player_position_and_rotation(
@@ -229,7 +228,6 @@ impl ServerBoundPacketHandler for Plot {
         player: usize,
     ) {
         let old = self.players[player].pos;
-        let from = self.players[player].standing_on();
         let new = PlayerPos::new(
             player_position_and_rotation.x,
             player_position_and_rotation.y,
@@ -282,15 +280,13 @@ impl ServerBoundPacketHandler for Plot {
                 .client
                 .send_packet(&entity_head_look);
         }
-        self.step(from, self.players[player].standing_on());
+        self.on_players_moved();
     }
 
     fn handle_player_rotation(&mut self, player_rotation: SPlayerRotation, player: usize) {
         self.players[player].yaw = player_rotation.yaw;
         self.players[player].pitch = player_rotation.pitch;
-        let from = self.players[player].standing_on();
         self.players[player].on_ground = player_rotation.on_ground;
-        self.step(from, self.players[player].standing_on());
         let rotation_packet = CEntityRotation {
             entity_id: self.players[player].entity_id as i32,
             yaw: player_rotation.yaw,
@@ -317,9 +313,7 @@ impl ServerBoundPacketHandler for Plot {
     }
 
     fn handle_set_player_on_ground(&mut self, player_movement: SSetPlayerOnGround, player: usize) {
-        let from = self.players[player].standing_on();
         self.players[player].on_ground = player_movement.on_ground;
-        self.step(from, self.players[player].standing_on());
     }
 
     fn handle_player_action(&mut self, player_action: SPlayerAction, player: usize) {

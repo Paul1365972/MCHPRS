@@ -27,6 +27,7 @@ pub fn empty_plot() -> Result<PlotData<'static>> {
             z: 0,
             chunks,
             redstone: Redstone::new(Default::default()),
+            entity_boxes: Vec::new(),
             packet_senders: HashMap::new(),
             world_send_rate: WorldSendRate::default(),
             pending_block_entities: Default::default(),

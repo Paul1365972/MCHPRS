@@ -11,7 +11,7 @@ mod diode;
 pub mod interpreter;
 pub mod noteblock;
 pub mod pace;
-mod plate;
+pub mod plate;
 mod repeater;
 mod signal;
 pub mod tick_queue;
@@ -26,7 +26,6 @@ use tick_queue::{TickPriority, TickQueue};
 
 pub use behavior::{can_survive, place_block, state_for_placement, use_block};
 pub use diode::{diode_should_be_prioritized, is_diode};
-pub use plate::set_pressure_plate;
 pub use signal::{provides_strong_power, provides_weak_power};
 pub use update::{neighbor_changed_at, set_block, update_neighbors_for_output_signal, Notify};
 
@@ -66,10 +65,43 @@ impl Redstone {
 pub trait RedstoneWorld: BlockStore {
     fn redstone(&mut self) -> &mut Redstone;
 
+    fn has_entity_in(&self, area: Aabb) -> bool;
+
     fn play_note(&mut self, _pos: BlockPos, _instrument: Instrument, _note: u8) {}
 
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority, block: Block) {
         self.redstone().ticks.schedule(pos, delay, priority, block);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Aabb {
+    pub min: [f64; 3],
+    pub max: [f64; 3],
+}
+
+impl Aabb {
+    pub fn intersects(&self, other: &Aabb) -> bool {
+        (0..3).all(|axis| self.min[axis] < other.max[axis] && self.max[axis] > other.min[axis])
+    }
+
+    pub fn block_positions(&self) -> impl Iterator<Item = BlockPos> {
+        // Vanilla's checkInsideBlocks shrinks the box by this much
+        const MARGIN: f64 = 1.0e-7;
+        let min = self.min.map(|coord| (coord + MARGIN).floor() as i32);
+        let max = self.max.map(|coord| (coord - MARGIN).floor() as i32);
+        (min[0]..=max[0]).flat_map(move |x| {
+            (min[1]..=max[1])
+                .flat_map(move |y| (min[2]..=max[2]).map(move |z| BlockPos::new(x, y, z)))
+        })
+    }
+
+    fn offset(self, pos: BlockPos) -> Aabb {
+        let delta = [pos.x as f64, pos.y as f64, pos.z as f64];
+        Aabb {
+            min: std::array::from_fn(|axis| self.min[axis] + delta[axis]),
+            max: std::array::from_fn(|axis| self.max[axis] + delta[axis]),
+        }
     }
 }
 

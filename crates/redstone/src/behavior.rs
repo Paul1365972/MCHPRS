@@ -79,6 +79,7 @@ pub(crate) fn tick(world: &mut impl RedstoneWorld, pos: BlockPos, state: Block) 
         _ if state.button().is_some_and(|button| button.powered) => {
             attached::set_button_powered(world, pos, state, false)
         }
+        _ if state.pressure_plate_powered().is_some() => plate::tick(world, pos, state),
         _ => {}
     }
 }

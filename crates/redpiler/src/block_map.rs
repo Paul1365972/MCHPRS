@@ -197,6 +197,11 @@ impl BlockMap {
                 world.schedule_tick(pos, tick.delay, tick.priority, block);
             }
         }
+        for &(pos, block) in self.blocks.iter().flatten() {
+            if block.pressure_plate_powered() == Some(true) {
+                mchprs_redstone::plate::schedule_recheck(world, pos, block);
+            }
+        }
     }
 }
 

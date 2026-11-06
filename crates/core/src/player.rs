@@ -12,6 +12,7 @@ use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::{PacketEncoder, PlayerProperty, SlotData};
 use mchprs_network::text::{ColorCode, TextComponent, TextComponentBuilder};
 use mchprs_network::{PlayerConn, PlayerPacketSender};
+use mchprs_redstone::Aabb;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
@@ -364,6 +365,18 @@ impl Player {
         }
     }
 
+    pub fn collision_box(&self, pos: PlayerPos) -> Option<Aabb> {
+        const HALF_WIDTH: f64 = 0.3;
+        if matches!(self.gamemode, Gamemode::Spectator) {
+            return None;
+        }
+        let height = if self.crouching { 1.5 } else { 1.8 };
+        Some(Aabb {
+            min: [pos.x - HALF_WIDTH, pos.y, pos.z - HALF_WIDTH],
+            max: [pos.x + HALF_WIDTH, pos.y + height, pos.z + HALF_WIDTH],
+        })
+    }
+
     pub fn get_facing(&self) -> BlockFacing {
         let yaw = self.yaw.rem_euclid(360.0);
         let pitch = self.pitch;
@@ -402,10 +415,6 @@ impl Player {
         self.pos = pos;
         self.on_ground = false;
         self.client.send_packet(&player_position_and_look);
-    }
-
-    pub fn standing_on(&self) -> Option<BlockPos> {
-        self.on_ground.then(|| self.pos.block_pos())
     }
 
     /// Sends the `ChatMessage` packet containing the raw text component

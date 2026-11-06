@@ -1,5 +1,5 @@
 use crate::tick_queue::{run_scheduled_ticks, TickEntry, TickQueue};
-use crate::{behavior, Redstone, RedstoneWorld};
+use crate::{behavior, Aabb, Redstone, RedstoneWorld};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
@@ -64,5 +64,9 @@ impl<B: BlockStore> BlockStore for Interpreter<B> {
 impl<B: BlockStore> RedstoneWorld for Interpreter<B> {
     fn redstone(&mut self) -> &mut Redstone {
         &mut self.redstone
+    }
+
+    fn has_entity_in(&self, _area: Aabb) -> bool {
+        false
     }
 }

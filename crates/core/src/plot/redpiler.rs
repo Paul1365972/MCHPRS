@@ -9,6 +9,7 @@ use mchprs_redpiler::compile::Stage;
 use mchprs_redpiler::session::{Session, SessionContext, SessionError, Update};
 use mchprs_redpiler_backends::BackendSetup;
 use mchprs_redstone::pace::{Goal, TickRate};
+use mchprs_redstone::plate;
 use mchprs_redstone::tick_queue::{TickEntry, TickQueue};
 use mchprs_save_data::plot_data::Tps;
 use std::mem;
@@ -140,7 +141,6 @@ impl Plot {
         setup: BackendSetup,
         plan: CompilePlan,
     ) -> Result<(), &'static str> {
-        self.reset_pressure_plates();
         self.save();
         if self.world.unsaved_since.is_some() {
             return Err("Redpiler didn't start because the plot couldn't be saved.");
@@ -193,9 +193,6 @@ impl Plot {
                         }
                         self.record_ticks(&stopped.update);
                         self.end_redpiler();
-                        if restore {
-                            self.reset_pressure_plates();
-                        }
                     }
                     Err(error) => self.fail_redpiler(error),
                 }
@@ -261,9 +258,9 @@ impl Plot {
         } = started;
         let rate = self.session_tick_rate();
         for (pos, pressed) in blocks.pressure_plates() {
-            let stood_on = self.are_players_on_block(pos);
-            if pressed != stood_on
-                && let Some(drive) = blocks.pressure_plate(pos, stood_on)
+            let touched = plate::is_touched(&self.world, pos);
+            if pressed != touched
+                && let Some(drive) = blocks.pressure_plate(pos, touched)
             {
                 session.drive(drive);
             }
@@ -320,23 +317,6 @@ impl Plot {
 
     fn abandon_compile(&mut self, plot_ticks: Vec<TickEntry>) {
         self.world.redstone.ticks = TickQueue::new(plot_ticks);
-        self.reset_pressure_plates();
-    }
-
-    pub(super) fn reset_pressure_plates(&mut self) {
-        let region = self.world.region();
-        for pos in self
-            .world
-            .occupied_regions(region)
-            .into_iter()
-            .flat_map(Region::positions)
-        {
-            if let Some(&mut powered) = self.world.block(pos).get_pressure_plate_powered()
-                && powered != self.are_players_on_block(pos)
-            {
-                mchprs_redstone::set_pressure_plate(&mut self.world, pos, !powered);
-            }
-        }
     }
 
     fn end_redpiler(&mut self) {
