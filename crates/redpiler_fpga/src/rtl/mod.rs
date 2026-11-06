@@ -9,7 +9,7 @@ use expression::signal_name;
 use include_dir::{include_dir, Dir};
 use instance::{Instance, StatesSlice};
 use mchprs_redpiler::Reporting;
-use node_modules::NodeModules;
+use node_modules::{NodeModules, NODES_PER_FIRING_COPY};
 use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::fs;
@@ -113,6 +113,12 @@ impl<'a> Writer<'a> {
     }
 
     fn header(&mut self, state_bits: usize, appearance_bits: usize, readback_bits: usize) {
+        let firing_copies = self
+            .circuit
+            .nodes()
+            .len()
+            .div_ceil(NODES_PER_FIRING_COPY)
+            .max(1);
         writeln!(
             self.output,
             "module compiled_circuit(
@@ -132,18 +138,18 @@ impl<'a> Writer<'a> {
     function [3:0] attenuated(input [3:0] signal, input [3:0] attenuation);
         attenuated = signal > attenuation ? signal - attenuation : 4'd0;
     endfunction
-    wire input_nodes, begin_tick;
-    assign tick_started = begin_tick;
-    wire [3:0] firing;
-    fpga_sequencer sequencer (
+    wire input_nodes;
+    wire [{}:0] firing;
+    fpga_sequencer #(.GROUPS({firing_copies})) sequencer (
         .clock(clock), .set_input(set_input), .run(run), .tick_limit(tick_limit),
-        .input_nodes(input_nodes), .begin_tick(begin_tick),
+        .input_nodes(input_nodes), .begin_tick(tick_started),
         .firing(firing), .busy(busy), .tick_count(tick_count)
     );
 ",
             readback_bits - 1,
             state_bits - 1,
-            appearance_bits - 1
+            appearance_bits - 1,
+            firing_copies * 4 - 1,
         )
         .unwrap();
     }

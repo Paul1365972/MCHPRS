@@ -22,6 +22,10 @@ pub(super) enum Connection {
     Net(&'static str),
     Signal(usize),
     States(StatesSlice),
+    /// A group's copy of the firing bits
+    Firing(usize),
+    /// The firing bit of priority 0 in a group's copy, which begins each tick
+    BeginTick(usize),
 }
 
 impl From<Expression> for Connection {
@@ -49,6 +53,8 @@ impl fmt::Display for Connection {
             Self::Net(net) => formatter.write_str(net),
             Self::Signal(node) => formatter.write_str(&signal_name(*node)),
             Self::States(slice) => write!(formatter, "{slice}"),
+            Self::Firing(group) => write!(formatter, "firing[{} +: 4]", group * 4),
+            Self::BeginTick(group) => write!(formatter, "firing[{}]", group * 4),
         }
     }
 }
