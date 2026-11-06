@@ -139,6 +139,8 @@ When a Lamp is updated, it checks if the Lamp should be lit. If a Lamp should be
 
 When a Lamp is ticked, it checks if the Lamp should be lit. If it should not be bit, but currently is, then the state of the Lamp is changed.
 
+Unlike in vanilla, a Lamp is only updated by the nodes it reads, not by every change near it.
+
 ### Trapdoor
 
 When a trapdoor is updated, it checks if it should be powered. If that value is different from its current state, its state is changed (this is instant).
