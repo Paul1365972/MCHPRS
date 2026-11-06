@@ -35,7 +35,7 @@ use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redstone::pace::Pacer;
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
-use mchprs_redstone::RedstoneWorld;
+use mchprs_redstone::{Notify, Redstone, RedstoneWorld};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
 use mchprs_world::occupied_regions;
 use mchprs_world::storage::Chunk;
@@ -117,7 +117,7 @@ pub struct PlotWorld {
     pub x: i32,
     pub z: i32,
     pub chunks: Vec<Chunk>,
-    pub ticks: TickQueue,
+    redstone: Redstone,
     pub packet_senders: HashMap<EntityId, PlayerPacketSender>,
     world_send_rate: WorldSendRate,
     pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
@@ -311,14 +311,13 @@ impl BlockStore for PlotWorld {
 }
 
 impl RedstoneWorld for PlotWorld {
-    fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority) {
-        let block = self.block(pos);
-        self.ticks.schedule(pos, delay, priority, block);
+    fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority, block: Block) {
+        self.redstone.ticks.schedule(pos, delay, priority, block);
         self.mark_unsaved();
     }
 
-    fn pending_tick_at(&self, pos: BlockPos) -> bool {
-        self.ticks.is_pending(pos, self.block(pos))
+    fn redstone(&mut self) -> &mut Redstone {
+        &mut self.redstone
     }
 
     fn play_note(&mut self, pos: BlockPos, instrument: Instrument, note: u8) {
@@ -363,10 +362,10 @@ impl BlockView for PlotBlocks {
 impl Plot {
     fn tick(&mut self) {
         self.tick_history.record(1);
-        if !self.world.ticks.entries().is_empty() {
+        if !self.world.redstone.ticks.entries().is_empty() {
             self.world.mark_unsaved();
         }
-        mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world, |world| &mut world.ticks);
+        mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world);
     }
 
     fn run_world_ticks(&mut self) {
@@ -378,7 +377,7 @@ impl Plot {
         let mut ran = 0;
         let mut settled = false;
         while ran < due.limit && (ran == 0 || start.elapsed() < batch_time) {
-            if due.until_settled && self.world.ticks.entries().is_empty() {
+            if due.until_settled && self.world.redstone.ticks.entries().is_empty() {
                 settled = true;
                 break;
             }
@@ -693,7 +692,7 @@ impl Plot {
             return;
         }
 
-        interaction::destroy(block, &mut self.world, block_pos);
+        mchprs_redstone::set_block(&mut self.world, block_pos, Block::Air, Notify::All);
         self.world.flush_block_changes();
 
         let effect = CWorldEvent {
@@ -1235,7 +1234,7 @@ impl Plot {
             x,
             z,
             chunks: load_chunks(plot_data.chunk_data, x, z),
-            ticks: load_ticks(plot_data.pending_ticks),
+            redstone: Redstone::new(load_ticks(plot_data.pending_ticks)),
             packet_senders: HashMap::new(),
             world_send_rate: plot_data.world_send_rate,
             pending_block_entities: FxHashMap::default(),
@@ -1310,7 +1309,7 @@ impl Plot {
             self.world.mark_unsaved();
         }
         self.world.chunks = load_chunks(data.chunk_data, x, z);
-        self.world.ticks = load_ticks(data.pending_ticks);
+        self.world.redstone.ticks = load_ticks(data.pending_ticks);
         self.world.pending_block_entities.clear();
         self.reset_pressure_plates();
         for player in 0..self.players.len() {
@@ -1371,6 +1370,7 @@ impl Plot {
             world_send_rate: world.world_send_rate,
             chunk_data,
             pending_ticks: world
+                .redstone
                 .ticks
                 .entries()
                 .iter()

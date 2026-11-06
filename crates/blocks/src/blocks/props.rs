@@ -150,6 +150,25 @@ impl RedstoneWire {
             power,
         }
     }
+
+    pub fn side(self, direction: BlockDirection) -> RedstoneWireSide {
+        match direction {
+            BlockDirection::North => self.north,
+            BlockDirection::South => self.south,
+            BlockDirection::East => self.east,
+            BlockDirection::West => self.west,
+        }
+    }
+
+    pub fn with_side(mut self, direction: BlockDirection, side: RedstoneWireSide) -> RedstoneWire {
+        match direction {
+            BlockDirection::North => self.north = side,
+            BlockDirection::South => self.south = side,
+            BlockDirection::East => self.east = side,
+            BlockDirection::West => self.west = side,
+        }
+        self
+    }
 }
 
 impl BlockTransform for RedstoneWire {

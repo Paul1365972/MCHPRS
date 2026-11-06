@@ -152,7 +152,7 @@ impl Plot {
         let job = CompileJob::spawn(
             self.world.copy_blocks(),
             self.world.region(),
-            self.world.ticks.entries().to_vec(),
+            self.world.redstone.ticks.entries().to_vec(),
             setup.clone(),
             plan,
             session,
@@ -165,7 +165,7 @@ impl Plot {
         self.redpiler = Redpiler::Compiling(Compiling {
             setup,
             job,
-            plot_ticks: mem::take(&mut self.world.ticks).into_entries(),
+            plot_ticks: mem::take(&mut self.world.redstone.ticks).into_entries(),
             started: Instant::now(),
         });
         self.reset_timings();
@@ -186,11 +186,11 @@ impl Plot {
                 debug!("Stopping redpiler");
                 match running.session.stop(restore, SESSION_TIMEOUT) {
                     Ok(stopped) => {
-                        if running.had_ticks {
-                            self.world.mark_unsaved();
-                        }
                         running.blocks.record(&stopped.update.changes);
                         running.blocks.finish(&stopped.snapshot, &mut self.world);
+                        if running.had_ticks || !self.world.redstone.ticks.entries().is_empty() {
+                            self.world.mark_unsaved();
+                        }
                         self.record_ticks(&stopped.update);
                         self.end_redpiler();
                         if restore {
@@ -209,8 +209,7 @@ impl Plot {
                 .into_iter()
                 .flat_map(Region::positions)
             {
-                let block = self.world.block(pos);
-                mchprs_redstone::update(block, &mut self.world, pos);
+                mchprs_redstone::neighbor_changed_at(&mut self.world, pos);
             }
         }
         self.publish_world();
@@ -320,7 +319,7 @@ impl Plot {
     }
 
     fn abandon_compile(&mut self, plot_ticks: Vec<TickEntry>) {
-        self.world.ticks = TickQueue::new(plot_ticks);
+        self.world.redstone.ticks = TickQueue::new(plot_ticks);
         self.reset_pressure_plates();
     }
 

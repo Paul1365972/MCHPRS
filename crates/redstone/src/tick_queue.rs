@@ -1,8 +1,7 @@
-use crate::RedstoneWorld;
+use crate::{behavior, RedstoneWorld};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use serde::{Deserialize, Serialize};
-use std::mem;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TickPriority {
@@ -31,7 +30,7 @@ impl TickEntry {
     }
 
     pub fn is_for(&self, block: Block) -> bool {
-        mem::discriminant(&self.block) == mem::discriminant(&block)
+        self.block.is_same_kind(block)
     }
 }
 
@@ -87,15 +86,12 @@ impl TickQueue {
     }
 }
 
-pub fn run_scheduled_ticks<W: RedstoneWorld>(
-    world: &mut W,
-    tick_queue: impl Fn(&mut W) -> &mut TickQueue,
-) {
-    tick_queue(world).advance();
-    while let Some(entry) = tick_queue(world).pop_due() {
+pub fn run_scheduled_ticks(world: &mut impl RedstoneWorld) {
+    world.redstone().ticks.advance();
+    while let Some(entry) = world.redstone().ticks.pop_due() {
         let block = world.block(entry.pos);
         if entry.is_for(block) {
-            crate::tick(block, world, entry.pos);
+            behavior::tick(world, entry.pos, block);
         }
     }
 }

@@ -189,8 +189,7 @@ pub fn update(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {
         .into_iter()
         .flat_map(Region::positions)
     {
-        let block = plot.block(pos);
-        mchprs_redstone::update(block, plot, pos);
+        mchprs_redstone::neighbor_changed_at(plot, pos);
     }
 }
 

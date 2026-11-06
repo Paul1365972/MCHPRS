@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 
-use mchprs_blocks::block_store::BlockStore;
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockDirection;
 use mchprs_redstone::tick_queue::TickPriority;
@@ -195,7 +195,8 @@ fn ground_torch_does_not_power_block_below(backend: TestBackend) {
     world.set_block(lamp_pos, Block::RedstoneLamp { lit: true });
     world.set_block(torch_pos, Block::RedstoneTorch { lit: true });
 
-    world.schedule_tick(lamp_pos, 1, TickPriority::Normal);
+    let lamp = world.block(lamp_pos);
+    world.schedule_tick(lamp_pos, 1, TickPriority::Normal, lamp);
 
     let mut runner = BackendRunner::new(world, backend);
     runner.tick();
@@ -210,7 +211,8 @@ fn pending_repeater_pulses_without_input(backend: TestBackend) {
     let mut world = test_world(16, 16, 16);
     make_repeater(&mut world, repeater_pos, 1, BlockDirection::West);
     world.set_block(trapdoor_pos, trapdoor());
-    world.schedule_tick(repeater_pos, 1, TickPriority::Higher);
+    let repeater = world.block(repeater_pos);
+    world.schedule_tick(repeater_pos, 1, TickPriority::Higher, repeater);
 
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(trapdoor_pos, false);

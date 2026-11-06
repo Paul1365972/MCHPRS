@@ -1,5 +1,5 @@
-use crate::tick_queue::{run_scheduled_ticks, TickEntry, TickPriority, TickQueue};
-use crate::RedstoneWorld;
+use crate::tick_queue::{run_scheduled_ticks, TickEntry, TickQueue};
+use crate::{behavior, Redstone, RedstoneWorld};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
@@ -9,23 +9,23 @@ use mchprs_blocks::BlockPos;
 #[derive(Debug)]
 pub struct Interpreter<B: BlockStore> {
     blocks: B,
-    ticks: TickQueue,
+    redstone: Redstone,
 }
 
 impl<B: BlockStore> Interpreter<B> {
     pub fn new(blocks: B, pending: Vec<TickEntry>) -> Interpreter<B> {
         Interpreter {
             blocks,
-            ticks: TickQueue::new(pending),
+            redstone: Redstone::new(TickQueue::new(pending)),
         }
     }
 
     pub fn tick(&mut self) {
-        run_scheduled_ticks(self, |interpreter| &mut interpreter.ticks);
+        run_scheduled_ticks(self);
     }
 
     pub fn use_block(&mut self, pos: BlockPos) {
-        crate::on_use(self.block(pos), self, pos);
+        behavior::use_block(self, pos);
     }
 
     pub fn blocks(&self) -> &B {
@@ -33,7 +33,7 @@ impl<B: BlockStore> Interpreter<B> {
     }
 
     pub fn pending_ticks(&self) -> &[TickEntry] {
-        self.ticks.entries()
+        self.redstone.ticks.entries()
     }
 }
 
@@ -62,12 +62,7 @@ impl<B: BlockStore> BlockStore for Interpreter<B> {
 }
 
 impl<B: BlockStore> RedstoneWorld for Interpreter<B> {
-    fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority) {
-        let block = self.blocks.block(pos);
-        self.ticks.schedule(pos, delay, priority, block);
-    }
-
-    fn pending_tick_at(&self, pos: BlockPos) -> bool {
-        self.ticks.is_pending(pos, self.blocks.block(pos))
+    fn redstone(&mut self) -> &mut Redstone {
+        &mut self.redstone
     }
 }

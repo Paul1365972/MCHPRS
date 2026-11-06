@@ -1,5 +1,6 @@
 use super::{Plot, PlotWorld, PLOT_WIDTH};
 use anyhow::{Context, Result};
+use mchprs_redstone::Redstone;
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use std::collections::HashMap;
 use std::path::Path;
@@ -25,7 +26,7 @@ pub fn empty_plot() -> Result<PlotData<'static>> {
             x: 0,
             z: 0,
             chunks,
-            ticks: Default::default(),
+            redstone: Redstone::new(Default::default()),
             packet_senders: HashMap::new(),
             world_send_rate: WorldSendRate::default(),
             pending_block_entities: Default::default(),

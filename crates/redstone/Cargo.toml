@@ -17,4 +17,3 @@ include.workspace = true
 mchprs_blocks = { path = "../blocks" }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
-rustc-hash = { workspace = true }

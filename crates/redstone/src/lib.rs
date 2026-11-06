@@ -1,42 +1,76 @@
-//! A very basic redstone implementation with focus on accuracy over speed.
-//! This is the implementation that is used by default in low-performance
-//! scenerio (i.e. regular buiding)
+//! Vanilla 1.20.4's redstone: a settled circuit driven by its inputs runs exactly as in vanilla,
+//! except that torches never burn out and observers stay inert. Placing and breaking blocks works
+//! but may differ in details. Plots run on it whenever Redpiler isn't running.
+//!
+//! Time runs in redstone ticks, two game ticks each, so every vanilla delay is halved
 
+mod attached;
+mod behavior;
 pub mod comparator;
+mod diode;
 pub mod interpreter;
 pub mod noteblock;
 pub mod pace;
-pub mod repeater;
+mod plate;
+mod repeater;
+mod signal;
 pub mod tick_queue;
+mod torch;
+mod update;
 pub mod wire;
 
-use mchprs_blocks::block_entities::BlockEntity;
-use mchprs_blocks::block_store::{BlockStore, BlockView};
-use mchprs_blocks::blocks::{Block, Button, Instrument, LeverFace, RedstoneWire, Repeater};
+use mchprs_blocks::block_store::BlockStore;
+use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
-use tick_queue::TickPriority;
+use tick_queue::{TickPriority, TickQueue};
+
+pub use behavior::{can_survive, place_block, state_for_placement, use_block};
+pub use diode::{diode_should_be_prioritized, is_diode};
+pub use plate::set_pressure_plate;
+pub use signal::{provides_strong_power, provides_weak_power};
+pub use update::{neighbor_changed_at, set_block, update_neighbors_for_output_signal, Notify};
+
+/// Vanilla's `Direction.values()` order
+const DIRECTIONS: [BlockFace; 6] = [
+    BlockFace::Bottom,
+    BlockFace::Top,
+    BlockFace::North,
+    BlockFace::South,
+    BlockFace::West,
+    BlockFace::East,
+];
+
+/// Vanilla's `Direction.Plane.HORIZONTAL` order
+const HORIZONTAL: [BlockDirection; 4] = [
+    BlockDirection::North,
+    BlockDirection::East,
+    BlockDirection::South,
+    BlockDirection::West,
+];
+
+#[derive(Debug)]
+pub struct Redstone {
+    pub ticks: TickQueue,
+    updater: update::NeighborUpdater,
+}
+
+impl Redstone {
+    pub fn new(ticks: TickQueue) -> Redstone {
+        Redstone {
+            ticks,
+            updater: Default::default(),
+        }
+    }
+}
 
 pub trait RedstoneWorld: BlockStore {
-    fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority);
-
-    /// Includes a tick that is due in this tick but has not run yet
-    fn pending_tick_at(&self, pos: BlockPos) -> bool;
+    fn redstone(&mut self) -> &mut Redstone;
 
     fn play_note(&mut self, _pos: BlockPos, _instrument: Instrument, _note: u8) {}
-}
 
-pub fn button_press_ticks(button: Block) -> u8 {
-    match button {
-        Block::StoneButton(_) | Block::PolishedBlackstoneButton(_) => 10,
-        _ => 15,
+    fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority, block: Block) {
+        self.redstone().ticks.schedule(pos, delay, priority, block);
     }
-}
-
-fn with_button_powered(mut block: Block, powered: bool) -> Block {
-    if let Some(button) = block.button_mut() {
-        button.powered = powered;
-    }
-    block
 }
 
 pub fn bool_to_ss(b: bool) -> u8 {
@@ -46,491 +80,9 @@ pub fn bool_to_ss(b: bool) -> u8 {
     }
 }
 
-/// Returns `true` if the given block provides either weak or strong power to the given side.
-/// Note that `side` is the side of the block receiving power, not the side of the block providing power.
-pub fn provides_weak_power(block: Block, side: BlockFace) -> bool {
-    if block.clone().get_pressure_plate_powered().is_some() {
-        return true;
-    }
-    match block {
-        Block::RedstoneTorch { .. } => side != BlockFace::Top,
-        Block::RedstoneWallTorch { facing, .. } => facing.block_face() != side,
-        Block::RedstoneBlock | Block::Lever { .. } => true,
-        Block::Repeater(repeater) => repeater.facing.block_face() == side,
-        Block::Comparator(comparator) => comparator.facing.block_face() == side,
-        _ => block.button().is_some(),
-    }
-}
-
-/// Returns `true` if the given block provides strong power to the given side.
-/// Note that `side` is the side of the block receiving power, not the side of the block providing power.
-pub fn provides_strong_power(block: Block, side: BlockFace) -> bool {
-    if block.clone().get_pressure_plate_powered().is_some() {
-        return side == BlockFace::Top;
-    }
-    match block {
-        Block::RedstoneTorch { .. } | Block::RedstoneWallTorch { .. } => side == BlockFace::Bottom,
-        Block::Lever { face, facing, .. } => is_attached_to(face, facing, side),
-        Block::Repeater(_) | Block::Comparator(_) => provides_weak_power(block, side),
-        _ if let Some(button) = block.button() => is_attached_to(button.face, button.facing, side),
-        _ => false,
-    }
-}
-
-fn is_attached_to(face: LeverFace, facing: BlockDirection, side: BlockFace) -> bool {
-    match side {
-        BlockFace::Top => face == LeverFace::Floor,
-        BlockFace::Bottom => face == LeverFace::Ceiling,
-        _ => face == LeverFace::Wall && facing == side.unwrap_direction(),
-    }
-}
-
-fn get_output_power(block: Block, world: &impl BlockView, pos: BlockPos) -> u8 {
-    if let Some(powered) = block.clone().get_pressure_plate_powered() {
-        return bool_to_ss(*powered);
-    }
-    match block {
-        Block::RedstoneTorch { lit } | Block::RedstoneWallTorch { lit, .. } => bool_to_ss(lit),
-        Block::RedstoneBlock => 15,
-        Block::Lever { powered, .. } | Block::Repeater(Repeater { powered, .. }) => {
-            bool_to_ss(powered)
-        }
-        Block::Comparator(_) => match world.block_entity(pos) {
-            Some(BlockEntity::Comparator { output_strength }) => output_strength.get(),
-            _ => 0,
-        },
-        _ if let Some(button) = block.button() => bool_to_ss(button.powered),
-        _ => 0,
-    }
-}
-
-fn get_weak_power(
-    block: Block,
-    world: &impl BlockView,
-    pos: BlockPos,
-    side: BlockFace,
-    dust_power: bool,
-) -> u8 {
-    match block {
-        Block::RedstoneWire(wire) if dust_power => match side {
-            BlockFace::Top => wire.power,
-            BlockFace::Bottom => 0,
-            _ => {
-                let direction = side.unwrap_direction();
-                if wire::get_current_side(
-                    wire::get_regulated_sides(wire, world, pos),
-                    direction.opposite(),
-                )
-                .is_none()
-                {
-                    0
-                } else {
-                    wire.power
-                }
-            }
-        },
-        _ if provides_weak_power(block, side) => get_output_power(block, world, pos),
-        _ => 0,
-    }
-}
-
-fn get_strong_power(
-    block: Block,
-    world: &impl BlockView,
-    pos: BlockPos,
-    side: BlockFace,
-    dust_power: bool,
-) -> u8 {
-    match block {
-        Block::RedstoneWire(_) => get_weak_power(block, world, pos, side, dust_power),
-        _ if provides_strong_power(block, side) => get_output_power(block, world, pos),
-        _ => 0,
-    }
-}
-
-fn get_max_strong_power(world: &impl BlockView, pos: BlockPos, dust_power: bool) -> u8 {
-    let mut max_power = 0;
-    for side in &BlockFace::values() {
-        let block = world.block(pos.offset(*side));
-        max_power = max_power.max(get_strong_power(
-            block,
-            world,
-            pos.offset(*side),
-            *side,
-            dust_power,
-        ));
-    }
-    max_power
-}
-
-pub fn get_redstone_power(
-    block: Block,
-    world: &impl BlockView,
-    pos: BlockPos,
-    facing: BlockFace,
-) -> u8 {
-    if block.is_conductor() {
-        get_max_strong_power(world, pos, true)
-    } else {
-        get_weak_power(block, world, pos, facing, true)
-    }
-}
-
-fn get_redstone_power_no_dust(
-    block: Block,
-    world: &impl BlockView,
-    pos: BlockPos,
-    facing: BlockFace,
-) -> u8 {
-    if block.is_conductor() {
-        get_max_strong_power(world, pos, false)
-    } else {
-        get_weak_power(block, world, pos, facing, false)
-    }
-}
-
-pub fn torch_should_be_off(world: &impl BlockView, pos: BlockPos) -> bool {
-    let bottom_pos = pos.offset(BlockFace::Bottom);
-    let bottom_block = world.block(bottom_pos);
-    get_redstone_power(bottom_block, world, bottom_pos, BlockFace::Top) > 0
-}
-
-pub fn wall_torch_should_be_off(
-    world: &impl BlockView,
-    pos: BlockPos,
-    direction: BlockDirection,
-) -> bool {
-    let wall_pos = pos.offset(direction.opposite().block_face());
-    let wall_block = world.block(wall_pos);
-    get_redstone_power(
-        wall_block,
-        world,
-        wall_pos,
-        direction.opposite().block_face(),
-    ) > 0
-}
-
-pub fn redstone_lamp_should_be_lit(world: &impl BlockView, pos: BlockPos) -> bool {
-    for face in &BlockFace::values() {
-        let neighbor_pos = pos.offset(*face);
-        if get_redstone_power(world.block(neighbor_pos), world, neighbor_pos, *face) > 0 {
-            return true;
-        }
-    }
-    false
-}
-
-fn diode_get_input_strength(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> u8 {
-    let input_pos = pos.offset(facing.block_face());
-    let input_block = world.block(input_pos);
-    let mut power = get_redstone_power(input_block, world, input_pos, facing.block_face());
-    if power == 0
-        && let Block::RedstoneWire(wire) = input_block
-    {
-        power = wire.power;
-    }
-    power
-}
-
-pub fn diode_should_be_prioritized(
-    world: &impl BlockView,
-    pos: BlockPos,
-    facing: BlockDirection,
-) -> bool {
-    let output_direction = facing.opposite();
-    match world.block(pos.offset(output_direction.block_face())) {
-        Block::Repeater(front_repeater) => front_repeater.facing != output_direction,
-        Block::Comparator(front_comparator) => front_comparator.facing != output_direction,
-        _ => false,
-    }
-}
-
-pub fn update(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) {
-    match block {
-        Block::RedstoneWire(wire) => {
-            wire::on_neighbor_updated(wire, world, pos);
-        }
-        Block::RedstoneTorch { lit } => {
-            if lit == torch_should_be_off(world, pos) && !world.pending_tick_at(pos) {
-                world.schedule_tick(pos, 1, TickPriority::Normal);
-            }
-        }
-        Block::RedstoneWallTorch { lit, facing } => {
-            if lit == wall_torch_should_be_off(world, pos, facing) && !world.pending_tick_at(pos) {
-                world.schedule_tick(pos, 1, TickPriority::Normal);
-            }
-        }
-        Block::Repeater(repeater) => {
-            repeater::on_neighbor_updated(repeater, world, pos);
-        }
-        Block::Comparator(comparator) => {
-            comparator::update(comparator, world, pos);
-        }
-        Block::RedstoneLamp { lit } => {
-            let should_be_lit = redstone_lamp_should_be_lit(world, pos);
-            if lit && !should_be_lit {
-                world.schedule_tick(pos, 2, TickPriority::Normal);
-            } else if !lit && should_be_lit {
-                world.set_block(pos, Block::RedstoneLamp { lit: true });
-            }
-        }
-        Block::IronTrapdoor {
-            powered,
-            facing,
-            half,
-            waterlogged,
-            ..
-        } => {
-            let should_be_powered = redstone_lamp_should_be_lit(world, pos);
-            if powered != should_be_powered {
-                let new_block = Block::IronTrapdoor {
-                    facing,
-                    half,
-                    powered: should_be_powered,
-                    open: should_be_powered,
-                    waterlogged,
-                };
-                world.set_block(pos, new_block);
-            }
-        }
-        Block::NoteBlock {
-            instrument: _instrument,
-            note,
-            ..
-        } => {
-            let should_be_powered = redstone_lamp_should_be_lit(world, pos);
-            // We need to recheck if the live version of the block is powered,
-            // because the supplied block is cached and could be outdated
-            let Block::NoteBlock { powered, .. } = world.block(pos) else {
-                unreachable!("Underlying block changed, this should never happen")
-            };
-            if powered != should_be_powered {
-                // Hack: Update the instrument only just before the noteblock is updated
-                let instrument = noteblock::get_noteblock_instrument(world, pos);
-                let new_block = Block::NoteBlock {
-                    instrument,
-                    note,
-                    powered: should_be_powered,
-                };
-
-                if should_be_powered && noteblock::is_noteblock_unblocked(world, pos) {
-                    world.play_note(pos, instrument, note);
-                }
-                world.set_block(pos, new_block);
-            }
-        }
-        _ => {}
-    }
-}
-
-pub fn tick(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) {
-    match block {
-        Block::Repeater(repeater) => {
-            repeater::tick(repeater, world, pos);
-        }
-        Block::Comparator(comparator) => {
-            comparator::tick(comparator, world, pos);
-        }
-        Block::RedstoneTorch { lit } => {
-            let should_be_off = torch_should_be_off(world, pos);
-            if lit && should_be_off {
-                world.set_block(pos, Block::RedstoneTorch { lit: false });
-                update_surrounding_blocks(world, pos);
-            } else if !lit && !should_be_off {
-                world.set_block(pos, Block::RedstoneTorch { lit: true });
-                update_surrounding_blocks(world, pos);
-            }
-        }
-        Block::RedstoneWallTorch { lit, facing } => {
-            let should_be_off = wall_torch_should_be_off(world, pos, facing);
-            if lit && should_be_off {
-                world.set_block(pos, Block::RedstoneWallTorch { lit: false, facing });
-                update_surrounding_blocks(world, pos);
-            } else if !lit && !should_be_off {
-                world.set_block(pos, Block::RedstoneWallTorch { lit: true, facing });
-                update_surrounding_blocks(world, pos);
-            }
-        }
-        Block::RedstoneLamp { lit } => {
-            let should_be_lit = redstone_lamp_should_be_lit(world, pos);
-            if lit && !should_be_lit {
-                world.set_block(pos, Block::RedstoneLamp { lit: false });
-            }
-        }
-        _ if let Some(Button {
-            face,
-            facing,
-            powered: true,
-        }) = block.button() =>
-        {
-            world.set_block(pos, with_button_powered(block, false));
-            update_surrounding_blocks(world, pos);
-            match face {
-                LeverFace::Ceiling => {
-                    update_surrounding_blocks(world, pos.offset(BlockFace::Top));
-                }
-                LeverFace::Floor => {
-                    update_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
-                }
-                LeverFace::Wall => {
-                    update_surrounding_blocks(world, pos.offset(facing.opposite().block_face()))
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-pub fn update_wire_neighbors(world: &mut impl RedstoneWorld, pos: BlockPos) {
-    for direction in &BlockFace::values() {
-        let neighbor_pos = pos.offset(*direction);
-        let block = world.block(neighbor_pos);
-        update(block, world, neighbor_pos);
-        for n_direction in &BlockFace::values() {
-            let n_neighbor_pos = neighbor_pos.offset(*n_direction);
-            let block = world.block(n_neighbor_pos);
-            update(block, world, n_neighbor_pos);
-        }
-    }
-}
-
-pub fn update_surrounding_blocks(world: &mut impl RedstoneWorld, pos: BlockPos) {
-    for direction in &BlockFace::values() {
-        let neighbor_pos = pos.offset(*direction);
-        let block = world.block(neighbor_pos);
-        update(block, world, neighbor_pos);
-
-        // Also update diagonal blocks
-
-        let up_pos = neighbor_pos.offset(BlockFace::Top);
-        let up_block = world.block(up_pos);
-        update(up_block, world, up_pos);
-
-        let down_pos = neighbor_pos.offset(BlockFace::Bottom);
-        let down_block = world.block(down_pos);
-        update(down_block, world, down_pos);
-    }
-}
-
-pub fn set_pressure_plate(world: &mut impl RedstoneWorld, pos: BlockPos, powered: bool) {
-    let mut block = world.block(pos);
-    let Some(block_powered) = block.get_pressure_plate_powered() else {
-        return;
-    };
-    *block_powered = powered;
-    world.set_block(pos, block);
-    update_surrounding_blocks(world, pos);
-    update_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
-}
-
-pub fn is_diode(block: Block) -> bool {
-    matches!(block, Block::Repeater(_) | Block::Comparator(_))
-}
-
-/// Returns true if the action was handled
-pub fn on_use(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) -> bool {
-    match block {
-        Block::Repeater(mut repeater) => {
-            repeater.delay += 1;
-            if repeater.delay > 4 {
-                repeater.delay -= 4;
-            }
-            world.set_block(pos, Block::Repeater(repeater));
-            true
-        }
-        Block::Comparator(mut comparator) => {
-            comparator.mode = comparator.mode.toggle();
-            world.set_block(pos, Block::Comparator(comparator));
-            comparator::tick(comparator, world, pos);
-            true
-        }
-        Block::Lever {
-            face,
-            facing,
-            powered,
-        } => {
-            world.set_block(
-                pos,
-                Block::Lever {
-                    powered: !powered,
-                    face,
-                    facing,
-                },
-            );
-            update_surrounding_blocks(world, pos);
-            match face {
-                LeverFace::Ceiling => {
-                    update_surrounding_blocks(world, pos.offset(BlockFace::Top));
-                }
-                LeverFace::Floor => {
-                    update_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
-                }
-                LeverFace::Wall => {
-                    update_surrounding_blocks(world, pos.offset(facing.opposite().block_face()))
-                }
-            }
-            true
-        }
-        _ if let Some(Button {
-            face,
-            facing,
-            powered,
-        }) = block.button() =>
-        {
-            if !powered {
-                world.set_block(pos, with_button_powered(block, true));
-                world.schedule_tick(pos, button_press_ticks(block).into(), TickPriority::Normal);
-                update_surrounding_blocks(world, pos);
-                match face {
-                    LeverFace::Ceiling => {
-                        update_surrounding_blocks(world, pos.offset(BlockFace::Top));
-                    }
-                    LeverFace::Floor => {
-                        update_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
-                    }
-                    LeverFace::Wall => {
-                        update_surrounding_blocks(world, pos.offset(facing.opposite().block_face()))
-                    }
-                }
-            }
-            true
-        }
-        Block::RedstoneWire(wire) => {
-            if wire::is_dot(wire) || wire::is_cross(wire) {
-                let mut new_wire = if wire::is_cross(wire) {
-                    RedstoneWire::default()
-                } else {
-                    wire::make_cross(0)
-                };
-                new_wire.power = wire.power;
-                new_wire = wire::get_regulated_sides(new_wire, world, pos);
-                if wire != new_wire {
-                    world.set_block(pos, Block::RedstoneWire(new_wire));
-                    update_wire_neighbors(world, pos);
-                    return true;
-                }
-            }
-            false
-        }
-        Block::NoteBlock { note, powered, .. } => {
-            let note = (note + 1) % 25;
-            let instrument = noteblock::get_noteblock_instrument(world, pos);
-
-            world.set_block(
-                pos,
-                Block::NoteBlock {
-                    instrument,
-                    note,
-                    powered,
-                },
-            );
-
-            if noteblock::is_noteblock_unblocked(world, pos) {
-                world.play_note(pos, instrument, note);
-            }
-
-            true
-        }
-        _ => false,
+pub fn button_press_ticks(button: Block) -> u8 {
+    match button {
+        Block::StoneButton(_) | Block::PolishedBlackstoneButton(_) => 10,
+        _ => 15,
     }
 }

@@ -1,103 +1,104 @@
 use crate::tick_queue::TickPriority;
-use crate::RedstoneWorld;
+use crate::update::{self, Notify};
+use crate::{diode, RedstoneWorld};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Repeater};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 
-pub fn get_state_for_placement(
+pub(crate) fn state_for_placement(
     world: &impl BlockView,
     pos: BlockPos,
-    facing: BlockDirection,
+    repeater: Repeater,
 ) -> Repeater {
     Repeater {
-        delay: 1,
-        facing,
-        locked: should_be_locked(facing, world, pos),
-        powered: false,
+        locked: is_locked(world, pos, repeater.facing),
+        ..repeater
     }
 }
 
-fn should_be_locked(facing: BlockDirection, world: &impl BlockView, pos: BlockPos) -> bool {
-    let right_side = get_power_on_side(world, pos, facing.rotate());
-    let left_side = get_power_on_side(world, pos, facing.rotate_ccw());
-    std::cmp::max(right_side, left_side) > 0
-}
-
-fn get_power_on_side(world: &impl BlockView, pos: BlockPos, side: BlockDirection) -> u8 {
-    let side_pos = pos.offset(side.block_face());
-    let side_block = world.block(side_pos);
-    if super::is_diode(side_block) {
-        super::get_weak_power(side_block, world, side_pos, side.block_face(), false)
-    } else {
-        0
-    }
-}
-
-fn on_state_change(rep: Repeater, world: &mut impl RedstoneWorld, pos: BlockPos) {
-    let front_pos = pos.offset(rep.facing.opposite().block_face());
-    let front_block = world.block(front_pos);
-    super::update(front_block, world, front_pos);
-    for direction in &BlockFace::values() {
-        let neighbor_pos = front_pos.offset(*direction);
-        let block = world.block(neighbor_pos);
-        super::update(block, world, neighbor_pos);
-    }
-}
-
-fn schedule_tick(
-    rep: Repeater,
-    world: &mut impl RedstoneWorld,
-    pos: BlockPos,
-    should_be_powered: bool,
-) {
-    let priority = if super::diode_should_be_prioritized(world, pos, rep.facing) {
-        TickPriority::Highest
-    } else if !should_be_powered {
-        TickPriority::Higher
-    } else {
-        TickPriority::High
-    };
-    world.schedule_tick(pos, rep.delay as u32, priority);
-}
-
-fn should_be_powered(rep: Repeater, world: &impl BlockView, pos: BlockPos) -> bool {
-    super::diode_get_input_strength(world, pos, rep.facing) > 0
-}
-
-pub fn on_neighbor_updated(mut rep: Repeater, world: &mut impl RedstoneWorld, pos: BlockPos) {
-    let should_be_locked = should_be_locked(rep.facing, world, pos);
-    if !rep.locked && should_be_locked {
-        rep.locked = true;
-        world.set_block(pos, Block::Repeater(rep));
-    } else if rep.locked && !should_be_locked {
-        rep.locked = false;
-        world.set_block(pos, Block::Repeater(rep));
-    }
-
-    if !rep.locked && !world.pending_tick_at(pos) {
-        let should_be_powered = should_be_powered(rep, world, pos);
-        if should_be_powered != rep.powered {
-            schedule_tick(rep, world, pos, should_be_powered);
-        }
-    }
-}
-
-pub fn tick(mut rep: Repeater, world: &mut impl RedstoneWorld, pos: BlockPos) {
-    if rep.locked {
+pub(crate) fn neighbor_changed(world: &mut impl RedstoneWorld, pos: BlockPos, repeater: Repeater) {
+    if !diode::can_survive(world, pos) {
+        diode::remove_unsupported(world, pos);
         return;
     }
-
-    let should_be_powered = should_be_powered(rep, world, pos);
-    if rep.powered && !should_be_powered {
-        rep.powered = false;
-        world.set_block(pos, Block::Repeater(rep));
-        on_state_change(rep, world, pos);
-    } else if !rep.powered {
-        if !should_be_powered {
-            world.schedule_tick(pos, rep.delay as u32, TickPriority::Higher);
-        }
-        rep.powered = true;
-        world.set_block(pos, Block::Repeater(rep));
-        on_state_change(rep, world, pos);
+    if is_locked(world, pos, repeater.facing) {
+        return;
     }
+    let should_be_powered = should_turn_on(world, pos, repeater);
+    let state = Block::Repeater(repeater);
+    if repeater.powered != should_be_powered && !world.redstone().ticks.is_pending(pos, state) {
+        let priority = if diode::diode_should_be_prioritized(world, pos, repeater.facing) {
+            TickPriority::Highest
+        } else if repeater.powered {
+            TickPriority::Higher
+        } else {
+            TickPriority::High
+        };
+        world.schedule_tick(pos, repeater.delay as u32, priority, state);
+    }
+}
+
+pub(crate) fn tick(world: &mut impl RedstoneWorld, pos: BlockPos, repeater: Repeater) {
+    if is_locked(world, pos, repeater.facing) {
+        return;
+    }
+    let should_be_powered = should_turn_on(world, pos, repeater);
+    if repeater.powered && !should_be_powered {
+        let unpowered = Repeater {
+            powered: false,
+            ..repeater
+        };
+        update::set_block(world, pos, Block::Repeater(unpowered), Notify::Shapes);
+    } else if !repeater.powered {
+        let powered = Repeater {
+            powered: true,
+            ..repeater
+        };
+        update::set_block(world, pos, Block::Repeater(powered), Notify::Shapes);
+        if !should_be_powered {
+            world.schedule_tick(
+                pos,
+                repeater.delay as u32,
+                TickPriority::Higher,
+                Block::Repeater(repeater),
+            );
+        }
+    }
+}
+
+pub(crate) fn update_shape(
+    world: &impl BlockView,
+    pos: BlockPos,
+    repeater: Repeater,
+    direction: BlockFace,
+    neighbor_state: Block,
+) -> Block {
+    if direction == BlockFace::Bottom && !neighbor_state.can_support_rigid_block() {
+        return Block::Air;
+    }
+    let along_axis = direction == repeater.facing.block_face()
+        || direction == repeater.facing.opposite().block_face();
+    if along_axis {
+        return Block::Repeater(repeater);
+    }
+    Block::Repeater(Repeater {
+        locked: is_locked(world, pos, repeater.facing),
+        ..repeater
+    })
+}
+
+pub(crate) fn use_block(world: &mut impl RedstoneWorld, pos: BlockPos, repeater: Repeater) {
+    let cycled = Repeater {
+        delay: repeater.delay % 4 + 1,
+        ..repeater
+    };
+    update::set_block(world, pos, Block::Repeater(cycled), Notify::All);
+}
+
+fn is_locked(world: &impl BlockView, pos: BlockPos, facing: BlockDirection) -> bool {
+    diode::side_signal(world, pos, facing, true) > 0
+}
+
+fn should_turn_on(world: &impl BlockView, pos: BlockPos, repeater: Repeater) -> bool {
+    diode::input_signal(world, pos, repeater.facing) > 0
 }

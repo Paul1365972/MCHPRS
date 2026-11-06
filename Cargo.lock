@@ -948,7 +948,6 @@ name = "mchprs_redstone"
 version = "0.5.2-dev"
 dependencies = [
  "mchprs_blocks",
- "rustc-hash",
  "serde",
  "tracing",
 ]

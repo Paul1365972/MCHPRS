@@ -193,8 +193,8 @@ impl BlockMap {
         self.record_snapshot(snapshot);
         self.take_changes().apply(world);
         for &(node, tick) in &snapshot.pending_ticks {
-            for &(pos, _) in &self.blocks[node.index()] {
-                world.schedule_tick(pos, tick.delay, tick.priority);
+            for &(pos, block) in &self.blocks[node.index()] {
+                world.schedule_tick(pos, tick.delay, tick.priority, block);
             }
         }
     }

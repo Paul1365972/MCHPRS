@@ -9,8 +9,7 @@ use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
 use mchprs_network::NBTCompound;
-use mchprs_redstone as redstone;
-use mchprs_redstone::RedstoneWorld;
+use mchprs_redstone::{self as redstone, Notify, RedstoneWorld};
 
 pub fn on_use(
     block: Block,
@@ -19,7 +18,7 @@ pub fn on_use(
     pos: BlockPos,
     item_in_hand: Option<Item>,
 ) -> ActionResult {
-    if redstone::on_use(block, world, pos) {
+    if redstone::use_block(world, pos) {
         return ActionResult::Success;
     }
 
@@ -31,13 +30,11 @@ pub fn on_use(
             if let Some(Item::SeaPickle) = item_in_hand
                 && pickles < 4
             {
-                world.set_block(
-                    pos,
-                    Block::SeaPickle {
-                        pickles: pickles + 1,
-                        waterlogged,
-                    },
-                );
+                let grown = Block::SeaPickle {
+                    pickles: pickles + 1,
+                    waterlogged,
+                };
+                redstone::set_block(world, pos, grown, Notify::All);
             }
             ActionResult::Success
         }
@@ -45,8 +42,9 @@ pub fn on_use(
             if let Some(Item::EnderEye) = item_in_hand
                 && !eye
             {
-                world.set_block(pos, Block::EndPortalFrame { eye: true, facing });
-                redstone::update_surrounding_blocks(world, pos);
+                let filled = Block::EndPortalFrame { eye: true, facing };
+                redstone::set_block(world, pos, filled, Notify::Shapes);
+                redstone::update_neighbors_for_output_signal(world, pos);
                 return ActionResult::Success;
             }
             ActionResult::Pass
@@ -197,25 +195,24 @@ pub fn get_state_for_placement(
         Item::BambooButton => Block::BambooButton(get_button_placement(context)),
         Item::CrimsonButton => Block::CrimsonButton(get_button_placement(context)),
         Item::WarpedButton => Block::WarpedButton(get_button_placement(context)),
-        Item::RedstoneLamp => Block::RedstoneLamp {
-            lit: redstone::redstone_lamp_should_be_lit(world, pos),
-        },
+        Item::RedstoneLamp => Block::RedstoneLamp { lit: false },
         // TODO: Hopper facing
         Item::Hopper => Block::Hopper {
             enabled: false,
             facing: HopperFacing::Down,
         },
-        Item::Repeater => Block::Repeater(redstone::repeater::get_state_for_placement(
-            world,
-            pos,
+        Item::Repeater => Block::Repeater(Repeater::new(
+            1,
             context.player.get_direction().opposite(),
+            false,
+            false,
         )),
         Item::Comparator => Block::Comparator(Comparator::new(
             context.player.get_direction().opposite(),
             ComparatorMode::Compare,
             false,
         )),
-        Item::Redstone => Block::RedstoneWire(redstone::wire::get_state_for_placement(world, pos)),
+        Item::Redstone => Block::RedstoneWire(RedstoneWire::default()),
         // TODO: Barrel facing
         Item::Barrel => Block::Barrel {
             facing: BlockFacing::Up,
@@ -270,8 +267,8 @@ pub fn get_state_for_placement(
         },
         _ => Block::Air,
     };
-    let block = simple_block.unwrap_or(block);
-    if is_valid_position(block, world, pos) {
+    let block = redstone::state_for_placement(world, pos, simple_block.unwrap_or(block));
+    if redstone::can_survive(world, pos, block) {
         block
     } else {
         Block::Air
@@ -296,141 +293,14 @@ pub fn place_in_world(
     pos: BlockPos,
     nbt: &Option<NBTCompound>,
 ) {
+    redstone::place_block(world, pos, block);
     if block.has_block_entity()
         && let Some(nbt) = nbt
         && let Some(block_entity) = read_block_entity_tag(nbt, block.get_name())
     {
         world.set_block_entity(pos, Some(block_entity));
+        redstone::update_neighbors_for_output_signal(world, pos);
     };
-    world.set_block(pos, block);
-    change_surrounding_blocks(world, pos);
-    if let Block::RedstoneWire { .. } = block {
-        redstone::update_wire_neighbors(world, pos);
-    } else {
-        redstone::update_surrounding_blocks(world, pos);
-    }
-}
-
-pub fn destroy(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) {
-    if block.has_block_entity() {
-        world.set_block_entity(pos, None);
-    }
-
-    match block {
-        Block::RedstoneWire { .. } => {
-            world.set_block(pos, Block::Air);
-            change_surrounding_blocks(world, pos);
-            redstone::update_wire_neighbors(world, pos);
-        }
-        Block::Lever { face, facing, .. } => {
-            world.set_block(pos, Block::Air);
-            // This is a horrible idea, don't do this.
-            // One day this will be fixed, but for now... too bad!
-            match face {
-                LeverFace::Ceiling => {
-                    change_surrounding_blocks(world, pos.offset(BlockFace::Top));
-                    redstone::update_surrounding_blocks(world, pos.offset(BlockFace::Top));
-                }
-                LeverFace::Floor => {
-                    change_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
-                    redstone::update_surrounding_blocks(world, pos.offset(BlockFace::Bottom));
-                }
-                LeverFace::Wall => {
-                    change_surrounding_blocks(world, pos.offset(facing.opposite().block_face()));
-                    redstone::update_surrounding_blocks(
-                        world,
-                        pos.offset(facing.opposite().block_face()),
-                    );
-                }
-            }
-        }
-        _ => {
-            world.set_block(pos, Block::Air);
-            change_surrounding_blocks(world, pos);
-            redstone::update_surrounding_blocks(world, pos);
-        }
-    }
-}
-
-pub fn is_valid_position(block: Block, world: &impl BlockView, pos: BlockPos) -> bool {
-    let button_face = block.button().map(|button| button.face);
-    let check_bottom = matches!(
-        block,
-        Block::RedstoneWire(_)
-            | Block::Comparator(_)
-            | Block::Repeater(_)
-            | Block::RedstoneTorch { .. }
-            | Block::Lever {
-                face: LeverFace::Floor,
-                ..
-            }
-    ) || block.is_sign()
-        || button_face == Some(LeverFace::Floor);
-
-    let check_top = matches!(
-        block,
-        Block::Lever {
-            face: LeverFace::Ceiling,
-            ..
-        }
-    ) || button_face == Some(LeverFace::Ceiling);
-
-    let check_parent = block.get_wall_sign_facing().or(match block {
-        Block::TripwireHook { facing, .. } => Some(facing),
-        Block::Lever {
-            face: LeverFace::Wall,
-            facing,
-            ..
-        } => Some(facing),
-        _ => block
-            .button()
-            .filter(|button| button.face == LeverFace::Wall)
-            .map(|button| button.facing),
-    });
-
-    if check_bottom {
-        let bottom_block = world.block(pos.offset(BlockFace::Bottom));
-        bottom_block.can_support_rigid_block()
-    } else if check_top {
-        let top_block = world.block(pos.offset(BlockFace::Top));
-        top_block.is_face_sturdy(BlockFace::Bottom)
-    } else if let Some(facing) = check_parent {
-        let parent_block = world.block(pos.offset(facing.opposite().block_face()));
-        parent_block.is_face_sturdy(facing.block_face())
-    } else {
-        true
-    }
-}
-
-pub fn change(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos, direction: BlockFace) {
-    if !is_valid_position(block, world, pos) {
-        destroy(block, world, pos);
-        return;
-    }
-    if let Block::RedstoneWire(wire) = block {
-        let new_state = redstone::wire::on_neighbor_changed(wire, world, pos, direction);
-        if world.set_block(pos, Block::RedstoneWire(new_state)) {
-            redstone::update_wire_neighbors(world, pos);
-        }
-    }
-}
-
-fn change_surrounding_blocks(world: &mut impl RedstoneWorld, pos: BlockPos) {
-    for direction in &BlockFace::values() {
-        let neighbor_pos = pos.offset(*direction);
-        let block = world.block(neighbor_pos);
-        change(block, world, neighbor_pos, *direction);
-
-        // Also change diagonal blocks
-
-        let up_pos = neighbor_pos.offset(BlockFace::Top);
-        let up_block = world.block(up_pos);
-        change(up_block, world, up_pos, *direction);
-
-        let down_pos = neighbor_pos.offset(BlockFace::Bottom);
-        let down_block = world.block(down_pos);
-        change(down_block, world, down_pos, *direction);
-    }
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]

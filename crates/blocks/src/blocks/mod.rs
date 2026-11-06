@@ -3,6 +3,7 @@ mod props;
 pub use crate::generated::Block;
 use crate::{BlockDirection, BlockFace, BlockFacing};
 pub use props::*;
+use std::mem;
 
 #[derive(Clone, Copy, Debug)]
 pub struct PropertyDefinition {
@@ -129,6 +130,10 @@ impl Block {
         )
     }
 
+    pub fn is_same_kind(self, other: Block) -> bool {
+        mem::discriminant(&self) == mem::discriminant(&other)
+    }
+
     pub fn has_block_entity(self) -> bool {
         self.is_sign()
             || self.is_wall_sign()
@@ -234,6 +239,10 @@ impl Block {
     pub fn can_support_center(self) -> bool {
         self.is_face_sturdy(BlockFace::Top)
             || matches!(self, Block::EndPortalFrame { eye: true, .. })
+    }
+
+    pub fn pressure_plate_powered(mut self) -> Option<bool> {
+        self.get_pressure_plate_powered().copied()
     }
 
     pub fn get_pressure_plate_powered(&mut self) -> Option<&mut bool> {

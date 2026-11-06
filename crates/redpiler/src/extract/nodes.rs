@@ -57,8 +57,8 @@ fn identify_block(
     pos: BlockPos,
     world: &impl BlockView,
 ) -> Option<(NodeKind, NodeState)> {
-    if let Some(powered) = block.clone().get_pressure_plate_powered() {
-        return Some((NodeKind::PressurePlate, NodeState::from_powered(*powered)));
+    if let Some(powered) = block.pressure_plate_powered() {
+        return Some((NodeKind::PressurePlate, NodeState::from_powered(powered)));
     }
     let (kind, state) = match block {
         Block::Repeater(repeater) => (
@@ -121,7 +121,7 @@ fn identify_block(
             )
         }
         _ => {
-            let power = comparator::analog_output(block, world, pos)?;
+            let power = comparator::analog_output(world, pos, block)?;
             (
                 NodeKind::Constant,
                 NodeState::from_power(

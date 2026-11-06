@@ -118,8 +118,8 @@ impl BackendRunner {
 }
 
 fn is_block_powered(block: Block) -> Option<bool> {
-    if let Some(powered) = block.clone().get_pressure_plate_powered() {
-        return Some(*powered);
+    if let Some(powered) = block.pressure_plate_powered() {
+        return Some(powered);
     }
     Some(match block {
         Block::Comparator(comparator) => comparator.powered,
