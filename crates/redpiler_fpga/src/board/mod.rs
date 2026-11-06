@@ -70,6 +70,7 @@ pub(crate) struct BoardEngine {
     readback: Readback,
     snapshot: View,
     report: View,
+    circuit_clock_hertz: u32,
     rate: TickRate,
     target: u64,
     ticks_counted: u64,
@@ -91,7 +92,6 @@ impl BoardEngine {
         let bitstream = toolchain::build(&directory, progress)?;
         progress(Stage::ProgramBoard);
         toolchain::program(&bitstream.path)?;
-        board.set_clock_divisor(bitstream.clock_divisor)?;
         progress(Stage::VerifyCircuit);
         board.discard_received()?;
         let status = board.request(Command::Status)?;
@@ -108,6 +108,7 @@ impl BoardEngine {
                 reporting.reports_every_block_while_running(),
                 circuit,
             ),
+            circuit_clock_hertz: bitstream.circuit_clock_hertz,
             rate: TickRate::Paused,
             target: 0,
             ticks_counted: 0,
@@ -128,7 +129,8 @@ impl BoardEngine {
 
 impl Engine for BoardEngine {
     fn set_tick_rate(&mut self, rate: TickRate) -> Result<(), EngineError> {
-        let ticks = self.board.request(Command::Run(rate))?.ticks;
+        let run = Command::run(rate, self.circuit_clock_hertz);
+        let ticks = self.board.request(run)?.ticks;
         if let TickRate::Ticks(owed) = rate {
             self.target = ticks.saturating_add(owed);
         }

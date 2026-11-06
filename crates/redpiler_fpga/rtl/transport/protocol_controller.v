@@ -1,7 +1,8 @@
 // A command is [code, argument u64]. Once no tick is running the board carries it out and answers
 // [status, tick count, payload]; between commands it paces its own ticks by the last run command.
 // Whether a tick may start is registered to keep the pacing off the tick counter's path, so the
-// circuit only rests once that register has dropped as well.
+// circuit only rests once that register has dropped as well. Only the serial line runs on
+// serial_clock.
 module protocol_controller #(
     parameter NODE_COUNT = 1,
     parameter STATE_BYTES = 1,
@@ -10,6 +11,7 @@ module protocol_controller #(
     parameter CLOCKS_PER_BIT = 25
 ) (
     input wire clock,
+    input wire serial_clock,
     input wire serial_receive,
     input wire clear_fault,
     input wire circuit_busy,
@@ -32,6 +34,8 @@ module protocol_controller #(
     localparam POSITION_WIDTH =
         $clog2(HEADER_BYTES + IDENTITY_BYTES + STATE_BYTES + APPEARANCE_BYTES + 3);
 
+    wire byte_received, framing_error, byte_transmitting, byte_sent;
+    wire [7:0] received_byte, sent_byte;
     wire received, sending;
     wire [COMMAND_BYTES * 8 - 1:0] command;
     wire [7:0] received_code = command[7:0];
@@ -66,16 +70,23 @@ module protocol_controller #(
     assign input_value = argument[31];
     assign tick_limit = mode == RUN_TICKS ? target : 64'hffff_ffff_ffff_ffff;
 
-    frame_receiver #(.CONTENT_BYTES(COMMAND_BYTES), .CLOCKS_PER_BIT(CLOCKS_PER_BIT)) receiver (
-        .clock(clock), .serial(serial_receive), .received(received), .content(command),
+    serial_link #(.CLOCKS_PER_BIT(CLOCKS_PER_BIT)) link (
+        .clock(clock), .serial_clock(serial_clock), .serial_receive(serial_receive),
+        .serial_transmit(serial_transmit), .received_data(received_byte),
+        .received(byte_received), .framing_error(framing_error), .transmit_data(sent_byte),
+        .transmit(byte_sent), .transmitting(byte_transmitting)
+    );
+    frame_receiver #(.CONTENT_BYTES(COMMAND_BYTES)) receiver (
+        .clock(clock), .data(received_byte), .ready(byte_received),
+        .framing_error(framing_error), .received(received), .content(command),
         .fault(receive_fault)
     );
     frame_transmitter #(
-        .POSITION_WIDTH(POSITION_WIDTH), .CONTENT_LATENCY(CONTENT_LATENCY),
-        .CLOCKS_PER_BIT(CLOCKS_PER_BIT)
+        .POSITION_WIDTH(POSITION_WIDTH), .CONTENT_LATENCY(CONTENT_LATENCY)
     ) transmitter (
         .clock(clock), .start(executing), .length(length), .content(content),
-        .position(position), .busy(sending), .serial(serial_transmit)
+        .sending(byte_transmitting), .position(position), .busy(sending), .data(sent_byte),
+        .send(byte_sent)
     );
 
     function [POSITION_WIDTH - 1:0] payload_bytes(input [7:0] answered_code);

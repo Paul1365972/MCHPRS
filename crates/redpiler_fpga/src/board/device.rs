@@ -38,22 +38,36 @@ pub(crate) enum DeviceError {
 pub(crate) enum Command {
     Status,
     Input { node: u32, powered: bool },
-    Run(TickRate),
+    Pause,
+    RunUnlimited,
+    RunTicks(u64),
+    RunPeriodic { clocks_per_tick: u64 },
     Read(Contents),
 }
 
 impl Command {
-    fn encode(self, clock_hertz: u32) -> [u8; 9] {
+    /// Runs at `rate` on a circuit whose clock runs at `circuit_clock_hertz`
+    pub(super) fn run(rate: TickRate, circuit_clock_hertz: u32) -> Command {
+        match rate {
+            TickRate::Paused => Command::Pause,
+            TickRate::Unlimited => Command::RunUnlimited,
+            TickRate::Ticks(ticks) => Command::RunTicks(ticks),
+            TickRate::PerSecond(per_second) => Command::RunPeriodic {
+                clocks_per_tick: (f64::from(circuit_clock_hertz) / per_second)
+                    .round()
+                    .max(1.0) as u64,
+            },
+        }
+    }
+
+    fn encode(self) -> [u8; 9] {
         let (code, argument) = match self {
             Self::Status => (0, 0),
             Self::Input { node, powered } => (1, u64::from(node) | u64::from(powered) << 31),
-            Self::Run(TickRate::Paused) => (2, 0),
-            Self::Run(TickRate::Unlimited) => (3, 0),
-            Self::Run(TickRate::Ticks(ticks)) => (4, ticks),
-            Self::Run(TickRate::PerSecond(per_second)) => (
-                5,
-                (f64::from(clock_hertz) / per_second).round().max(1.0) as u64,
-            ),
+            Self::Pause => (2, 0),
+            Self::RunUnlimited => (3, 0),
+            Self::RunTicks(ticks) => (4, ticks),
+            Self::RunPeriodic { clocks_per_tick } => (5, clocks_per_tick),
             Self::Read(Contents::Appearance) => (6, 0),
             Self::Read(Contents::State) => (7, 0),
         };
@@ -71,7 +85,6 @@ pub(super) struct Answer {
 
 pub(super) struct Board {
     port: BufReader<Box<dyn SerialPort>>,
-    clock_hertz: u32,
 }
 
 impl Board {
@@ -85,17 +98,7 @@ impl Board {
             })?;
         Ok(Board {
             port: BufReader::new(opened),
-            clock_hertz: BOARD_CLOCK_HERTZ,
         })
-    }
-
-    /// Follows a circuit whose system clock runs at the board clock divided by `divisor`.
-    pub(super) fn set_clock_divisor(&mut self, divisor: u32) -> Result<(), DeviceError> {
-        self.clock_hertz = BOARD_CLOCK_HERTZ / divisor;
-        self.port
-            .get_mut()
-            .set_baud_rate(self.clock_hertz / CLOCKS_PER_BIT)?;
-        Ok(())
     }
 
     pub(super) fn discard_received(&mut self) -> Result<(), DeviceError> {
@@ -106,9 +109,7 @@ impl Board {
     }
 
     pub(super) fn request(&mut self, command: Command) -> Result<Answer, DeviceError> {
-        self.port
-            .get_mut()
-            .write_all(&frame(&command.encode(self.clock_hertz)))?;
+        self.port.get_mut().write_all(&frame(&command.encode()))?;
         let mut stuffed = Vec::new();
         while stuffed.len() < 2 {
             stuffed.clear();
@@ -202,24 +203,21 @@ mod tests {
             node: 0x0102_0304,
             powered: true,
         };
-        assert_eq!(
-            input.encode(BOARD_CLOCK_HERTZ),
-            [1, 0x04, 0x03, 0x02, 0x81, 0, 0, 0, 0]
-        );
-        let ticks = Command::Run(TickRate::Ticks(300)).encode(BOARD_CLOCK_HERTZ);
+        assert_eq!(input.encode(), [1, 0x04, 0x03, 0x02, 0x81, 0, 0, 0, 0]);
+        let ticks = Command::run(TickRate::Ticks(300), 100_000_000).encode();
         assert_eq!(ticks, [4, 44, 1, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
     fn tick_rates_become_clocks_per_tick() {
-        let clocks = |per_second, clock_hertz| {
-            let bytes = Command::Run(TickRate::PerSecond(per_second)).encode(clock_hertz);
+        let clocks = |per_second, circuit_clock_hertz| {
+            let bytes = Command::run(TickRate::PerSecond(per_second), circuit_clock_hertz).encode();
             (bytes[0], u64::from_le_bytes(bytes[1..].try_into().unwrap()))
         };
-        assert_eq!(clocks(20.0, BOARD_CLOCK_HERTZ), (5, 5_000_000));
-        assert_eq!(clocks(20.0, BOARD_CLOCK_HERTZ / 2), (5, 2_500_000));
-        assert_eq!(clocks(0.1, BOARD_CLOCK_HERTZ), (5, 1_000_000_000));
-        assert_eq!(clocks(1e9, BOARD_CLOCK_HERTZ), (5, 1));
+        assert_eq!(clocks(20.0, 100_000_000), (5, 5_000_000));
+        assert_eq!(clocks(20.0, 84_210_526), (5, 4_210_526));
+        assert_eq!(clocks(0.1, 100_000_000), (5, 1_000_000_000));
+        assert_eq!(clocks(1e9, 100_000_000), (5, 1));
     }
 
     #[test]

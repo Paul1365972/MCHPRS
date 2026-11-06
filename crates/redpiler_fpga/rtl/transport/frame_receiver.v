@@ -1,11 +1,12 @@
 // Frames are byte-stuffed (0xc0 ends a frame, 0xdb escapes) and end with a CRC-16 of their content.
 // Only frames of exactly CONTENT_BYTES are received; content holds the latest bytes, first byte lowest.
 module frame_receiver #(
-    parameter CONTENT_BYTES = 1,
-    parameter CLOCKS_PER_BIT = 25
+    parameter CONTENT_BYTES = 1
 ) (
     input wire clock,
-    input wire serial,
+    input wire [7:0] data,
+    input wire ready,
+    input wire framing_error,
     output reg received = 0,
     output wire [CONTENT_BYTES * 8 - 1:0] content,
     output reg [3:0] fault = 0
@@ -14,8 +15,6 @@ module frame_receiver #(
     localparam [3:0] FRAMING_FAULT = 1, CHECKSUM_FAULT = 2, LENGTH_FAULT = 3;
     localparam FRAME_BYTES = CONTENT_BYTES + 2;
 
-    wire [7:0] data;
-    wire ready, framing_error;
     wire [15:0] next_crc;
     reg escaping = 0;
     reg broken = 0;
@@ -26,9 +25,6 @@ module frame_receiver #(
 
     assign content = bytes[CONTENT_BYTES * 8 - 1:0];
 
-    uart_receiver #(.CLOCKS_PER_BIT(CLOCKS_PER_BIT)) uart (
-        .clock(clock), .serial(serial), .data(data), .ready(ready), .framing_error(framing_error)
-    );
     crc16 checksum (.previous(crc), .data(unescaped), .next(next_crc));
 
     always @(posedge clock) begin

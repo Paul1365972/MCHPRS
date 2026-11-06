@@ -209,7 +209,7 @@ impl<'a> Writer<'a> {
             self.output,
             "
 module circuit_system #(parameter CLOCKS_PER_BIT = 25)(
-    input wire clock, serial_receive, clear_fault,
+    input wire clock, serial_clock, serial_receive, clear_fault,
     output wire serial_transmit, ticking, halted,
     output wire [63:0] tick_count,
     output wire [3:0] fault_code
@@ -222,8 +222,8 @@ module circuit_system #(parameter CLOCKS_PER_BIT = 25)(
         .NODE_COUNT({node_count}), .STATE_BYTES({state_bytes}), .APPEARANCE_BYTES({appearance_bytes}),
         .CIRCUIT_ID(64'h{identity:016x}), .CLOCKS_PER_BIT(CLOCKS_PER_BIT)
     ) controller (
-        .clock(clock), .serial_receive(serial_receive), .clear_fault(clear_fault),
-        .circuit_busy(ticking), .tick_started(tick_started), .tick_count(tick_count),
+        .clock(clock), .serial_clock(serial_clock), .serial_receive(serial_receive),
+        .clear_fault(clear_fault), .circuit_busy(ticking), .tick_started(tick_started), .tick_count(tick_count),
         .readback(readback), .serial_transmit(serial_transmit), .halted(halted),
         .fault_code(fault_code), .set_input(set_input), .input_index(input_index),
         .input_value(input_value), .run(run), .tick_limit(tick_limit)
