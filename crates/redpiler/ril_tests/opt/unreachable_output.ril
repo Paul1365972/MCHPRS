@@ -2,7 +2,7 @@ test_args "--passes=unreachable-output"
 
 # %sub outputs at most 3, so the loop through %loop cannot exceed 3 either
 circuit @bounded_loop_input {
-  %button = button false -> [%sub:0]
+  %button = button 10, false -> [%sub:0]
   %constant = constant 12 -> [side %sub:0]
   %sub = comparator subtract, none, false, 0 -> [%loop:0, %lamp_sub:3]
   %loop = comparator compare, none, false, 0 -> [%loop:1, %lamp_near:2, %lamp_far:3]
@@ -12,7 +12,7 @@ circuit @bounded_loop_input {
 }
 
 test(@bounded_loop_input) circuit @bounded_loop {
-  %button = button false -> [%sub:0]
+  %button = button 10, false -> [%sub:0]
   %constant = constant 12 -> [side %sub:0]
   %sub = comparator subtract, none, false, 0 -> [%loop:0]
   %loop = comparator compare, none, false, 0 -> [%loop:1, %lamp_near:2]

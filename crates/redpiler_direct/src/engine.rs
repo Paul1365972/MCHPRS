@@ -164,9 +164,17 @@ impl Engine for DirectEngine {
         match drive.input() {
             Input::Press => {
                 let node = &mut self.nodes[node_id];
-                if !node.is_powered() {
+                if let NodeKind::Button { press_ticks } = node.kind
+                    && !node.is_powered()
+                {
                     if !node.has_pending_tick() {
-                        schedule_tick(&mut self.scheduler, node_id, node, 10, TickPriority::Normal);
+                        schedule_tick(
+                            &mut self.scheduler,
+                            node_id,
+                            node,
+                            press_ticks.into(),
+                            TickPriority::Normal,
+                        );
                     }
                     self.set_power_and_propagate(node_id, SignalStrength::Fifteen);
                 }

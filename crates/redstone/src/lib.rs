@@ -12,7 +12,7 @@ pub mod wire;
 
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::{BlockStore, BlockView};
-use mchprs_blocks::blocks::{Block, Instrument, LeverFace, RedstoneWire, Repeater};
+use mchprs_blocks::blocks::{Block, Button, Instrument, LeverFace, RedstoneWire, Repeater};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use tick_queue::TickPriority;
 
@@ -23,6 +23,20 @@ pub trait RedstoneWorld: BlockStore {
     fn pending_tick_at(&self, pos: BlockPos) -> bool;
 
     fn play_note(&mut self, _pos: BlockPos, _instrument: Instrument, _note: u8) {}
+}
+
+pub fn button_press_ticks(button: Block) -> u8 {
+    match button {
+        Block::StoneButton(_) | Block::PolishedBlackstoneButton(_) => 10,
+        _ => 15,
+    }
+}
+
+fn with_button_powered(mut block: Block, powered: bool) -> Block {
+    if let Some(button) = block.button_mut() {
+        button.powered = powered;
+    }
+    block
 }
 
 pub fn bool_to_ss(b: bool) -> u8 {
@@ -41,10 +55,10 @@ pub fn provides_weak_power(block: Block, side: BlockFace) -> bool {
     match block {
         Block::RedstoneTorch { .. } => side != BlockFace::Top,
         Block::RedstoneWallTorch { facing, .. } => facing.block_face() != side,
-        Block::RedstoneBlock | Block::Lever { .. } | Block::StoneButton { .. } => true,
+        Block::RedstoneBlock | Block::Lever { .. } => true,
         Block::Repeater(repeater) => repeater.facing.block_face() == side,
         Block::Comparator(comparator) => comparator.facing.block_face() == side,
-        _ => false,
+        _ => block.button().is_some(),
     }
 }
 
@@ -56,13 +70,18 @@ pub fn provides_strong_power(block: Block, side: BlockFace) -> bool {
     }
     match block {
         Block::RedstoneTorch { .. } | Block::RedstoneWallTorch { .. } => side == BlockFace::Bottom,
-        Block::Lever { face, facing, .. } | Block::StoneButton { face, facing, .. } => match side {
-            BlockFace::Top => face == LeverFace::Floor,
-            BlockFace::Bottom => face == LeverFace::Ceiling,
-            _ => face == LeverFace::Wall && facing == side.unwrap_direction(),
-        },
+        Block::Lever { face, facing, .. } => is_attached_to(face, facing, side),
         Block::Repeater(_) | Block::Comparator(_) => provides_weak_power(block, side),
+        _ if let Some(button) = block.button() => is_attached_to(button.face, button.facing, side),
         _ => false,
+    }
+}
+
+fn is_attached_to(face: LeverFace, facing: BlockDirection, side: BlockFace) -> bool {
+    match side {
+        BlockFace::Top => face == LeverFace::Floor,
+        BlockFace::Bottom => face == LeverFace::Ceiling,
+        _ => face == LeverFace::Wall && facing == side.unwrap_direction(),
     }
 }
 
@@ -73,13 +92,14 @@ fn get_output_power(block: Block, world: &impl BlockView, pos: BlockPos) -> u8 {
     match block {
         Block::RedstoneTorch { lit } | Block::RedstoneWallTorch { lit, .. } => bool_to_ss(lit),
         Block::RedstoneBlock => 15,
-        Block::Lever { powered, .. }
-        | Block::StoneButton { powered, .. }
-        | Block::Repeater(Repeater { powered, .. }) => bool_to_ss(powered),
+        Block::Lever { powered, .. } | Block::Repeater(Repeater { powered, .. }) => {
+            bool_to_ss(powered)
+        }
         Block::Comparator(_) => match world.block_entity(pos) {
             Some(BlockEntity::Comparator { output_strength }) => output_strength.get(),
             _ => 0,
         },
+        _ if let Some(button) = block.button() => bool_to_ss(button.powered),
         _ => 0,
     }
 }
@@ -337,19 +357,13 @@ pub fn tick(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) {
                 world.set_block(pos, Block::RedstoneLamp { lit: false });
             }
         }
-        Block::StoneButton {
-            powered: true,
+        _ if let Some(Button {
             face,
             facing,
-        } => {
-            world.set_block(
-                pos,
-                Block::StoneButton {
-                    face,
-                    facing,
-                    powered: false,
-                },
-            );
+            powered: true,
+        }) = block.button() =>
+        {
+            world.set_block(pos, with_button_powered(block, false));
             update_surrounding_blocks(world, pos);
             match face {
                 LeverFace::Ceiling => {
@@ -457,21 +471,15 @@ pub fn on_use(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) -> bo
             }
             true
         }
-        Block::StoneButton {
-            powered,
+        _ if let Some(Button {
             face,
             facing,
-        } => {
+            powered,
+        }) = block.button() =>
+        {
             if !powered {
-                world.set_block(
-                    pos,
-                    Block::StoneButton {
-                        powered: true,
-                        face,
-                        facing,
-                    },
-                );
-                world.schedule_tick(pos, 10, TickPriority::Normal);
+                world.set_block(pos, with_button_powered(block, true));
+                world.schedule_tick(pos, button_press_ticks(block).into(), TickPriority::Normal);
                 update_surrounding_blocks(world, pos);
                 match face {
                     LeverFace::Ceiling => {

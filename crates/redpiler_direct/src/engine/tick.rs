@@ -51,7 +51,7 @@ impl DirectEngine {
                     node.set_powered(false);
                 }
             }
-            NodeKind::Button => {
+            NodeKind::Button { .. } => {
                 if node.is_powered() {
                     self.set_power_and_propagate(node_id, SignalStrength::Zero);
                 }

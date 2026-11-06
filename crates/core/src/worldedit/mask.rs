@@ -221,14 +221,13 @@ fn is_movement_blocker(block: Block) -> bool {
         Block::Air
             | Block::RedstoneWire(_)
             | Block::Lever { .. }
-            | Block::StoneButton { .. }
             | Block::RedstoneTorch { .. }
             | Block::RedstoneWallTorch { .. }
             | Block::Repeater(_)
             | Block::TripwireHook { .. }
             | Block::Comparator(_)
             | Block::SeaPickle { .. }
-    )
+    ) && block.button().is_none()
 }
 
 fn parse_block_matchers(input: &str) -> Result<MaskPredicate, MaskParseError> {

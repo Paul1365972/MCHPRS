@@ -101,8 +101,10 @@ Levers, buttons and pressure plates are inputs; lamps, trapdoors and note blocks
 ### button
 
 ```
-%x = button <powered>
+%x = button <press_ticks>, <powered>
 ```
+
+`press_ticks` is how many ticks the button stays pressed: 10 for stone buttons, 15 for wooden ones.
 
 ### lever
 

@@ -100,7 +100,7 @@ impl fmt::Display for Component<'_> {
                 state.power
             ),
             NodeKind::Lamp => write!(f, "lamp {powered}"),
-            NodeKind::Button => write!(f, "button {powered}"),
+            NodeKind::Button { press_ticks } => write!(f, "button {press_ticks}, {powered}"),
             NodeKind::Lever => write!(f, "lever {powered}"),
             NodeKind::PressurePlate => write!(f, "pressure_plate {powered}"),
             NodeKind::Trapdoor => write!(f, "trapdoor {powered}"),

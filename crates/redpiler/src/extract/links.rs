@@ -34,7 +34,7 @@ fn type_order(kind: &NodeKind) -> u8 {
         NodeKind::Torch => 1,
         NodeKind::Comparator { .. } => 2,
         NodeKind::Lamp => 3,
-        NodeKind::Button => 4,
+        NodeKind::Button { .. } => 4,
         NodeKind::Lever => 5,
         NodeKind::PressurePlate => 6,
         NodeKind::Trapdoor => 7,

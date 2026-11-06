@@ -194,6 +194,6 @@ fn evaluate(kind: &NodeKind, state: &NodeState, default_input: SSSet, side_input
         }
         NodeKind::Wire => default_input,
         NodeKind::Constant => SSSet::singleton(state.power.get()),
-        NodeKind::Button | NodeKind::Lever | NodeKind::PressurePlate => SSSet::BINARY,
+        NodeKind::Button { .. } | NodeKind::Lever | NodeKind::PressurePlate => SSSet::BINARY,
     }
 }

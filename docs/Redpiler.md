@@ -10,7 +10,7 @@ Extraction turns the plot into the nodes and links of the graph.
 
 ## Nodes
 
-Extraction iterates through all the blocks in the plot and tries to identify them as Redstone components. If a block is a Repeater, Comparator, Torch, Stone Button, Lamp, Lever, Pressure Plate, Iron Trapdoor or Note Block with air above it, a new node is created in the graph with the appropriate node type containing the necessary state information. Redstone Wires are added too, except that with `--optimize` only wires that are ports are added.
+Extraction iterates through all the blocks in the plot and tries to identify them as Redstone components. If a block is a Repeater, Comparator, Torch, Button, Lamp, Lever, Pressure Plate, Iron Trapdoor or Note Block with air above it, a new node is created in the graph with the appropriate node type containing the necessary state information. Redstone Wires are added too, except that with `--optimize` only wires that are ports are added.
 
 Blocks that have a comparator override such as Barrels, Furnaces, Hoppers, Cauldron, Composters, and Cake are also added into the graph as constant nodes, and so are Redstone Blocks.
 
@@ -153,7 +153,7 @@ A tick is never scheduled at a Wire node, therefore a Wire is never ticked.
 
 ## Button
 
-When a button is pressed and it is not powered, its state is changed to powered and any nodes that may be affected by this change is updated. Unless a tick is already scheduled at its node, a tick is scheduled with delay 10 and priority `Normal`.
+When a button is pressed and it is not powered, its state is changed to powered and any nodes that may be affected by this change is updated. Unless a tick is already scheduled at its node, a tick is scheduled after its press duration (10 ticks for stone buttons, 15 for wooden ones) with priority `Normal`.
 
 When a Button is ticked and it is currently powered, its state is changed to unpowered and any nodes that may be affected by this change is updated.
 

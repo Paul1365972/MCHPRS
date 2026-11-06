@@ -10,6 +10,7 @@
 # maybe_cube: depends on block state properties
 # maybe_transparent: depends on block state properties
 # prop_struct: make a separate struct containing block properties
+# prop_struct:<Name>: share the struct <Name> with other blocks, with accessors on Block
 # item: also creates an item with the same name
 # simple_item: also create an item with the same name that gets simply placed when used.
 #              This attribute cannot be used if the block has properties.
@@ -48,7 +49,19 @@ blocks:
   "minecraft:cherry_sign": "item,wood,complex_transform"
   "minecraft:mangrove_sign": "item,wood,complex_transform"
   "minecraft:lever": "item"
-  "minecraft:stone_button": "item"
+  "minecraft:stone_button": "prop_struct:Button,item"
+  "minecraft:polished_blackstone_button": "prop_struct:Button,item"
+  "minecraft:oak_button": "prop_struct:Button,item"
+  "minecraft:spruce_button": "prop_struct:Button,item"
+  "minecraft:birch_button": "prop_struct:Button,item"
+  "minecraft:jungle_button": "prop_struct:Button,item"
+  "minecraft:acacia_button": "prop_struct:Button,item"
+  "minecraft:dark_oak_button": "prop_struct:Button,item"
+  "minecraft:mangrove_button": "prop_struct:Button,item"
+  "minecraft:cherry_button": "prop_struct:Button,item"
+  "minecraft:bamboo_button": "prop_struct:Button,item"
+  "minecraft:crimson_button": "prop_struct:Button,item"
+  "minecraft:warped_button": "prop_struct:Button,item"
   "minecraft:redstone_torch": "item"
   "minecraft:redstone_wall_torch": ""
   "minecraft:repeater": "prop_struct,item"

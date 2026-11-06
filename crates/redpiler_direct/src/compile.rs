@@ -52,7 +52,7 @@ fn build_node(circuit: &Circuit, id: circuit::NodeId, forward_links: &mut Forwar
             prioritized,
         },
         graph::NodeKind::Lamp => NodeKind::Lamp,
-        graph::NodeKind::Button => NodeKind::Button,
+        graph::NodeKind::Button { press_ticks } => NodeKind::Button { press_ticks },
         graph::NodeKind::Lever => NodeKind::Lever,
         graph::NodeKind::PressurePlate => NodeKind::PressurePlate,
         graph::NodeKind::Trapdoor => NodeKind::Trapdoor,

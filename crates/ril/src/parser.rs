@@ -203,7 +203,18 @@ impl<'a> Parser<'a> {
                 };
                 (kind, NodeState::from_power(power))
             }
-            ComponentType::Button => (NodeKind::Button, self.expect_powered()?),
+            ComponentType::Button => {
+                let (press_ticks_offset, press_ticks) = self.expect_int()?;
+                let Ok(press_ticks) = u8::try_from(press_ticks) else {
+                    return Err(self.error(press_ticks_offset, "button press ticks out of range"));
+                };
+                self.expect_token(&[TokenKind::Comma])?;
+                let powered = self.expect_bool()?;
+                (
+                    NodeKind::Button { press_ticks },
+                    NodeState::from_powered(powered),
+                )
+            }
             ComponentType::Torch => (NodeKind::Torch, self.expect_powered()?),
             ComponentType::Lamp => (NodeKind::Lamp, self.expect_powered()?),
             ComponentType::Trapdoor => (NodeKind::Trapdoor, self.expect_powered()?),

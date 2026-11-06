@@ -284,6 +284,11 @@ fn check_node(node: &Node) -> Result<(), String> {
         NodeKind::Repeater { delay, .. } if !(1..=4).contains(&delay) => {
             return Err(format!("has a repeater delay of {delay}, not 1 to 4"));
         }
+        NodeKind::Button { press_ticks } if !matches!(press_ticks, 10 | 15) => {
+            return Err(format!(
+                "presses for {press_ticks} ticks, not the 10 or 15 of vanilla's buttons"
+            ));
+        }
         NodeKind::NoteBlock { note, .. } if note > 24 => {
             return Err(format!("has note {note}, not 0 to 24"));
         }

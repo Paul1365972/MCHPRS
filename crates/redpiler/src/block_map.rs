@@ -81,7 +81,7 @@ impl BlockMap {
         let node = self.circuit.node_at(pos)?;
         let input = match self.circuit.node(node).kind {
             NodeKind::Lever => Input::Toggle,
-            NodeKind::Button => Input::Press,
+            NodeKind::Button { .. } => Input::Press,
             _ => return None,
         };
         self.circuit.check_input(node, input).ok()
@@ -219,10 +219,10 @@ fn powered_mut(block: &mut Block) -> Option<&mut bool> {
         Block::RedstoneWallTorch { lit, .. } => lit,
         Block::Repeater(repeater) => &mut repeater.powered,
         Block::Lever { powered, .. } => powered,
-        Block::StoneButton { powered, .. } => powered,
         Block::RedstoneLamp { lit } => lit,
         Block::IronTrapdoor { powered, .. } => powered,
         Block::NoteBlock { powered, .. } => powered,
+        _ if block.button().is_some() => &mut block.button_mut()?.powered,
         _ => return block.get_pressure_plate_powered(),
     })
 }

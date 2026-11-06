@@ -77,6 +77,20 @@ fn get_sign_placement(
     }
 }
 
+fn get_button_placement(context: &UseOnBlockContext<'_>) -> Button {
+    let face = match context.block_face {
+        BlockFace::Top => LeverFace::Floor,
+        BlockFace::Bottom => LeverFace::Ceiling,
+        _ => LeverFace::Wall,
+    };
+    let facing = if face == LeverFace::Wall {
+        context.block_face.unwrap_direction()
+    } else {
+        context.player.get_direction()
+    };
+    Button::new(face, facing, false)
+}
+
 pub fn get_state_for_placement(
     world: &impl BlockView,
     pos: BlockPos,
@@ -166,23 +180,21 @@ pub fn get_state_for_placement(
                 attached: false,
             },
         },
-        Item::StoneButton => {
-            let face = match context.block_face {
-                BlockFace::Top => LeverFace::Floor,
-                BlockFace::Bottom => LeverFace::Ceiling,
-                _ => LeverFace::Wall,
-            };
-            let facing = if face == LeverFace::Wall {
-                context.block_face.unwrap_direction()
-            } else {
-                context.player.get_direction()
-            };
-            Block::StoneButton {
-                face,
-                facing,
-                powered: false,
-            }
+        Item::StoneButton => Block::StoneButton(get_button_placement(context)),
+        Item::PolishedBlackstoneButton => {
+            Block::PolishedBlackstoneButton(get_button_placement(context))
         }
+        Item::OakButton => Block::OakButton(get_button_placement(context)),
+        Item::SpruceButton => Block::SpruceButton(get_button_placement(context)),
+        Item::BirchButton => Block::BirchButton(get_button_placement(context)),
+        Item::JungleButton => Block::JungleButton(get_button_placement(context)),
+        Item::AcaciaButton => Block::AcaciaButton(get_button_placement(context)),
+        Item::DarkOakButton => Block::DarkOakButton(get_button_placement(context)),
+        Item::MangroveButton => Block::MangroveButton(get_button_placement(context)),
+        Item::CherryButton => Block::CherryButton(get_button_placement(context)),
+        Item::BambooButton => Block::BambooButton(get_button_placement(context)),
+        Item::CrimsonButton => Block::CrimsonButton(get_button_placement(context)),
+        Item::WarpedButton => Block::WarpedButton(get_button_placement(context)),
         Item::RedstoneLamp => Block::RedstoneLamp {
             lit: redstone::redstone_lamp_should_be_lit(world, pos),
         },
@@ -339,6 +351,7 @@ pub fn destroy(block: Block, world: &mut impl RedstoneWorld, pos: BlockPos) {
 }
 
 pub fn is_valid_position(block: Block, world: &impl BlockView, pos: BlockPos) -> bool {
+    let button_face = block.button().map(|button| button.face);
     let check_bottom = matches!(
         block,
         Block::RedstoneWire(_)
@@ -349,36 +362,28 @@ pub fn is_valid_position(block: Block, world: &impl BlockView, pos: BlockPos) ->
                 face: LeverFace::Floor,
                 ..
             }
-            | Block::StoneButton {
-                face: LeverFace::Floor,
-                ..
-            }
-    ) || block.is_sign();
+    ) || block.is_sign()
+        || button_face == Some(LeverFace::Floor);
 
     let check_top = matches!(
         block,
         Block::Lever {
             face: LeverFace::Ceiling,
             ..
-        } | Block::StoneButton {
-            face: LeverFace::Ceiling,
-            ..
         }
-    );
+    ) || button_face == Some(LeverFace::Ceiling);
 
     let check_parent = block.get_wall_sign_facing().or(match block {
         Block::TripwireHook { facing, .. } => Some(facing),
-        Block::StoneButton {
-            face: LeverFace::Wall,
-            facing,
-            ..
-        } => Some(facing),
         Block::Lever {
             face: LeverFace::Wall,
             facing,
             ..
         } => Some(facing),
-        _ => None,
+        _ => block
+            .button()
+            .filter(|button| button.face == LeverFace::Wall)
+            .map(|button| button.facing),
     });
 
     if check_bottom {

@@ -98,7 +98,12 @@ fn identify_block(
                 SignalStrength::try_from(wire.power).expect("invalid wire power"),
             ),
         ),
-        Block::StoneButton { powered, .. } => (NodeKind::Button, NodeState::from_powered(powered)),
+        _ if let Some(button) = block.button() => (
+            NodeKind::Button {
+                press_ticks: mchprs_redstone::button_press_ticks(block),
+            },
+            NodeState::from_powered(button.powered),
+        ),
         Block::RedstoneLamp { lit } => (NodeKind::Lamp, NodeState::from_powered(lit)),
         Block::Lever { powered, .. } => (NodeKind::Lever, NodeState::from_powered(powered)),
         Block::IronTrapdoor { powered, .. } => {

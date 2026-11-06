@@ -75,15 +75,15 @@ pub enum LeverFace {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-pub struct Lever {
+pub struct Button {
     pub face: LeverFace,
     pub facing: BlockDirection,
     pub powered: bool,
 }
 
-impl Lever {
-    pub fn new(face: LeverFace, facing: BlockDirection, powered: bool) -> Lever {
-        Lever {
+impl Button {
+    pub fn new(face: LeverFace, facing: BlockDirection, powered: bool) -> Button {
+        Button {
             face,
             facing,
             powered,

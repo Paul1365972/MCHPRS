@@ -103,11 +103,19 @@ pub enum Block {
         facing: BlockDirection,
         powered: bool,
     },
-    StoneButton {
-        face: LeverFace,
-        facing: BlockDirection,
-        powered: bool,
-    },
+    StoneButton(Button),
+    PolishedBlackstoneButton(Button),
+    OakButton(Button),
+    SpruceButton(Button),
+    BirchButton(Button),
+    JungleButton(Button),
+    AcaciaButton(Button),
+    DarkOakButton(Button),
+    MangroveButton(Button),
+    CherryButton(Button),
+    BambooButton(Button),
+    CrimsonButton(Button),
+    WarpedButton(Button),
     RedstoneTorch {
         lit: bool,
     },
@@ -339,6 +347,18 @@ impl Block {
             "minecraft:mangrove_sign",
             "minecraft:lever",
             "minecraft:stone_button",
+            "minecraft:polished_blackstone_button",
+            "minecraft:oak_button",
+            "minecraft:spruce_button",
+            "minecraft:birch_button",
+            "minecraft:jungle_button",
+            "minecraft:acacia_button",
+            "minecraft:dark_oak_button",
+            "minecraft:mangrove_button",
+            "minecraft:cherry_button",
+            "minecraft:bamboo_button",
+            "minecraft:crimson_button",
+            "minecraft:warped_button",
             "minecraft:redstone_torch",
             "minecraft:redstone_wall_torch",
             "minecraft:repeater",
@@ -486,7 +506,19 @@ impl Block {
             Block::CherrySign { .. } => "minecraft:cherry_sign",
             Block::MangroveSign { .. } => "minecraft:mangrove_sign",
             Block::Lever { .. } => "minecraft:lever",
-            Block::StoneButton { .. } => "minecraft:stone_button",
+            Block::StoneButton(_) => "minecraft:stone_button",
+            Block::PolishedBlackstoneButton(_) => "minecraft:polished_blackstone_button",
+            Block::OakButton(_) => "minecraft:oak_button",
+            Block::SpruceButton(_) => "minecraft:spruce_button",
+            Block::BirchButton(_) => "minecraft:birch_button",
+            Block::JungleButton(_) => "minecraft:jungle_button",
+            Block::AcaciaButton(_) => "minecraft:acacia_button",
+            Block::DarkOakButton(_) => "minecraft:dark_oak_button",
+            Block::MangroveButton(_) => "minecraft:mangrove_button",
+            Block::CherryButton(_) => "minecraft:cherry_button",
+            Block::BambooButton(_) => "minecraft:bamboo_button",
+            Block::CrimsonButton(_) => "minecraft:crimson_button",
+            Block::WarpedButton(_) => "minecraft:warped_button",
             Block::RedstoneTorch { .. } => "minecraft:redstone_torch",
             Block::RedstoneWallTorch { .. } => "minecraft:redstone_wall_torch",
             Block::Repeater(_) => "minecraft:repeater",
@@ -712,11 +744,71 @@ impl Block {
                 facing: BlockDirection::North,
                 powered: false,
             },
-            "minecraft:stone_button" => Block::StoneButton {
+            "minecraft:stone_button" => Block::StoneButton(Button {
                 face: LeverFace::Wall,
                 facing: BlockDirection::North,
                 powered: false,
-            },
+            }),
+            "minecraft:polished_blackstone_button" => Block::PolishedBlackstoneButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:oak_button" => Block::OakButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:spruce_button" => Block::SpruceButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:birch_button" => Block::BirchButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:jungle_button" => Block::JungleButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:acacia_button" => Block::AcaciaButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:dark_oak_button" => Block::DarkOakButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:mangrove_button" => Block::MangroveButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:cherry_button" => Block::CherryButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:bamboo_button" => Block::BambooButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:crimson_button" => Block::CrimsonButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:warped_button" => Block::WarpedButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
             "minecraft:redstone_torch" => Block::RedstoneTorch { lit: true },
             "minecraft:redstone_wall_torch" => Block::RedstoneWallTorch {
                 facing: BlockDirection::North,
@@ -887,6 +979,27 @@ impl Block {
             "minecraft:cave_air" | "minecraft:void_air" => Block::Air,
             _ => return None,
         })
+    }
+    pub fn button(mut self) -> Option<Button> {
+        self.button_mut().copied()
+    }
+    pub fn button_mut(&mut self) -> Option<&mut Button> {
+        match self {
+            Block::StoneButton(props)
+            | Block::PolishedBlackstoneButton(props)
+            | Block::OakButton(props)
+            | Block::SpruceButton(props)
+            | Block::BirchButton(props)
+            | Block::JungleButton(props)
+            | Block::AcaciaButton(props)
+            | Block::DarkOakButton(props)
+            | Block::MangroveButton(props)
+            | Block::CherryButton(props)
+            | Block::BambooButton(props)
+            | Block::CrimsonButton(props)
+            | Block::WarpedButton(props) => Some(props),
+            _ => None,
+        }
     }
     pub fn is_solid(self) -> bool {
         match self {
@@ -1277,11 +1390,119 @@ impl Block {
                 <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
                 <bool as BlockProperty>::decode(powered, &props, "powered");
             }
-            Block::StoneButton {
+            Block::StoneButton(Button {
                 face,
                 facing,
                 powered,
-            } => {
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::WarpedButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
                 <LeverFace as BlockProperty>::decode(face, &props, "face");
                 <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
                 <bool as BlockProperty>::decode(powered, &props, "powered");
@@ -1611,9 +1832,47 @@ impl Block {
             (Block::Lever { .. }, "face") => Some(&["floor", "wall", "ceiling"]),
             (Block::Lever { .. }, "facing") => Some(&["north", "south", "west", "east"]),
             (Block::Lever { .. }, "powered") => Some(&["true", "false"]),
-            (Block::StoneButton { .. }, "face") => Some(&["floor", "wall", "ceiling"]),
-            (Block::StoneButton { .. }, "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::StoneButton { .. }, "powered") => Some(&["true", "false"]),
+            (Block::StoneButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::StoneButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::StoneButton(_), "powered") => Some(&["true", "false"]),
+            (Block::PolishedBlackstoneButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::PolishedBlackstoneButton(_), "facing") => {
+                Some(&["north", "south", "west", "east"])
+            }
+            (Block::PolishedBlackstoneButton(_), "powered") => Some(&["true", "false"]),
+            (Block::OakButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::OakButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::OakButton(_), "powered") => Some(&["true", "false"]),
+            (Block::SpruceButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::SpruceButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::SpruceButton(_), "powered") => Some(&["true", "false"]),
+            (Block::BirchButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::BirchButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::BirchButton(_), "powered") => Some(&["true", "false"]),
+            (Block::JungleButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::JungleButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::JungleButton(_), "powered") => Some(&["true", "false"]),
+            (Block::AcaciaButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::AcaciaButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::AcaciaButton(_), "powered") => Some(&["true", "false"]),
+            (Block::DarkOakButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::DarkOakButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::DarkOakButton(_), "powered") => Some(&["true", "false"]),
+            (Block::MangroveButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::MangroveButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::MangroveButton(_), "powered") => Some(&["true", "false"]),
+            (Block::CherryButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::CherryButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::CherryButton(_), "powered") => Some(&["true", "false"]),
+            (Block::BambooButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::BambooButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::BambooButton(_), "powered") => Some(&["true", "false"]),
+            (Block::CrimsonButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::CrimsonButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::CrimsonButton(_), "powered") => Some(&["true", "false"]),
+            (Block::WarpedButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::WarpedButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::WarpedButton(_), "powered") => Some(&["true", "false"]),
             (Block::RedstoneTorch { .. }, "lit") => Some(&["true", "false"]),
             (Block::RedstoneWallTorch { .. }, "facing") => {
                 Some(&["north", "south", "west", "east"])
@@ -2036,11 +2295,119 @@ impl Block {
                 <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
                 <bool as BlockProperty>::encode(*powered, &mut props, "powered");
             }
-            Block::StoneButton {
+            Block::StoneButton(Button {
                 face,
                 facing,
                 powered,
-            } => {
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::WarpedButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
                 <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
                 <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
                 <bool as BlockProperty>::encode(*powered, &mut props, "powered");
@@ -2424,11 +2791,119 @@ impl Block {
                 <BlockDirection as BlockTransform>::rotate(facing, amt);
                 <bool as BlockTransform>::rotate(powered, amt);
             }
-            Block::StoneButton {
+            Block::StoneButton(Button {
                 face,
                 facing,
                 powered,
-            } => {
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::WarpedButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
                 <LeverFace as BlockTransform>::rotate(face, amt);
                 <BlockDirection as BlockTransform>::rotate(facing, amt);
                 <bool as BlockTransform>::rotate(powered, amt);
@@ -2811,11 +3286,119 @@ impl Block {
                 <BlockDirection as BlockTransform>::flip(facing, dir);
                 <bool as BlockTransform>::flip(powered, dir);
             }
-            Block::StoneButton {
+            Block::StoneButton(Button {
                 face,
                 facing,
                 powered,
-            } => {
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::WarpedButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
                 <LeverFace as BlockTransform>::flip(face, dir);
                 <BlockDirection as BlockTransform>::flip(facing, dir);
                 <bool as BlockTransform>::flip(powered, dir);
@@ -3167,11 +3750,71 @@ impl Block {
                 facing,
                 powered,
             } => 5626 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
-            Block::StoneButton {
+            Block::StoneButton(Button {
                 face,
                 facing,
                 powered,
-            } => 5748 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            }) => 5748 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 20374 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8611 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8635 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8659 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8683 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8707 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8755 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8779 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8731 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8803 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 19100 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::WarpedButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 19124 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
             Block::RedstoneTorch { lit } => 5738 + (!lit as u32),
             Block::RedstoneWallTorch { facing, lit } => {
                 5740 + (facing.get_id()) * 2 + (!lit as u32)
@@ -3527,11 +4170,107 @@ impl Block {
             }
             5748..5772 => {
                 id -= 5748;
-                Block::StoneButton {
+                Block::StoneButton(Button {
                     face: LeverFace::from_id(((id / 8) % 3)),
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
+            }
+            20374..20398 => {
+                id -= 20374;
+                Block::PolishedBlackstoneButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8611..8635 => {
+                id -= 8611;
+                Block::OakButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8635..8659 => {
+                id -= 8635;
+                Block::SpruceButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8659..8683 => {
+                id -= 8659;
+                Block::BirchButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8683..8707 => {
+                id -= 8683;
+                Block::JungleButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8707..8731 => {
+                id -= 8707;
+                Block::AcaciaButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8755..8779 => {
+                id -= 8755;
+                Block::DarkOakButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8779..8803 => {
+                id -= 8779;
+                Block::MangroveButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8731..8755 => {
+                id -= 8731;
+                Block::CherryButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            8803..8827 => {
+                id -= 8803;
+                Block::BambooButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            19100..19124 => {
+                id -= 19100;
+                Block::CrimsonButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
+            }
+            19124..19148 => {
+                id -= 19124;
+                Block::WarpedButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                })
             }
             5738..5740 => {
                 id -= 5738;
@@ -4634,6 +5373,18 @@ pub enum Item {
     MangroveSign,
     Lever,
     StoneButton,
+    PolishedBlackstoneButton,
+    OakButton,
+    SpruceButton,
+    BirchButton,
+    JungleButton,
+    AcaciaButton,
+    DarkOakButton,
+    MangroveButton,
+    CherryButton,
+    BambooButton,
+    CrimsonButton,
+    WarpedButton,
     RedstoneTorch,
     Repeater,
     RedstoneLamp,
@@ -4774,6 +5525,18 @@ impl Item {
             Item::MangroveSign => 890,
             Item::Lever => 671,
             Item::StoneButton => 681,
+            Item::PolishedBlackstoneButton => 682,
+            Item::OakButton => 683,
+            Item::SpruceButton => 684,
+            Item::BirchButton => 685,
+            Item::JungleButton => 686,
+            Item::AcaciaButton => 687,
+            Item::DarkOakButton => 689,
+            Item::MangroveButton => 690,
+            Item::CherryButton => 688,
+            Item::BambooButton => 691,
+            Item::CrimsonButton => 692,
+            Item::WarpedButton => 693,
             Item::RedstoneTorch => 657,
             Item::Repeater => 659,
             Item::RedstoneLamp => 679,
@@ -4914,6 +5677,18 @@ impl Item {
             890 => Item::MangroveSign,
             671 => Item::Lever,
             681 => Item::StoneButton,
+            682 => Item::PolishedBlackstoneButton,
+            683 => Item::OakButton,
+            684 => Item::SpruceButton,
+            685 => Item::BirchButton,
+            686 => Item::JungleButton,
+            687 => Item::AcaciaButton,
+            689 => Item::DarkOakButton,
+            690 => Item::MangroveButton,
+            688 => Item::CherryButton,
+            691 => Item::BambooButton,
+            692 => Item::CrimsonButton,
+            693 => Item::WarpedButton,
             657 => Item::RedstoneTorch,
             659 => Item::Repeater,
             679 => Item::RedstoneLamp,
@@ -5054,6 +5829,18 @@ impl Item {
             Item::MangroveSign => "minecraft:mangrove_sign",
             Item::Lever => "minecraft:lever",
             Item::StoneButton => "minecraft:stone_button",
+            Item::PolishedBlackstoneButton => "minecraft:polished_blackstone_button",
+            Item::OakButton => "minecraft:oak_button",
+            Item::SpruceButton => "minecraft:spruce_button",
+            Item::BirchButton => "minecraft:birch_button",
+            Item::JungleButton => "minecraft:jungle_button",
+            Item::AcaciaButton => "minecraft:acacia_button",
+            Item::DarkOakButton => "minecraft:dark_oak_button",
+            Item::MangroveButton => "minecraft:mangrove_button",
+            Item::CherryButton => "minecraft:cherry_button",
+            Item::BambooButton => "minecraft:bamboo_button",
+            Item::CrimsonButton => "minecraft:crimson_button",
+            Item::WarpedButton => "minecraft:warped_button",
             Item::RedstoneTorch => "minecraft:redstone_torch",
             Item::Repeater => "minecraft:repeater",
             Item::RedstoneLamp => "minecraft:redstone_lamp",
@@ -5194,6 +5981,18 @@ impl Item {
             "minecraft:mangrove_sign" => Item::MangroveSign,
             "minecraft:lever" => Item::Lever,
             "minecraft:stone_button" => Item::StoneButton,
+            "minecraft:polished_blackstone_button" => Item::PolishedBlackstoneButton,
+            "minecraft:oak_button" => Item::OakButton,
+            "minecraft:spruce_button" => Item::SpruceButton,
+            "minecraft:birch_button" => Item::BirchButton,
+            "minecraft:jungle_button" => Item::JungleButton,
+            "minecraft:acacia_button" => Item::AcaciaButton,
+            "minecraft:dark_oak_button" => Item::DarkOakButton,
+            "minecraft:mangrove_button" => Item::MangroveButton,
+            "minecraft:cherry_button" => Item::CherryButton,
+            "minecraft:bamboo_button" => Item::BambooButton,
+            "minecraft:crimson_button" => Item::CrimsonButton,
+            "minecraft:warped_button" => Item::WarpedButton,
             "minecraft:redstone_torch" => Item::RedstoneTorch,
             "minecraft:repeater" => Item::Repeater,
             "minecraft:redstone_lamp" => Item::RedstoneLamp,
@@ -5420,6 +6219,18 @@ impl Item {
             Item::MangroveSign => true,
             Item::Lever => true,
             Item::StoneButton => true,
+            Item::PolishedBlackstoneButton => true,
+            Item::OakButton => true,
+            Item::SpruceButton => true,
+            Item::BirchButton => true,
+            Item::JungleButton => true,
+            Item::AcaciaButton => true,
+            Item::DarkOakButton => true,
+            Item::MangroveButton => true,
+            Item::CherryButton => true,
+            Item::BambooButton => true,
+            Item::CrimsonButton => true,
+            Item::WarpedButton => true,
             Item::RedstoneTorch => true,
             Item::Repeater => true,
             Item::RedstoneLamp => true,
@@ -5560,6 +6371,18 @@ impl Item {
             Item::MangroveSign => 64,
             Item::Lever => 64,
             Item::StoneButton => 64,
+            Item::PolishedBlackstoneButton => 64,
+            Item::OakButton => 64,
+            Item::SpruceButton => 64,
+            Item::BirchButton => 64,
+            Item::JungleButton => 64,
+            Item::AcaciaButton => 64,
+            Item::DarkOakButton => 64,
+            Item::MangroveButton => 64,
+            Item::CherryButton => 64,
+            Item::BambooButton => 64,
+            Item::CrimsonButton => 64,
+            Item::WarpedButton => 64,
             Item::RedstoneTorch => 64,
             Item::Repeater => 64,
             Item::RedstoneLamp => 64,

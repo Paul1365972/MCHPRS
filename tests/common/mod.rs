@@ -79,7 +79,7 @@ impl BackendRunner {
         if let Some(redpiler) = &mut self.redpiler {
             let input = match self.world.block(pos) {
                 Block::Lever { .. } => Input::Toggle,
-                Block::StoneButton { .. } => Input::Press,
+                block if block.button().is_some() => Input::Press,
                 block => panic!("{block:?} can't be used"),
             };
             redpiler
@@ -127,11 +127,10 @@ fn is_block_powered(block: Block) -> Option<bool> {
         Block::RedstoneWallTorch { lit, .. } => lit,
         Block::Repeater(repeater) => repeater.powered,
         Block::Lever { powered, .. } => powered,
-        Block::StoneButton { powered, .. } => powered,
         Block::RedstoneLamp { lit } => lit,
         Block::IronTrapdoor { powered, .. } => powered,
         Block::NoteBlock { powered, .. } => powered,
-        _ => return None,
+        _ => return block.button().map(|button| button.powered),
     })
 }
 

@@ -27,7 +27,9 @@ pub enum NodeKind {
         prioritized: bool,
     },
     Lamp,
-    Button,
+    Button {
+        press_ticks: u8,
+    },
     Lever,
     PressurePlate,
     Trapdoor,
@@ -42,7 +44,9 @@ pub enum NodeKind {
 impl NodeKind {
     pub fn conventional_role(&self) -> Option<Role> {
         match self {
-            NodeKind::Button | NodeKind::Lever | NodeKind::PressurePlate => Some(Role::Input),
+            NodeKind::Button { .. } | NodeKind::Lever | NodeKind::PressurePlate => {
+                Some(Role::Input)
+            }
             NodeKind::Trapdoor | NodeKind::Lamp | NodeKind::NoteBlock { .. } => Some(Role::Output),
             NodeKind::Repeater { .. }
             | NodeKind::Torch
@@ -59,7 +63,7 @@ impl NodeKind {
             | NodeKind::Repeater { .. }
             | NodeKind::Torch => Some(DriveKind::OnOff),
             NodeKind::Comparator { .. } => Some(DriveKind::Strength),
-            NodeKind::Button => Some(DriveKind::Press),
+            NodeKind::Button { .. } => Some(DriveKind::Press),
             NodeKind::Lamp
             | NodeKind::Trapdoor
             | NodeKind::Wire
@@ -74,7 +78,7 @@ impl NodeKind {
             NodeKind::Repeater { .. }
             | NodeKind::Torch
             | NodeKind::Lamp
-            | NodeKind::Button
+            | NodeKind::Button { .. }
             | NodeKind::Lever
             | NodeKind::PressurePlate
             | NodeKind::Trapdoor
@@ -89,7 +93,7 @@ impl NodeKind {
             NodeKind::Repeater { .. }
             | NodeKind::Torch
             | NodeKind::Lamp
-            | NodeKind::Button
+            | NodeKind::Button { .. }
             | NodeKind::Lever
             | NodeKind::PressurePlate
             | NodeKind::Trapdoor
@@ -105,7 +109,7 @@ impl NodeKind {
             NodeKind::Repeater { .. }
             | NodeKind::Torch
             | NodeKind::Comparator { .. }
-            | NodeKind::Button
+            | NodeKind::Button { .. }
             | NodeKind::Lever
             | NodeKind::PressurePlate
             | NodeKind::Constant => true,
@@ -114,9 +118,10 @@ impl NodeKind {
 
     pub fn is_link_target(&self) -> bool {
         match self {
-            NodeKind::Button | NodeKind::Lever | NodeKind::PressurePlate | NodeKind::Constant => {
-                false
-            }
+            NodeKind::Button { .. }
+            | NodeKind::Lever
+            | NodeKind::PressurePlate
+            | NodeKind::Constant => false,
             NodeKind::Repeater { .. }
             | NodeKind::Torch
             | NodeKind::Comparator { .. }
@@ -133,7 +138,7 @@ impl NodeKind {
             | NodeKind::Torch
             | NodeKind::Comparator { .. }
             | NodeKind::Lamp
-            | NodeKind::Button => true,
+            | NodeKind::Button { .. } => true,
             NodeKind::Lever
             | NodeKind::PressurePlate
             | NodeKind::Trapdoor
@@ -211,7 +216,8 @@ impl Node {
     }
 
     pub fn can_tick(&self) -> bool {
-        self.kind.is_tickable() && (!self.is_input() || self.kind == NodeKind::Button)
+        self.kind.is_tickable()
+            && (!self.is_input() || matches!(self.kind, NodeKind::Button { .. }))
     }
 }
 

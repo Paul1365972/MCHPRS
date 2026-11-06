@@ -144,7 +144,9 @@ pub enum NodeKind {
         prioritized: bool,
     },
     Lamp,
-    Button,
+    Button {
+        press_ticks: u8,
+    },
     Lever,
     PressurePlate,
     Trapdoor,
