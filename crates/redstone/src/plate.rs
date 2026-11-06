@@ -1,6 +1,6 @@
 use crate::tick_queue::TickPriority;
 use crate::update::{self, Notify};
-use crate::{Aabb, RedstoneWorld};
+use crate::{set_block_audibly, Aabb, RedstoneWorld};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFace, BlockPos};
@@ -53,7 +53,7 @@ pub fn recheck_pressed_plates(world: &mut impl RedstoneWorld, region: Region) {
 fn check_pressed(world: &mut impl RedstoneWorld, pos: BlockPos, state: Block) -> bool {
     let pressed = is_touched(world, pos);
     if state.pressure_plate().map(|plate| plate.powered) != Some(pressed) {
-        update::set_block(world, pos, with_powered(state, pressed), Notify::Shapes);
+        set_block_audibly(world, pos, with_powered(state, pressed), Notify::Shapes);
         update_neighbors(world, pos);
     }
     if pressed {

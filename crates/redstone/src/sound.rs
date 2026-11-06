@@ -1,4 +1,6 @@
-use mchprs_blocks::blocks::Instrument;
+use crate::attached;
+use mchprs_blocks::blocks::{Block, Button, ComparatorMode, Instrument};
+use mchprs_blocks::registries::sound_event;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SoundSource {
@@ -24,7 +26,116 @@ impl Sound {
         }
     }
 
+    pub fn of_use(block: Block) -> Option<Sound> {
+        let (event, volume, pitch) = match block {
+            _ if let Some(Button { powered: false, .. }) = block.button() => {
+                (button_click(block, true), 1.0, 1.0)
+            }
+            Block::Comparator(comparator) => {
+                let pitch = match comparator.mode.toggle() {
+                    ComparatorMode::Compare => 0.5,
+                    ComparatorMode::Subtract => 0.55,
+                };
+                (sound_event::BLOCK_COMPARATOR_CLICK, 0.3, pitch)
+            }
+            _ => return None,
+        };
+        Some(Sound {
+            event,
+            source: SoundSource::Blocks,
+            volume,
+            pitch,
+        })
+    }
+
+    pub fn of_change(old: Block, new: Block) -> Option<Sound> {
+        let (event, volume, pitch) = match (old, new) {
+            (Block::Lever { powered: was, .. }, Block::Lever { powered, .. }) if was != powered => {
+                let pitch = if powered { 0.6 } else { 0.5 };
+                (sound_event::BLOCK_LEVER_CLICK, 0.3, pitch)
+            }
+            _ if let (Some(Button { powered: true, .. }), Some(Button { powered: false, .. })) =
+                (old.button(), new.button()) =>
+            {
+                (button_click(new, false), 1.0, 1.0)
+            }
+            (Block::IronTrapdoor { open: was, .. }, Block::IronTrapdoor { open, .. })
+                if was != open =>
+            {
+                let event = if open {
+                    sound_event::BLOCK_IRON_TRAPDOOR_OPEN
+                } else {
+                    sound_event::BLOCK_IRON_TRAPDOOR_CLOSE
+                };
+                (event, 1.0, 0.95)
+            }
+            _ if old != new => {
+                let (powered, off, on) = match new {
+                    Block::OakPressurePlate(plate)
+                    | Block::SprucePressurePlate(plate)
+                    | Block::BirchPressurePlate(plate)
+                    | Block::JunglePressurePlate(plate)
+                    | Block::AcaciaPressurePlate(plate)
+                    | Block::DarkOakPressurePlate(plate)
+                    | Block::MangrovePressurePlate(plate) => (
+                        plate.powered,
+                        sound_event::BLOCK_WOODEN_PRESSURE_PLATE_CLICK_OFF,
+                        sound_event::BLOCK_WOODEN_PRESSURE_PLATE_CLICK_ON,
+                    ),
+                    Block::CherryPressurePlate(plate) => (
+                        plate.powered,
+                        sound_event::BLOCK_CHERRY_WOOD_PRESSURE_PLATE_CLICK_OFF,
+                        sound_event::BLOCK_CHERRY_WOOD_PRESSURE_PLATE_CLICK_ON,
+                    ),
+                    Block::BambooPressurePlate(plate) => (
+                        plate.powered,
+                        sound_event::BLOCK_BAMBOO_WOOD_PRESSURE_PLATE_CLICK_OFF,
+                        sound_event::BLOCK_BAMBOO_WOOD_PRESSURE_PLATE_CLICK_ON,
+                    ),
+                    Block::CrimsonPressurePlate(plate) | Block::WarpedPressurePlate(plate) => (
+                        plate.powered,
+                        sound_event::BLOCK_NETHER_WOOD_PRESSURE_PLATE_CLICK_OFF,
+                        sound_event::BLOCK_NETHER_WOOD_PRESSURE_PLATE_CLICK_ON,
+                    ),
+                    Block::StonePressurePlate(plate)
+                    | Block::PolishedBlackstonePressurePlate(plate) => (
+                        plate.powered,
+                        sound_event::BLOCK_STONE_PRESSURE_PLATE_CLICK_OFF,
+                        sound_event::BLOCK_STONE_PRESSURE_PLATE_CLICK_ON,
+                    ),
+                    _ => return None,
+                };
+                (if powered { on } else { off }, 1.0, 1.0)
+            }
+            _ => return None,
+        };
+        Some(Sound {
+            event,
+            source: SoundSource::Blocks,
+            volume,
+            pitch,
+        })
+    }
+
     pub fn range(self) -> f64 {
         16.0 * f64::from(self.volume.max(1.0))
+    }
+}
+
+fn button_click(button: Block, on: bool) -> i32 {
+    let (off_event, on_event) = match button {
+        _ if attached::is_stone_button(button) => (
+            sound_event::BLOCK_STONE_BUTTON_CLICK_OFF,
+            sound_event::BLOCK_STONE_BUTTON_CLICK_ON,
+        ),
+        _ => (
+            sound_event::BLOCK_WOODEN_BUTTON_CLICK_OFF,
+            sound_event::BLOCK_WOODEN_BUTTON_CLICK_ON,
+        ),
+    };
+    if on {
+        on_event
+    } else {
+        off_event
     }
 }

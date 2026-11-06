@@ -120,3 +120,11 @@ pub fn settle(world: &mut impl RedstoneWorld, region: Region, limit: u64) -> Opt
     }
     world.redstone().is_idle().then_some(limit)
 }
+
+fn set_block_audibly(world: &mut impl RedstoneWorld, pos: BlockPos, state: Block, notify: Notify) {
+    let old = world.block(pos);
+    set_block(world, pos, state, notify);
+    if let Some(sound) = Sound::of_change(old, state) {
+        world.play_sound(pos, sound);
+    }
+}

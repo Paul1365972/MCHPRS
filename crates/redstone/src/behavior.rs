@@ -1,7 +1,8 @@
 use crate::tick_queue::TickPriority;
 use crate::update::{self, Notify};
 use crate::{
-    attached, comparator, diode, noteblock, plate, repeater, signal, torch, wire, RedstoneWorld,
+    attached, comparator, diode, noteblock, plate, repeater, set_block_audibly, signal, torch,
+    wire, RedstoneWorld,
 };
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
@@ -48,7 +49,7 @@ pub fn neighbor_changed(world: &mut impl RedstoneWorld, pos: BlockPos, state: Bl
                     powered: should_be_powered,
                     waterlogged,
                 };
-                update::set_block(world, pos, toggled, Notify::Shapes);
+                set_block_audibly(world, pos, toggled, Notify::Shapes);
             }
         }
         Block::NoteBlock {

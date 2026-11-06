@@ -8,6 +8,7 @@ pub mod data;
 mod monitor;
 mod packet_handlers;
 mod scoreboard;
+mod sound;
 pub(crate) mod stepped;
 #[cfg(feature = "whitelist")]
 mod whitelist;
@@ -348,6 +349,7 @@ impl Plot {
             self.compiler_failed(error);
         }
         self.world.flush_block_changes();
+        self.send_sounds();
         self.last_world_send_time = Instant::now();
     }
 
@@ -752,6 +754,7 @@ impl Plot {
             if time_since_last_world_send > world_send_interval {
                 self.last_world_send_time = now;
                 self.world.flush_block_changes();
+                self.send_sounds();
             }
         } else {
             self.timings.set_ticking(false);

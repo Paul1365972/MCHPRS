@@ -133,9 +133,21 @@ impl BlockMap {
         let strength_changed = self.states[index].power != state.power;
         self.states[index] = state;
         let mut changed = false;
-        for (_, block) in &mut self.blocks[index] {
+        for (pos, block) in &mut self.blocks[index] {
             let previous = *block;
             apply_state(block, state);
+            let mut before = previous;
+            if *block == previous {
+                let reverted = NodeState {
+                    power: (!state.is_powered()).into(),
+                    ..state
+                };
+                apply_state(&mut before, reverted);
+            }
+            let sound = Sound::of_change(before, *block);
+            block_changes
+                .sounds
+                .extend(sound.map(|sound| (*pos, sound)));
             changed |=
                 *block != previous || strength_changed && matches!(block, Block::Comparator(_));
         }
