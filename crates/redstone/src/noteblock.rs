@@ -1,3 +1,4 @@
+use crate::sound::Sound;
 use crate::update::{self, Notify};
 use crate::{signal, RedstoneWorld};
 use mchprs_blocks::block_store::BlockView;
@@ -87,6 +88,6 @@ fn play_if_unblocked(
     note: u8,
 ) {
     if is_noteblock_unblocked(world, pos) {
-        world.play_note(pos, instrument, note);
+        world.play_sound(pos, Sound::note(instrument, note));
     }
 }

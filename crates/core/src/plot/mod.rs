@@ -7,6 +7,7 @@ mod packet_handlers;
 pub mod redpiler;
 mod scoreboard;
 mod send_schedule;
+mod sound;
 mod tick_history;
 
 use self::advance::Advance;
@@ -25,7 +26,7 @@ use anyhow::Error;
 use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::{BlockStore, BlockView};
-use mchprs_blocks::blocks::{Block, Instrument};
+use mchprs_blocks::blocks::Block;
 use mchprs_blocks::items::Item;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFace, BlockPos};
@@ -34,6 +35,7 @@ use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redstone::pace::Pacer;
+use mchprs_redstone::sound::Sound;
 use mchprs_redstone::tick_queue::{TickEntry, TickPriority, TickQueue};
 use mchprs_redstone::{plate, Aabb, Notify, Redstone, RedstoneWorld};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
@@ -122,7 +124,7 @@ pub struct PlotWorld {
     pub packet_senders: HashMap<EntityId, PlayerPacketSender>,
     world_send_rate: WorldSendRate,
     pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
-    pending_sounds: FxHashMap<BlockPos, CSoundEffect>,
+    pending_sounds: FxHashMap<BlockPos, Sound>,
     unsaved_since: Option<Instant>,
 }
 
@@ -159,37 +161,6 @@ impl PlotWorld {
         self.chunks.get(self.get_chunk_index_for_chunk(x, z)?)
     }
 
-    fn play_sound(
-        &mut self,
-        pos: BlockPos,
-        sound_id: i32,
-        sound_category: i32,
-        volume: f32,
-        pitch: f32,
-    ) {
-        if self.world_send_rate.0 == 0.0 {
-            return;
-        }
-        // FIXME: We do not know the players location here, so we send the sound packet to all
-        // players A notchian server would only send to players in hearing distance
-        // (volume.clamp(0.0, 1.0) * 16.0)
-        let sound_effect_data = CSoundEffect {
-            sound_id: sound_id + 1,
-            sound_name: None,
-            has_fixed_range: None,
-            range: None,
-            sound_category,
-            x: pos.x * 8 + 4,
-            y: pos.y * 8 + 4,
-            z: pos.z * 8 + 4,
-            volume,
-            pitch,
-            // FIXME: How do we decide this?
-            seed: 0,
-        };
-        self.pending_sounds.insert(pos, sound_effect_data);
-    }
-
     pub fn flush_block_changes(&mut self) {
         for packet in self.chunks.iter_mut().flat_map(encode_block_changes) {
             for packet_sender in self.packet_senders.values() {
@@ -198,12 +169,6 @@ impl PlotWorld {
         }
         for (_, block_entity) in self.pending_block_entities.drain() {
             let encoded = block_entity.encode();
-            for packet_sender in self.packet_senders.values() {
-                packet_sender.send_packet(&encoded);
-            }
-        }
-        for (_, sound) in self.pending_sounds.drain() {
-            let encoded = sound.encode();
             for packet_sender in self.packet_senders.values() {
                 packet_sender.send_packet(&encoded);
             }
@@ -327,20 +292,10 @@ impl RedstoneWorld for PlotWorld {
             .any(|entity| entity.intersects(&area))
     }
 
-    fn play_note(&mut self, pos: BlockPos, instrument: Instrument, note: u8) {
-        const RECORDS_SOUND_CATEGORY: i32 = 2;
-        const NOTE_VOLUME: f32 = 3.0;
-        // The note is mapped to [0, 31] to avoid ultra high pitches in case of invalid values.
-        // The range [0, 31] is used even though it is different from the noteblock's note range
-        // of [0, 24] because mapping to [0, 31] can be done efficiently using bitwise AND.
-        let pitch = f32::exp2(((note % 32) as f32 - 12.0) / 12.0);
-        self.play_sound(
-            pos,
-            instrument.to_sound_id(),
-            RECORDS_SOUND_CATEGORY,
-            NOTE_VOLUME,
-            pitch,
-        );
+    fn play_sound(&mut self, pos: BlockPos, sound: Sound) {
+        if self.world_send_rate.0 != 0.0 {
+            self.pending_sounds.insert(pos, sound);
+        }
     }
 }
 
@@ -653,8 +608,10 @@ impl Plot {
             return;
         }
 
+        let block = self.world.block(block_pos);
         if self.redpiler.is_active() {
             if !self.players[player].crouching && self.redpiler.use_block(block_pos) {
+                self.play_use_sound(player, block_pos, block);
                 return;
             }
             if use_item_on.hand == 0 {
@@ -679,12 +636,7 @@ impl Plot {
             if cancelled {
                 cancel(self);
             }
-            self.world.flush_block_changes();
-            return;
-        }
-
-        let block = self.world.block(block_pos);
-        if !self.players[player].crouching {
+        } else if !self.players[player].crouching {
             interaction::on_use(
                 block,
                 &mut self.world,
@@ -692,8 +644,12 @@ impl Plot {
                 block_pos,
                 None,
             );
-            self.world.flush_block_changes();
         }
+        if self.world.block(block_pos) != block {
+            self.play_use_sound(player, block_pos, block);
+        }
+        self.world.flush_block_changes();
+        self.send_sounds();
     }
 
     fn handle_player_digging(&mut self, block_pos: BlockPos, player: usize) {
@@ -730,6 +686,7 @@ impl Plot {
 
         mchprs_redstone::set_block(&mut self.world, block_pos, Block::Air, Notify::All);
         self.world.flush_block_changes();
+        self.send_sounds();
 
         let effect = CWorldEvent {
             event: 2001,
@@ -757,6 +714,7 @@ impl Plot {
 
     pub fn publish_world(&mut self) {
         self.world.flush_block_changes();
+        self.send_sounds();
         self.send_schedule.sent(self.now());
     }
 

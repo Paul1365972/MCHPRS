@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::thread;
 
 pub struct Started {
-    pub blocks: BlockMap,
+    pub blocks: Box<BlockMap>,
     pub session: Box<dyn Session>,
 }
 
@@ -97,7 +97,7 @@ fn start(
         .backend()
         .start(&circuit, setup.flags(), context, session)?;
     Ok(Started {
-        blocks: BlockMap::new(circuit),
+        blocks: Box::new(BlockMap::new(circuit)),
         session,
     })
 }

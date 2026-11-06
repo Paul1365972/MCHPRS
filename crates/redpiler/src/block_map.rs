@@ -4,6 +4,7 @@ use crate::graph::{NodeKind, NodeState};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::BlockPos;
+use mchprs_redstone::sound::Sound;
 use mchprs_redstone::RedstoneWorld;
 use smallvec::SmallVec;
 use std::mem;
@@ -14,12 +15,16 @@ type NodeBlocks = SmallVec<[(BlockPos, Block); 1]>;
 pub struct BlockChanges {
     pub blocks: Vec<(BlockPos, Block)>,
     pub block_entities: Vec<(BlockPos, BlockEntity)>,
+    pub sounds: Vec<(BlockPos, Sound)>,
     pub notes: Vec<PlayedNote>,
 }
 
 impl BlockChanges {
     pub fn is_empty(&self) -> bool {
-        self.blocks.is_empty() && self.block_entities.is_empty() && self.notes.is_empty()
+        self.blocks.is_empty()
+            && self.block_entities.is_empty()
+            && self.sounds.is_empty()
+            && self.notes.is_empty()
     }
 
     pub fn apply(&self, world: &mut impl RedstoneWorld) {
@@ -29,8 +34,11 @@ impl BlockChanges {
         for (pos, block_entity) in &self.block_entities {
             world.set_block_entity(*pos, Some(block_entity.clone()));
         }
+        for &(pos, sound) in &self.sounds {
+            world.play_sound(pos, sound);
+        }
         for note in &self.notes {
-            world.play_note(note.pos, note.instrument, note.note);
+            world.play_sound(note.pos, Sound::note(note.instrument, note.note));
         }
     }
 }
@@ -49,6 +57,7 @@ pub struct BlockMap {
     states: Box<[NodeState]>,
     dirty: Box<[bool]>,
     dirty_nodes: Vec<NodeId>,
+    sounds: Vec<(BlockPos, Sound)>,
     plays: Box<[u32]>,
     played: Vec<NodeId>,
 }
@@ -67,6 +76,7 @@ impl BlockMap {
             states: circuit.ids().map(|id| circuit.node(id).state).collect(),
             dirty: vec![false; circuit.len()].into_boxed_slice(),
             dirty_nodes: Vec::new(),
+            sounds: Vec::new(),
             plays: vec![0; circuit.len()].into_boxed_slice(),
             played: Vec::new(),
             circuit,
@@ -114,6 +124,13 @@ impl BlockMap {
 
     pub fn record(&mut self, changes: &Changes) {
         for &(node, state) in &changes.states {
+            for &(pos, old) in &self.blocks[node.index()] {
+                let mut new = old;
+                apply_state(&mut new, state);
+                if let Some(sound) = Sound::of_change(old, new) {
+                    self.sounds.push((pos, sound));
+                }
+            }
             self.set_state(node, state);
         }
         for &(node, count) in &changes.notes {
@@ -151,7 +168,10 @@ impl BlockMap {
     }
 
     pub fn take_changes(&mut self) -> BlockChanges {
-        let mut changes = BlockChanges::default();
+        let mut changes = BlockChanges {
+            sounds: mem::take(&mut self.sounds),
+            ..BlockChanges::default()
+        };
         for node in self.dirty_nodes.drain(..) {
             self.dirty[node.index()] = false;
             let output_strength = self.states[node.index()].power;

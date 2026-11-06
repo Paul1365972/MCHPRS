@@ -1,6 +1,6 @@
 use crate::tick_queue::TickPriority;
 use crate::update::{self, Notify};
-use crate::{button_press_ticks, RedstoneWorld};
+use crate::{button_press_ticks, set_block_audibly, RedstoneWorld};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, LeverFace};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
@@ -63,7 +63,7 @@ pub(crate) fn pull_lever(
         facing,
         powered: !powered,
     };
-    update::set_block(world, pos, pulled, Notify::All);
+    set_block_audibly(world, pos, pulled, Notify::All);
     update_neighbors(world, pos, face, facing);
 }
 
@@ -84,6 +84,6 @@ pub(crate) fn set_button_powered(
     };
     props.powered = powered;
     let (face, facing) = (props.face, props.facing);
-    update::set_block(world, pos, button, Notify::All);
+    set_block_audibly(world, pos, button, Notify::All);
     update_neighbors(world, pos, face, facing);
 }

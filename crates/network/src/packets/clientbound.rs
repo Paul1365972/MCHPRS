@@ -1277,9 +1277,6 @@ impl ClientBoundPacket for UpdateTime {
 
 pub struct CSoundEffect {
     pub sound_id: i32,
-    pub sound_name: Option<String>,
-    pub has_fixed_range: Option<bool>,
-    pub range: Option<bool>,
     pub sound_category: i32,
     pub x: i32,
     pub y: i32,

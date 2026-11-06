@@ -35,7 +35,7 @@ pub struct Compiling {
 
 pub struct Running {
     pub(super) setup: BackendSetup,
-    blocks: BlockMap,
+    blocks: Box<BlockMap>,
     session: Box<dyn Session>,
     had_ticks: bool,
     tick_rate: TickRate,

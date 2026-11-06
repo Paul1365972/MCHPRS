@@ -14,14 +14,16 @@ pub mod pace;
 pub mod plate;
 mod repeater;
 mod signal;
+pub mod sound;
 pub mod tick_queue;
 mod torch;
 mod update;
 pub mod wire;
 
 use mchprs_blocks::block_store::BlockStore;
-use mchprs_blocks::blocks::{Block, Instrument};
+use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
+use sound::Sound;
 use tick_queue::{TickPriority, TickQueue};
 
 pub use behavior::{can_survive, place_block, state_for_placement, use_block};
@@ -67,7 +69,7 @@ pub trait RedstoneWorld: BlockStore {
 
     fn has_entity_in(&self, area: Aabb) -> bool;
 
-    fn play_note(&mut self, _pos: BlockPos, _instrument: Instrument, _note: u8) {}
+    fn play_sound(&mut self, _pos: BlockPos, _sound: Sound) {}
 
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority, block: Block) {
         self.redstone().ticks.schedule(pos, delay, priority, block);
@@ -116,5 +118,13 @@ pub fn button_press_ticks(button: Block) -> u8 {
     match button {
         Block::StoneButton(_) | Block::PolishedBlackstoneButton(_) => 10,
         _ => 15,
+    }
+}
+
+fn set_block_audibly(world: &mut impl RedstoneWorld, pos: BlockPos, state: Block, notify: Notify) {
+    let old = world.block(pos);
+    update::set_block(world, pos, state, notify);
+    if let Some(sound) = Sound::of_change(old, state) {
+        world.play_sound(pos, sound);
     }
 }
