@@ -7,7 +7,7 @@ mod update;
 
 use crate::backend::direct::node::ForwardLinks;
 use crate::block_map::BlockMap;
-use crate::compile_graph::SignalStrength;
+use crate::compile_graph::{comparator_output, SignalStrength};
 use crate::engine::{
     EngineError, EngineSnapshot, HostPaced, Input, NodeChanges, PendingTick, Reporting,
     SteppedEngine,
@@ -264,20 +264,10 @@ fn comparator_output_power(
     mode: ComparatorMode,
     far_input: Option<SignalStrength>,
 ) -> SignalStrength {
-    let mut input_power = node.default_inputs.power();
-    let side_power = node.side_inputs.power();
-    if let Some(far_input) = far_input
-        && input_power < SignalStrength::Fifteen
-    {
-        input_power = far_input;
-    }
-    let difference = input_power.get().wrapping_sub(side_power.get());
-    if difference <= SignalStrength::Fifteen.get() {
-        match mode {
-            ComparatorMode::Compare => input_power,
-            ComparatorMode::Subtract => SignalStrength::try_from(difference).unwrap(),
-        }
-    } else {
-        SignalStrength::Zero
-    }
+    comparator_output(
+        mode,
+        far_input,
+        node.default_inputs.power(),
+        node.side_inputs.power(),
+    )
 }

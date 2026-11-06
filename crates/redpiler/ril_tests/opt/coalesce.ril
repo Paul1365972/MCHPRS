@@ -91,3 +91,25 @@ test(@analog_reader_input) circuit @analog_reader {
   %lamp2 = lamp false, [%comparator2:0]
 }
 
+# Both cells output 1 while the lever is off and 0 while it is on, so they merge whatever their
+# modes and link weights. The third outputs 2 and 1, so it stays.
+circuit @comparator_outputs_input {
+  %lever = lever false
+  %one = constant 1
+  %two = constant 2
+  %cell1 = comparator subtract, none, false, 1, [%one:0], [%lever:2]
+  %cell2 = comparator compare, none, false, 1, [%one:0], [%lever:9]
+  %cell3 = comparator subtract, none, false, 2, [%two:0], [%lever:14]
+  %lamp1 = lamp true, [%cell1:0, %cell3:0]
+  %lamp2 = lamp true, [%cell2:3]
+}
+
+test(@comparator_outputs_input) circuit @comparator_outputs {
+  %lever = lever false
+  %one = constant 1
+  %two = constant 2
+  %cell1 = comparator subtract, none, false, 1, [%one:0], [%lever:2]
+  %cell3 = comparator subtract, none, false, 2, [%two:0], [%lever:14]
+  %lamp1 = lamp true, [%cell1:0, %cell3:0]
+  %lamp2 = lamp true, [%cell1:3]
+}

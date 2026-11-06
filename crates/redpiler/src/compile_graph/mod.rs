@@ -61,6 +61,25 @@ impl NodeType {
     }
 }
 
+/// The output of a comparator whose strongest rear and side inputs are `rear` and `side`.
+#[inline]
+pub fn comparator_output(
+    mode: ComparatorMode,
+    far_input: Option<SignalStrength>,
+    rear: SignalStrength,
+    side: SignalStrength,
+) -> SignalStrength {
+    let rear = match far_input {
+        Some(far_input) if rear < SignalStrength::Fifteen => far_input,
+        _ => rear,
+    };
+    match mode {
+        ComparatorMode::Compare if rear >= side => rear,
+        ComparatorMode::Compare => SignalStrength::Zero,
+        ComparatorMode::Subtract => rear.saturating_sub(side.get()),
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct NodeState {
     pub power: SignalStrength,

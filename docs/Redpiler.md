@@ -71,6 +71,9 @@ Nodes that are not inputs, have no pending tick, and have the same type, initial
 A merged output keeps the blocks of all merged nodes and writes each of them.
 Input links are compared by source, link type and weight, and only the strongest link per source and link type counts.
 The weight is ignored when a binary source (everything except comparators, wires and constants) feeds a binary reader (everything except comparators and wires), since any link that carries a signal powers the reader the same way.
+Comparators are compared by what they compute instead: two comparators facing the same way are identical when they read the same sources and output the same strength for every combination of strengths those sources can take according to the [`SSSetAnalysis`](#the-sssetanalysis-pass), whatever their modes and link weights.
+This merges, for example, the cells of a ROM row that subtract the same row signal at different distances from the same stored value.
+Comparators whose sources allow more than 256 combinations keep comparing their links.
 Merging can make the nodes fed by the merged node identical as well, so those are checked again.
 
 The merged node updates the targets of one merged node after another, as if they ticked right after each other (see [Tick Ordering](#tick-ordering)). This can change the order of updates within a tick, so the pass only runs with `--reorder`.
