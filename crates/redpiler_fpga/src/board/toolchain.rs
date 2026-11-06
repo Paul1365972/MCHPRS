@@ -16,6 +16,8 @@ const DEVICE: &str = "xc7a35tcpg236-1";
 const CHIP_DATABASE_DEVICE: &str = "xc7a50t";
 /// The divisors of the board clock that the system clock can take, fastest first
 const CLOCK_DIVISORS: [u32; 2] = [1, 2];
+/// The fewest flip-flops an enable or reset must drive to keep its dedicated pin
+const CONTROL_SET_FLIP_FLOPS: u32 = 4;
 const BUILD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const ASSEMBLY_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const CONVERSION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -120,16 +122,18 @@ fn synthesize(
         .map(|source| yosys_path(&directory.join(source)))
         .collect::<Result<Vec<_>, _>>()?
         .join(" ");
-    // A slice's flip-flops share one enable and reset, so legalizing every flip-flop to a plain one
-    // before mapping keeps each node's own enable and reset in LUTs instead of a slice of its own.
+    // A slice's flip-flops share one enable and reset, so enables and resets of fewer than
+    // CONTROL_SET_FLIP_FLOPS flip-flops, such as each node's own, become LUT logic instead of
+    // claiming a slice each.
     let synth_xilinx = "synth_xilinx -flatten -abc9 -nosrl -arch xc7 -top basys3 -run";
+    let flip_flops = "-cell $_DFFE_?P?P_ 01 -cell $_SDFFE_?P?P_ 01 -cell $_DLATCH_?P?_ 01";
     fs::write(
         &script,
         format!(
             "read_verilog -sv {sources}
 chparam -set CLOCK_DIVISOR {clock_divisor} basys3
 {synth_xilinx} :map_ffs
-dfflegalize -cell $_DFF_P_ 01
+dfflegalize {flip_flops} -mince {CONTROL_SET_FLIP_FLOPS} -minsrst {CONTROL_SET_FLIP_FLOPS}
 {synth_xilinx} map_ffs:
 write_json {}
 ",
