@@ -39,6 +39,18 @@ pub enum Block {
         powered: bool,
     },
     StoneButton(Button),
+    PolishedBlackstoneButton(Button),
+    OakButton(Button),
+    SpruceButton(Button),
+    BirchButton(Button),
+    JungleButton(Button),
+    AcaciaButton(Button),
+    DarkOakButton(Button),
+    MangroveButton(Button),
+    CherryButton(Button),
+    BambooButton(Button),
+    CrimsonButton(Button),
+    WarpedButton(Button),
     RedstoneTorch {
         lit: bool,
     },
@@ -244,6 +256,18 @@ impl Block {
             "minecraft:mangrove_sign",
             "minecraft:lever",
             "minecraft:stone_button",
+            "minecraft:polished_blackstone_button",
+            "minecraft:oak_button",
+            "minecraft:spruce_button",
+            "minecraft:birch_button",
+            "minecraft:jungle_button",
+            "minecraft:acacia_button",
+            "minecraft:dark_oak_button",
+            "minecraft:mangrove_button",
+            "minecraft:cherry_button",
+            "minecraft:bamboo_button",
+            "minecraft:crimson_button",
+            "minecraft:warped_button",
             "minecraft:redstone_torch",
             "minecraft:redstone_wall_torch",
             "minecraft:repeater",
@@ -392,6 +416,18 @@ impl Block {
             Block::MangroveSign(_) => "minecraft:mangrove_sign",
             Block::Lever { .. } => "minecraft:lever",
             Block::StoneButton(_) => "minecraft:stone_button",
+            Block::PolishedBlackstoneButton(_) => "minecraft:polished_blackstone_button",
+            Block::OakButton(_) => "minecraft:oak_button",
+            Block::SpruceButton(_) => "minecraft:spruce_button",
+            Block::BirchButton(_) => "minecraft:birch_button",
+            Block::JungleButton(_) => "minecraft:jungle_button",
+            Block::AcaciaButton(_) => "minecraft:acacia_button",
+            Block::DarkOakButton(_) => "minecraft:dark_oak_button",
+            Block::MangroveButton(_) => "minecraft:mangrove_button",
+            Block::CherryButton(_) => "minecraft:cherry_button",
+            Block::BambooButton(_) => "minecraft:bamboo_button",
+            Block::CrimsonButton(_) => "minecraft:crimson_button",
+            Block::WarpedButton(_) => "minecraft:warped_button",
             Block::RedstoneTorch { .. } => "minecraft:redstone_torch",
             Block::RedstoneWallTorch { .. } => "minecraft:redstone_wall_torch",
             Block::Repeater(_) => "minecraft:repeater",
@@ -618,6 +654,66 @@ impl Block {
                 powered: false,
             },
             "minecraft:stone_button" => Block::StoneButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:polished_blackstone_button" => Block::PolishedBlackstoneButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:oak_button" => Block::OakButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:spruce_button" => Block::SpruceButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:birch_button" => Block::BirchButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:jungle_button" => Block::JungleButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:acacia_button" => Block::AcaciaButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:dark_oak_button" => Block::DarkOakButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:mangrove_button" => Block::MangroveButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:cherry_button" => Block::CherryButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:bamboo_button" => Block::BambooButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:crimson_button" => Block::CrimsonButton(Button {
+                face: LeverFace::Wall,
+                facing: BlockDirection::North,
+                powered: false,
+            }),
+            "minecraft:warped_button" => Block::WarpedButton(Button {
                 face: LeverFace::Wall,
                 facing: BlockDirection::North,
                 powered: false,
@@ -862,7 +958,19 @@ impl Block {
     }
     pub fn button_mut(&mut self) -> Option<&mut Button> {
         match self {
-            Block::StoneButton(props) => Some(props),
+            Block::StoneButton(props)
+            | Block::PolishedBlackstoneButton(props)
+            | Block::OakButton(props)
+            | Block::SpruceButton(props)
+            | Block::BirchButton(props)
+            | Block::JungleButton(props)
+            | Block::AcaciaButton(props)
+            | Block::DarkOakButton(props)
+            | Block::MangroveButton(props)
+            | Block::CherryButton(props)
+            | Block::BambooButton(props)
+            | Block::CrimsonButton(props)
+            | Block::WarpedButton(props) => Some(props),
             _ => None,
         }
     }
@@ -1280,6 +1388,114 @@ impl Block {
                 <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
                 <bool as BlockProperty>::decode(powered, &props, "powered");
             }
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
+            Block::WarpedButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::decode(face, &props, "face");
+                <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
+                <bool as BlockProperty>::decode(powered, &props, "powered");
+            }
             Block::RedstoneTorch { lit } => {
                 <bool as BlockProperty>::decode(lit, &props, "lit");
             }
@@ -1515,338 +1731,6 @@ impl Block {
             }
         }
     }
-    pub fn property_values(&self, name: &str) -> Option<&'static [&'static str]> {
-        match (self, name) {
-            (Block::RedstoneWire(_), "east") => Some(&["up", "side", "none"]),
-            (Block::RedstoneWire(_), "north") => Some(&["up", "side", "none"]),
-            (Block::RedstoneWire(_), "power") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::RedstoneWire(_), "south") => Some(&["up", "side", "none"]),
-            (Block::RedstoneWire(_), "west") => Some(&["up", "side", "none"]),
-            (Block::OakWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::OakWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::SpruceWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::SpruceWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::BirchWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::BirchWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::AcaciaWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::AcaciaWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::JungleWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::JungleWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::DarkOakWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::DarkOakWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::CrimsonWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::CrimsonWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::WarpedWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::WarpedWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::BambooWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::BambooWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::CherryWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::CherryWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::MangroveWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::MangroveWallSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::OakSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::OakSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::SpruceSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::SpruceSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::BirchSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::BirchSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::AcaciaSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::AcaciaSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::JungleSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::JungleSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::DarkOakSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::DarkOakSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::CrimsonSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::CrimsonSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::WarpedSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::WarpedSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::BambooSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::BambooSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::CherrySign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::CherrySign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::MangroveSign(_), "rotation") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::MangroveSign(_), "waterlogged") => Some(&["true", "false"]),
-            (Block::Lever { .. }, "face") => Some(&["floor", "wall", "ceiling"]),
-            (Block::Lever { .. }, "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::Lever { .. }, "powered") => Some(&["true", "false"]),
-            (Block::StoneButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
-            (Block::StoneButton(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::StoneButton(_), "powered") => Some(&["true", "false"]),
-            (Block::RedstoneTorch { .. }, "lit") => Some(&["true", "false"]),
-            (Block::RedstoneWallTorch { .. }, "facing") => {
-                Some(&["north", "south", "west", "east"])
-            }
-            (Block::RedstoneWallTorch { .. }, "lit") => Some(&["true", "false"]),
-            (Block::Repeater(_), "delay") => Some(&["1", "2", "3", "4"]),
-            (Block::Repeater(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::Repeater(_), "locked") => Some(&["true", "false"]),
-            (Block::Repeater(_), "powered") => Some(&["true", "false"]),
-            (Block::RedstoneLamp { .. }, "lit") => Some(&["true", "false"]),
-            (Block::TripwireHook { .. }, "attached") => Some(&["true", "false"]),
-            (Block::TripwireHook { .. }, "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::TripwireHook { .. }, "powered") => Some(&["true", "false"]),
-            (Block::Comparator(_), "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::Comparator(_), "mode") => Some(&["compare", "subtract"]),
-            (Block::Comparator(_), "powered") => Some(&["true", "false"]),
-            (Block::Observer { .. }, "facing") => {
-                Some(&["north", "east", "south", "west", "up", "down"])
-            }
-            (Block::Observer { .. }, "powered") => Some(&["true", "false"]),
-            (Block::SeaPickle { .. }, "pickles") => Some(&["1", "2", "3", "4"]),
-            (Block::SeaPickle { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::Target { .. }, "power") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15",
-            ]),
-            (Block::OakPressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::SprucePressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::BirchPressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::JunglePressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::AcaciaPressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::DarkOakPressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::MangrovePressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::CherryPressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::BambooPressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::CrimsonPressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::WarpedPressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::PolishedBlackstonePressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::StonePressurePlate(_), "powered") => Some(&["true", "false"]),
-            (Block::Cake { .. }, "bites") => Some(&["0", "1", "2", "3", "4", "5", "6"]),
-            (Block::Barrel { .. }, "facing") => {
-                Some(&["north", "east", "south", "west", "up", "down"])
-            }
-            (Block::Barrel { .. }, "open") => Some(&["true", "false"]),
-            (Block::Hopper { .. }, "enabled") => Some(&["true", "false"]),
-            (Block::Hopper { .. }, "facing") => Some(&["down", "north", "south", "west", "east"]),
-            (Block::Furnace { .. }, "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::Furnace { .. }, "lit") => Some(&["true", "false"]),
-            (Block::SmoothStoneSlab { .. }, "type") => Some(&["top", "bottom", "double"]),
-            (Block::SmoothStoneSlab { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::QuartzSlab { .. }, "type") => Some(&["top", "bottom", "double"]),
-            (Block::QuartzSlab { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::WaterCauldron { .. }, "level") => Some(&["1", "2", "3"]),
-            (Block::Composter { .. }, "level") => {
-                Some(&["0", "1", "2", "3", "4", "5", "6", "7", "8"])
-            }
-            (Block::IronTrapdoor { .. }, "facing") => Some(&["north", "south", "west", "east"]),
-            (Block::IronTrapdoor { .. }, "half") => Some(&["top", "bottom"]),
-            (Block::IronTrapdoor { .. }, "open") => Some(&["true", "false"]),
-            (Block::IronTrapdoor { .. }, "powered") => Some(&["true", "false"]),
-            (Block::IronTrapdoor { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::NoteBlock { .. }, "instrument") => Some(&[
-                "harp",
-                "basedrum",
-                "snare",
-                "hat",
-                "bass",
-                "flute",
-                "bell",
-                "guitar",
-                "chime",
-                "xylophone",
-                "iron_xylophone",
-                "cow_bell",
-                "didgeridoo",
-                "bit",
-                "banjo",
-                "pling",
-                "zombie",
-                "skeleton",
-                "creeper",
-                "dragon",
-                "wither_skeleton",
-                "piglin",
-                "custom_head",
-            ]),
-            (Block::NoteBlock { .. }, "note") => Some(&[
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-                "15", "16", "17", "18", "19", "20", "21", "22", "23", "24",
-            ]),
-            (Block::NoteBlock { .. }, "powered") => Some(&["true", "false"]),
-            (Block::BoneBlock { .. }, "axis") => Some(&["x", "y", "z"]),
-            (Block::HayBlock { .. }, "axis") => Some(&["x", "y", "z"]),
-            (Block::EndPortalFrame { .. }, "eye") => Some(&["true", "false"]),
-            (Block::EndPortalFrame { .. }, "facing") => Some(&["north", "south", "west", "east"]),
-            _ => None,
-        }
-    }
-    pub fn known_properties() -> &'static [PropertyDefinition] {
-        &[
-            PropertyDefinition {
-                name: "attached",
-                values: &["false", "true"],
-            },
-            PropertyDefinition {
-                name: "axis",
-                values: &["x", "y", "z"],
-            },
-            PropertyDefinition {
-                name: "bites",
-                values: &["0", "1", "2", "3", "4", "5", "6"],
-            },
-            PropertyDefinition {
-                name: "delay",
-                values: &["1", "2", "3", "4"],
-            },
-            PropertyDefinition {
-                name: "east",
-                values: &["none", "side", "up"],
-            },
-            PropertyDefinition {
-                name: "enabled",
-                values: &["false", "true"],
-            },
-            PropertyDefinition {
-                name: "eye",
-                values: &["false", "true"],
-            },
-            PropertyDefinition {
-                name: "face",
-                values: &["ceiling", "floor", "wall"],
-            },
-            PropertyDefinition {
-                name: "facing",
-                values: &["down", "east", "north", "south", "up", "west"],
-            },
-            PropertyDefinition {
-                name: "half",
-                values: &["bottom", "top"],
-            },
-            PropertyDefinition {
-                name: "instrument",
-                values: &[
-                    "banjo",
-                    "basedrum",
-                    "bass",
-                    "bell",
-                    "bit",
-                    "chime",
-                    "cow_bell",
-                    "creeper",
-                    "custom_head",
-                    "didgeridoo",
-                    "dragon",
-                    "flute",
-                    "guitar",
-                    "harp",
-                    "hat",
-                    "iron_xylophone",
-                    "piglin",
-                    "pling",
-                    "skeleton",
-                    "snare",
-                    "wither_skeleton",
-                    "xylophone",
-                    "zombie",
-                ],
-            },
-            PropertyDefinition {
-                name: "level",
-                values: &["0", "1", "2", "3", "4", "5", "6", "7", "8"],
-            },
-            PropertyDefinition {
-                name: "lit",
-                values: &["false", "true"],
-            },
-            PropertyDefinition {
-                name: "locked",
-                values: &["false", "true"],
-            },
-            PropertyDefinition {
-                name: "mode",
-                values: &["compare", "subtract"],
-            },
-            PropertyDefinition {
-                name: "north",
-                values: &["none", "side", "up"],
-            },
-            PropertyDefinition {
-                name: "note",
-                values: &[
-                    "0", "1", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "2",
-                    "20", "21", "22", "23", "24", "3", "4", "5", "6", "7", "8", "9",
-                ],
-            },
-            PropertyDefinition {
-                name: "open",
-                values: &["false", "true"],
-            },
-            PropertyDefinition {
-                name: "pickles",
-                values: &["1", "2", "3", "4"],
-            },
-            PropertyDefinition {
-                name: "power",
-                values: &[
-                    "0", "1", "10", "11", "12", "13", "14", "15", "2", "3", "4", "5", "6", "7",
-                    "8", "9",
-                ],
-            },
-            PropertyDefinition {
-                name: "powered",
-                values: &["false", "true"],
-            },
-            PropertyDefinition {
-                name: "rotation",
-                values: &[
-                    "0", "1", "10", "11", "12", "13", "14", "15", "2", "3", "4", "5", "6", "7",
-                    "8", "9",
-                ],
-            },
-            PropertyDefinition {
-                name: "south",
-                values: &["none", "side", "up"],
-            },
-            PropertyDefinition {
-                name: "type",
-                values: &["bottom", "double", "top"],
-            },
-            PropertyDefinition {
-                name: "waterlogged",
-                values: &["false", "true"],
-            },
-            PropertyDefinition {
-                name: "west",
-                values: &["none", "side", "up"],
-            },
-        ]
-    }
     pub fn properties(&self) -> BTreeMap<&'static str, String> {
         let mut props = BTreeMap::new();
         match self {
@@ -2031,6 +1915,114 @@ impl Block {
                 <bool as BlockProperty>::encode(*powered, &mut props, "powered");
             }
             Block::StoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockProperty>::encode(*face, &mut props, "face");
+                <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
+                <bool as BlockProperty>::encode(*powered, &mut props, "powered");
+            }
+            Block::WarpedButton(Button {
                 face,
                 facing,
                 powered,
@@ -2275,6 +2267,376 @@ impl Block {
         }
         props
     }
+    pub fn property_values(&self, name: &str) -> Option<&'static [&'static str]> {
+        match (self, name) {
+            (Block::RedstoneWire(_), "east") => Some(&["up", "side", "none"]),
+            (Block::RedstoneWire(_), "north") => Some(&["up", "side", "none"]),
+            (Block::RedstoneWire(_), "power") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::RedstoneWire(_), "south") => Some(&["up", "side", "none"]),
+            (Block::RedstoneWire(_), "west") => Some(&["up", "side", "none"]),
+            (Block::OakWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::OakWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::SpruceWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::SpruceWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::BirchWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::BirchWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::AcaciaWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::AcaciaWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::JungleWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::JungleWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::DarkOakWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::DarkOakWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::CrimsonWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::CrimsonWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::WarpedWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::WarpedWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::BambooWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::BambooWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::CherryWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::CherryWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::MangroveWallSign(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::MangroveWallSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::OakSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::OakSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::SpruceSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::SpruceSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::BirchSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::BirchSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::AcaciaSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::AcaciaSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::JungleSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::JungleSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::DarkOakSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::DarkOakSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::CrimsonSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::CrimsonSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::WarpedSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::WarpedSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::BambooSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::BambooSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::CherrySign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::CherrySign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::MangroveSign(_), "rotation") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::MangroveSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::Lever { .. }, "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::Lever { .. }, "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::Lever { .. }, "powered") => Some(&["true", "false"]),
+            (Block::StoneButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::StoneButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::StoneButton(_), "powered") => Some(&["true", "false"]),
+            (Block::PolishedBlackstoneButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::PolishedBlackstoneButton(_), "facing") => {
+                Some(&["north", "south", "west", "east"])
+            }
+            (Block::PolishedBlackstoneButton(_), "powered") => Some(&["true", "false"]),
+            (Block::OakButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::OakButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::OakButton(_), "powered") => Some(&["true", "false"]),
+            (Block::SpruceButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::SpruceButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::SpruceButton(_), "powered") => Some(&["true", "false"]),
+            (Block::BirchButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::BirchButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::BirchButton(_), "powered") => Some(&["true", "false"]),
+            (Block::JungleButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::JungleButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::JungleButton(_), "powered") => Some(&["true", "false"]),
+            (Block::AcaciaButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::AcaciaButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::AcaciaButton(_), "powered") => Some(&["true", "false"]),
+            (Block::DarkOakButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::DarkOakButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::DarkOakButton(_), "powered") => Some(&["true", "false"]),
+            (Block::MangroveButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::MangroveButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::MangroveButton(_), "powered") => Some(&["true", "false"]),
+            (Block::CherryButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::CherryButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::CherryButton(_), "powered") => Some(&["true", "false"]),
+            (Block::BambooButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::BambooButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::BambooButton(_), "powered") => Some(&["true", "false"]),
+            (Block::CrimsonButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::CrimsonButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::CrimsonButton(_), "powered") => Some(&["true", "false"]),
+            (Block::WarpedButton(_), "face") => Some(&["floor", "wall", "ceiling"]),
+            (Block::WarpedButton(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::WarpedButton(_), "powered") => Some(&["true", "false"]),
+            (Block::RedstoneTorch { .. }, "lit") => Some(&["true", "false"]),
+            (Block::RedstoneWallTorch { .. }, "facing") => {
+                Some(&["north", "south", "west", "east"])
+            }
+            (Block::RedstoneWallTorch { .. }, "lit") => Some(&["true", "false"]),
+            (Block::Repeater(_), "delay") => Some(&["1", "2", "3", "4"]),
+            (Block::Repeater(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::Repeater(_), "locked") => Some(&["true", "false"]),
+            (Block::Repeater(_), "powered") => Some(&["true", "false"]),
+            (Block::RedstoneLamp { .. }, "lit") => Some(&["true", "false"]),
+            (Block::TripwireHook { .. }, "attached") => Some(&["true", "false"]),
+            (Block::TripwireHook { .. }, "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::TripwireHook { .. }, "powered") => Some(&["true", "false"]),
+            (Block::Comparator(_), "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::Comparator(_), "mode") => Some(&["compare", "subtract"]),
+            (Block::Comparator(_), "powered") => Some(&["true", "false"]),
+            (Block::Observer { .. }, "facing") => {
+                Some(&["north", "east", "south", "west", "up", "down"])
+            }
+            (Block::Observer { .. }, "powered") => Some(&["true", "false"]),
+            (Block::SeaPickle { .. }, "pickles") => Some(&["1", "2", "3", "4"]),
+            (Block::SeaPickle { .. }, "waterlogged") => Some(&["true", "false"]),
+            (Block::Target { .. }, "power") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15",
+            ]),
+            (Block::OakPressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::SprucePressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::BirchPressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::JunglePressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::AcaciaPressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::DarkOakPressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::MangrovePressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::CherryPressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::BambooPressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::CrimsonPressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::WarpedPressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::PolishedBlackstonePressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::StonePressurePlate(_), "powered") => Some(&["true", "false"]),
+            (Block::Cake { .. }, "bites") => Some(&["0", "1", "2", "3", "4", "5", "6"]),
+            (Block::Barrel { .. }, "facing") => {
+                Some(&["north", "east", "south", "west", "up", "down"])
+            }
+            (Block::Barrel { .. }, "open") => Some(&["true", "false"]),
+            (Block::Hopper { .. }, "enabled") => Some(&["true", "false"]),
+            (Block::Hopper { .. }, "facing") => Some(&["down", "north", "south", "west", "east"]),
+            (Block::Furnace { .. }, "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::Furnace { .. }, "lit") => Some(&["true", "false"]),
+            (Block::SmoothStoneSlab { .. }, "type") => Some(&["top", "bottom", "double"]),
+            (Block::SmoothStoneSlab { .. }, "waterlogged") => Some(&["true", "false"]),
+            (Block::QuartzSlab { .. }, "type") => Some(&["top", "bottom", "double"]),
+            (Block::QuartzSlab { .. }, "waterlogged") => Some(&["true", "false"]),
+            (Block::WaterCauldron { .. }, "level") => Some(&["1", "2", "3"]),
+            (Block::Composter { .. }, "level") => {
+                Some(&["0", "1", "2", "3", "4", "5", "6", "7", "8"])
+            }
+            (Block::IronTrapdoor { .. }, "facing") => Some(&["north", "south", "west", "east"]),
+            (Block::IronTrapdoor { .. }, "half") => Some(&["top", "bottom"]),
+            (Block::IronTrapdoor { .. }, "open") => Some(&["true", "false"]),
+            (Block::IronTrapdoor { .. }, "powered") => Some(&["true", "false"]),
+            (Block::IronTrapdoor { .. }, "waterlogged") => Some(&["true", "false"]),
+            (Block::NoteBlock { .. }, "instrument") => Some(&[
+                "harp",
+                "basedrum",
+                "snare",
+                "hat",
+                "bass",
+                "flute",
+                "bell",
+                "guitar",
+                "chime",
+                "xylophone",
+                "iron_xylophone",
+                "cow_bell",
+                "didgeridoo",
+                "bit",
+                "banjo",
+                "pling",
+                "zombie",
+                "skeleton",
+                "creeper",
+                "dragon",
+                "wither_skeleton",
+                "piglin",
+                "custom_head",
+            ]),
+            (Block::NoteBlock { .. }, "note") => Some(&[
+                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                "15", "16", "17", "18", "19", "20", "21", "22", "23", "24",
+            ]),
+            (Block::NoteBlock { .. }, "powered") => Some(&["true", "false"]),
+            (Block::BoneBlock { .. }, "axis") => Some(&["x", "y", "z"]),
+            (Block::HayBlock { .. }, "axis") => Some(&["x", "y", "z"]),
+            (Block::EndPortalFrame { .. }, "eye") => Some(&["true", "false"]),
+            (Block::EndPortalFrame { .. }, "facing") => Some(&["north", "south", "west", "east"]),
+            _ => None,
+        }
+    }
+    pub fn known_properties() -> &'static [PropertyDefinition] {
+        &[
+            PropertyDefinition {
+                name: "attached",
+                values: &["false", "true"],
+            },
+            PropertyDefinition {
+                name: "axis",
+                values: &["x", "y", "z"],
+            },
+            PropertyDefinition {
+                name: "bites",
+                values: &["0", "1", "2", "3", "4", "5", "6"],
+            },
+            PropertyDefinition {
+                name: "delay",
+                values: &["1", "2", "3", "4"],
+            },
+            PropertyDefinition {
+                name: "east",
+                values: &["none", "side", "up"],
+            },
+            PropertyDefinition {
+                name: "enabled",
+                values: &["false", "true"],
+            },
+            PropertyDefinition {
+                name: "eye",
+                values: &["false", "true"],
+            },
+            PropertyDefinition {
+                name: "face",
+                values: &["ceiling", "floor", "wall"],
+            },
+            PropertyDefinition {
+                name: "facing",
+                values: &["down", "east", "north", "south", "up", "west"],
+            },
+            PropertyDefinition {
+                name: "half",
+                values: &["bottom", "top"],
+            },
+            PropertyDefinition {
+                name: "instrument",
+                values: &[
+                    "banjo",
+                    "basedrum",
+                    "bass",
+                    "bell",
+                    "bit",
+                    "chime",
+                    "cow_bell",
+                    "creeper",
+                    "custom_head",
+                    "didgeridoo",
+                    "dragon",
+                    "flute",
+                    "guitar",
+                    "harp",
+                    "hat",
+                    "iron_xylophone",
+                    "piglin",
+                    "pling",
+                    "skeleton",
+                    "snare",
+                    "wither_skeleton",
+                    "xylophone",
+                    "zombie",
+                ],
+            },
+            PropertyDefinition {
+                name: "level",
+                values: &["0", "1", "2", "3", "4", "5", "6", "7", "8"],
+            },
+            PropertyDefinition {
+                name: "lit",
+                values: &["false", "true"],
+            },
+            PropertyDefinition {
+                name: "locked",
+                values: &["false", "true"],
+            },
+            PropertyDefinition {
+                name: "mode",
+                values: &["compare", "subtract"],
+            },
+            PropertyDefinition {
+                name: "north",
+                values: &["none", "side", "up"],
+            },
+            PropertyDefinition {
+                name: "note",
+                values: &[
+                    "0", "1", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "2",
+                    "20", "21", "22", "23", "24", "3", "4", "5", "6", "7", "8", "9",
+                ],
+            },
+            PropertyDefinition {
+                name: "open",
+                values: &["false", "true"],
+            },
+            PropertyDefinition {
+                name: "pickles",
+                values: &["1", "2", "3", "4"],
+            },
+            PropertyDefinition {
+                name: "power",
+                values: &[
+                    "0", "1", "10", "11", "12", "13", "14", "15", "2", "3", "4", "5", "6", "7",
+                    "8", "9",
+                ],
+            },
+            PropertyDefinition {
+                name: "powered",
+                values: &["false", "true"],
+            },
+            PropertyDefinition {
+                name: "rotation",
+                values: &[
+                    "0", "1", "10", "11", "12", "13", "14", "15", "2", "3", "4", "5", "6", "7",
+                    "8", "9",
+                ],
+            },
+            PropertyDefinition {
+                name: "south",
+                values: &["none", "side", "up"],
+            },
+            PropertyDefinition {
+                name: "type",
+                values: &["bottom", "double", "top"],
+            },
+            PropertyDefinition {
+                name: "waterlogged",
+                values: &["false", "true"],
+            },
+            PropertyDefinition {
+                name: "west",
+                values: &["none", "side", "up"],
+            },
+        ]
+    }
     pub fn rotate(&mut self, amt: RotateAmt) {
         match self {
             Block::Air => {}
@@ -2380,6 +2742,114 @@ impl Block {
                 <bool as BlockTransform>::rotate(powered, amt);
             }
             Block::StoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::rotate(face, amt);
+                <BlockDirection as BlockTransform>::rotate(facing, amt);
+                <bool as BlockTransform>::rotate(powered, amt);
+            }
+            Block::WarpedButton(Button {
                 face,
                 facing,
                 powered,
@@ -2728,6 +3198,114 @@ impl Block {
                 <bool as BlockTransform>::flip(powered, dir);
             }
             Block::StoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => {
+                <LeverFace as BlockTransform>::flip(face, dir);
+                <BlockDirection as BlockTransform>::flip(facing, dir);
+                <bool as BlockTransform>::flip(powered, dir);
+            }
+            Block::WarpedButton(Button {
                 face,
                 facing,
                 powered,
@@ -3088,6 +3666,66 @@ impl Block {
                 facing,
                 powered,
             }) => 5748 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::PolishedBlackstoneButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 20374 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::OakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8611 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::SpruceButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8635 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::BirchButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8659 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::JungleButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8683 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::AcaciaButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8707 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::DarkOakButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8755 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::MangroveButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8779 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::CherryButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8731 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::BambooButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 8803 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::CrimsonButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 19100 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
+            Block::WarpedButton(Button {
+                face,
+                facing,
+                powered,
+            }) => 19124 + (face.get_id()) * 8 + (facing.get_id()) * 2 + (!powered as u32),
             Block::RedstoneTorch { lit } => 5738 + (!lit as u32),
             Block::RedstoneWallTorch { facing, lit } => {
                 5740 + (facing.get_id()) * 2 + (!lit as u32)
@@ -3446,6 +4084,102 @@ impl Block {
             5748..5772 => {
                 id -= 5748;
                 Some(Block::StoneButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            20374..20398 => {
+                id -= 20374;
+                Some(Block::PolishedBlackstoneButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8611..8635 => {
+                id -= 8611;
+                Some(Block::OakButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8635..8659 => {
+                id -= 8635;
+                Some(Block::SpruceButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8659..8683 => {
+                id -= 8659;
+                Some(Block::BirchButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8683..8707 => {
+                id -= 8683;
+                Some(Block::JungleButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8707..8731 => {
+                id -= 8707;
+                Some(Block::AcaciaButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8755..8779 => {
+                id -= 8755;
+                Some(Block::DarkOakButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8779..8803 => {
+                id -= 8779;
+                Some(Block::MangroveButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8731..8755 => {
+                id -= 8731;
+                Some(Block::CherryButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            8803..8827 => {
+                id -= 8803;
+                Some(Block::BambooButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            19100..19124 => {
+                id -= 19100;
+                Some(Block::CrimsonButton(Button {
+                    face: LeverFace::from_id(((id / 8) % 3)),
+                    facing: BlockDirection::from_id(((id / 2) % 4)),
+                    powered: (((id) % 2) & 1) == 0,
+                }))
+            }
+            19124..19148 => {
+                id -= 19124;
+                Some(Block::WarpedButton(Button {
                     face: LeverFace::from_id(((id / 8) % 3)),
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     powered: (((id) % 2) & 1) == 0,
@@ -11925,18 +12659,18 @@ impl Item {
             Item::RedstoneLamp => true,
             Item::NoteBlock => true,
             Item::StoneButton => true,
-            Item::PolishedBlackstoneButton => false,
-            Item::OakButton => false,
-            Item::SpruceButton => false,
-            Item::BirchButton => false,
-            Item::JungleButton => false,
-            Item::AcaciaButton => false,
-            Item::CherryButton => false,
-            Item::DarkOakButton => false,
-            Item::MangroveButton => false,
-            Item::BambooButton => false,
-            Item::CrimsonButton => false,
-            Item::WarpedButton => false,
+            Item::PolishedBlackstoneButton => true,
+            Item::OakButton => true,
+            Item::SpruceButton => true,
+            Item::BirchButton => true,
+            Item::JungleButton => true,
+            Item::AcaciaButton => true,
+            Item::CherryButton => true,
+            Item::DarkOakButton => true,
+            Item::MangroveButton => true,
+            Item::BambooButton => true,
+            Item::CrimsonButton => true,
+            Item::WarpedButton => true,
             Item::StonePressurePlate => true,
             Item::PolishedBlackstonePressurePlate => true,
             Item::LightWeightedPressurePlate => false,

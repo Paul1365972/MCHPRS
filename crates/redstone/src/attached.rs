@@ -68,7 +68,10 @@ pub fn button_press_ticks(button: Block) -> u8 {
 }
 
 pub(crate) fn is_stone_button(button: Block) -> bool {
-    matches!(button, Block::StoneButton(_))
+    matches!(
+        button,
+        Block::StoneButton(_) | Block::PolishedBlackstoneButton(_)
+    )
 }
 
 pub(crate) fn press_button(world: &mut impl RedstoneWorld, pos: BlockPos, button: Block) {

@@ -1,0 +1,71 @@
+origin 56 42 94
+size 10 4 9
+state 0 stone
+state 1 redstone_wire[east=none,north=side,power=15,south=side,west=none]
+state 2 repeater[delay=4,facing=south,locked=false,powered=true]
+state 3 note_block[instrument=basedrum,note=0,powered=true]
+state 4 comparator[facing=south,mode=compare,powered=true]{OutputSignal:15}
+state 5 redstone_torch[lit=true]
+state 6 stone_button[face=floor,facing=east,powered=false]
+state 7 repeater[delay=1,facing=west,locked=false,powered=false]
+state 8 note_block[instrument=basedrum,note=0,powered=false]
+state 9 redstone_wire[east=up,north=none,power=0,south=none,west=side]
+state 10 repeater[delay=2,facing=east,locked=false,powered=false]
+state 11 repeater[delay=1,facing=south,locked=false,powered=false]
+state 12 redstone_wire[east=side,north=none,power=0,south=none,west=side]
+state 13 smooth_stone_slab[type=bottom,waterlogged=false]
+state 14 redstone_wire[east=side,north=none,power=0,south=side,west=none]
+state 15 stone_button[face=floor,facing=north,powered=false]
+state 16 comparator[facing=east,mode=compare,powered=true]{OutputSignal:15}
+state 17 repeater[delay=3,facing=east,locked=false,powered=false]
+state 18 iron_trapdoor[facing=west,half=bottom,open=true,powered=true,waterlogged=false]
+state 19 iron_trapdoor[facing=north,half=bottom,open=false,powered=false,waterlogged=false]
+state 20 redstone_wire[east=side,north=side,power=0,south=side,west=side]
+state 21 redstone_wire[east=side,north=none,power=15,south=none,west=side]
+state 22 smooth_stone_slab[type=top,waterlogged=false]
+state 23 lever[face=floor,facing=west,powered=false]
+state 24 iron_trapdoor[facing=south,half=bottom,open=false,powered=false,waterlogged=false]
+state 25 comparator[facing=west,mode=compare,powered=false]{OutputSignal:0}
+state 26 redstone_block
+state 27 comparator[facing=north,mode=compare,powered=true]{OutputSignal:15}
+state 28 redstone_lamp[lit=true]
+state 29 comparator[facing=west,mode=compare,powered=true]{OutputSignal:15}
+state 30 oak_button[face=floor,facing=south,powered=false]
+state 31 comparator[facing=north,mode=subtract,powered=false]{OutputSignal:0}
+state 32 glass
+state 33 comparator[facing=east,mode=compare,powered=false]{OutputSignal:0}
+state 34 stone_button[face=floor,facing=east,powered=true]
+state 35 lever[face=floor,facing=west,powered=true]
+state 36 iron_trapdoor[facing=south,half=bottom,open=true,powered=true,waterlogged=false]
+state 37 oak_button[face=floor,facing=south,powered=true]
+state 38 stone_button[face=floor,facing=north,powered=true]
+state 39 redstone_wire[east=side,north=none,power=15,south=side,west=none]
+state 40 repeater[delay=1,facing=south,locked=false,powered=true]
+state 41 redstone_wire[east=side,north=none,power=14,south=none,west=side]
+start 1,0,1=0 1,0,2=0 1,0,3=0 1,0,4=0 1,0,5=0 1,0,6=0 1,0,7=0 1,1,1=1 1,1,2=2 1,1,3=3 1,1,4=4 1,1,5=5 1,1,6=6 1,1,7=7 2,0,1=0 2,0,2=0 2,0,3=0 2,0,4=0 2,0,5=0 2,0,6=0 2,0,7=0 2,1,1=8 2,1,2=9 2,1,4=10 2,1,5=11 2,1,6=0 2,1,7=12 3,0,1=0 3,0,2=0 3,0,3=0 3,0,4=0 3,0,5=0 3,0,6=0 3,0,7=0 3,1,2=0 3,1,3=0 3,1,4=13 3,1,5=14 3,1,6=11 3,1,7=15 3,2,2=12 4,0,1=0 4,0,2=0 4,0,3=0 4,0,4=0 4,0,5=0 4,0,6=0 4,0,7=0 4,1,1=16 4,1,2=17 4,1,3=5 4,1,4=18 4,1,5=12 4,1,6=19 4,1,7=0 4,2,7=20 5,0,1=0 5,0,2=0 5,0,3=0 5,0,4=0 5,0,5=0 5,0,6=0 5,0,7=0 5,1,1=21 5,1,2=22 5,1,3=3 5,1,4=23 5,1,5=24 5,1,6=0 5,1,7=25 6,0,1=0 6,0,2=0 6,0,3=0 6,0,4=0 6,0,5=0 6,0,6=0 6,0,7=0 6,1,1=26 6,1,2=0 6,1,3=5 6,1,4=27 6,1,5=25 6,1,6=0 6,1,7=0 6,2,2=20 6,2,7=5 7,0,1=0 7,0,2=0 7,0,3=0 7,0,4=0 7,0,5=0 7,0,6=0 7,0,7=0 7,1,1=5 7,1,2=28 7,1,3=29 7,1,4=30 7,1,5=8 7,1,6=13 7,1,7=0 7,2,7=5 8,0,1=0 8,0,2=0 8,0,3=0 8,0,4=0 8,0,5=0 8,0,6=0 8,0,7=0 8,1,1=31 8,1,2=1 8,1,3=28 8,1,4=28 8,1,5=32 8,1,6=0 8,1,7=33 8,2,6=20
+wait 18
+use 1,1,6 1,1,6=34
+wait 2
+use 5,1,4 5,1,4=35 5,1,5=36
+wait 4
+use 5,1,4 5,1,4=23 5,1,5=24
+wait 2
+use 7,1,4 1,1,6 7,1,4=37 7,1,5=3
+wait 12 1,1,6=6
+wait 18 7,1,4=30 7,1,5=8
+wait 6
+use 7,1,4 7,1,4 7,1,4=37 7,1,5=3
+wait 8
+use 1,1,6 1,1,6 1,1,6=34
+wait 2
+use 1,1,6
+wait 8
+use 3,1,7 2,1,7=21 3,1,7=38
+wait 2 3,1,5=39 3,1,6=40 4,1,5=41 5,1,5=36
+wait 2
+use 1,1,6
+wait 6 1,1,6=6
+wait 2 7,1,4=30 7,1,5=8
+wait 8 2,1,7=12 3,1,7=15
+wait 2 3,1,5=14 3,1,6=11 4,1,5=12 5,1,5=24
+wait 18

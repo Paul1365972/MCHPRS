@@ -1,0 +1,106 @@
+origin 70 44 -98
+size 10 4 9
+state 0 stone
+state 1 redstone_torch[lit=true]
+state 2 redstone_wire[east=none,north=side,power=0,south=side,west=none]
+state 3 repeater[delay=4,facing=south,locked=false,powered=false]
+state 4 redstone_wire[east=side,north=none,power=0,south=none,west=side]
+state 5 repeater[delay=1,facing=west,locked=false,powered=false]
+state 6 redstone_wire[east=side,north=none,power=15,south=side,west=side]
+state 7 redstone_wire[east=side,north=side,power=14,south=side,west=none]
+state 8 repeater[delay=2,facing=south,locked=false,powered=false]
+state 9 comparator[facing=south,mode=subtract,powered=false]{OutputSignal:0}
+state 10 redstone_wire[east=up,north=side,power=0,south=none,west=side]
+state 11 redstone_wire[east=side,north=none,power=14,south=side,west=side]
+state 12 comparator[facing=east,mode=subtract,powered=false]{OutputSignal:0}
+state 13 redstone_wire[east=side,north=side,power=0,south=up,west=none]
+state 14 smooth_stone_slab[type=top,waterlogged=false]
+state 15 redstone_wire[east=side,north=none,power=0,south=up,west=side]
+state 16 redstone_wire[east=side,north=side,power=0,south=none,west=side]
+state 17 repeater[delay=4,facing=west,locked=false,powered=true]
+state 18 iron_trapdoor[facing=north,half=bottom,open=false,powered=false,waterlogged=false]
+state 19 comparator[facing=west,mode=subtract,powered=false]{OutputSignal:0}
+state 20 redstone_wire[east=none,north=side,power=0,south=none,west=up]
+state 21 note_block[instrument=basedrum,note=0,powered=false]
+state 22 redstone_wire[east=side,north=side,power=0,south=none,west=up]
+state 23 repeater[delay=3,facing=north,locked=false,powered=true]
+state 24 iron_trapdoor[facing=south,half=bottom,open=false,powered=false,waterlogged=false]
+state 25 repeater[delay=1,facing=east,locked=false,powered=false]
+state 26 lever[face=floor,facing=east,powered=false]
+state 27 redstone_wire[east=side,north=side,power=0,south=side,west=none]
+state 28 redstone_wire[east=side,north=side,power=0,south=side,west=side]
+state 29 redstone_wire[east=side,north=none,power=15,south=none,west=side]
+state 30 iron_trapdoor[facing=west,half=bottom,open=false,powered=false,waterlogged=false]
+state 31 comparator[facing=north,mode=compare,powered=false]{OutputSignal:0}
+state 32 stone_button[face=floor,facing=north,powered=false]
+state 33 redstone_wire[east=side,north=none,power=14,south=none,west=side]
+state 34 repeater[delay=4,facing=east,locked=false,powered=false]
+state 35 oak_button[face=floor,facing=south,powered=false]
+state 36 repeater[delay=1,facing=south,locked=false,powered=false]
+state 37 redstone_wire[east=up,north=side,power=8,south=none,west=side]
+state 38 redstone_wire[east=side,north=none,power=8,south=up,west=side]
+state 39 redstone_wire[east=side,north=side,power=9,south=none,west=side]
+state 40 redstone_wire[east=side,north=side,power=10,south=none,west=up]
+state 41 redstone_wire[east=side,north=none,power=11,south=none,west=side]
+state 42 redstone_wire[east=side,north=side,power=13,south=side,west=side]
+state 43 redstone_wire[east=side,north=side,power=12,south=none,west=side]
+state 44 redstone_wire[east=side,north=side,power=15,south=side,west=side]
+state 45 oak_button[face=floor,facing=south,powered=true]
+state 46 repeater[delay=1,facing=east,locked=false,powered=true]
+state 47 comparator[facing=south,mode=subtract,powered=true]{OutputSignal:14}
+state 48 comparator[facing=north,mode=compare,powered=true]{OutputSignal:15}
+state 49 redstone_wire[east=up,north=side,power=11,south=none,west=side]
+state 50 redstone_wire[east=side,north=none,power=11,south=up,west=side]
+state 51 redstone_wire[east=side,north=side,power=13,south=none,west=up]
+state 52 redstone_wire[east=side,north=side,power=14,south=side,west=side]
+state 53 redstone_wire[east=side,north=side,power=15,south=none,west=side]
+state 54 stone_button[face=floor,facing=north,powered=true]
+state 55 comparator[facing=east,mode=subtract,powered=true]{OutputSignal:2}
+state 56 repeater[delay=4,facing=east,locked=true,powered=false]
+state 57 repeater[delay=4,facing=south,locked=false,powered=true]
+state 58 lever[face=floor,facing=east,powered=true]
+state 59 comparator[facing=east,mode=subtract,powered=true]{OutputSignal:5}
+state 60 redstone_wire[east=side,north=side,power=13,south=side,west=none]
+state 61 redstone_wire[east=side,north=side,power=12,south=side,west=side]
+state 62 comparator[facing=south,mode=subtract,powered=true]{OutputSignal:13}
+state 63 redstone_wire[east=side,north=none,power=2,south=up,west=side]
+state 64 redstone_wire[east=side,north=side,power=1,south=none,west=side]
+state 65 redstone_wire[east=up,north=side,power=3,south=none,west=side]
+state 66 redstone_wire[east=side,north=none,power=5,south=up,west=side]
+state 67 redstone_wire[east=side,north=side,power=4,south=none,west=side]
+state 68 redstone_wire[east=side,north=side,power=3,south=none,west=up]
+state 69 redstone_wire[east=side,north=none,power=2,south=none,west=side]
+start 1,0,1=0 1,0,2=0 1,0,3=0 1,0,4=0 1,0,5=0 1,0,6=0 1,0,7=0 1,1,1=1 1,1,3=2 1,1,4=3 1,1,6=4 1,1,7=5 2,0,1=0 2,0,2=0 2,0,3=0 2,0,4=0 2,0,5=0 2,0,6=0 2,0,7=0 2,1,1=6 2,1,2=7 2,1,3=8 2,1,4=0 2,1,5=0 2,1,6=9 2,1,7=10 2,2,4=4 3,0,1=0 3,0,2=0 3,0,3=0 3,0,4=0 3,0,5=0 3,0,6=0 3,0,7=0 3,1,1=11 3,1,2=12 3,1,3=13 3,1,4=0 3,1,5=14 3,1,6=15 3,1,7=0 3,2,4=16 3,2,7=16 4,0,1=0 4,0,2=0 4,0,3=0 4,0,4=0 4,0,5=0 4,0,6=0 4,0,7=0 4,1,1=17 4,1,2=18 4,1,3=19 4,1,4=20 4,1,5=21 4,1,6=12 4,1,7=22 5,0,1=0 5,0,2=0 5,0,3=0 5,0,4=0 5,0,5=0 5,0,6=0 5,0,7=0 5,1,1=1 5,1,2=23 5,1,3=14 5,1,4=21 5,1,5=24 5,1,6=25 5,1,7=4 6,0,1=0 6,0,2=0 6,0,3=0 6,0,4=0 6,0,5=0 6,0,6=0 6,0,7=0 6,1,1=1 6,1,2=26 6,1,4=9 6,1,5=27 6,1,6=28 6,1,7=16 7,0,1=0 7,0,2=0 7,0,3=0 7,0,4=0 7,0,5=0 7,0,6=0 7,0,7=0 7,1,1=29 7,1,3=30 7,1,4=19 7,1,5=28 7,1,6=31 7,1,7=32 8,0,1=0 8,0,2=0 8,0,3=0 8,0,4=0 8,0,5=0 8,0,6=0 8,0,7=0 8,1,1=33 8,1,2=21 8,1,3=34 8,1,4=3 8,1,5=35 8,1,6=0 8,1,7=36
+wait 2
+use 8,1,5 8,1,5 2,1,7=37 3,1,6=38 3,2,7=39 4,1,7=40 5,1,7=41 6,1,5=7 6,1,6=42 6,1,7=43 7,1,5=44 8,1,5=45
+wait 2 5,1,6=46 6,1,4=47 7,1,6=48
+use 7,1,7 2,1,7=49 3,1,6=50 3,2,7=43 4,1,7=51 5,1,7=33 6,1,6=52 6,1,7=53 7,1,7=54
+wait 2 4,1,6=55
+wait 4 8,1,3=56 8,1,4=57
+wait 2
+use 6,1,2 6,1,2=58
+wait 12 2,1,7=37 3,1,6=38 3,2,7=39 4,1,7=40 5,1,7=41 6,1,6=42 6,1,7=43 7,1,7=32
+wait 2 4,1,6=59
+wait 4
+use 7,1,7 2,1,7=49 3,1,6=50 3,2,7=43 4,1,7=51 5,1,7=33 6,1,6=52 6,1,7=53 7,1,7=54
+wait 2 4,1,6=55 6,1,5=60 7,1,5=61 8,1,5=35
+wait 2 6,1,4=62 7,1,6=31
+use 7,1,7
+wait 6 8,1,3=34 8,1,4=3
+wait 10 2,1,7=10 3,1,6=63 3,2,7=64 4,1,7=22 5,1,7=4 6,1,5=27 6,1,6=28 6,1,7=16 7,1,5=28 7,1,7=32
+wait 2 3,1,6=15 3,2,7=16 4,1,6=12 5,1,6=25 6,1,4=9
+wait 6
+use 6,1,2 6,1,2=26
+wait 6
+use 7,1,7 2,1,7=49 3,1,6=50 3,2,7=43 4,1,7=51 5,1,7=33 6,1,5=60 6,1,6=52 6,1,7=53 7,1,5=61 7,1,7=54
+wait 2 5,1,6=46 6,1,4=62
+wait 2 4,1,6=55
+wait 16 2,1,7=10 3,1,6=63 3,2,7=64 4,1,7=22 5,1,7=4 6,1,5=27 6,1,6=28 6,1,7=16 7,1,5=28 7,1,7=32
+wait 2 3,1,6=15 3,2,7=16 4,1,6=12 5,1,6=25 6,1,4=9
+use 8,1,5 2,1,7=37 3,1,6=38 3,2,7=39 4,1,7=40 5,1,7=41 6,1,5=7 6,1,6=42 6,1,7=43 7,1,5=44 8,1,5=45
+wait 2 5,1,6=46 6,1,4=47 7,1,6=48
+wait 2 4,1,6=59
+wait 4 8,1,3=56 8,1,4=57
+wait 22 2,1,7=65 3,1,6=66 3,2,7=67 4,1,7=68 5,1,7=69 6,1,5=27 6,1,6=28 6,1,7=64 7,1,5=28 8,1,5=35
+wait 2 2,1,7=10 3,1,6=15 3,2,7=16 4,1,6=12 4,1,7=22 5,1,6=25 5,1,7=4 6,1,4=9 6,1,7=16 7,1,6=31
+wait 2

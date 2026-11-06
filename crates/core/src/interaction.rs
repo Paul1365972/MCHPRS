@@ -185,6 +185,20 @@ pub fn get_state_for_placement(
             },
         },
         Item::StoneButton => Block::StoneButton(get_button_placement(context)),
+        Item::PolishedBlackstoneButton => {
+            Block::PolishedBlackstoneButton(get_button_placement(context))
+        }
+        Item::OakButton => Block::OakButton(get_button_placement(context)),
+        Item::SpruceButton => Block::SpruceButton(get_button_placement(context)),
+        Item::BirchButton => Block::BirchButton(get_button_placement(context)),
+        Item::JungleButton => Block::JungleButton(get_button_placement(context)),
+        Item::AcaciaButton => Block::AcaciaButton(get_button_placement(context)),
+        Item::DarkOakButton => Block::DarkOakButton(get_button_placement(context)),
+        Item::MangroveButton => Block::MangroveButton(get_button_placement(context)),
+        Item::CherryButton => Block::CherryButton(get_button_placement(context)),
+        Item::BambooButton => Block::BambooButton(get_button_placement(context)),
+        Item::CrimsonButton => Block::CrimsonButton(get_button_placement(context)),
+        Item::WarpedButton => Block::WarpedButton(get_button_placement(context)),
         Item::RedstoneLamp => Block::RedstoneLamp { lit: false },
         // TODO: Hopper facing
         Item::Hopper => Block::Hopper {

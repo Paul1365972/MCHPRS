@@ -1,0 +1,41 @@
+origin -64 23 11
+size 6 4 10
+state 0 stone
+state 1 lever[face=floor,facing=east,powered=false]
+state 2 comparator[facing=east,mode=subtract,powered=false]{OutputSignal:0}
+state 3 repeater[delay=4,facing=north,locked=false,powered=false]
+state 4 repeater[delay=2,facing=north,locked=false,powered=false]
+state 5 redstone_torch[lit=true]
+state 6 comparator[facing=east,mode=compare,powered=true]{OutputSignal:15}
+state 7 redstone_wire[east=side,north=side,power=15,south=none,west=none]
+state 8 redstone_lamp[lit=false]
+state 9 redstone_wire[east=none,north=none,power=0,south=side,west=side]
+state 10 redstone_wire[east=up,north=side,power=0,south=none,west=none]
+state 11 smooth_stone_slab[type=top,waterlogged=false]
+state 12 repeater[delay=3,facing=east,locked=false,powered=false]
+state 13 redstone_wire[east=side,north=none,power=15,south=side,west=side]
+state 14 redstone_block
+state 15 glass
+state 16 redstone_wire[east=side,north=up,power=0,south=none,west=none]
+state 17 oak_button[face=floor,facing=east,powered=false]
+state 18 repeater[delay=1,facing=east,locked=false,powered=false]
+state 19 note_block[instrument=basedrum,note=0,powered=true]
+state 20 comparator[facing=north,mode=subtract,powered=false]{OutputSignal:0}
+state 21 comparator[facing=west,mode=subtract,powered=false]{OutputSignal:0}
+state 22 redstone_wire[east=side,north=side,power=0,south=side,west=side]
+state 23 oak_button[face=floor,facing=east,powered=true]
+state 24 comparator[facing=west,mode=subtract,powered=true]{OutputSignal:15}
+start 1,0,1=0 1,0,2=0 1,0,3=0 1,0,4=0 1,0,5=0 1,0,6=0 1,0,7=0 1,0,8=0 1,1,1=1 1,1,2=2 1,1,3=3 1,1,4=4 1,1,5=5 1,1,6=0 1,1,7=6 1,1,8=7 2,0,1=0 2,0,2=0 2,0,3=0 2,0,4=0 2,0,5=0 2,0,6=0 2,0,7=0 2,0,8=0 2,1,1=8 2,1,2=9 2,1,3=10 2,1,4=11 2,1,5=5 2,1,6=12 2,1,7=13 2,1,8=14 3,0,1=0 3,0,2=0 3,0,3=0 3,0,4=0 3,0,5=0 3,0,6=0 3,0,7=0 3,0,8=0 3,1,1=15 3,1,2=0 3,1,3=0 3,1,4=16 3,1,6=4 3,1,7=17 3,1,8=15 3,2,3=9 4,0,1=0 4,0,2=0 4,0,3=0 4,0,4=0 4,0,5=0 4,0,6=0 4,0,7=0 4,0,8=0 4,1,1=18 4,1,2=5 4,1,3=19 4,1,4=20 4,1,5=0 4,1,7=21 4,1,8=5 4,2,5=22
+wait 26
+use 3,1,7 3,1,7=23
+wait 2 4,1,7=24
+wait 28 3,1,7=17
+wait 2 4,1,7=21
+wait 16
+use 3,1,7 3,1,7 3,1,7=23
+wait 2 4,1,7=24
+wait 10
+use 3,1,7
+wait 18 3,1,7=17
+wait 2 4,1,7=21
+wait 14
