@@ -38,6 +38,7 @@ pub struct ExtractOptions {
     pub ports: Ports,
     pub ports_only: bool,
     pub keeps_dust: bool,
+    pub link_order: LinkOrder,
 }
 
 impl ExtractOptions {
@@ -56,12 +57,19 @@ impl ExtractOptions {
             ports,
             ports_only: flags.is_on(&IO_ONLY),
             keeps_dust: true,
+            link_order: LinkOrder::NearestFirst,
         }
     }
 
     pub fn observes(&self, port: Option<Role>) -> bool {
         port.is_some() || !self.ports_only
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkOrder {
+    NearestFirst,
+    TypeFirst,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +132,6 @@ pub fn extract(
         });
     }
 
-    links::add_links(&mut graph, world, &nodes_by_position);
+    links::add_links(&mut graph, world, &nodes_by_position, options.link_order);
     Ok(graph)
 }

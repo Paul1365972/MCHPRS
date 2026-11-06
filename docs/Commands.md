@@ -150,7 +150,7 @@ The [config](../README.md#redpiler) can set default flags per backend; flags giv
 | Flag | Short | Description |
 | --- | --- | --- |
 | `--optimize` | `-o` | Enable Redpiler optimizations. This can and will break the state of your build; use backups. |
-| `--reorder` | `-r` | Let `--optimize` also run optimizations that can reorder updates within a tick. |
+| `--reorder` | `-r` | Reorder updates within a tick for speed. |
 | `--io-only` | `-i` | Only send block updates for inputs and outputs: buttons, levers, pressure plates, lamps, trapdoors, and note blocks. This can reduce lag and improve simulation speed. |
 | `--wire-dot-out` | `-d` | Treat redstone dots as outputs, so they still update with `--io-only` or `--optimize`; useful for color displays. |
 | `--illegal-states-out` | `-l` | Treat redstone wires in illegal states (one connected side) as outputs, so they still update with `--io-only` or `--optimize`; useful for sprite displays. |

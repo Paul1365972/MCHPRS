@@ -5,7 +5,7 @@ use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler::compile::{BuildContext, Stage};
 use mchprs_redpiler::engine::Engine;
 use mchprs_redpiler::extract::{
-    ExtractOptions, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
+    ExtractOptions, LinkOrder, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
 };
 use mchprs_redpiler::passes::{
     Coalesce, ConstantFold, DedupLinks, Pass, PruneOrphans, UnreachableOutput, OPTIMIZE,
@@ -14,7 +14,7 @@ use mchprs_redpiler::passes::{
 const REORDER: Flag = Flag::switch(
     "reorder",
     Some('r'),
-    "Let optimizations reorder updates within a tick",
+    "Reorder updates within a tick for speed",
 );
 
 static FLAGS: [Flag; 6] = [
@@ -54,9 +54,10 @@ impl Backend for DirectBackend {
 
     fn configure(&self, flags: &FlagValues) -> Result<CompilePlan, String> {
         let optimize = flags.is_on(&OPTIMIZE);
+        let reorder = flags.is_on(&REORDER);
         let passes = if !optimize {
             Vec::new()
-        } else if flags.is_on(&REORDER) {
+        } else if reorder {
             REORDERING_PASSES.to_vec()
         } else {
             OPTIMIZING_PASSES.to_vec()
@@ -64,6 +65,11 @@ impl Backend for DirectBackend {
         Ok(CompilePlan {
             extract: ExtractOptions {
                 keeps_dust: !optimize,
+                link_order: if reorder {
+                    LinkOrder::TypeFirst
+                } else {
+                    LinkOrder::NearestFirst
+                },
                 ..ExtractOptions::from_flags(flags)
             },
             passes,

@@ -29,7 +29,7 @@ To start, extraction iterates through all nodes in the graph. Different types of
 When the input block of a node is searched, the block is either a component that can provide Redstone power on its own, or a Redstone Wire. If it can provide power, then it can directly create a link to that component. The corresponding node in the graph is looked up based on the position of the component, and a link to the node is created with a weight of 0. If the block is a Redstone Wire, then a breadth-first search is run to look for components that provide power to the Wire. The distance of the path taken from the starting wire to the input components are recorded as the weight of the links. Then, input components are looked up in the graph, and links are created.
 The search stops after 15 wires, so every link weighs less than 15.
 
-Each node's outgoing links are ordered by target type, then by target index, which is the order the engine updates them in.
+Each node's outgoing links are ordered by weight, then by target type, then by target index (with `--reorder`, by target type first), which is the order the engine updates them in.
 
 # The Pass System
 
@@ -172,7 +172,7 @@ Due ticks run by priority, then in the order they were scheduled, as in vanilla.
 
 The order in which one change reaches the nodes it links to is not specified.
 Vanilla derives it from block positions: a fixed neighbor update order, each component's update pattern, and the iteration order of a Java hash set for redstone wire. Rotating or moving a build can therefore change its behavior.
-Redpiler uses the order of each node's outgoing links instead, which matches vanilla only by chance. The other passes keep this order, but the `Coalesce` pass can move a tick that ran between two merged nodes after both of them.
+Redpiler uses the order of each node's outgoing links instead, which approximates vanilla's. The other passes keep this order, but the `Coalesce` pass can move a tick that ran between two merged nodes after both of them.
 
 ## The Direct Backend
 

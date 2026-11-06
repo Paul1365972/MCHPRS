@@ -1,3 +1,4 @@
+use super::LinkOrder;
 use crate::graph::{Direction, Graph, Link, LinkKind, NodeIdx, NodeKind};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
@@ -11,6 +12,7 @@ pub fn add_links(
     graph: &mut Graph,
     world: &impl BlockView,
     nodes_by_position: &FxHashMap<BlockPos, NodeIdx>,
+    order: LinkOrder,
 ) {
     let mut search = LinkSearch {
         world,
@@ -22,7 +24,12 @@ pub fn add_links(
     for node in (0..graph.node_bound()).map(NodeIdx::new) {
         if graph.contains_node(node) {
             graph.sort_edges_by_key(node, Direction::Outgoing, |graph, edge| {
-                (type_order(&graph[edge.target()].kind), edge.target())
+                let weight = edge.weight().weight;
+                let type_order = type_order(&graph[edge.target()].kind);
+                match order {
+                    LinkOrder::NearestFirst => (weight, type_order, edge.target()),
+                    LinkOrder::TypeFirst => (type_order, weight, edge.target()),
+                }
             });
         }
     }
