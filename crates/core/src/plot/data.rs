@@ -102,7 +102,7 @@ impl Plot {
             packet_senders: HashMap::new(),
             world_send_rate: plot_data.world_send_rate,
             pending_block_entities: FxHashMap::default(),
-            pending_sounds: Vec::new(),
+            pending_sounds: FxHashMap::default(),
         };
         let region = world.region();
         plate::recheck_pressed_plates(&mut world, region);

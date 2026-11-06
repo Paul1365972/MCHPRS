@@ -60,6 +60,7 @@ impl Plot {
                 Block::Lever { .. } | Block::StoneButton(mchprs_blocks::blocks::Button { .. })
             );
             if lever_or_button && !self.players[player].crouching {
+                self.play_use_sound(player, block_pos, block);
                 if let Err(error) = self.redpiler.on_use_block(block_pos, block) {
                     self.compiler_failed(error);
                 }

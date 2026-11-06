@@ -10,7 +10,7 @@ pub struct PlotWorld {
     pub packet_senders: HashMap<EntityId, PlayerPacketSender>,
     pub(super) world_send_rate: WorldSendRate,
     pub(super) pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
-    pub(super) pending_sounds: Vec<CSoundEffect>,
+    pub(super) pending_sounds: FxHashMap<BlockPos, Sound>,
 }
 
 impl PlotWorld {
@@ -175,27 +175,9 @@ impl RedstoneWorld for PlotWorld {
     }
 
     fn play_sound(&mut self, pos: BlockPos, sound: Sound) {
-        if self.world_send_rate.0 == 0.0 {
-            return;
+        if self.world_send_rate.0 != 0.0 {
+            self.pending_sounds.insert(pos, sound);
         }
-        // FIXME: We do not know the players location here, so we send the sound packet to all
-        // players A notchian server would only send to players in hearing distance
-        // (volume.clamp(0.0, 1.0) * 16.0)
-        let sound_effect_data = CSoundEffect {
-            sound_id: sound.event + 1,
-            sound_name: None,
-            has_fixed_range: None,
-            range: None,
-            sound_category: sound.source as i32,
-            x: pos.x * 8 + 4,
-            y: pos.y * 8 + 4,
-            z: pos.z * 8 + 4,
-            volume: sound.volume,
-            pitch: sound.pitch,
-            // FIXME: How do we decide this?
-            seed: 0,
-        };
-        self.pending_sounds.push(sound_effect_data);
     }
 }
 
@@ -208,12 +190,6 @@ impl PlotWorld {
         }
         for (_, block_entity) in self.pending_block_entities.drain() {
             let encoded = block_entity.encode();
-            for packet_sender in self.packet_senders.values() {
-                packet_sender.send_packet(&encoded);
-            }
-        }
-        for sound in self.pending_sounds.drain(..) {
-            let encoded = sound.encode();
             for packet_sender in self.packet_senders.values() {
                 packet_sender.send_packet(&encoded);
             }
