@@ -2,6 +2,8 @@ use crate::cache;
 use crate::rtl;
 use crate::stage::Stage;
 use crate::subprocess::{self, SubprocessError};
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
 use std::io;
@@ -12,6 +14,8 @@ use std::time::{Duration, Instant};
 const DEVICE: &str = "xc7a35tcpg236-1";
 // The XC7A35T shares the XC7A50T die, so nextpnr routes it with the XC7A50T chip database.
 const CHIP_DATABASE_DEVICE: &str = "xc7a50t";
+/// The divisors of the board clock that the system clock can take, fastest first
+const CLOCK_DIVISORS: [u32; 2] = [1, 2];
 const BUILD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const ASSEMBLY_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const CONVERSION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -41,6 +45,19 @@ pub(crate) enum ToolchainError {
         #[source]
         source: io::Error,
     },
+    #[error("could not read the timing report {}", .path.display())]
+    Report {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the timing report names no clock")]
+    Unclocked,
+    #[error("the circuit reaches {achieved_megahertz:.1} MHz, but the slowest system clock is {constraint_megahertz} MHz")]
+    Timing {
+        achieved_megahertz: f64,
+        constraint_megahertz: f64,
+    },
     #[error("FPGA {stage} failed; see {} and {}", .stdout.display(), .stderr.display())]
     Stage {
         stage: &'static str,
@@ -51,19 +68,51 @@ pub(crate) enum ToolchainError {
     },
 }
 
-pub(super) fn build(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, ToolchainError> {
+pub(super) struct Bitstream {
+    pub(super) path: PathBuf,
+    pub(super) clock_divisor: u32,
+}
+
+pub(super) fn build(
+    directory: &Path,
+    progress: &dyn Fn(Stage),
+) -> Result<Bitstream, ToolchainError> {
     let directory = directory.canonicalize()?;
     let cache = parent(&directory)?;
     let database = environment_path("PRJXRAY_DB_DIR")?.join("artix7");
     let nextpnr = environment_path("NEXTPNR_XILINX_DIR")?;
-    let netlist = synthesize(&directory, progress)?;
     let chip_database = chip_database(cache, &database, &nextpnr, progress)?;
-    let assembly = place_and_route(&directory, &chip_database, &netlist, progress)?;
-    let frames = generate_frames(&directory, &database, &assembly, progress)?;
-    write_bitstream(&directory, &database, &frames, progress)
+    let mut timing = None;
+    for clock_divisor in CLOCK_DIVISORS {
+        let netlist = synthesize(&directory, clock_divisor, progress)?;
+        let routed = place_and_route(&directory, &chip_database, &netlist, progress)?;
+        if routed.timing.is_met() {
+            let frames = generate_frames(&directory, &database, &routed.assembly, progress)?;
+            let path = write_bitstream(&directory, &database, &frames, progress)?;
+            return Ok(Bitstream {
+                path,
+                clock_divisor,
+            });
+        }
+        tracing::info!(
+            achieved_megahertz = routed.timing.achieved,
+            constraint_megahertz = routed.timing.constraint,
+            "the circuit misses its system clock"
+        );
+        timing = Some(routed.timing);
+    }
+    let timing = timing.expect("at least one clock divisor");
+    Err(ToolchainError::Timing {
+        achieved_megahertz: timing.achieved,
+        constraint_megahertz: timing.constraint,
+    })
 }
 
-fn synthesize(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, ToolchainError> {
+fn synthesize(
+    directory: &Path,
+    clock_divisor: u32,
+    progress: &dyn Fn(Stage),
+) -> Result<PathBuf, ToolchainError> {
     let netlist = directory.join("circuit.json");
     let script = directory.join("synthesis.ys");
     let sources = rtl::sources()
@@ -78,6 +127,7 @@ fn synthesize(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, Too
         &script,
         format!(
             "read_verilog -sv {sources}
+chparam -set CLOCK_DIVISOR {clock_divisor} basys3
 {synth_xilinx} :map_ffs
 dfflegalize -cell $_DFF_P_ 01
 {synth_xilinx} map_ffs:
@@ -159,17 +209,45 @@ fn build_chip_database(
     Ok(())
 }
 
+struct Routed {
+    assembly: PathBuf,
+    timing: ClockTiming,
+}
+
+#[derive(Deserialize)]
+struct TimingReport {
+    fmax: HashMap<String, ClockTiming>,
+}
+
+/// Frequencies in megahertz
+#[derive(Clone, Copy, Deserialize)]
+struct ClockTiming {
+    achieved: f64,
+    constraint: f64,
+}
+
+impl ClockTiming {
+    fn headroom(self) -> f64 {
+        self.achieved / self.constraint
+    }
+
+    fn is_met(self) -> bool {
+        self.headroom() >= 1.0
+    }
+}
+
 fn place_and_route(
     directory: &Path,
     chip_database: &Path,
     netlist: &Path,
     progress: &dyn Fn(Stage),
-) -> Result<PathBuf, ToolchainError> {
+) -> Result<Routed, ToolchainError> {
     let constraints = directory
         .join(rtl::LIBRARY_DIRECTORY)
         .join("board")
         .join("basys3.xdc");
     let assembly = directory.join("circuit.fasm");
+    let timing_report = directory.join("timing.json");
     progress(Stage::PlaceAndRoute);
     run(
         Command::new("nextpnr-himbaechel")
@@ -181,12 +259,27 @@ fn place_and_route(
             .arg(netlist)
             .arg("-o")
             .arg(format!("fasm={}", assembly.display()))
-            .args(["--freq", "100"]),
+            // nextpnr derives every clock's constraint from the board clock in the constraints file
+            .arg("--report")
+            .arg(&timing_report)
+            .arg("--timing-allow-fail"),
         directory,
         "place-route",
         BUILD_TIMEOUT,
     )?;
-    Ok(assembly)
+    let report: TimingReport =
+        serde_json::from_slice(&fs::read(&timing_report)?).map_err(|source| {
+            ToolchainError::Report {
+                path: timing_report,
+                source,
+            }
+        })?;
+    let timing = report
+        .fmax
+        .into_values()
+        .min_by(|first, second| first.headroom().total_cmp(&second.headroom()))
+        .ok_or(ToolchainError::Unclocked)?;
+    Ok(Routed { assembly, timing })
 }
 
 fn generate_frames(

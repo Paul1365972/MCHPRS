@@ -90,7 +90,8 @@ impl BoardEngine {
         let mut board = Board::open(&port)?;
         let bitstream = toolchain::build(&directory, progress)?;
         progress(Stage::ProgramBoard);
-        toolchain::program(&bitstream)?;
+        toolchain::program(&bitstream.path)?;
+        board.set_clock_divisor(bitstream.clock_divisor)?;
         progress(Stage::VerifyCircuit);
         board.discard_received()?;
         let status = board.request(Command::Status)?;

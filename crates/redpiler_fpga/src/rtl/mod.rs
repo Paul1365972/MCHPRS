@@ -216,7 +216,7 @@ impl<'a> Writer<'a> {
         writeln!(
             self.output,
             "
-module circuit_system #(parameter CLOCKS_PER_BIT = 25)(
+module circuit_system #(parameter CLOCKS_PER_BIT = 25, CLOCKS_PER_PIXEL = 4)(
     input wire clock, serial_receive, clear_fault,
     output wire serial_transmit, ticking, halted,
     output wire [63:0] tick_count,
@@ -245,6 +245,7 @@ module circuit_system #(parameter CLOCKS_PER_BIT = 25)(
     );
     vga_screen #(
         .COLUMNS({columns}), .ROWS({rows}), .CELL_PIXELS({cell_pixels}),
+        .CLOCKS_PER_PIXEL(CLOCKS_PER_PIXEL),
         .OCCUPIED({occupied})
     ) screen (
         .clock(clock), .lit({screen_lit}), .color(vga_color),

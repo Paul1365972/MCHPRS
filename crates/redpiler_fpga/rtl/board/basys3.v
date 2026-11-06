@@ -1,4 +1,6 @@
-module basys3 (
+// CLOCK_DIVISOR 2 runs the system at 50 MHz from a PLL, for circuits that miss 100 MHz. The serial
+// line's baud rate falls with the clock.
+module basys3 #(parameter CLOCK_DIVISOR = 1) (
     input wire clock,
     input wire serial_receive,
     output wire serial_transmit,
@@ -15,7 +17,7 @@ module basys3 (
     output wire vga_horizontal_sync,
     output wire vga_vertical_sync
 );
-    localparam CLOCKS_PER_SECOND = 100_000_000;
+    localparam CLOCKS_PER_SECOND = 100_000_000 / CLOCK_DIVISOR;
     localparam CLOCKS_PER_REFRESH = CLOCKS_PER_SECOND / 10;
     localparam ACTIVITY_CLOCKS = CLOCKS_PER_SECOND / 20;
     localparam [1:0] TICK_RATE_VIEW = 0, TICK_COUNT_VIEW = 1, FAULT_VIEW = 2;
@@ -41,7 +43,23 @@ module basys3 (
         : fault_code == 0 ? {4{DASH}}
         : {LETTER_E, number[23:0]};
 
-    always @(posedge clock) begin
+    wire system_clock;
+    generate
+        if (CLOCK_DIVISOR == 1) begin : board_clock
+            assign system_clock = clock;
+        end else begin : divided_clock
+            wire feedback, divided, locked;
+            PLLE2_BASE #(
+                .CLKIN1_PERIOD(10.0), .CLKFBOUT_MULT(10), .CLKOUT0_DIVIDE(10 * CLOCK_DIVISOR)
+            ) pll (
+                .CLKIN1(clock), .CLKFBIN(feedback), .CLKFBOUT(feedback), .CLKOUT0(divided),
+                .RST(1'b0), .PWRDWN(1'b0), .LOCKED(locked)
+            );
+            BUFGCE buffer (.I(divided), .CE(locked), .O(system_clock));
+        end
+    endgenerate
+
+    always @(posedge system_clock) begin
         heartbeat <= heartbeat + 1;
         refresh_clocks <= refresh ? 0 : refresh_clocks + 1;
         if (second_clocks == CLOCKS_PER_SECOND - 1) begin
@@ -62,32 +80,32 @@ module basys3 (
         7'b0, transmitting, receiving, halted, ticking_shown, heartbeat[26]
     };
 
-    circuit_system system (
-        .clock(clock), .serial_receive(serial_receive), .clear_fault(clear_fault),
+    circuit_system #(.CLOCKS_PER_PIXEL(4 / CLOCK_DIVISOR)) system (
+        .clock(system_clock), .serial_receive(serial_receive), .clear_fault(clear_fault),
         .serial_transmit(serial_transmit), .ticking(ticking), .halted(halted),
         .tick_count(tick_count), .fault_code(fault_code),
         .vga_color({vga_red, vga_green, vga_blue}), .vga_horizontal_sync(vga_horizontal_sync),
         .vga_vertical_sync(vga_vertical_sync)
     );
-    push_button center (.clock(clock), .button(button_center), .pressed(clear_fault));
-    push_button left (.clock(clock), .button(button_left), .pressed(previous_view));
-    push_button right (.clock(clock), .button(button_right), .pressed(next_view));
+    push_button center (.clock(system_clock), .button(button_center), .pressed(clear_fault));
+    push_button left (.clock(system_clock), .button(button_left), .pressed(previous_view));
+    push_button right (.clock(system_clock), .button(button_right), .pressed(next_view));
     activity #(.HOLD_CLOCKS(ACTIVITY_CLOCKS)) ticking_activity (
-        .clock(clock), .signal(ticking), .active(ticking_shown)
+        .clock(system_clock), .signal(ticking), .active(ticking_shown)
     );
     activity #(.HOLD_CLOCKS(ACTIVITY_CLOCKS)) receive_activity (
-        .clock(clock), .signal(!serial_receive), .active(receiving)
+        .clock(system_clock), .signal(!serial_receive), .active(receiving)
     );
     activity #(.HOLD_CLOCKS(ACTIVITY_CLOCKS)) transmit_activity (
-        .clock(clock), .signal(!serial_transmit), .active(transmitting)
+        .clock(system_clock), .signal(!serial_transmit), .active(transmitting)
     );
     decimal_digits converter (
-        .clock(clock), .start(refresh || previous_view || next_view),
+        .clock(system_clock), .start(refresh || previous_view || next_view),
         .value(shown_value), .digits(digits)
     );
     number_glyphs formatter (.digits(digits), .glyphs(number));
     seven_segment_display display (
-        .clock(clock), .glyphs(glyphs), .segment(segment), .anode(anode),
+        .clock(system_clock), .glyphs(glyphs), .segment(segment), .anode(anode),
         .decimal_point(decimal_point)
     );
 endmodule

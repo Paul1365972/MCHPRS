@@ -6,6 +6,7 @@ module vga_screen #(
     parameter COLUMNS = 1,
     parameter ROWS = 1,
     parameter CELL_PIXELS = 1,
+    parameter CLOCKS_PER_PIXEL = 4,
     parameter [COLUMNS * ROWS - 1:0] OCCUPIED = 0
 ) (
     input wire clock,
@@ -14,7 +15,6 @@ module vga_screen #(
     output reg horizontal_sync = 1,
     output reg vertical_sync = 1
 );
-    localparam CLOCKS_PER_PIXEL = 4;
     localparam WIDTH = 640, LINE_PIXELS = 800, HORIZONTAL_SYNC_START = 656, HORIZONTAL_SYNC_END = 752;
     localparam HEIGHT = 480, FRAME_LINES = 525, VERTICAL_SYNC_START = 490, VERTICAL_SYNC_END = 492;
     localparam GRID_WIDTH = COLUMNS * CELL_PIXELS, LEFT = (WIDTH - GRID_WIDTH) / 2;

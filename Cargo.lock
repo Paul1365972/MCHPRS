@@ -1443,6 +1443,8 @@ dependencies = [
  "mchprs_blocks",
  "mchprs_redpiler",
  "mchprs_world",
+ "serde",
+ "serde_json",
  "serialport",
  "sha2",
  "thiserror 2.0.18",
