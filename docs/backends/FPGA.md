@@ -37,6 +37,8 @@ The backend finds the signal strengths each node can produce.
 It omits comparisons whose result is fixed by those strengths.
 The analysis includes the initial state and every possible input.
 
+A comparator whose output can only be a low or a high strength stores which strength it has.
+
 ## Flags
 
 | Flag | Short | Description |

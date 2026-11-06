@@ -7,6 +7,7 @@ pub enum NodeModule {
     Torch,
     Repeater,
     RepeaterPrioritized,
+    ComparatorBinary,
     Comparator,
     Lamp,
     Trapdoor,
@@ -24,6 +25,7 @@ impl NodeModule {
             Self::Torch => "torch",
             Self::Repeater => "repeater",
             Self::RepeaterPrioritized => "repeater_prioritized",
+            Self::ComparatorBinary => "comparator_binary",
             Self::Comparator => "comparator",
             Self::Lamp => "lamp",
             Self::Trapdoor => "trapdoor",
@@ -37,6 +39,7 @@ impl NodeModule {
 pub enum Parameter {
     Powered,
     Strength,
+    High,
     Locked,
     Touched,
     Delay,
@@ -53,6 +56,7 @@ impl Parameter {
         match self {
             Self::Powered => "POWERED",
             Self::Strength => "STRENGTH",
+            Self::High => "HIGH",
             Self::Locked => "LOCKED",
             Self::Touched => "TOUCHED",
             Self::Delay => "DELAY",

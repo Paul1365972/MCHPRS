@@ -1,4 +1,5 @@
 use crate::scenario::{Step, CASES};
+use mchprs_redpiler::behavior::{comparator_output, InputStrengths};
 use mchprs_redpiler::circuit::{Circuit, NodeId};
 use mchprs_redpiler::graph::{LinkKind, NodeKind};
 use mchprs_redpiler::nodes::Snapshot;
@@ -43,6 +44,25 @@ fn assert_analysis_holds(circuit: &Circuit, analysis: &CircuitAnalysis, snapshot
         assert!(
             analysis.strengths(node).contains(power.get()),
             "{names:?} has the strength {power}"
+        );
+        let NodeKind::Comparator {
+            mode, far_input, ..
+        } = circuit.node(node).kind
+        else {
+            continue;
+        };
+        let Some((low, high)) = analysis.binary_strengths(node) else {
+            continue;
+        };
+        let mut inputs = InputStrengths::default();
+        for link in circuit.inputs(node) {
+            let source = states[link.source.index()].power;
+            inputs.raise(link.kind, source.saturating_sub(link.weight));
+        }
+        let output = comparator_output(mode, far_input, inputs);
+        assert!(
+            [low, high].contains(&output),
+            "the inputs of {names:?} give {output}, neither {low} nor {high}"
         );
     }
 }

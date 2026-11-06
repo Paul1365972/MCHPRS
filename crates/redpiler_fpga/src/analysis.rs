@@ -27,6 +27,14 @@ impl CircuitAnalysis {
     pub fn strengths(&self, node: NodeId) -> SSSet {
         self.strengths[node.index()]
     }
+
+    /// The output that the inputs of such a comparator give is always one of the two strengths.
+    pub fn binary_strengths(&self, node: NodeId) -> Option<(SignalStrength, SignalStrength)> {
+        match strengths_of(self.strengths(node)).as_slice() {
+            &[low, high] => Some((low, high)),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) fn strengths_of(set: SSSet) -> Vec<SignalStrength> {
