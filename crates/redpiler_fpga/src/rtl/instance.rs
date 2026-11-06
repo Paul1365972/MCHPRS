@@ -131,6 +131,7 @@ fn field_port(field: Field) -> &'static str {
     match field {
         Field::Powered => "powered",
         Field::Strength => "strength",
+        Field::High { .. } => "high",
         Field::Locked => "locked",
         Field::Countdown(_) => "countdown",
         Field::Pulsing => "pulsing",

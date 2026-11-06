@@ -6,6 +6,11 @@ use std::num::NonZeroU8;
 pub(crate) enum Field {
     Powered,
     Strength,
+    /// Whether a comparator with two possible outputs outputs the higher one
+    High {
+        low: SignalStrength,
+        high: SignalStrength,
+    },
     Locked,
     Countdown(NonZeroU8),
     Pulsing,
@@ -124,6 +129,16 @@ impl<'a> Registers<'a> {
         self.strengths(index).single()
     }
 
+    pub(crate) fn two_level(&self, index: usize) -> Option<(SignalStrength, SignalStrength)> {
+        let strengths = self.strengths(index);
+        if !matches!(self.circuit.nodes()[index].kind, Kind::Comparator { .. })
+            || strengths.len() != 2
+        {
+            return None;
+        }
+        Some((strengths.minimum()?, strengths.maximum()?))
+    }
+
     pub(crate) fn is_lockable(&self, index: usize) -> bool {
         let node = &self.circuit.nodes()[index];
         matches!(node.kind, Kind::Repeater { .. }) && !node.sides.is_empty()
@@ -138,6 +153,9 @@ impl<'a> Registers<'a> {
         let mut fields = Vec::new();
         match kind {
             Kind::Constant => {}
+            Kind::Comparator { .. } if let Some((low, high)) = self.two_level(index) => {
+                fields.push(Field::High { low, high });
+            }
             Kind::Comparator { .. } | Kind::Wire => {
                 if self.literal(index).is_none() {
                     fields.push(Field::Strength);

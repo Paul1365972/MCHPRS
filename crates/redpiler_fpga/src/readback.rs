@@ -108,6 +108,7 @@ impl Readback {
                     state.strength =
                         SignalStrength::try_from(value).expect("a strength field has four bits");
                 }
+                Field::High { low, high } => state.strength = if value != 0 { high } else { low },
                 Field::Locked => state.locked = value != 0,
                 Field::Countdown(_) => countdown = value,
                 Field::Pulsing => pulsing = value != 0,
@@ -154,6 +155,7 @@ mod tests {
         match field {
             Field::Powered => u32::from(state.is_powered()),
             Field::Strength => u32::from(state.strength.get()),
+            Field::High { high, .. } => u32::from(state.strength == high),
             Field::Locked => u32::from(state.locked),
             Field::Countdown(_) => state
                 .pending
