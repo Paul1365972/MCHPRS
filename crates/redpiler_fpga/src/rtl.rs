@@ -31,6 +31,8 @@ const DESIGN: &[SourceFile] = &[
     source!("nodes/torch.sv"),
     source!("nodes/repeater.sv"),
     source!("nodes/repeater_prioritized.sv"),
+    source!("nodes/repeater_pulse_free.sv"),
+    source!("nodes/repeater_prioritized_pulse_free.sv"),
     source!("nodes/comparator.sv"),
     source!("nodes/comparator_binary.sv"),
     source!("nodes/lamp.sv"),

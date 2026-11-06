@@ -110,6 +110,7 @@ impl Register {
 pub enum PriorityRule {
     Fixed(TickPriority),
     ByOutput { off: TickPriority, on: TickPriority },
+    AtStart,
     ByPulsing,
 }
 
@@ -124,6 +125,7 @@ impl PriorityRule {
                     off
                 }
             }
+            PriorityRule::AtStart => TICK_START_PRIORITY,
             PriorityRule::ByPulsing if pulsing => PULSE_END_PRIORITY,
             PriorityRule::ByPulsing => TICK_START_PRIORITY,
         }
@@ -135,6 +137,7 @@ impl PriorityRule {
             PriorityRule::ByOutput { off, on } => {
                 vec![(FiringPort::FiringOff, off), (FiringPort::FiringOn, on)]
             }
+            PriorityRule::AtStart => Vec::new(),
             PriorityRule::ByPulsing => vec![(FiringPort::FiringPulse, PULSE_END_PRIORITY)],
         }
     }
@@ -229,7 +232,7 @@ fn instance(
     id: NodeId,
     analysis: &CircuitAnalysis,
 ) -> Result<Option<Instance>, CompileError> {
-    use PriorityRule::{ByOutput, ByPulsing, Fixed};
+    use PriorityRule::{AtStart, ByOutput, ByPulsing, Fixed};
     use Register::{BinaryStrength, Locked, Played, Powered, Pulsing, Strength, Touched};
     let refused = |problem: String| {
         let index = id.index();
@@ -267,7 +270,17 @@ fn instance(
             prioritized: false,
         } => {
             let [off, on] = [false, true].map(|powered| repeater::tick_priority(false, powered));
-            repeater(NodeModule::Repeater).with_timer(delay.into(), ByOutput { off, on })
+            let module = match analysis.is_pulse_free(id) {
+                true => NodeModule::RepeaterPulseFree,
+                false => NodeModule::Repeater,
+            };
+            repeater(module).with_timer(delay.into(), ByOutput { off, on })
+        }
+        NodeKind::Repeater {
+            delay,
+            prioritized: true,
+        } if analysis.is_pulse_free(id) => {
+            repeater(NodeModule::RepeaterPrioritizedPulseFree).with_timer(delay.into(), AtStart)
         }
         NodeKind::Repeater {
             delay,
