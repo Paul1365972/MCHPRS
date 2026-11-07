@@ -52,11 +52,19 @@ For example: `%lever = lever false -> [%a:12, side %12:2]`
 
 ## Components
 
-All components have a type, a list of arguments and an optional output list.
+All components have a type, a list of arguments, an optional port marker and an optional output list.
 
 These arguments have a standard type:
 - `powered`: boolean
 - `power`: integer between 0 and 15
+
+### Ports
+
+Levers, buttons and pressure plates are inputs; lamps, trapdoors and note blocks are outputs; other components are no ports. A component whose port role differs from that is marked `input`, `output` or `internal` (no port) after its arguments, like a wire that `--wire-dot-out` made an output:
+
+```
+%dot = wire 0 output
+```
 
 ### repeater
 

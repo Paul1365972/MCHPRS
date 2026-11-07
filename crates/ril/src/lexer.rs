@@ -1,5 +1,6 @@
 use crate::Error;
 use mchprs_blocks::blocks::{ComparatorMode, Instrument};
+use mchprs_redpiler::ports::Role;
 use std::iter::Peekable;
 use std::str::CharIndices;
 
@@ -31,6 +32,8 @@ pub(crate) enum TokenKind {
     ComponentType(ComponentType),
     Instrument(Instrument),
     ComparatorMode(ComparatorMode),
+    /// The `input`, `output` or `internal` keyword, the last for no port
+    Port(Option<Role>),
     Bool(bool),
     Int(u32),
     String(String),
@@ -66,6 +69,7 @@ impl TokenKind {
             ComponentType(_) => "component type",
             Instrument(_) => "instrument",
             ComparatorMode(_) => "comparator mode",
+            Port(_) => "port marker",
             Bool(_) => "boolean",
             Int(_) => "int",
             String(_) => "string",
@@ -225,6 +229,9 @@ impl<'a> Lexer<'a> {
             "schematic" => TokenKind::Schematic,
             "none" => TokenKind::None,
             "side" => TokenKind::Side,
+            "input" => TokenKind::Port(Some(Role::Input)),
+            "output" => TokenKind::Port(Some(Role::Output)),
+            "internal" => TokenKind::Port(None),
             "repeater" => TokenKind::ComponentType(ComponentType::Repeater),
             "torch" => TokenKind::ComponentType(ComponentType::Torch),
             "comparator" => TokenKind::ComponentType(ComponentType::Comparator),

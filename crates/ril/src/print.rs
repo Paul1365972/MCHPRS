@@ -1,5 +1,6 @@
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::graph::{Direction, Graph, LinkKind, NodeIdx, NodeKind, NodeState};
+use mchprs_redpiler::ports::Role;
 use rustc_hash::FxHashSet;
 use std::fmt;
 
@@ -135,6 +136,14 @@ pub(crate) fn write_node(
     let node = &graph[idx];
     write!(f, "%{}", names.of(idx))?;
     write!(f, " = {}", component(&node.kind, node.state))?;
+    if node.port != node.kind.conventional_role() {
+        let marker = match node.port {
+            Some(Role::Input) => "input",
+            Some(Role::Output) => "output",
+            None => "internal",
+        };
+        write!(f, " {marker}")?;
+    }
     let mut outputs = graph.edges(idx, Direction::Outgoing).peekable();
     if outputs.peek().is_none() {
         return Ok(());

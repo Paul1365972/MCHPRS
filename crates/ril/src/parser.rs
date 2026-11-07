@@ -240,7 +240,16 @@ impl<'a> Parser<'a> {
                 (kind, NodeState::from_powered(powered))
             }
         };
-        let port = kind.conventional_role();
+        let port = match self
+            .tokens
+            .next_if(|token| matches!(token.kind, TokenKind::Port(_)))
+        {
+            Some(Token {
+                kind: TokenKind::Port(port),
+                ..
+            }) => port,
+            _ => kind.conventional_role(),
+        };
         let outputs = self.parse_outputs()?;
         let component = Component {
             name,
