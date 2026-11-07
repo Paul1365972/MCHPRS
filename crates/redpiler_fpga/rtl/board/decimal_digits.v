@@ -9,13 +9,22 @@ module decimal_digits (
     reg [79:0] converting = 0;
     reg [6:0] bits_left = 0;
 
+    function [3:0] corrected_digit(input [3:0] digit);
+        case (digit)
+            4'd5: corrected_digit = 4'd8;
+            4'd6: corrected_digit = 4'd9;
+            4'd7: corrected_digit = 4'd10;
+            4'd8: corrected_digit = 4'd11;
+            4'd9: corrected_digit = 4'd12;
+            default: corrected_digit = digit;
+        endcase
+    endfunction
+
     function [79:0] corrected(input [79:0] decimal);
         integer index;
         begin
             for (index = 0; index < 20; index = index + 1)
-                corrected[index * 4 +: 4] = decimal[index * 4 +: 4] >= 5
-                    ? decimal[index * 4 +: 4] + 4'd3
-                    : decimal[index * 4 +: 4];
+                corrected[index * 4 +: 4] = corrected_digit(decimal[index * 4 +: 4]);
         end
     endfunction
 

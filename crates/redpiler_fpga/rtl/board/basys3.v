@@ -53,8 +53,8 @@ module basys3 (
     reg [23:0] refresh_clocks = 0;
     reg [3:0] snapshots = 0;
     reg [1:0] view = TICK_RATE_VIEW;
-    reg [63:0] second_start = 0;
-    reg [63:0] tick_rate = 0;
+    reg [31:0] second_start = 0;
+    reg [31:0] tick_rate = 0;
     wire refresh_due = refresh_clocks == BOARD_CLOCKS_PER_REFRESH - 1;
     wire [63:0] shown_value = view == TICK_RATE_VIEW ? tick_rate
         : view == TICK_COUNT_VIEW ? counted_ticks
@@ -69,8 +69,8 @@ module basys3 (
         if (snapshot_arrived) begin
             snapshots <= snapshots == REFRESHES_PER_SECOND - 1 ? 0 : snapshots + 1;
             if (snapshots == 0) begin
-                second_start <= counted_ticks;
-                tick_rate <= counted_ticks - second_start;
+                second_start <= counted_ticks[31:0];
+                tick_rate <= counted_ticks[31:0] - second_start;
             end
         end
         if (previous_view)
