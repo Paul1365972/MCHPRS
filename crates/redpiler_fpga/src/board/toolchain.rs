@@ -1,13 +1,13 @@
+use super::pll::{PllCountError, PllSetting};
 use crate::cache;
 use crate::rtl;
 use crate::stage::Stage;
 use crate::subprocess::{self, SubprocessError};
 use serde::Deserialize;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
 use std::io;
-use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -17,11 +17,6 @@ const DEVICE: &str = "xc7a35tcpg236-1";
 const CHIP_DATABASE_DEVICE: &str = "xc7a50t";
 /// The clock that runs the circuit, named after its net in the board top
 const CIRCUIT_CLOCK: &str = "circuit_clock";
-/// The frequency of the PLL's oscillator, 16 times the board clock and the most the XC7A35T-1 allows
-const PLL_OSCILLATOR_MEGAHERTZ: u32 = 1600;
-/// The dividers of the PLL's oscillator that can drive the circuit clock: from 400 MHz, within the
-/// global clock network's 464 MHz, to the most the counter's six-bit high and low times can count
-const CIRCUIT_CLOCK_DIVIDERS: RangeInclusive<u32> = 4..=126;
 /// The fewest flip-flops an enable or reset must drive to keep its dedicated pin
 const CONTROL_SET_FLIP_FLOPS: u32 = 4;
 const BUILD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -67,8 +62,10 @@ pub(crate) enum ToolchainError {
         achieved_megahertz: f64,
         required_megahertz: f64,
     },
-    #[error("the routed design holds {0} PLLs instead of one")]
-    PllCount(usize),
+    #[error("the {CIRCUIT_CLOCK} clock reaches only {0:.1} MHz, slower than the PLL can run")]
+    SlowCircuitClock(f64),
+    #[error(transparent)]
+    PllCount(#[from] PllCountError),
     #[error("FPGA {stage} failed; see {} and {}", .stdout.display(), .stderr.display())]
     Stage {
         stage: &'static str,
@@ -95,16 +92,14 @@ pub(super) fn build(
     let chip_database = chip_database(cache, &database, &nextpnr, progress)?;
     let netlist = synthesize(&directory, progress)?;
     let routed = place_and_route(&directory, &chip_database, &netlist, progress)?;
-    let (divider, maximum_megahertz) = circuit_clock_divider(&routed.timing)?;
+    let (setting, maximum_megahertz) = circuit_clock_setting(&routed.timing)?;
     let assembly = fs::read_to_string(&routed.assembly)?;
-    fs::write(
-        &routed.assembly,
-        with_circuit_clock_divider(&assembly, divider)?,
-    )?;
-    let circuit_clock_hertz = PLL_OSCILLATOR_MEGAHERTZ * 1_000_000 / divider;
+    fs::write(&routed.assembly, setting.apply(&assembly)?)?;
+    let circuit_clock_hertz = setting.output_hertz() as u32;
     tracing::info!(
         circuit_clock_hertz,
         maximum_megahertz,
+        ?setting,
         "chose the circuit clock"
     );
     let frames = generate_frames(&directory, &database, &routed.assembly, progress)?;
@@ -115,11 +110,11 @@ pub(super) fn build(
     })
 }
 
-/// The divider of the PLL's oscillator that gives the fastest circuit clock the routed circuit
-/// meets, with that maximum frequency, provided every other clock meets its constraint
-fn circuit_clock_divider(
+/// The PLL setting of the fastest circuit clock the routed circuit meets, with that maximum
+/// frequency, provided every other clock meets its constraint
+fn circuit_clock_setting(
     timing: &HashMap<String, ClockTiming>,
-) -> Result<(u32, f64), ToolchainError> {
+) -> Result<(PllSetting, f64), ToolchainError> {
     let mut maximum_megahertz = None;
     for (clock, timing) in timing {
         if clock == CIRCUIT_CLOCK {
@@ -133,54 +128,9 @@ fn circuit_clock_divider(
         }
     }
     let maximum_megahertz = maximum_megahertz.ok_or(ToolchainError::MissingCircuitClock)?;
-    let oscillator_megahertz = f64::from(PLL_OSCILLATOR_MEGAHERTZ);
-    let divider = ((oscillator_megahertz / maximum_megahertz).ceil() as u32)
-        .max(*CIRCUIT_CLOCK_DIVIDERS.start());
-    if !CIRCUIT_CLOCK_DIVIDERS.contains(&divider) {
-        return Err(ToolchainError::Timing {
-            clock: CIRCUIT_CLOCK.to_owned(),
-            achieved_megahertz: maximum_megahertz,
-            required_megahertz: oscillator_megahertz / f64::from(*CIRCUIT_CLOCK_DIVIDERS.end()),
-        });
-    }
-    Ok((divider, maximum_megahertz))
-}
-
-/// The routed design's assembly with another divider for the PLL output that drives the circuit
-/// clock. The output's counter splits each period into a high and a low time, and an odd divider
-/// sets its edge bit for the extra half period.
-fn with_circuit_clock_divider(assembly: &str, divider: u32) -> Result<String, ToolchainError> {
-    const HIGH_TIME: &str = ".PLLE2_ADV.CLKOUT0_CLKOUT1_HIGH_TIME";
-    const LOW_TIME: &str = ".PLLE2_ADV.CLKOUT0_CLKOUT1_LOW_TIME";
-    const EDGE: &str = ".PLLE2_ADV.CLKOUT0_CLKOUT2_EDGE";
-    const NO_COUNT: &str = ".PLLE2_ADV.CLKOUT0_CLKOUT2_NO_COUNT";
-    let tiles: BTreeSet<&str> = assembly
-        .lines()
-        .filter_map(|line| line.split_once(HIGH_TIME).map(|(tile, _)| tile))
-        .collect();
-    let [tile] = tiles.iter().copied().collect::<Vec<_>>()[..] else {
-        return Err(ToolchainError::PllCount(tiles.len()));
-    };
-    let high_time = divider / 2;
-    let mut lines: Vec<String> = assembly
-        .lines()
-        .filter(|line| {
-            ![HIGH_TIME, LOW_TIME, EDGE, NO_COUNT]
-                .iter()
-                .any(|field| line.contains(field))
-        })
-        .map(str::to_owned)
-        .collect();
-    lines.push(format!("{tile}{HIGH_TIME}[5:0] = 6'b{high_time:06b}"));
-    lines.push(format!(
-        "{tile}{LOW_TIME}[5:0] = 6'b{:06b}",
-        divider - high_time
-    ));
-    if divider % 2 == 1 {
-        lines.push(format!("{tile}{EDGE}[0]"));
-    }
-    lines.push(String::new());
-    Ok(lines.join("\n"))
+    let setting = PllSetting::fastest(maximum_megahertz * 1e6)
+        .ok_or(ToolchainError::SlowCircuitClock(maximum_megahertz))?;
+    Ok((setting, maximum_megahertz))
 }
 
 fn synthesize(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, ToolchainError> {
@@ -457,23 +407,6 @@ fn run(
 mod tests {
     use super::*;
 
-    /// nextpnr's PLL lines for a CLKOUT0_DIVIDE of 16, 19 and 32, around another PLL output's
-    fn assembly(high_time: &str, low_time: &str, odd: bool) -> BTreeSet<String> {
-        let pll = "CMT_TOP_L_UPPER_T_X106Y44.PLLE2_ADV";
-        let mut lines = vec![
-            format!("{pll}.IN_USE"),
-            format!("{pll}.CLKFBOUT_CLKOUT1_HIGH_TIME[5:0] = 6'b001000"),
-            format!("{pll}.CLKOUT0_CLKOUT1_OUTPUT_ENABLE[0]"),
-            format!("{pll}.CLKOUT0_CLKOUT1_HIGH_TIME[5:0] = 6'b{high_time}"),
-            format!("{pll}.CLKOUT0_CLKOUT1_LOW_TIME[5:0] = 6'b{low_time}"),
-            format!("{pll}.CLKOUT0_CLKOUT2_DELAY_TIME[5:0] = 6'b000000"),
-        ];
-        if odd {
-            lines.push(format!("{pll}.CLKOUT0_CLKOUT2_EDGE[0]"));
-        }
-        lines.into_iter().collect()
-    }
-
     fn timing(clocks: &[(&str, f64, f64)]) -> HashMap<String, ClockTiming> {
         clocks
             .iter()
@@ -488,40 +421,24 @@ mod tests {
     }
 
     #[test]
-    fn dividers_follow_the_encoding_of_nextpnr() {
-        let sixteen = assembly("001000", "001000", false);
-        let nineteen = assembly("001001", "001010", true);
-        let thirty_two = assembly("010000", "010000", false);
-        let divided = |lines: &BTreeSet<String>, divider| -> BTreeSet<String> {
-            let text = Vec::from_iter(lines.iter().cloned()).join("\n");
-            let divided = with_circuit_clock_divider(&text, divider).unwrap();
-            divided.lines().map(str::to_owned).collect()
-        };
-        assert_eq!(divided(&sixteen, 19), nineteen);
-        assert_eq!(divided(&nineteen, 16), sixteen);
-        assert_eq!(divided(&sixteen, 32), thirty_two);
-    }
-
-    #[test]
-    fn the_circuit_clock_takes_the_smallest_divider_it_meets() {
-        let divider = |megahertz| {
+    fn the_circuit_clock_runs_as_fast_as_it_meets() {
+        let hertz = |megahertz| {
             let clocks = [(CIRCUIT_CLOCK, megahertz, 100.0), ("clock", 300.0, 100.0)];
-            circuit_clock_divider(&timing(&clocks))
-                .map(|(divider, _)| divider)
-                .ok()
+            circuit_clock_setting(&timing(&clocks)).map(|(setting, _)| setting.output_hertz())
         };
-        assert_eq!(divider(87.9), Some(19));
-        assert_eq!(divider(100.0), Some(16));
-        assert_eq!(divider(116.8), Some(14));
-        assert_eq!(divider(900.0), Some(4));
-        assert_eq!(divider(12.0), None);
+        assert_eq!(hertz(108.6).unwrap().round(), 108_333_333.0);
+        assert_eq!(hertz(100.0).unwrap(), 100e6);
+        assert!(matches!(
+            hertz(5.0),
+            Err(ToolchainError::SlowCircuitClock(_))
+        ));
     }
 
     #[test]
     fn other_clocks_must_meet_their_constraints() {
         let clocks = [(CIRCUIT_CLOCK, 120.0, 100.0), ("clock", 90.0, 100.0)];
         assert!(matches!(
-            circuit_clock_divider(&timing(&clocks)),
+            circuit_clock_setting(&timing(&clocks)),
             Err(ToolchainError::Timing { clock, .. }) if clock == "clock"
         ));
     }

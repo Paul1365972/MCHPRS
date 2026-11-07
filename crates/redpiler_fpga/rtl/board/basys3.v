@@ -1,8 +1,8 @@
 // The serial line, the display and the lights run on the board's 100 MHz oscillator, the circuit and
-// its controller on the circuit clock, which the PLL divides from a 1.6 GHz oscillator locked to the
-// board's. Placement and routing aim at the 100 MHz that CLKOUT0_DIVIDE gives here; the toolchain
-// then replaces the divider with the smallest one whose clock the routed circuit meets. Every tenth
-// of a second the display asks the circuit's side for its tick count and fault code.
+// its controller on the circuit clock, which the PLL derives from an oscillator locked to the
+// board's. Placement and routing time the 100 MHz that the PLL's parameters give here; the toolchain
+// then sets the PLL to the fastest clock the routed circuit meets. Every tenth of a second the
+// display asks the circuit's side for its tick count and fault code.
 module basys3 (
     input wire clock,
     input wire serial_receive,

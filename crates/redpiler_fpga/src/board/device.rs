@@ -1,10 +1,10 @@
+use super::BOARD_CLOCK_HERTZ;
 use crate::registers::Contents;
 use mchprs_world::TickRate;
 use serialport::{ClearBuffer, SerialPort};
 use std::io::{self, BufRead, BufReader, Write};
 use std::time::Duration;
 
-const BOARD_CLOCK_HERTZ: u32 = 100_000_000;
 const CLOCKS_PER_BIT: u32 = 25;
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(2);
 const FRAME_END: u8 = 0xc0;

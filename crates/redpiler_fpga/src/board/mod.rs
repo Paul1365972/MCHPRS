@@ -1,4 +1,5 @@
 mod device;
+mod pll;
 mod toolchain;
 
 use crate::cache;
@@ -19,6 +20,8 @@ use std::time::{Duration, Instant};
 use toolchain::ToolchainError;
 
 const PORT_VARIABLE: &str = "MCHPRS_FPGA_PORT";
+/// The frequency of the board's oscillator, which clocks the serial line and the PLL
+const BOARD_CLOCK_HERTZ: u32 = 100_000_000;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, thiserror::Error)]
