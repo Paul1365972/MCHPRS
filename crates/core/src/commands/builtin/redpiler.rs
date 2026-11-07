@@ -19,7 +19,6 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
                         "reorder",
                         "Let optimizations reorder updates within a tick",
                     )
-                    .flag('e', "export", "Export the compile graph")
                     .flag(
                         'i',
                         "io-only",
@@ -63,7 +62,6 @@ fn exec_compile(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
     let options = CompilerOptions {
         optimize: ctx.flag("optimize"),
         reorder: ctx.flag("reorder"),
-        export: ctx.flag("export"),
         io_only: ctx.flag("io-only"),
         update: ctx.flag("update"),
         export_dot_graph: ctx.flag("export-dot"),

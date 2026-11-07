@@ -154,7 +154,6 @@ The `/redpiler compile` command supports these optional flags:
 | `--illegal-states-out` | `-l` | Treat redstone wires in illegal states (one connected side) as outputs with `--io-only`, useful for sprite displays. |
 | `--wire-cross-out` | `-c` | Treat redstone crosses as outputs with `--io-only`, useful for sprite displays without illegal wire states. |
 | `--update` | `-u` | Update all blocks after Redpiler resets. |
-| `--export` | `-e` | Export the compiled graph in binary format for use by external tools. |
 | `--export-dot` | None | Export the backend graph in Graphviz DOT format for debugging. |
 | `--print-after-all` | None | Print the RIL circuit after each compiler pass. |
 | `--print-before-backend` | None | Print the RIL circuit before backend compilation. |

@@ -44,9 +44,6 @@ enum Command {
         /// Let optimizations reorder updates within a tick
         #[arg(long, short)]
         reorder: bool,
-        /// Export the graph to a binary format. See the [`redpiler_graph`] crate.
-        #[arg(long, short)]
-        export: bool,
         /// Only flush lamp, button, lever, pressure plate, or trapdoor updates.
         #[arg(long, short)]
         io_only: bool,
@@ -154,7 +151,6 @@ fn main() -> ExitCode {
             output_path,
             optimize,
             reorder,
-            export,
             io_only,
             wire_dot_out,
             illegal_states_out,
@@ -165,7 +161,6 @@ fn main() -> ExitCode {
             let options = CompilerOptions {
                 optimize,
                 reorder,
-                export,
                 io_only,
                 update: false,
                 export_dot_graph: false,

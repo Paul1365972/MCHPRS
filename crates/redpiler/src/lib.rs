@@ -42,8 +42,6 @@ pub struct CompilerOptions {
     pub optimize: bool,
     /// Let optimizations reorder updates within a tick
     pub reorder: bool,
-    /// Export the graph to a binary format. See the [`redpiler_graph`] crate.
-    pub export: bool,
     /// Only flush lamp, button, lever, pressure plate, or trapdoor updates.
     pub io_only: bool,
     /// Update all blocks in the input region after reset.
@@ -83,7 +81,6 @@ impl CompilerOptions {
             match option {
                 "--optimize" => self.optimize = true,
                 "--reorder" => self.reorder = true,
-                "--export" => self.export = true,
                 "--io-only" => self.io_only = true,
                 "--update" => self.update = true,
                 "--export-dot" => self.export_dot_graph = true,
@@ -101,7 +98,6 @@ impl CompilerOptions {
                 match lower.as_str() {
                     "o" => self.optimize = true,
                     "r" => self.reorder = true,
-                    "e" => self.export = true,
                     "i" => self.io_only = true,
                     "u" => self.update = true,
                     "d" => self.wire_dot_out = true,
@@ -276,12 +272,11 @@ mod tests {
 
     #[test]
     fn parse_options() {
-        let input = "-io -u --export";
+        let input = "-io -u";
         let expected_options = CompilerOptions {
             io_only: true,
             optimize: true,
             reorder: false,
-            export: true,
             update: true,
             export_dot_graph: false,
             wire_dot_out: false,

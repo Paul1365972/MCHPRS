@@ -1,5 +1,4 @@
 mod analysis;
-mod misc;
 mod opt;
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -16,7 +15,6 @@ use std::time::Instant;
 use tracing::{debug, trace};
 
 use analysis::*;
-use misc::*;
 use opt::*;
 
 pub fn build_pass_pipeline<'p>(
@@ -39,10 +37,6 @@ pub fn build_pass_pipeline<'p>(
         }
     }
 
-    if options.export {
-        builder.add_pass::<export_graph::ExportGraph>();
-    }
-
     builder.build()
 }
 
@@ -63,7 +57,6 @@ impl Default for PassRegistry {
         registry.register_pass(unreachable_output::UnreachableOutput);
         registry.register_pass(coalesce::Coalesce);
         registry.register_pass(prune_orphans::PruneOrphans);
-        registry.register_pass(export_graph::ExportGraph);
 
         registry
     }

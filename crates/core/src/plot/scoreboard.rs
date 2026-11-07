@@ -149,9 +149,6 @@ impl Scoreboard {
         if options.reorder {
             flags.push(("r", "- reorder"));
         }
-        if options.export {
-            flags.push(("e", "- export"));
-        }
         if options.io_only {
             flags.push(("i", "- io only"));
         }
