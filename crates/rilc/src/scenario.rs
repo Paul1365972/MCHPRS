@@ -4,7 +4,7 @@ use crate::Error;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::engine::Input;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use std::fs;
@@ -46,7 +46,7 @@ impl fmt::Display for Location {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum Target {
     Position([i32; 3]),
@@ -62,22 +62,37 @@ impl From<Target> for Location {
     }
 }
 
-#[derive(Deserialize)]
+impl From<&Location> for Target {
+    fn from(location: &Location) -> Target {
+        match location {
+            Location::Position(pos) => Target::Position([pos.x, pos.y, pos.z]),
+            Location::Name(name) => Target::Name(name.clone()),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ScenarioFile {
     input: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
     circuit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     settle: Option<u64>,
     #[serde(default)]
     step: Vec<StepFile>,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StepFile {
+    #[serde(skip_serializing_if = "Option::is_none")]
     toggle: Option<Target>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     press: Option<Target>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     set: Option<Target>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     power: Option<u32>,
     run: u64,
 }
@@ -133,6 +148,16 @@ impl Scenario {
         Ok(scenario)
     }
 
+    pub fn to_toml(&self, input: &Path) -> Result<String, Error> {
+        let file = ScenarioFile {
+            input: input.to_owned(),
+            circuit: self.circuit.clone(),
+            settle: self.settle,
+            step: self.steps.iter().map(StepFile::from).collect(),
+        };
+        Ok(toml::to_string(&file)?)
+    }
+
     pub fn step_error(&self, index: usize, problem: impl fmt::Display) -> Error {
         format!("{}: step {}: {problem}", self.path.display(), index + 1).into()
     }
@@ -172,6 +197,30 @@ impl Scenario {
             }
         }
         Ok(input)
+    }
+}
+
+impl From<&Step> for StepFile {
+    fn from(step: &Step) -> StepFile {
+        let mut file = StepFile {
+            toggle: None,
+            press: None,
+            set: None,
+            power: None,
+            run: step.ticks,
+        };
+        if let Some(action) = &step.action {
+            let target = Some(Target::from(&action.location));
+            match action.input {
+                Input::Toggle => file.toggle = target,
+                Input::Press => file.press = target,
+                Input::Set(power) => {
+                    file.set = target;
+                    file.power = Some(power.get().into());
+                }
+            }
+        }
+        file
     }
 }
 

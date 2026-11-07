@@ -1,5 +1,6 @@
 mod compile;
 mod diff;
+mod fuzz;
 mod input;
 mod numbers;
 mod run;
@@ -11,7 +12,7 @@ mod test;
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand};
 use setup::Setup;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -94,6 +95,51 @@ enum Command {
         )]
         setups: Vec<Setup>,
     },
+    /// Play random scenarios on random circuits, or on an input, under two setups and name the
+    /// cases on which they differ by seed
+    #[command(after_help = setup::help())]
+    Fuzz {
+        /// A schematic, a plot file or a RIL file of one circuit to play random scenarios on,
+        /// instead of random circuits
+        input: Option<PathBuf>,
+        /// Each of the two setups, like -b direct -b "direct -o"
+        #[arg(
+            short = 'b',
+            long = "backend",
+            value_name = "SETUP",
+            value_parser = Setup::parse,
+            required = true
+        )]
+        setups: Vec<Setup>,
+        /// The first case's seed; each next case takes the next seed
+        #[arg(long, value_name = "S", default_value = "1")]
+        seed: u64,
+        /// How many cases to play
+        #[arg(long, value_name = "N", default_value = "1000")]
+        count: NonZeroU64,
+        /// How many ticks each case runs
+        #[arg(long, value_name = "N", default_value = "300")]
+        ticks: u64,
+        /// Write each differing case to DIR as <seed>.toml, a scenario for diff, and a random
+        /// circuit as <seed>.ril
+        #[arg(long, value_name = "DIR")]
+        out: Option<PathBuf>,
+    },
+}
+
+fn two_setups(command: &str, setups: Vec<Setup>) -> [Setup; 2] {
+    let Ok(setups) = <[Setup; 2]>::try_from(setups) else {
+        let mut cli = Cli::command();
+        cli.build();
+        cli.find_subcommand_mut(command)
+            .expect("the command is a subcommand")
+            .error(
+                ErrorKind::WrongNumberOfValues,
+                format!("{command} takes exactly two setups"),
+            )
+            .exit();
+    };
+    setups
 }
 
 fn main() -> ExitCode {
@@ -127,18 +173,20 @@ fn main() -> ExitCode {
             save_outputs,
         } => run::command(&scenario, &setup, repeat, save_outputs.as_deref()),
         Command::Diff { scenario, setups } => {
-            let Ok([first, second]) = <[Setup; 2]>::try_from(setups) else {
-                let mut cli = Cli::command();
-                cli.build();
-                cli.find_subcommand_mut("diff")
-                    .expect("diff is a subcommand")
-                    .error(
-                        ErrorKind::WrongNumberOfValues,
-                        "diff takes exactly two setups",
-                    )
-                    .exit();
-            };
+            let [first, second] = two_setups("diff", setups);
             diff::command(&scenario, [&first, &second])
+        }
+        Command::Fuzz {
+            input,
+            setups,
+            seed,
+            count,
+            ticks,
+            out,
+        } => {
+            let [first, second] = two_setups("fuzz", setups);
+            let cases = fuzz::Cases { seed, count, ticks };
+            fuzz::command(input.as_deref(), [&first, &second], &cases, out.as_deref())
         }
     };
     match outcome {

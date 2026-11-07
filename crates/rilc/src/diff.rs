@@ -5,7 +5,7 @@ use crate::subject::Subject;
 use crate::{Error, Outcome};
 use mchprs_redpiler::circuit::NodeId;
 use mchprs_redpiler::engine::{Changes, Drive, Engine};
-use mchprs_redpiler::graph::{LinkKind, NodeState};
+use mchprs_redpiler::graph::{DriveKind, LinkKind, NodeState};
 use rustc_hash::FxHashMap;
 use std::mem;
 use std::path::Path;
@@ -34,7 +34,7 @@ pub struct Pair<'a> {
     setups: [&'a Setup; 2],
     shared: Vec<(Location, [NodeId; 2])>,
     port_indices: Vec<usize>,
-    unshared: [usize; 2],
+    unshared: [u64; 2],
 }
 
 impl<'a> Pair<'a> {
@@ -53,7 +53,7 @@ impl<'a> Pair<'a> {
                 (0..2).any(|setup| subjects[setup].circuit.node(ids[setup]).port.is_some())
             })
             .collect();
-        let unshared = [0, 1].map(|setup| subjects[setup].nodes().count() - shared.len());
+        let unshared = [0, 1].map(|setup| (subjects[setup].nodes().count() - shared.len()) as u64);
         Pair {
             subjects,
             setups,
@@ -61,6 +61,23 @@ impl<'a> Pair<'a> {
             port_indices,
             unshared,
         }
+    }
+
+    pub fn inputs(&self) -> Vec<(&Location, DriveKind)> {
+        self.shared
+            .iter()
+            .filter_map(|(location, ids)| {
+                let nodes = [0, 1].map(|setup| self.subjects[setup].circuit.node(ids[setup]));
+                if !nodes.iter().all(|node| node.is_input()) {
+                    return None;
+                }
+                Some((location, nodes[0].kind.drive_kind()?))
+            })
+            .collect()
+    }
+
+    pub fn unshared(&self) -> [u64; 2] {
+        self.unshared
     }
 
     pub fn play(&self, scenario: &Scenario) -> Result<Verdict, Error> {
@@ -93,23 +110,31 @@ impl<'a> Pair<'a> {
                 counted(run.notes_played, "note play"),
             ),
         };
-        let noun = if self.subjects[0].is_circuit() {
-            "name"
-        } else {
-            "position"
-        };
-        report.push_str(&format!(
-            "not compared: nodes at {} only {} has, at {} only {} has; queued ticks; changes \
-             within a tick\n",
-            counted(self.unshared[0] as u64, noun),
-            self.setups[0],
-            grouped(self.unshared[1] as u64),
-            self.setups[1]
-        ));
+        let circuit = self.subjects[0].is_circuit();
+        report.push_str(&not_compared(self.setups, self.unshared, circuit));
         Ok(Verdict {
             first_difference_tick: differences.map(|_| run.tick),
             report,
         })
+    }
+}
+
+pub fn not_compared(setups: [&Setup; 2], unshared: [u64; 2], circuit: bool) -> String {
+    let noun = if circuit { "name" } else { "position" };
+    format!(
+        "not compared: nodes at {} only {} has, at {} only {} has; queued ticks; changes within \
+         a tick\n",
+        counted(unshared[0], noun),
+        setups[0],
+        grouped(unshared[1]),
+        setups[1]
+    )
+}
+
+pub fn when(tick: u64) -> String {
+    match tick {
+        0 => "before the first tick".to_owned(),
+        tick => format!("after tick {}", grouped(tick)),
     }
 }
 
@@ -213,10 +238,6 @@ impl<'a> Run<'a> {
 
     fn explain(&self, differences: &[Difference]) -> String {
         let [first, second] = self.pair.setups;
-        let when = |tick| match tick {
-            0 => "before the first tick".to_owned(),
-            tick => format!("after tick {}", grouped(tick)),
-        };
         let mut report = format!("{first} and {second} differ {}\n", when(self.tick));
         for difference in differences.iter().take(EXPLAINED_DIFFERENCES) {
             match difference {

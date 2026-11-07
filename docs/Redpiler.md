@@ -107,6 +107,8 @@ A backend runs a circuit. It may implement redstone execution in any way, whethe
 
 [`rilc diff`](#diff) plays a scenario on two backends tick by tick and explains the first difference, which checks an optimized circuit against the plain one, or one backend against another.
 
+[`rilc fuzz`](#fuzz) does the same for random scenarios, on random circuits or on one input, and names the cases on which the backends differ.
+
 ## How Redstone Works
 
 Implementing a Redstone executor is not as trivial as it may initially seem because Redstone has very specific timing rules.
@@ -242,6 +244,18 @@ It reports the compile time, and for each repeat the ticks per second and the ti
 The setups agree when every port has the same state and the note blocks play equally often.
 At the first difference, `diff` reports the tick, the differing ports with their states and the inputs feeding them under each setup, the last action, and the earliest tick and location at which any node both setups have differed.
 Every report lists what it didn't compare: the nodes only one setup has, pending ticks, and changes that revert within a tick.
+
+## fuzz
+
+`rilc fuzz [INPUT] -b A -b B [--seed S] [--count N] [--ticks N] [--out DIR]` plays `N` cases, by default 1000, on two setups and compares them as `diff` does, for `--ticks` ticks each, by default 300.
+Each case is named by its seed: the first case takes `S`, by default 1, and each next case the next seed.
+Before each tick, a case uses one of the inputs both setups have, picked at random, 30% of the time: it toggles a lever, presses a button, or sets another input to a random signal strength.
+
+- Without an input, each case is a random circuit of 4 to 64 levers, buttons, repeaters, torches, comparators, constants, lamps, trapdoors and wires in random and often stale states. A third more nodes copy another node's inputs, and wires are outputs. RIL can't hold pending ticks, so there are none.
+- With an input, a world or a RIL file of one circuit, each case is a random scenario on it.
+
+The report names up to 10 differing cases with the tick after which each differed, and explains the first as `diff` does.
+`--out` writes each differing case to `DIR` as a scenario, `<seed>.toml`, that `diff` plays again, and a random circuit as `<seed>.ril`.
 
 ## test
 
