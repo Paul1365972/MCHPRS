@@ -1,7 +1,5 @@
 use super::compile::{CompileJob, Started};
 use super::Plot;
-use mchprs_blocks::block_store::BlockView;
-use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::backend::CompilePlan;
 use mchprs_redpiler::block_map::BlockMap;
@@ -200,14 +198,7 @@ impl Plot {
         }
         if update {
             let region = self.world.region();
-            for pos in self
-                .world
-                .occupied_regions(region)
-                .into_iter()
-                .flat_map(Region::positions)
-            {
-                mchprs_redstone::neighbor_changed_at(&mut self.world, pos);
-            }
+            mchprs_redstone::update_region(&mut self.world, region);
         }
         self.publish_world();
     }

@@ -9,7 +9,7 @@ use crate::item_stack::ItemStack;
 use crate::utils;
 use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
-use crate::worldedit::{clear_area, create_clipboard, paste_clipboard, update};
+use crate::worldedit::{clear_area, create_clipboard, paste_clipboard};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType};
 use mchprs_blocks::block_store::{BlockStore, BlockView};
@@ -19,6 +19,7 @@ use mchprs_blocks::region::Region;
 use mchprs_blocks::signal_strength::UncappedSignalStrength;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
+use mchprs_redstone::update_region;
 use rustc_hash::FxHashMap;
 use std::time::Instant;
 
@@ -165,11 +166,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             .executes(|ctx| {
                 if ctx.flag("plot") {
                     let region = ctx.plot().world.region();
-                    update(ctx.world_mut()?, region.min(), region.max());
+                    update_region(ctx.world_mut()?, region);
                     ctx.worldedit_message("Updated entire plot.")
                 } else {
                     let (first_pos, second_pos) = ctx.selection()?;
-                    update(ctx.world_mut()?, first_pos, second_pos);
+                    update_region(ctx.world_mut()?, Region::new(first_pos, second_pos));
                     ctx.worldedit_message("Updated selection.")
                 }
             }),

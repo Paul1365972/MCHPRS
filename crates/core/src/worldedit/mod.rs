@@ -183,16 +183,6 @@ pub fn calculate_expanded_selection(
     (new_first, new_second)
 }
 
-pub fn update(plot: &mut PlotWorld, first_pos: BlockPos, second_pos: BlockPos) {
-    for pos in plot
-        .occupied_regions(Region::new(first_pos, second_pos))
-        .into_iter()
-        .flat_map(Region::positions)
-    {
-        mchprs_redstone::neighbor_changed_at(plot, pos);
-    }
-}
-
 fn split_top_level_commas(input: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut depth = 0i32;

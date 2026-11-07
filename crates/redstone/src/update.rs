@@ -1,5 +1,6 @@
 use crate::{behavior, comparator, wire, RedstoneWorld, HORIZONTAL};
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFace, BlockPos};
 
 /// Vanilla's `NeighborUpdater.UPDATE_ORDER`
@@ -115,6 +116,16 @@ pub(crate) fn update_neighbors_at_except(
 
 pub fn neighbor_changed_at(world: &mut impl RedstoneWorld, pos: BlockPos) {
     add_and_run(world, [Update::Neighbor(pos)]);
+}
+
+pub fn update_region(world: &mut impl RedstoneWorld, region: Region) {
+    for pos in world
+        .occupied_regions(region)
+        .into_iter()
+        .flat_map(Region::positions)
+    {
+        neighbor_changed_at(world, pos);
+    }
 }
 
 pub fn update_neighbors_for_output_signal(world: &mut impl RedstoneWorld, pos: BlockPos) {

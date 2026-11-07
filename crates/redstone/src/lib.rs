@@ -22,6 +22,7 @@ pub mod wire;
 
 use mchprs_blocks::block_store::BlockStore;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use sound::Sound;
 use tick_queue::{TickPriority, TickQueue};
@@ -29,7 +30,9 @@ use tick_queue::{TickPriority, TickQueue};
 pub use behavior::{can_survive, place_block, state_for_placement, use_block};
 pub use diode::{diode_should_be_prioritized, is_diode};
 pub use signal::{provides_strong_power, provides_weak_power};
-pub use update::{neighbor_changed_at, set_block, update_neighbors_for_output_signal, Notify};
+pub use update::{
+    neighbor_changed_at, set_block, update_neighbors_for_output_signal, update_region, Notify,
+};
 
 /// Vanilla's `Direction.values()` order
 const DIRECTIONS: [BlockFace; 6] = [
@@ -105,6 +108,19 @@ impl Aabb {
             max: std::array::from_fn(|axis| self.max[axis] + delta[axis]),
         }
     }
+}
+
+/// Updates every block in `region`, then runs at most `limit` ticks until none is pending, and
+/// returns how many it ran if it got there.
+pub fn settle(world: &mut impl RedstoneWorld, region: Region, limit: u64) -> Option<u64> {
+    update_region(world, region);
+    for ticks in 0..limit {
+        if world.redstone().ticks.entries().is_empty() {
+            return Some(ticks);
+        }
+        tick_queue::run_scheduled_ticks(world);
+    }
+    world.redstone().ticks.entries().is_empty().then_some(limit)
 }
 
 pub fn button_press_ticks(button: Block) -> u8 {

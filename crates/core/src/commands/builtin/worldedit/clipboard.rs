@@ -5,12 +5,13 @@ use crate::commands::define::Command;
 use crate::commands::error::{CommandError, CommandResult, RuntimeError};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::Direction;
-use crate::worldedit::{clear_area, create_clipboard, paste_clipboard, update};
+use crate::worldedit::{clear_area, create_clipboard, paste_clipboard};
 use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::{Block, FlipDirection, RotateAmt};
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFacing, BlockPos};
+use mchprs_redstone::update_region;
 use std::time::Instant;
 
 pub(super) fn register(registry: &mut CommandRegistry) {
@@ -182,7 +183,7 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
         .ok_or(RuntimeError::EmptyClipboard)?;
     paste_clipboard(world, clipboard, pos, ignore_air);
     if should_update && let Some(region) = ctx.clip_region(paste_region) {
-        update(ctx.world_mut()?, region.min(), region.max());
+        update_region(ctx.world_mut()?, region);
     }
     if select_region {
         select(ctx)?;

@@ -1,4 +1,5 @@
 use crate::input::Input as Loaded;
+use crate::numbers::counted;
 use crate::Error;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
@@ -66,6 +67,7 @@ impl From<Target> for Location {
 struct ScenarioFile {
     input: PathBuf,
     circuit: Option<String>,
+    settle: Option<u64>,
     #[serde(default)]
     step: Vec<StepFile>,
 }
@@ -84,6 +86,7 @@ pub struct Scenario {
     pub path: PathBuf,
     pub input: PathBuf,
     pub circuit: Option<String>,
+    pub settle: Option<u64>,
     pub steps: Vec<Step>,
 }
 
@@ -118,6 +121,7 @@ impl Scenario {
             path: path.to_owned(),
             input: path.parent().unwrap_or(Path::new("")).join(file.input),
             circuit: file.circuit,
+            settle: file.settle,
             steps: Vec::with_capacity(file.step.len()),
         };
         for (index, step) in file.step.into_iter().enumerate() {
@@ -138,7 +142,7 @@ impl Scenario {
     }
 
     pub fn read_input(&self) -> Result<Loaded, Error> {
-        let input = Loaded::read(&self.input, self.circuit.as_deref())?;
+        let mut input = Loaded::read(&self.input, self.circuit.as_deref())?;
         let world = matches!(input, Loaded::World(_));
         for (index, step) in self.steps.iter().enumerate() {
             let Some(action) = &step.action else {
@@ -154,6 +158,17 @@ impl Scenario {
                     return Err(self.step_error(index, problem));
                 }
                 _ => {}
+            }
+        }
+        if let Some(limit) = self.settle {
+            let Loaded::World(world) = &mut input else {
+                let problem = format!("{}: settle only applies to worlds", self.path.display());
+                return Err(problem.into());
+            };
+            let region = world.blocks().region();
+            if mchprs_redstone::settle(world, region, limit).is_none() {
+                let ticks = counted(limit, "tick");
+                return Err(format!("the world hasn't settled within {ticks}").into());
             }
         }
         Ok(input)

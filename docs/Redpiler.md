@@ -210,6 +210,7 @@ RIL can't hold pending ticks, so a comment says how many the output leaves out.
 
 ```toml
 input = "alu.schem"
+settle = 1000
 
 [[step]]
 toggle = [0, 1, 8]
@@ -222,6 +223,7 @@ run = 20
 ```
 
 - `input` is the world or RIL file, relative to the scenario. `circuit = "<name>"` picks the circuit of a RIL file that holds several.
+- `settle` is optional. It updates every block of a world and runs it until no tick is pending, and fails if that takes more ticks than it gives. The setups then compile the settled world.
 - Each `[[step]]` takes at most one action and then runs `run` ticks. `toggle` flips a lever, `press` presses a button, and `set` with `power` sets a pressure plate or another input to a signal strength.
 - An input is `[x, y, z]` in a world and a name like `"reset"` in a RIL circuit. An action that the node can't take is an error before anything runs.
 
