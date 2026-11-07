@@ -38,7 +38,6 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, compilation: &C
                 eprintln!("error: tests are not supported in this context");
                 process::exit(1);
             }
-            Global::BackendCircuit(_) => todo!("backend circuit compilation"),
         };
 
         let result_graph = run_passes(compilation.passes, graph, compilation.print_after_all);

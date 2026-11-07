@@ -213,8 +213,6 @@ impl ComponentType {
 enum TokenType {
     /// The `circuit` keyword
     Circuit,
-    /// The `backend_circuit` keyword
-    BackendCircuit,
     /// The `test` keyword
     Test,
     /// The `test_args` keyword
@@ -309,7 +307,6 @@ impl TokenType {
         use TokenType::*;
         match self {
             Circuit => "circuit keyword",
-            BackendCircuit => "backend_circuit keyword",
             Test => "test keyword",
             TestArgs => "test_args keyword",
             Schematic => "schematic keyword",
@@ -505,7 +502,6 @@ impl<'a> Lexer<'a> {
 
         let kind = match word.as_str() {
             "circuit" => TokenType::Circuit,
-            "backend_circuit" => TokenType::BackendCircuit,
             "test" => TokenType::Test,
             "test_args" => TokenType::TestArgs,
             "schematic" => TokenType::Schematic,
@@ -649,9 +645,7 @@ impl RILModule {
         let Some(ast::Global::Test(test)) = self.globals.get(name) else {
             panic!("could not find test: {}", name);
         };
-        let ast::TestResult::Circuit(circuit) = &test.result else {
-            todo!("non-circuit test result types")
-        };
+        let circuit = &test.result;
 
         let mut expected_map = FxHashMap::default();
         for (idx, component) in circuit.components.iter().enumerate() {
@@ -697,9 +691,7 @@ impl RILModule {
         let Some(ast::Global::Test(test)) = self.globals.get(name) else {
             panic!("could not find test: {}", name);
         };
-        let ast::TestResult::Circuit(circuit) = &test.result else {
-            todo!("non-circuit test result types")
-        };
+        let circuit = &test.result;
         src.replace_range(circuit.src_begin..circuit.src_end, new_result);
     }
 }
@@ -723,7 +715,6 @@ impl Parser {
 
             let keyword_token = parser.expect_token(&[
                 TokenType::Circuit,
-                TokenType::BackendCircuit,
                 TokenType::Schematic,
                 TokenType::Test,
                 TokenType::TestArgs,
@@ -743,7 +734,6 @@ impl Parser {
                         .globals
                         .insert(schematic.name.clone(), ast::Global::Schematic(schematic));
                 }
-                TokenType::BackendCircuit => todo!("backend circuit parsing"),
                 TokenType::Test => parser.parse_test()?,
                 TokenType::TestArgs => parser.parse_test_args()?,
                 _ => unreachable!(),
@@ -949,18 +939,11 @@ impl Parser {
             _ => unreachable!(),
         };
 
-        let result_ty = self.expect_token(&[TokenType::Circuit, TokenType::BackendCircuit])?;
-        let (name, result) = match result_ty.kind {
-            TokenType::Circuit => {
-                let circuit = self.parse_circuit(result_ty.pos)?;
-                (circuit.name.clone(), ast::TestResult::Circuit(circuit))
-            }
-            TokenType::BackendCircuit => todo!("backend circuit parsing"),
-            _ => unreachable!(),
-        };
+        let result_ty = self.expect_token(&[TokenType::Circuit])?;
+        let result = self.parse_circuit(result_ty.pos)?;
 
         self.module.globals.insert(
-            name,
+            result.name.clone(),
             ast::Global::Test(ast::Test {
                 input,
                 result,
@@ -1112,7 +1095,6 @@ pub mod ast {
 
     pub enum Global {
         Circuit(Circuit),
-        BackendCircuit(BackendCircuit),
         Test(Test),
         Schematic(Schematic),
     }
@@ -1129,21 +1111,10 @@ pub mod ast {
         pub src_end: usize,
     }
 
-    pub struct BackendCircuit {
-        pub name: String,
-        pub backend: String,
-        // TODO
-    }
-
-    pub enum TestResult {
-        Circuit(Circuit),
-        BackendCircuit,
-    }
-
     pub struct Test {
         pub input: String,
         pub test_args: Option<RILOptions>,
-        pub result: TestResult,
+        pub result: Circuit,
     }
 
     pub struct TestArgs {

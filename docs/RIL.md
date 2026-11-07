@@ -6,10 +6,7 @@
 
 ```
 circuit @<name> {}
-backend_circuit(<backend_name>) @<name> {}
 ```
-
-Backends each have their own printer and parser to suit their own needs
 
 ### Schematics
 
@@ -28,12 +25,11 @@ It must list the passes to run, like `--passes=coalesce,prune-orphans`, and can 
 
 `redpiler_args` is a string. If `redpiler_args` is not specified, it must be specified through `test_args`.
 
-`test_result` can either be a `circuit` or `backend_circuit`. `test_result` can be automatically updated with `rilc test --update`.
+`test_result` is a `circuit`, which `rilc test --update` can fill in.
 
 ```
 test_args <args>
 test(@<src>) circuit @<test_name> {}
-test(@<src>) backend_circuit(<backend_name>) @<test_name> {}
 ```
 
 ### Values
