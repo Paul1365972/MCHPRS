@@ -73,6 +73,12 @@ Since each set has only 16 possible strengths and sets only grow, the sweeps ter
 Cycles can retain bounded output sets, for example a comparator loop fed by a bounded signal.
 The sets do not track correlations between inputs, so they can include combinations that cannot occur together at runtime.
 
+## The `UnifyConstants` Pass
+
+This pass moves the links of every constant onto one constant of strength 15, each lengthened by the strength its constant lacks: a link of weight 2 from a constant of strength 10 becomes a link of weight 7. Links that carry the same strength then come from the same node, so `Coalesce` can merge the nodes they feed.
+Of the links from constants into one input of a node, only the shortest stays, and links that carry nothing go.
+Constants never change, so their blocks never need writing back: the pass removes every constant that isn't a port, and a port keeps its node without links.
+
 ## The `Coalesce` Pass
 
 There are often times when a wire powers many different components in the same way. For example, it is common for vertical multi-bit latches to be controlled by a slab tower that powers several repeaters that lock other repeaters. This is very inefficient because these repeaters will always have the exact same value, but they are still updated and ticked independently. To avoid this logic duplication, this optimization pass merges duplicate nodes into one, removing duplicate nodes from the graph and adjusting links to point to the new node.

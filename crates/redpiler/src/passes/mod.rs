@@ -7,6 +7,7 @@ pub use opt::coalesce::Coalesce;
 pub use opt::dedup_links::DedupLinks;
 pub use opt::fold::Fold;
 pub use opt::prune_orphans::PruneOrphans;
+pub use opt::unify_constants::UnifyConstants;
 pub use opt::unreachable_output::UnreachableOutput;
 
 pub const OPTIMIZE: Flag = Flag::switch(
@@ -15,10 +16,11 @@ pub const OPTIMIZE: Flag = Flag::switch(
     "Enable Redpiler optimizations, which can break builds",
 );
 
-const ALL: [&dyn Pass; 5] = [
+const ALL: [&dyn Pass; 6] = [
     &DedupLinks,
     &Fold,
     &UnreachableOutput,
+    &UnifyConstants,
     &Coalesce,
     &PruneOrphans,
 ];

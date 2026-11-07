@@ -8,7 +8,7 @@ use mchprs_redpiler::extract::{
     ExtractOptions, LinkOrder, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
 };
 use mchprs_redpiler::passes::{
-    Coalesce, DedupLinks, Fold, Pass, PruneOrphans, UnreachableOutput, OPTIMIZE,
+    Coalesce, DedupLinks, Fold, Pass, PruneOrphans, UnifyConstants, UnreachableOutput, OPTIMIZE,
 };
 
 const REORDER: Flag = Flag::switch(
@@ -26,12 +26,19 @@ static FLAGS: [Flag; 6] = [
     WIRE_CROSS_OUT,
 ];
 
-const OPTIMIZING_PASSES: [&dyn Pass; 4] = [&DedupLinks, &Fold, &UnreachableOutput, &PruneOrphans];
-
-const REORDERING_PASSES: [&dyn Pass; 5] = [
+const OPTIMIZING_PASSES: [&dyn Pass; 5] = [
     &DedupLinks,
     &Fold,
     &UnreachableOutput,
+    &UnifyConstants,
+    &PruneOrphans,
+];
+
+const REORDERING_PASSES: [&dyn Pass; 6] = [
+    &DedupLinks,
+    &Fold,
+    &UnreachableOutput,
+    &UnifyConstants,
     &Coalesce,
     &PruneOrphans,
 ];
