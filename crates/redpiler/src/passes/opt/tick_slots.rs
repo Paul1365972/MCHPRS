@@ -38,6 +38,15 @@ impl TickSlots {
         }
     }
 
+    /// Where a tick of a node of this kind schedules its own next tick: a repeater that turns on
+    /// without input stays on for one more pulse
+    pub fn of_own_tick(kind: &NodeKind) -> TickSlots {
+        match *kind {
+            NodeKind::Repeater { delay, .. } => TickSlots::slot(delay, TickPriority::Higher),
+            _ => TickSlots::default(),
+        }
+    }
+
     fn slot(delay: u8, priority: TickPriority) -> TickSlots {
         let index = delay as u32 * 4 + priority as u32;
         TickSlots(1u64.checked_shl(index).unwrap_or(u64::MAX))

@@ -5,9 +5,9 @@
 //!
 //! The merged node updates the targets of one merged node after another. With
 //! [`UpdateOrder::Kept`], nodes only merge in runs whose ticks always follow each other: every
-//! source updates them in the same order, and no target in between could be scheduled into the
-//! same tick and priority. Nodes that feed nothing merge without that, since their ticks only
-//! change themselves.
+//! source updates them in the same order, and no target in between could be scheduled into the same
+//! tick and priority, unless its tick commutes with theirs. Nodes that feed nothing merge without
+//! that, since their ticks only change themselves.
 //!
 //! Merges make links parallel and remove the nodes between parallel links. So once no nodes merge,
 //! parallel links merge as in [`DedupLinks`](crate::passes::DedupLinks), and the nodes their
@@ -163,21 +163,36 @@ fn inputs_are_stable(graph: &Graph, signature: &Signature, node: NodeIdx) -> boo
 struct Group {
     members: FxHashSet<NodeIdx>,
     slots: TickSlots,
+    targets: FxHashSet<NodeIdx>,
+    caused_tick_slots: TickSlots,
 }
 
 impl Group {
-    fn new(members: &[NodeIdx], kind: &NodeKind) -> Group {
+    fn new(graph: &Graph, members: &[NodeIdx]) -> Group {
         Group {
             members: members.iter().copied().collect(),
-            slots: TickSlots::of(kind),
+            slots: TickSlots::of(&graph[members[0]].kind),
+            targets: members
+                .iter()
+                .flat_map(|&member| graph.neighbors(member, Direction::Outgoing))
+                .collect(),
+            caused_tick_slots: members.iter().fold(TickSlots::default(), |slots, &member| {
+                slots.union(caused_tick_slots(graph, member))
+            }),
         }
     }
 
     /// Whether a tick of this target, updated between two members, could run between their ticks
+    /// and change what follows
     fn separates_members(&self, graph: &Graph, target: NodeIdx) -> bool {
         !self.members.contains(&target)
             && graph[target].kind.is_link_source()
             && TickSlots::of(&graph[target].kind).intersects(self.slots)
+            && (self.targets.contains(&target)
+                || graph
+                    .neighbors(target, Direction::Outgoing)
+                    .any(|next| self.members.contains(&next) || self.targets.contains(&next))
+                || caused_tick_slots(graph, target).intersects(self.caused_tick_slots))
     }
 }
 
@@ -189,6 +204,18 @@ struct UpdateSpan {
 struct SourceUpdates {
     targets: Vec<NodeIdx>,
     member_spans: FxHashMap<NodeIdx, UpdateSpan>,
+}
+
+/// Where the ticks a tick of this node causes are scheduled, except those of nodes that feed
+/// nothing
+fn caused_tick_slots(graph: &Graph, node: NodeIdx) -> TickSlots {
+    graph
+        .neighbors(node, Direction::Outgoing)
+        .filter(|&target| graph[target].kind.is_link_source())
+        .fold(
+            TickSlots::of_own_tick(&graph[node].kind),
+            |slots, target| slots.union(TickSlots::of(&graph[target].kind)),
+        )
 }
 
 /// Splits identical nodes into runs whose ticks always follow each other, each in the order they
@@ -204,7 +231,7 @@ fn ordered_runs(graph: &Graph, mut members: Vec<NodeIdx>) -> Vec<Vec<NodeIdx>> {
     if !kind.is_link_source() || sources.is_empty() {
         return vec![members];
     }
-    let group = Group::new(&members, kind);
+    let group = Group::new(graph, &members);
     let updates: Vec<SourceUpdates> = sources
         .into_iter()
         .map(|source| {

@@ -111,7 +111,8 @@ The merged node updates the targets of one merged node after another, as if they
 Nodes that read their own output, or whose inputs update each other, never merge: an input could change between their ticks.
 Without `--reorder`, identical nodes only merge in runs whose ticks always follow each other, so the merged node makes the same updates in the same order:
 - every source updates the members of a run in the same order;
-- no node between two members in a source's order can be scheduled into the same tick and priority as them, so no tick can run between theirs.
+- no node between two members in a source's order can be scheduled into the same tick and priority as them, so no tick can run between theirs;
+- unless that node's tick commutes with theirs, and can run after the whole run instead: it doesn't feed a member or a node a member feeds, no member feeds it, and the ticks it causes can't share a tick and priority with those the members cause.
 
 A run can be any part of a group of identical nodes, and its members merge in the order they tick in. Nodes that feed nothing, like lamps, merge without these conditions, as their ticks only change themselves.
 
