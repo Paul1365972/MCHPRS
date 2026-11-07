@@ -71,7 +71,7 @@ impl BackendSetup {
     ) -> Result<Simulation, Box<dyn Error + Send + Sync>> {
         let plan = self.configure()?;
         let context = &mut BuildContext::silent();
-        let circuit = compile(world, region, ticks, &plan.extract, &plan.passes, context)?;
+        let circuit = compile(world, region, ticks, &plan.extract, &plan.passes, context)?.circuit;
         let engine = self.backend.build(&circuit, &self.flags, context)?;
         Ok(Simulation::new(circuit, engine))
     }

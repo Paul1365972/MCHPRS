@@ -92,7 +92,7 @@ fn start(
     context: &mut BuildContext<'_>,
     session: SessionContext,
 ) -> anyhow::Result<Started> {
-    let circuit = compile(world, region, ticks, &plan.extract, &plan.passes, context)?;
+    let circuit = compile(world, region, ticks, &plan.extract, &plan.passes, context)?.circuit;
     let session = setup
         .backend()
         .start(&circuit, setup.flags(), context, session)?;

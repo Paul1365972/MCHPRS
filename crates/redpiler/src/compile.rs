@@ -29,10 +29,37 @@ pub enum Stage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageReport {
+    /// `extracted`, or the name of the pass
+    pub name: &'static str,
+    pub nodes: usize,
+    pub links: usize,
+}
+
+impl StageReport {
+    pub fn new(name: &'static str, graph: &Graph) -> StageReport {
+        StageReport {
+            name,
+            nodes: graph.node_count(),
+            links: graph.edge_count(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Compiled {
+    pub circuit: Circuit,
+    pub stages: Vec<StageReport>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cancelled;
+
+type Inspector<'a> = &'a mut dyn FnMut(&StageReport, &Graph);
 
 pub struct BuildContext<'a> {
     progress: Option<&'a mut dyn FnMut(Stage)>,
+    inspect: Option<Inspector<'a>>,
     cancelled: &'a AtomicBool,
 }
 
@@ -40,14 +67,24 @@ impl<'a> BuildContext<'a> {
     pub fn new(progress: &'a mut dyn FnMut(Stage), cancelled: &'a AtomicBool) -> BuildContext<'a> {
         BuildContext {
             progress: Some(progress),
+            inspect: None,
             cancelled,
         }
     }
 
-    pub fn silent() -> BuildContext<'static> {
+    pub fn silent() -> BuildContext<'a> {
         BuildContext {
             progress: None,
+            inspect: None,
             cancelled: &NEVER_CANCELLED,
+        }
+    }
+
+    /// Shows `inspect` each stage's report and the graph it leaves as soon as the stage ends.
+    pub fn inspecting(self, inspect: Inspector<'a>) -> BuildContext<'a> {
+        BuildContext {
+            inspect: Some(inspect),
+            ..self
         }
     }
 
@@ -63,6 +100,12 @@ impl<'a> BuildContext<'a> {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
+    }
+
+    fn finished(&mut self, stage: &StageReport, graph: &Graph) {
+        if let Some(inspect) = &mut self.inspect {
+            inspect(stage, graph);
+        }
     }
 }
 
@@ -102,20 +145,40 @@ pub fn compile(
     options: &ExtractOptions,
     passes: &[&dyn Pass],
     context: &mut BuildContext<'_>,
-) -> Result<Circuit, CompileError> {
+) -> Result<Compiled, CompileError> {
+    let (graph, stages) = compile_graph(world, region, ticks, options, passes, context)?;
+    Ok(Compiled {
+        circuit: Circuit::new(graph)
+            .expect("extraction and the passes keep the circuit invariants"),
+        stages,
+    })
+}
+
+pub fn compile_graph(
+    world: &impl BlockView,
+    region: Region,
+    ticks: &[TickEntry],
+    options: &ExtractOptions,
+    passes: &[&dyn Pass],
+    context: &mut BuildContext<'_>,
+) -> Result<(Graph, Vec<StageReport>), CompileError> {
     let mut graph = extract(world, region, ticks, options)?;
+    let extracted = StageReport::new("extracted", &graph);
+    context.finished(&extracted, &graph);
     context.report(Stage::Extracted {
         nodes: graph.node_count(),
     })?;
-    optimize(&mut graph, passes, context)?;
-    Ok(Circuit::new(graph).expect("extraction and the passes keep the circuit invariants"))
+    let mut stages = vec![extracted];
+    stages.extend(optimize(&mut graph, passes, context)?);
+    Ok((graph, stages))
 }
 
 pub fn optimize(
     graph: &mut Graph,
     passes: &[&dyn Pass],
     context: &mut BuildContext<'_>,
-) -> Result<(), Cancelled> {
+) -> Result<Vec<StageReport>, Cancelled> {
+    let mut stages = Vec::with_capacity(passes.len());
     for (completed, pass) in passes.iter().enumerate() {
         context.report(Stage::Optimizing {
             pass: pass.status_message(),
@@ -129,6 +192,9 @@ pub fn optimize(
             graph.node_count(),
             graph.edge_count()
         );
+        let stage = StageReport::new(pass.name(), graph);
+        context.finished(&stage, graph);
+        stages.push(stage);
     }
-    Ok(())
+    Ok(stages)
 }
