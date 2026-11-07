@@ -1,5 +1,9 @@
 # Redstone Intermediate Language
 
+RIL is a text form of the graph Redpiler compiles, used to test its passes. A RIL file is a module of circuits, schematics and tests. Each has a global name prefixed with `@`, which can be used once per module and refers back to something defined earlier in the file.
+
+A mistake in a file is reported with its line and column, like `opt/x.ril:2:35: unknown value %nope`. Every circuit must keep the invariants of a compiled circuit: for example, a lamp has no outgoing links and an input has no incoming ones.
+
 ## Syntax
 
 ### Circuits
@@ -14,18 +18,18 @@ circuit @<name> {}
 schematic @<name> <path>
 ```
 
-`path` is a string path relative to the RIL file. If the file is stdin, the path is relative to the working directory.
+`path` is a string path relative to the RIL file.
 
 ### Tests
 
-`test_args <args>` specifies the default `redpiler_args` used in test blocks. `args` is a string.
+`test_args <args>` specifies the default `redpiler_args` used by the tests after it. `args` is a string, and a module has at most one.
 It must list the passes to run, like `--passes=coalesce,prune-orphans`, and can add the `/redpiler compile` flags `--io-only`, `--wire-dot-out`, `--illegal-states-out` and `--wire-cross-out`. Every wire in a schematic becomes a node, as without `--optimize`.
 
 `test(@<src>) <test_result>` or `test(@<src>, <redpiler_args>) <test_result>`
 
-`redpiler_args` is a string. If `redpiler_args` is not specified, it must be specified through `test_args`.
+`src` names a circuit or schematic. `redpiler_args` is a string. If `redpiler_args` is not specified, it must be specified through `test_args`.
 
-`test_result` is a `circuit`, which `rilc test --update` can fill in.
+`test_result` is a `circuit`, which `rilc test --update` can fill in. A test passes when its passes turn `src` into a circuit with the same nodes, each with the same type, state, port role and output list. Node order, positions and pending ticks don't count. A failing test shows the line of each node that differs, from the expected circuit (`-`) and from the result (`+`).
 
 ```
 test_args <args>
@@ -34,7 +38,7 @@ test(@<src>) circuit @<test_name> {}
 
 ### Values
 
-Values are a name given to a component prefixed with `%`. They can include any alphanumeric characters.
+Values are a name given to a component prefixed with `%`. They can include ASCII letters, digits and underscores, and name one component of their circuit. An output list can name components defined later in the circuit.
 
 Examples: `%a`, `%repeater`, `%123`
 

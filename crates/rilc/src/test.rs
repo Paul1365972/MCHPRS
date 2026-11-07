@@ -1,7 +1,7 @@
-use crate::{extract_schematic, named_passes, run_passes};
+use crate::{extract_schematic, run_passes};
 use anstream::println;
-use mchprs_ril::string_replacer::StringReplacer;
-use mchprs_ril::{self as ril, RILModule, RILTest};
+use mchprs_redpiler::graph::Graph;
+use mchprs_ril::{Input, Test};
 use owo_colors::OwoColorize as _;
 use std::{
     ffi::OsStr,
@@ -35,57 +35,45 @@ fn find_test_root(path: &Path) -> Option<&Path> {
 
 enum TestOutcome {
     Passed,
-    Updated,
+    Updated(Graph),
     Failed,
 }
 
-fn run_test(
-    test_root: &Option<&Path>,
-    test_path: &Path,
-    module: &RILModule,
-    test: RILTest,
-    update: bool,
-    test_src: &mut StringReplacer,
-) -> TestOutcome {
-    let graph = match &test.schematic_path {
-        Some(schematic_path) => {
-            match extract_schematic(test_path, schematic_path, &test.options.extract) {
+fn run_test(test_root: &Option<&Path>, test_path: &Path, test: &Test, update: bool) -> TestOutcome {
+    let graph = match &test.input {
+        Input::Schematic(schematic) => {
+            match extract_schematic(test_path, &schematic.path, &test.options.extract) {
                 Some(graph) => graph,
                 None => return TestOutcome::Failed,
             }
         }
-        None => test.graph,
+        Input::Circuit(circuit) => circuit.graph(&test.options.extract),
     };
 
-    let passes = match named_passes(&test.options.passes) {
-        Ok(passes) => passes,
-        Err(error) => {
-            eprintln!("error: {error}");
-            return TestOutcome::Failed;
-        }
-    };
-    let result_graph = run_passes(&passes, graph, false);
+    let result_graph = run_passes(&test.options.passes, graph, false);
     let test_path = match test_root {
         Some(test_root) => test_path.strip_prefix(test_root).unwrap(),
         None => test_path,
     };
     let full_name = format!("{}:{}", test_path.with_extension("").display(), test.name);
-    if !module.compare_test_result(&test.name, &result_graph) {
-        let mut result_ril = String::new();
-        ril::dump_graph(&mut result_ril, &result_graph, &test.name).unwrap();
-        if update {
-            println!("{} {}", "[UPDATED]".blue(), full_name);
-            module.update_test(test_src, &test.name, &result_ril);
-            TestOutcome::Updated
-        } else {
-            println!("{} {}", "[FAIL]".red(), full_name);
-            println!("Actual RIL:");
-            println!("{}", result_ril);
-            TestOutcome::Failed
-        }
-    } else {
+    let mismatches = test.compare(&result_graph);
+    if mismatches.is_empty() {
         println!("{} {}", "[PASS]".green(), full_name);
         TestOutcome::Passed
+    } else if update {
+        println!("{} {}", "[UPDATED]".blue(), full_name);
+        TestOutcome::Updated(result_graph)
+    } else {
+        println!("{} {}", "[FAIL]".red(), full_name);
+        for mismatch in mismatches {
+            if let Some(expected) = mismatch.expected {
+                println!("{}", format!("- {expected}").red());
+            }
+            if let Some(actual) = mismatch.actual {
+                println!("{}", format!("+ {actual}").green());
+            }
+        }
+        TestOutcome::Failed
     }
 }
 
@@ -121,24 +109,21 @@ pub fn run_tests(path: PathBuf, update: bool) -> bool {
             num_failed += 1;
             continue;
         };
-        let tests = module.get_tests();
-        let mut updated = 0;
-
-        let mut src = StringReplacer::new(&src);
-
-        for test in tests {
-            match run_test(&test_root, &path, &module, test, update, &mut src) {
+        let mut results = Vec::new();
+        for test in module.tests() {
+            match run_test(&test_root, &path, test, update) {
                 TestOutcome::Passed => num_passed += 1,
-                TestOutcome::Updated => updated += 1,
+                TestOutcome::Updated(graph) => results.push((test, graph)),
                 TestOutcome::Failed => num_failed += 1,
             }
         }
-        if updated > 0 {
-            match fs::write(&path, src.finish().as_ref()) {
-                Ok(()) => num_updated += updated,
+        if !results.is_empty() {
+            let results: Vec<_> = results.iter().map(|(test, graph)| (*test, graph)).collect();
+            match fs::write(&path, module.with_results(&results)) {
+                Ok(()) => num_updated += results.len(),
                 Err(error) => {
                     eprintln!("error: failed to update {}: {error}", path.display());
-                    num_failed += updated;
+                    num_failed += results.len();
                 }
             }
         }

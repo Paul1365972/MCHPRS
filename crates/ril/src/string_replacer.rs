@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 pub struct StringReplacer<'a> {
     src: &'a str,
     read: usize,
@@ -27,16 +25,8 @@ impl<'a> StringReplacer<'a> {
         self.read = range.end;
     }
 
-    pub fn updated(&self) -> bool {
-        !self.output.is_empty() || self.read > 0
-    }
-
-    pub fn finish(self) -> Cow<'a, str> {
-        if self.updated() {
-            Cow::Owned(self.output + &self.src[self.read..])
-        } else {
-            Cow::Borrowed(self.src)
-        }
+    pub fn finish(self) -> String {
+        self.output + &self.src[self.read..]
     }
 }
 
@@ -50,5 +40,5 @@ fn test() {
     sr.replace_range(hello..hello + 5, "bye");
     sr.replace_range(her..her + 3, "elephon");
 
-    assert_eq!(sr.finish().as_ref(), "bye telephone");
+    assert_eq!(sr.finish(), "bye telephone");
 }

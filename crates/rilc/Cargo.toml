@@ -17,7 +17,6 @@ mchprs_redpiler_backends = { path = "../redpiler_backends" }
 mchprs_ril = { path = "../ril" }
 mchprs_blocks = { path = "../blocks" }
 mchprs_schematic = { path = "../schematic" }
-line-index = { workspace = true }
 clap = { workspace = true }
 anstream = { workspace = true }
 owo-colors = { workspace = true }

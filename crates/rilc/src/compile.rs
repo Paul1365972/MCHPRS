@@ -1,8 +1,7 @@
-use crate::{extract_schematic, run_passes};
+use crate::run_passes;
 use mchprs_redpiler::extract::ExtractOptions;
 use mchprs_redpiler::passes::Pass;
-use mchprs_ril::ast::Global;
-use mchprs_ril::dump_graph;
+use mchprs_ril::Printed;
 use std::path::{Path, PathBuf};
 use std::{fs, process};
 
@@ -24,25 +23,16 @@ pub fn compile(input_path: &Path, output_path: &Option<PathBuf>, compilation: &C
         process::exit(1);
     };
 
+    if !module.tests().is_empty() {
+        eprintln!("error: tests are not supported in this context");
+        process::exit(1);
+    }
     let mut result = String::new();
-    for (name, global) in &module.globals {
-        let graph = match global {
-            Global::Circuit(circuit) => module.get_graph(circuit, compilation.extract),
-            Global::Schematic(schematic) => {
-                match extract_schematic(input_path, &schematic.path, compilation.extract) {
-                    Some(graph) => graph,
-                    None => process::exit(1),
-                }
-            }
-            Global::Test(_) => {
-                eprintln!("error: tests are not supported in this context");
-                process::exit(1);
-            }
-        };
-
+    for circuit in module.circuits() {
+        let graph = circuit.graph(compilation.extract);
         let result_graph = run_passes(compilation.passes, graph, compilation.print_after_all);
         result.push('\n');
-        dump_graph(&mut result, &result_graph, name).unwrap();
+        result.push_str(&Printed::new(&result_graph, &circuit.name).to_string());
         result.push('\n');
     }
 

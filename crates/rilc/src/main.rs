@@ -1,13 +1,12 @@
 use clap::{Parser, Subcommand};
 use compile::Compilation;
-use line_index::{LineIndex, TextSize};
 use mchprs_blocks::BlockPos;
 use mchprs_redpiler::compile::{optimize, BuildContext};
 use mchprs_redpiler::extract::{extract, ExtractOptions};
 use mchprs_redpiler::graph::Graph;
 use mchprs_redpiler::passes::{self, Pass};
 use mchprs_redpiler_backends::{BackendSetup, BACKENDS};
-use mchprs_ril::{DumpGraph, RILModule};
+use mchprs_ril::{Module, Printed};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -106,29 +105,17 @@ fn run_passes(passes: &[&dyn Pass], mut graph: Graph, print_after_all: bool) -> 
         optimize(&mut graph, &[pass], &mut BuildContext::silent())
             .expect("a silent build is never cancelled");
         if print_after_all {
-            println!("Circuit after pass: {}", pass.name());
-            graph.dump();
+            println!("{}", Printed::new(&graph, &pass.name().replace('-', "_")));
         }
     }
     graph
 }
 
-fn load_ril(path: &Path, src: &str) -> Option<RILModule> {
-    match RILModule::parse_from_string(src) {
+fn load_ril(path: &Path, src: &str) -> Option<Module> {
+    match Module::parse(src) {
         Ok(module) => Some(module),
-        Err(err) => {
-            eprintln!("error: failed to load RIL module at path: {:?}", path);
-            let file_name = path.file_name().unwrap();
-            let line_index = LineIndex::new(src);
-            let pos = TextSize::new(err.pos as u32);
-            let line_col = line_index.line_col(pos);
-            eprintln!(
-                "{}:{}:{} {}",
-                file_name.display(),
-                line_col.line + 1,
-                line_col.col + 1,
-                err.message
-            );
+        Err(error) => {
+            eprintln!("error: {}:{error}", path.display());
             None
         }
     }
