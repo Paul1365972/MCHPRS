@@ -4,6 +4,8 @@ At a high level, Redpiler transforms the redstone in a Minecraft world into a di
 
 The final graph becomes a `Circuit`, which an engine runs. A `BlockMap` maps the circuit's nodes to their blocks: it turns block positions into inputs and the engine's changes back into blocks.
 
+A `Circuit` serializes with serde as its nodes and its links in update order, for programs that want the graph Redpiler compiles. Deserializing one checks it like `Circuit::new` does.
+
 # Extraction
 
 Extraction turns the plot into the nodes and links of the graph.

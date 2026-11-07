@@ -41,6 +41,7 @@ const REORDERING_PASSES: [&dyn Pass; 5] = [
     &PruneOrphans,
 ];
 
+#[derive(Debug, Clone, Copy, Default)]
 pub struct DirectBackend;
 
 impl Backend for DirectBackend {

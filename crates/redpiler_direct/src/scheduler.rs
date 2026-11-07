@@ -4,7 +4,7 @@ use mchprs_redpiler::graph::PendingTick;
 use mchprs_redstone::tick_queue::TickPriority;
 use std::mem;
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Queues([Vec<NodeId>; TickScheduler::NUM_PRIORITIES]);
 
 impl Queues {
@@ -19,7 +19,7 @@ impl Queues {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct TickScheduler {
     queues_deque: [Queues; Self::NUM_QUEUES],
     tick: u32,

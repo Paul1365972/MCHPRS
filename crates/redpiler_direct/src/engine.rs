@@ -13,6 +13,7 @@ use mchprs_redpiler::graph::{NodeState, PendingTick};
 use mchprs_redstone::tick_queue::TickPriority;
 use std::mem;
 
+#[derive(Debug)]
 struct NoteActivations {
     counts: Box<[u32]>,
     played: Vec<NodeId>,
@@ -46,6 +47,7 @@ impl NoteActivations {
     }
 }
 
+#[derive(Debug)]
 pub struct DirectEngine {
     nodes: Nodes,
     visible_nodes: Box<[NodeId]>,

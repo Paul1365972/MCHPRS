@@ -11,7 +11,7 @@ use std::str::FromStr;
 const MAX_ITEM_COUNT: u32 = i8::MAX as u32;
 
 /// A single item in an inventory
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InventoryEntry {
     pub id: u32,
     pub slot: i8,
@@ -19,7 +19,7 @@ pub struct InventoryEntry {
     pub nbt: Option<Vec<u8>>,
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignBlockEntity {
     pub front_rows: [String; 4],
     pub back_rows: [String; 4],
@@ -124,7 +124,7 @@ impl ContainerType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BlockEntity {
     Comparator {
         output_strength: UncappedSignalStrength,

@@ -4,6 +4,7 @@ use crate::engine::{Changes, DriveError, Engine, EngineError, Input, Snapshot};
 use crate::graph::NodeState;
 use mchprs_blocks::BlockPos;
 
+#[derive(Debug)]
 pub struct Simulation<E: Engine = Box<dyn Engine>> {
     blocks: BlockMap,
     engine: E,

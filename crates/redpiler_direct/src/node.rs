@@ -25,7 +25,7 @@ impl NodeId {
 
 // This is Pretty Bad:tm: because one can create a NodeId using another instance of Nodes,
 // but at least some type system protection is better than none.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Nodes {
     pub nodes: Box<[Node]>,
 }
@@ -109,7 +109,7 @@ impl std::fmt::Debug for ForwardLink {
 #[derive(Clone, Debug, Default)]
 pub struct ForwardLinkRange(std::ops::Range<usize>);
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ForwardLinks {
     links: Vec<ForwardLink>,
 }

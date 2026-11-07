@@ -46,7 +46,7 @@ impl StageReport {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Compiled {
     pub circuit: Circuit,
     pub stages: Vec<StageReport>,

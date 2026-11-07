@@ -5,7 +5,7 @@ use mchprs_blocks::blocks::Block;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
 use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt, mem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ pub struct Link {
     pub weight: u8,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Circuit {
     nodes: Box<[Node]>,
     inputs: LinkTable,
@@ -79,6 +79,11 @@ impl Circuit {
             }
         }
         Ok(())
+    }
+
+    fn from_parts(nodes: Box<[Node]>, links: &[Link]) -> Result<Circuit, InvalidCircuit> {
+        check_parts(&nodes, links)?;
+        Ok(Circuit::from_checked_parts(nodes, links))
     }
 
     fn from_checked_parts(nodes: Box<[Node]>, links: &[Link]) -> Circuit {
@@ -191,6 +196,32 @@ impl Circuit {
     }
 }
 
+impl PartialEq for Circuit {
+    fn eq(&self, other: &Circuit) -> bool {
+        self.nodes == other.nodes && self.outputs.links == other.outputs.links
+    }
+}
+
+impl Eq for Circuit {}
+
+impl Serialize for Circuit {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        CircuitPartsRef {
+            nodes: &self.nodes,
+            links: &self.outputs.links,
+        }
+        .serialize(serializer)
+    }
+}
+
+/// Checks the circuit invariants, like [`Circuit::new`].
+impl<'de> Deserialize<'de> for Circuit {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Circuit, D::Error> {
+        let parts = CircuitParts::deserialize(deserializer)?;
+        Circuit::from_parts(parts.nodes.into_boxed_slice(), &parts.links).map_err(de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SnapshotError {
     NodeCount { expected: usize, found: usize },
@@ -264,6 +295,42 @@ impl fmt::Display for InvalidCircuit {
 }
 
 impl std::error::Error for InvalidCircuit {}
+
+/// A circuit as serde writes it: its nodes, and its links in update order
+#[derive(Serialize)]
+struct CircuitPartsRef<'a> {
+    nodes: &'a [Node],
+    links: &'a [Link],
+}
+
+#[derive(Deserialize)]
+struct CircuitParts {
+    nodes: Vec<Node>,
+    links: Vec<Link>,
+}
+
+fn check_parts(nodes: &[Node], links: &[Link]) -> Result<(), InvalidCircuit> {
+    check_node_count(nodes.len())?;
+    for link in links {
+        let (Some(source), Some(target)) = (
+            nodes.get(link.source.index()),
+            nodes.get(link.target.index()),
+        ) else {
+            return Err(InvalidCircuit::anywhere(format!(
+                "a link joins a missing node: {link:?}"
+            )));
+        };
+        check_link(
+            (link.source.index(), source),
+            (link.target.index(), target),
+            link.weight,
+        )?;
+    }
+    for (index, node) in nodes.iter().enumerate() {
+        check_node(node).map_err(|problem| InvalidCircuit::of(index, problem))?;
+    }
+    Ok(())
+}
 
 fn check_node_count(count: usize) -> Result<(), InvalidCircuit> {
     if u32::try_from(count).is_err() {
@@ -340,7 +407,7 @@ fn check_link(
     Ok(())
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct LinkTable {
     links: Vec<Link>,
     offsets: Vec<usize>,

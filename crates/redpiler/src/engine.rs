@@ -2,12 +2,13 @@ use crate::circuit::NodeId;
 use crate::graph::{NodeState, PendingTick};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_blocks::BlockPos;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt;
 
 pub type EngineError = Box<dyn Error + Send + Sync>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input {
     Set(SignalStrength),
     Toggle,
@@ -57,13 +58,13 @@ impl fmt::Display for DriveError {
 
 impl Error for DriveError {}
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Changes {
     pub states: Vec<(NodeId, NodeState)>,
     pub notes: Vec<(NodeId, u32)>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub states: Vec<NodeState>,
     /// Ticks due together with the same priority run in this order
@@ -71,7 +72,7 @@ pub struct Snapshot {
 }
 
 /// Keeps at most one pending tick per node between ticks.
-pub trait Engine: Send {
+pub trait Engine: fmt::Debug + Send {
     /// The drive must come from the circuit the engine was built from.
     fn drive(&mut self, drive: Drive) -> Result<(), EngineError>;
 

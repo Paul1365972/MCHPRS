@@ -1,13 +1,13 @@
 use mchprs_blocks::blocks::{Block, Button, ComparatorMode, Instrument};
 use mchprs_blocks::registries::sound_event;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SoundSource {
     Records = 2,
     Blocks = 4,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sound {
     pub event: i32,
     pub source: SoundSource,

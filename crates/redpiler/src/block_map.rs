@@ -11,7 +11,7 @@ use std::mem;
 
 type NodeBlocks = SmallVec<[(BlockPos, Block); 1]>;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BlockChanges {
     pub blocks: Vec<(BlockPos, Block)>,
     pub block_entities: Vec<(BlockPos, BlockEntity)>,
@@ -51,6 +51,7 @@ pub struct PlayedNote {
     pub count: u32,
 }
 
+#[derive(Debug)]
 pub struct BlockMap {
     circuit: Circuit,
     blocks: Box<[NodeBlocks]>,
