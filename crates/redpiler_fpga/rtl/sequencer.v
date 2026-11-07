@@ -2,7 +2,7 @@
 // shifts it each clock, beginning a tick at priority 0. Each of the GROUPS groups of nodes reads its
 // own copy of firing, which placement can put among them instead of routing one register across the
 // device, so whether a tick begins is decided in the clock before. set_input may only rise while run
-// is low.
+// is low, and tick_limit may only change between ticks.
 module fpga_sequencer #(
     parameter GROUPS = 1
 ) (
@@ -21,7 +21,6 @@ module fpga_sequencer #(
     reg limit_after_tick = 0;
     wire idle = phase == 0;
     wire beginning = run && (phase[3] ? !limit_after_tick : idle && !at_limit);
-    wire [63:0] next_tick_count = tick_count + phase[3];
 
     assign input_nodes = idle && set_input;
     assign begin_tick = phase[0];
@@ -29,8 +28,8 @@ module fpga_sequencer #(
 
     always @(posedge clock) begin
         phase <= {phase[2:0], beginning};
-        tick_count <= next_tick_count;
-        at_limit <= next_tick_count == tick_limit;
+        tick_count <= tick_count + phase[3];
+        at_limit <= phase[3] ? limit_after_tick : tick_count == tick_limit;
         limit_after_tick <= tick_count + 1 == tick_limit;
     end
 

@@ -51,8 +51,8 @@ module protocol_controller #(
     reg [3:0] status = 0;
     reg [7:0] mode = PAUSE;
     reg [63:0] target = 0;
-    reg [63:0] period = 1;
-    reg [63:0] clocks_left = 0;
+    reg [63:0] last_clock = 0;
+    reg [63:0] clocks = 0;
     reg [31:0] ticks_due = 0;
     reg reading = 0;
     reg [7:0] answered = STATUS;
@@ -60,7 +60,7 @@ module protocol_controller #(
     reg [POSITION_WIDTH - 1:0] length = 0;
 
     wire executing = pending && !circuit_busy && !run && !sending;
-    wire period_elapsed = mode == RUN_PERIODIC && clocks_left == 0;
+    wire period_elapsed = mode == RUN_PERIODIC && clocks == last_clock;
     wire tick_paid = mode == RUN_PERIODIC && tick_started;
     wire [POSITION_WIDTH - 1:0] payload_position = position - HEADER_BYTES;
 
@@ -121,7 +121,7 @@ module protocol_controller #(
                 : 4'd0;
         end
         if (mode == RUN_PERIODIC)
-            clocks_left <= period_elapsed ? period - 1 : clocks_left - 1;
+            clocks <= period_elapsed ? 64'd0 : clocks + 1;
         if (period_elapsed && !tick_paid && ticks_due != 32'hffff_ffff)
             ticks_due <= ticks_due + 1;
         else if (tick_paid && !period_elapsed)
@@ -136,8 +136,8 @@ module protocol_controller #(
             if (status == 0 && code >= PAUSE && code <= RUN_PERIODIC) begin
                 mode <= code;
                 target <= tick_count + argument;
-                period <= argument;
-                clocks_left <= argument - 1;
+                last_clock <= argument - 1;
+                clocks <= 0;
                 ticks_due <= 0;
             end
         end
