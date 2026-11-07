@@ -1,6 +1,7 @@
 use crate::block_map::{BlockChanges, BlockMap};
 use crate::circuit::{Circuit, NodeId};
 use crate::engine::{Changes, DriveError, Engine, EngineError, Input, Snapshot};
+use crate::graph::NodeState;
 use mchprs_blocks::BlockPos;
 
 pub struct Simulation<E: Engine = Box<dyn Engine>> {
@@ -36,6 +37,10 @@ impl<E: Engine> Simulation<E> {
 
     pub fn settle(&mut self, limit: u64) -> Result<Option<u64>, EngineError> {
         self.engine.settle(limit)
+    }
+
+    pub fn state(&mut self, node: NodeId) -> Result<NodeState, EngineError> {
+        self.engine.state(node)
     }
 
     pub fn sync(&mut self) -> Result<BlockChanges, EngineError> {

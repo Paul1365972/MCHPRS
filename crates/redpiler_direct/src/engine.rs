@@ -9,7 +9,7 @@ use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::backend::BuildError;
 use mchprs_redpiler::circuit::{self, Circuit};
 use mchprs_redpiler::engine::{Changes, Drive, Engine, EngineError, Input, Snapshot};
-use mchprs_redpiler::graph::PendingTick;
+use mchprs_redpiler::graph::{NodeState, PendingTick};
 use mchprs_redstone::tick_queue::TickPriority;
 use std::mem;
 
@@ -227,6 +227,10 @@ impl Engine for DirectEngine {
             }
         }
         Ok(())
+    }
+
+    fn state(&mut self, node: circuit::NodeId) -> Result<NodeState, EngineError> {
+        Ok(self.nodes[self.nodes.get(node.index())].state())
     }
 
     fn snapshot(&mut self) -> Result<Snapshot, EngineError> {

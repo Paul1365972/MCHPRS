@@ -85,6 +85,11 @@ pub trait Engine: Send {
     /// call.
     fn changes(&mut self, changes: &mut Changes) -> Result<(), EngineError>;
 
+    /// The node must come from the circuit the engine was built from.
+    fn state(&mut self, node: NodeId) -> Result<NodeState, EngineError> {
+        Ok(self.snapshot()?.states[node.index()])
+    }
+
     fn snapshot(&mut self) -> Result<Snapshot, EngineError>;
 
     /// The snapshot must pass [`Circuit::check_snapshot`](crate::circuit::Circuit::check_snapshot).
@@ -109,6 +114,10 @@ impl<E: Engine + ?Sized> Engine for Box<E> {
 
     fn changes(&mut self, changes: &mut Changes) -> Result<(), EngineError> {
         (**self).changes(changes)
+    }
+
+    fn state(&mut self, node: NodeId) -> Result<NodeState, EngineError> {
+        (**self).state(node)
     }
 
     fn snapshot(&mut self) -> Result<Snapshot, EngineError> {
