@@ -39,9 +39,27 @@ Each node's outgoing links are ordered by weight, then by target type, then by t
 
 Passes receive mutable access to the compile graph. Each backend chooses which passes run, in order; without `--optimize`, none do.
 
+## Optimization Levels
+
+`--optimize` keeps the behavior of a circuit exactly. Whatever its inputs do, every component shows the same state at the end of every tick as without it, plays the same notes and leaves the same pending ticks. The exception is redstone wires that aren't ports: they have no nodes, so they stop updating. Its passes only remove work that can't change anything.
+
+`--reorder` may change the order of the updates within a tick for speed. Every component still computes the same state from the same inputs and schedules its ticks with the same delay and priority, but ticks due in the same tick with the same priority can run in another order. A circuit can only behave differently where such ticks race, when both feed one component or one feeds the other:
+
+- Identical components merge even when another tick runs between theirs (see [`Coalesce`](#the-coalesce-pass)). That tick then runs after both, so a component it feeds together with one of them sees the two changes in the other order.
+- A component one source reaches over two paths of different length is updated once instead of once per path (see [`DedupLinks`](#the-deduplinks-pass)), so it can miss a tick it would have scheduled in between.
+- A source updates the components it feeds by type, repeaters first, then torches and comparators, instead of the nearest first (see [Links](#links)).
+
+A zero tick pulse can then vanish or appear, for example.
+
 ## The `DedupLinks` Pass
 
 Sometimes, the breadth-first search done by extraction can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 14, the link with weight 14 is removed.
+
+A source updates its links into one node one after another, and in between the node sees the new strength on one link and the old one on the other. Without `--reorder`, the pass only merges links where that in-between update can't matter:
+- into a component that only reads on or off, whose state agrees with its inputs, since in between it sees either its old or its final input;
+- into a wire, which shows only its final strength.
+
+The link that stays updates the node earlier than the last one did, so no node between the links in the source's order may be able to tick in the same tick and priority as it, unless it feeds nothing.
 
 ## The `Fold` Pass
 
@@ -84,12 +102,18 @@ Constants never change, so their blocks never need writing back: the pass remove
 There are often times when a wire powers many different components in the same way. For example, it is common for vertical multi-bit latches to be controlled by a slab tower that powers several repeaters that lock other repeaters. This is very inefficient because these repeaters will always have the exact same value, but they are still updated and ticked independently. To avoid this logic duplication, this optimization pass merges duplicate nodes into one, removing duplicate nodes from the graph and adjusting links to point to the new node.
 Nodes merge when they have the same type, port role, initial state and input links. Inputs and nodes with a pending tick never merge.
 The merged node keeps the blocks of all merged nodes and writes each of them.
-Input links match by source, link type and weight, counting only the strongest link per source and link type.
-The weight doesn't count when a binary source (everything except comparators, wires and constants) feeds a binary reader (everything except comparators and wires), as any link weighs less than 15.
+Input links match by source, link type and weight, and every link counts; with `--reorder`, only the strongest link per source and link type counts.
+The weight doesn't count when a binary source (everything except comparators, wires and constants) or a constant that reaches the node feeds a binary reader (everything except comparators and wires), as the reader only sees on.
 After a merge, the nodes fed by the merged node are checked again.
+Merges make links parallel and remove the nodes between parallel links, so once no nodes merge, parallel links merge by the rules of [`DedupLinks`](#the-deduplinks-pass), and the nodes their sources feed are checked again, until nothing merges.
 
-The merged node updates the targets of one merged node after another, as if they ticked right after each other (see [Tick Ordering](#tick-ordering)). This can change the order of updates within a tick, so the pass only runs with `--reorder`.
+The merged node updates the targets of one merged node after another, as if they ticked right after each other (see [Tick Ordering](#tick-ordering)).
 Nodes that read their own output, or whose inputs update each other, never merge: an input could change between their ticks.
+Without `--reorder`, identical nodes only merge in runs whose ticks always follow each other, so the merged node makes the same updates in the same order:
+- every source updates the members of a run in the same order;
+- no node between two members in a source's order can be scheduled into the same tick and priority as them, so no tick can run between theirs.
+
+A run can be any part of a group of identical nodes, and its members merge in the order they tick in. Nodes that feed nothing, like lamps, merge without these conditions, as their ticks only change themselves.
 
 ## The `PruneOrphans` Pass
 
@@ -249,7 +273,7 @@ It reports the compile time, and for each repeat the ticks per second and the ti
 ## diff
 
 `rilc diff <SCENARIO> -b A -b B` plays the scenario on two setups, like `-b direct -b "direct -o"`, and compares them before the first tick and after every tick: a world's nodes by position, a RIL circuit's by name.
-The setups agree when every port has the same state and the note blocks play equally often.
+The setups agree when every port has the same state and the note blocks play equally often, which is what `--optimize` promises to keep.
 At the first difference, `diff` reports the tick, the differing ports with their states and the inputs feeding them under each setup, the last action, and the earliest tick and location at which any node both setups have differed.
 Every report lists what it didn't compare: the nodes only one setup has, pending ticks, and changes that revert within a tick.
 

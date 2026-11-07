@@ -8,10 +8,11 @@ use mchprs_redstone::tick_queue::TickPriority;
 // use petgraph::stable_graph::{NodeIndex, StableGraph};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use stable_graph::{NodeIndex, StableGraph};
+use stable_graph::{EdgeIndex, NodeIndex, StableGraph};
 
 pub use stable_graph::{Direction, EdgeRef};
 pub type NodeIdx = NodeIndex<u32>;
+pub type EdgeIdx = EdgeIndex<u32>;
 pub type Graph = StableGraph<Node, Link, u32>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

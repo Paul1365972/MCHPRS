@@ -1,7 +1,7 @@
 test_args "--passes=coalesce"
 
 # Both torches read the same inputs. Merging them makes their repeaters identical too, and the
-# lamp keeps the links of both
+# lamp's two links from the merged repeater merge into the stronger one
 circuit @same_inputs_input {
   %lever_a = lever false -> [%torch1:3, %torch2:0]
   %lever_b = lever false -> [%torch1:0, %torch2:7]
@@ -15,7 +15,7 @@ circuit @same_inputs_input {
 test(@same_inputs_input) circuit @same_inputs {
   %lever_a = lever false -> [%torch1:3]
   %lever_b = lever false -> [%torch1:0]
-  %repeater1 = repeater 1, false, false, false -> [%lamp:0, %lamp:4]
+  %repeater1 = repeater 1, false, false, false -> [%lamp:0]
   %torch1 = torch true -> [%repeater1:0]
   %lamp = lamp false
 }

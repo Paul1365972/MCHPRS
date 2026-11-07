@@ -10,18 +10,26 @@ pub use opt::prune_orphans::PruneOrphans;
 pub use opt::unify_constants::UnifyConstants;
 pub use opt::unreachable_output::UnreachableOutput;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateOrder {
+    Kept,
+    Free,
+}
+
 pub const OPTIMIZE: Flag = Flag::switch(
     "optimize",
     Some('o'),
-    "Enable Redpiler optimizations, which can break builds",
+    "Optimize the circuit without changing its behavior",
 );
 
-const ALL: [&dyn Pass; 6] = [
-    &DedupLinks,
+const ALL: [&dyn Pass; 8] = [
+    &DedupLinks(UpdateOrder::Kept),
+    &DedupLinks(UpdateOrder::Free),
     &Fold,
     &UnreachableOutput,
     &UnifyConstants,
-    &Coalesce,
+    &Coalesce(UpdateOrder::Kept),
+    &Coalesce(UpdateOrder::Free),
     &PruneOrphans,
 ];
 
