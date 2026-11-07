@@ -1,4 +1,4 @@
-test_args "--passes=constant-fold"
+test_args "--passes=fold"
 
 circuit @simple_input {
   %constant = constant 1 -> [%repeater1:0]
@@ -10,8 +10,8 @@ circuit @simple_input {
 test(@simple_input) circuit @simple {
   %constant = constant 1
   %repeater1 = constant 15
-  %repeater2 = constant 15 -> [%lamp:0]
-  %lamp = lamp true
+  %repeater2 = constant 15
+  %lamp = constant 15 output
 }
 
 circuit @comparator_input {

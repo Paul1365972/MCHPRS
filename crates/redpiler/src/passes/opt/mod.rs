@@ -1,5 +1,5 @@
 pub mod coalesce;
-pub mod constant_fold;
 pub mod dedup_links;
+pub mod fold;
 pub mod prune_orphans;
 pub mod unreachable_output;

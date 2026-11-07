@@ -8,10 +8,14 @@
 //!
 //! Inputs also start with every strength the caller can set them to.
 //!
+//! A change only updates the nodes whose link carries a different strength, so a node without a
+//! pending tick whose input links each carry one strength is never updated. It keeps its output,
+//! even when that disagrees with its inputs.
+//!
 //! A queued repeater tick can emit a pulse after its input disappears, so pending repeaters
 //! also admit both 0 and 15.
 
-use crate::graph::{Direction, DriveKind, Graph, LinkKind, NodeIdx, NodeKind, NodeState};
+use crate::graph::{Direction, DriveKind, Graph, LinkKind, Node, NodeIdx, NodeKind, NodeState};
 use mchprs_blocks::blocks::ComparatorMode;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,6 +44,10 @@ impl SSSet {
 
     pub fn contains(self, ss: u8) -> bool {
         self.0 & (1 << ss) != 0
+    }
+
+    pub fn is_single(self) -> bool {
+        self.0.is_power_of_two()
     }
 
     pub fn min(self) -> u8 {
@@ -107,6 +115,22 @@ impl SSSets {
     pub fn of(&self, node_idx: NodeIdx) -> SSSet {
         self.0[node_idx.index()].expect("every node of the analyzed graph has a set")
     }
+
+    pub fn inputs(&self, graph: &Graph, node_idx: NodeIdx) -> InputSets {
+        collect_inputs(graph, &self.0, node_idx)
+    }
+}
+
+pub struct InputSets {
+    pub default: SSSet,
+    pub side: SSSet,
+    pub each_link_fixed: bool,
+}
+
+impl InputSets {
+    pub fn never_update(&self, node: &Node) -> bool {
+        self.each_link_fixed && !node.is_input() && node.pending_tick.is_none()
+    }
 }
 
 pub fn ss_sets(graph: &Graph) -> SSSets {
@@ -134,10 +158,18 @@ pub fn ss_sets(graph: &Graph) -> SSSets {
             }
             dirty[node_idx.index()] = false;
 
-            let (default_input, side_input) = collect_inputs(graph, &sets, node_idx);
+            let inputs = collect_inputs(graph, &sets, node_idx);
             let node = &graph[node_idx];
+            if inputs.never_update(node) {
+                continue;
+            }
             let old = sets[node_idx.index()].unwrap();
-            let new = old.union(evaluate(&node.kind, &node.state, default_input, side_input));
+            let new = old.union(evaluate(
+                &node.kind,
+                &node.state,
+                inputs.default,
+                inputs.side,
+            ));
             if new == old {
                 continue;
             }
@@ -153,18 +185,22 @@ pub fn ss_sets(graph: &Graph) -> SSSets {
     SSSets(sets)
 }
 
-fn collect_inputs(graph: &Graph, sets: &[Option<SSSet>], node_idx: NodeIdx) -> (SSSet, SSSet) {
-    let mut default_input = SSSet::ZERO;
-    let mut side_input = SSSet::ZERO;
+fn collect_inputs(graph: &Graph, sets: &[Option<SSSet>], node_idx: NodeIdx) -> InputSets {
+    let mut inputs = InputSets {
+        default: SSSet::ZERO,
+        side: SSSet::ZERO,
+        each_link_fixed: true,
+    };
     for edge in graph.edges(node_idx, Direction::Incoming) {
         let link = edge.weight();
-        let source = sets[edge.source().index()].unwrap().decay(link.weight);
+        let carried = sets[edge.source().index()].unwrap().decay(link.weight);
+        inputs.each_link_fixed &= carried.is_single();
         match link.kind {
-            LinkKind::Default => default_input = default_input.combine(source),
-            LinkKind::Side => side_input = side_input.combine(source),
+            LinkKind::Default => inputs.default = inputs.default.combine(carried),
+            LinkKind::Side => inputs.side = inputs.side.combine(carried),
         }
     }
-    (default_input, side_input)
+    inputs
 }
 
 fn evaluate(kind: &NodeKind, state: &NodeState, default_input: SSSet, side_input: SSSet) -> SSSet {

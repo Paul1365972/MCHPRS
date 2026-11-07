@@ -43,10 +43,11 @@ Passes receive mutable access to the compile graph. Each backend chooses which p
 
 Sometimes, the breadth-first search done by extraction can result in two different paths to the same node. While this would not cause any problems during execution, it is still inefficent. This optimization pass removes duplicate links to the same node, only keeping the link with the lowest weight. For example, if two nodes are connected with two links of weights 13 and 14, the link with weight 14 is removed.
 
-## The `ConstantFold` Pass
+## The `Fold` Pass
 
-While nodes that are never updated in theory have no affect on the number of instructions that are run at runtime, therefore the time taken to perform a tick at runtime, keeping the size of the graph small helps to avoid cache misses that to end up taking time at runtime. This optimization pass reduces the size of the final graph by recognizing situations where a node only has constant inputs and tranforming that node into a constant node, breaking the links to the other constant nodes.
-Nodes with pending ticks are not folded. A folded node keeps its current output strength and, for a repeater, its lock, because a node whose inputs are all constant is never updated again.
+This pass turns every node whose state can never change into a constant node that keeps its state, and removes its input links. Fewer nodes and links keep the graph small, and the nodes that fed only folded nodes become orphans that `PruneOrphans` can remove.
+By the `ss_sets` analysis, a node never changes when it is never updated, or when its output can take only one value and, for a repeater, its lock can't change either.
+Inputs and nodes with a pending tick are never folded. A folded node keeps its current output strength and, for a repeater, its lock, even when they disagree with its inputs, since it is never updated again.
 
 ## The `UnreachableOutput` Pass
 
@@ -63,6 +64,7 @@ Then the sets of its inputs are decayed by the link weights and combined, and th
 Evaluation results are unioned into the existing set.
 Nodes are visited in index order, and a node whose set grew marks the nodes it feeds for the next sweep, until a sweep changes nothing.
 Constants retain their current strength; buttons, levers and pressure plates admit both 0 and 15.
+A change only updates the nodes whose link carries a different strength (see [Tick Ordering](#tick-ordering)), so a node without a pending tick whose input links each always carry one strength is never updated: it retains its current strength, even when that disagrees with its inputs. This also holds through cycles.
 
 Pending repeaters include both 0 and 15: a queued tick can turn an unlocked repeater on after its input disappears. Torches and comparators instead reevaluate their inputs when ticked.
 A repeater whose side input is never off keeps its output, locked or not: every update locks it before evaluating its power.
@@ -176,7 +178,7 @@ Levers can never be updated nor ticked.
 ## Tick Ordering
 
 A Redpiler tick is one redstone tick, which is two game ticks. The ticks due in a tick are fixed when it starts; a tick scheduled while ticking runs in a later tick.
-Due ticks run by priority, then in the order they were scheduled, as in vanilla. A ticked node updates the nodes it links to right away, so a node ticked later in the same tick reads the result. Except for Lamps, a node has at most one pending tick.
+Due ticks run by priority, then in the order they were scheduled, as in vanilla. A ticked node updates the nodes it links to right away, so a node ticked later in the same tick reads the result. It only updates the nodes whose link now carries a different strength. Except for Lamps, a node has at most one pending tick.
 
 The order in which one change reaches the nodes it links to is not specified.
 Vanilla derives it from block positions: a fixed neighbor update order, each component's update pattern, and the iteration order of a Java hash set for redstone wire. Rotating or moving a build can therefore change its behavior.

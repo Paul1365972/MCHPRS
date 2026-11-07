@@ -136,7 +136,7 @@ Levers, buttons and pressure plates are inputs; lamps, trapdoors and note blocks
 %x = constant <power>[, <locked>]
 ```
 
-`locked` is a boolean, `false` if omitted. It holds the lock of a repeater that `ConstantFold` turned into a constant.
+`locked` is a boolean, `false` if omitted. It holds the lock of a repeater that `Fold` turned into a constant.
 
 ### note_block
 

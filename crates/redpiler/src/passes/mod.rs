@@ -4,8 +4,8 @@ use crate::graph::Graph;
 use mchprs_commands::flag::Flag;
 
 pub use opt::coalesce::Coalesce;
-pub use opt::constant_fold::ConstantFold;
 pub use opt::dedup_links::DedupLinks;
+pub use opt::fold::Fold;
 pub use opt::prune_orphans::PruneOrphans;
 pub use opt::unreachable_output::UnreachableOutput;
 
@@ -17,7 +17,7 @@ pub const OPTIMIZE: Flag = Flag::switch(
 
 const ALL: [&dyn Pass; 5] = [
     &DedupLinks,
-    &ConstantFold,
+    &Fold,
     &UnreachableOutput,
     &Coalesce,
     &PruneOrphans,
