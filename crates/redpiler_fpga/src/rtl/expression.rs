@@ -10,6 +10,8 @@ pub(super) enum Expression {
     Above(Box<Expression>, u8),
     Attenuated(Box<Expression>, u8),
     Maximum(Box<Expression>, Box<Expression>),
+    /// Whether each strength from 15 down to 1 is reached
+    HighestReached(Vec<Expression>),
     Select(Box<Expression>, Box<Expression>, Box<Expression>),
     Any(Vec<Expression>),
 }
@@ -89,7 +91,9 @@ impl Expression {
                     term.visit_signals(visit);
                 }
             }
-            Self::Any(terms) => terms.iter().for_each(|term| term.visit_signals(visit)),
+            Self::HighestReached(terms) | Self::Any(terms) => {
+                terms.iter().for_each(|term| term.visit_signals(visit))
+            }
         }
     }
 
@@ -130,6 +134,16 @@ impl fmt::Display for Expression {
                 write!(formatter, "attenuated({term}, 4'd{attenuation})")
             }
             Self::Maximum(left, right) => write!(formatter, "maximum({left}, {right})"),
+            Self::HighestReached(terms) => {
+                formatter.write_str("highest_reached({")?;
+                for (position, term) in terms.iter().enumerate() {
+                    if position != 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    write!(formatter, "{}", term.operand())?;
+                }
+                formatter.write_str("})")
+            }
             Self::Select(condition, then, otherwise) => write!(
                 formatter,
                 "{} ? {} : {}",
@@ -225,6 +239,18 @@ mod tests {
         assert_eq!(
             Expression::maximum(&terms).to_string(),
             "maximum(next_signal_1, maximum(next_signal_2, next_signal_3))"
+        );
+    }
+
+    #[test]
+    fn highest_reached_lists_thresholds_from_the_highest() {
+        let mut thresholds = vec![Expression::Bit(false); 13];
+        thresholds.push(Expression::Signal(2).above(1));
+        thresholds.push(Expression::any([powered(1), powered(2)]));
+        assert_eq!(
+            Expression::HighestReached(thresholds).to_string(),
+            "highest_reached({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, \
+             1'b0, 1'b0, (next_signal_2 > 4'd1), (|next_signal_1 || |next_signal_2)})"
         );
     }
 

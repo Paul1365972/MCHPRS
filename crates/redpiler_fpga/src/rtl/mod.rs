@@ -138,6 +138,14 @@ impl<'a> Writer<'a> {
     function [3:0] attenuated(input [3:0] signal, input [3:0] attenuation);
         attenuated = signal > attenuation ? signal - attenuation : 4'd0;
     endfunction
+    function [3:0] highest_reached(input [15:1] reached);
+        integer strength;
+        begin
+            highest_reached = 4'd0;
+            for (strength = 1; strength <= 15; strength = strength + 1)
+                if (reached[strength]) highest_reached = strength[3:0];
+        end
+    endfunction
     wire input_nodes;
     wire [{}:0] firing;
     fpga_sequencer #(.GROUPS({firing_copies})) sequencer (

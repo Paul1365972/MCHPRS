@@ -3,6 +3,10 @@ use crate::circuit::{Link, StrengthSet};
 use crate::registers::Registers;
 use mchprs_redpiler::compile_graph::SignalStrength;
 
+/// A maximum is built from its thresholds instead of a tree when its terms deliver at most this
+/// many nonzero strengths each on average, so that each threshold is an OR of few comparisons.
+const NONZERO_STRENGTHS_PER_TERM: usize = 2;
+
 pub(super) struct Inputs<'a> {
     registers: &'a Registers<'a>,
 }
@@ -25,29 +29,31 @@ impl<'a> Inputs<'a> {
         }
     }
 
-    fn powers(&self, link: &Link) -> Option<Expression> {
+    /// Whether the link delivers at least `threshold`, or `None` if it never does.
+    fn reaches(&self, link: &Link, threshold: u8) -> Option<Expression> {
         let reachable = self.reachable(link);
-        if reachable == StrengthSet::OFF {
+        if reachable.maximum()?.get() < threshold {
             return None;
         }
-        if !reachable.contains(SignalStrength::Zero) {
+        if reachable.minimum()?.get() >= threshold {
             return Some(Expression::Bit(true));
         }
+        let floor = threshold + link.attenuation;
         let signal = self.signal(link.source);
         let weak = self
             .registers
             .strengths(link.source)
             .iter()
-            .any(|strength| (1..=link.attenuation).contains(&strength.get()));
+            .any(|strength| (1..floor).contains(&strength.get()));
         Some(if weak {
-            signal.above(link.attenuation)
+            signal.above(floor - 1)
         } else {
             signal.nonzero()
         })
     }
 
     pub(super) fn power(&self, links: &[Link]) -> Expression {
-        Expression::any(links.iter().filter_map(|link| self.powers(link)))
+        Expression::any(links.iter().filter_map(|link| self.reaches(link, 1)))
     }
 
     pub(super) fn strength(&self, links: &[Link]) -> Expression {
@@ -65,6 +71,7 @@ impl<'a> Inputs<'a> {
         }
         let mut constant = SignalStrength::Zero;
         let mut terms = Vec::new();
+        let mut nonzero_strengths = 0;
         for link in links
             .iter()
             .filter(|link| self.reachable(link) != StrengthSet::OFF)
@@ -73,8 +80,25 @@ impl<'a> Inputs<'a> {
                 Some(strength) => {
                     constant = constant.max(strength.saturating_sub(link.attenuation));
                 }
-                None => terms.push(self.signal(link.source).attenuated(link.attenuation)),
+                None => {
+                    nonzero_strengths += self.reachable(link).len() as usize - 1;
+                    terms.push(self.signal(link.source).attenuated(link.attenuation));
+                }
             }
+        }
+        if terms.len() > 1 && nonzero_strengths <= NONZERO_STRENGTHS_PER_TERM * terms.len() {
+            return Expression::HighestReached(
+                (1..=15)
+                    .rev()
+                    .map(|threshold| {
+                        Expression::any(
+                            links
+                                .iter()
+                                .filter_map(|link| self.reaches(link, threshold)),
+                        )
+                    })
+                    .collect(),
+            );
         }
         if !constant.is_zero() {
             terms.push(Expression::Strength(constant));
