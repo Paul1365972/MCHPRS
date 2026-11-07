@@ -1,5 +1,5 @@
 use crate::engine::{Drive, DriveError, Input, Snapshot};
-use crate::graph::{Direction, DriveKind, Graph, LinkKind, Node, NodeIdx, QueuedTick};
+use crate::graph::{Direction, DriveKind, Graph, LinkKind, Node, NodeIdx, NodeKind, QueuedTick};
 use crate::ports::Role;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::signal_strength::SignalStrength;
@@ -40,6 +40,7 @@ pub struct Circuit {
 impl Circuit {
     /// Keeps the order of each node's outgoing links, which decides the order of updates.
     pub fn new(graph: Graph) -> Result<Circuit, InvalidCircuit> {
+        Circuit::check(&graph)?;
         let mut ids = vec![None; graph.node_bound()];
         for (index, node) in graph.node_indices().enumerate() {
             ids[node.index()] = Some(NodeId::new(index));
@@ -56,11 +57,31 @@ impl Circuit {
                 });
             }
         }
-        Circuit::from_parts(graph.into_node_weights().collect(), &links)
+        Ok(Circuit::from_checked_parts(
+            graph.into_node_weights().collect(),
+            &links,
+        ))
     }
 
-    fn from_parts(nodes: Box<[Node]>, links: &[Link]) -> Result<Circuit, InvalidCircuit> {
-        check(&nodes, links).map_err(InvalidCircuit)?;
+    /// An error names the node at fault by its index in `graph`.
+    pub fn check(graph: &Graph) -> Result<(), InvalidCircuit> {
+        check_node_count(graph.node_count())?;
+        for index in graph.node_indices() {
+            let node = &graph[index];
+            check_node(node).map_err(|problem| InvalidCircuit::of(index.index(), problem))?;
+            for edge in graph.edges(index, Direction::Outgoing) {
+                let target = edge.target();
+                check_link(
+                    (index.index(), node),
+                    (target.index(), &graph[target]),
+                    edge.weight().weight,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn from_checked_parts(nodes: Box<[Node]>, links: &[Link]) -> Circuit {
         let outputs = LinkTable::new(links, nodes.len(), |link| link.source);
         let inputs = LinkTable::new(&outputs.links, nodes.len(), |link| link.target);
         let mut nodes_by_position = FxHashMap::default();
@@ -69,12 +90,12 @@ impl Circuit {
                 nodes_by_position.insert(pos, NodeId::new(index));
             }
         }
-        Ok(Circuit {
+        Circuit {
             nodes,
             inputs,
             outputs,
             nodes_by_position,
-        })
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -204,71 +225,112 @@ impl fmt::Display for SnapshotError {
 impl std::error::Error for SnapshotError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvalidCircuit(String);
+pub struct InvalidCircuit {
+    node: Option<usize>,
+    problem: String,
+}
+
+impl InvalidCircuit {
+    fn of(node: usize, problem: String) -> InvalidCircuit {
+        InvalidCircuit {
+            node: Some(node),
+            problem,
+        }
+    }
+
+    fn anywhere(problem: String) -> InvalidCircuit {
+        InvalidCircuit {
+            node: None,
+            problem,
+        }
+    }
+
+    pub fn node(&self) -> Option<usize> {
+        self.node
+    }
+
+    pub fn problem(&self) -> &str {
+        &self.problem
+    }
+}
 
 impl fmt::Display for InvalidCircuit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid circuit: {}", self.0)
+        match self.node {
+            Some(node) => write!(f, "invalid circuit: node {node} {}", self.problem),
+            None => write!(f, "invalid circuit: {}", self.problem),
+        }
     }
 }
 
 impl std::error::Error for InvalidCircuit {}
 
-fn check(nodes: &[Node], links: &[Link]) -> Result<(), String> {
-    let node_count = nodes.len();
-    if u32::try_from(node_count).is_err() {
-        return Err(format!("{node_count} nodes exceed u32"));
+fn check_node_count(count: usize) -> Result<(), InvalidCircuit> {
+    if u32::try_from(count).is_err() {
+        return Err(InvalidCircuit::anywhere(format!(
+            "{count} nodes exceed u32"
+        )));
     }
-    for link in links {
-        if link.source.index() >= node_count || link.target.index() >= node_count {
-            return Err(format!("a link joins a missing node: {link:?}"));
-        }
-        if link.weight >= 15 {
-            return Err(format!("a link is too long to carry power: {link:?}"));
-        }
-        let target = &nodes[link.target.index()];
-        if target.is_input() {
-            return Err(format!(
-                "input {} has an incoming link",
-                link.target.index()
-            ));
-        }
-        if !target.kind.is_link_target() {
-            return Err(format!(
-                "node {} ({:?}) can't be a link target",
-                link.target.index(),
-                target.kind
-            ));
-        }
-        let source = &nodes[link.source.index()];
-        if !source.kind.is_link_source() {
-            return Err(format!(
-                "node {} ({:?}) can't be a link source",
-                link.source.index(),
-                source.kind
-            ));
+    Ok(())
+}
+
+fn check_node(node: &Node) -> Result<(), String> {
+    for &(pos, id) in &node.blocks {
+        if Block::from_id(id).get_id() != id {
+            return Err(format!("has an invalid block state {id} at {pos}"));
         }
     }
-    for (index, node) in nodes.iter().enumerate() {
-        for &(pos, id) in &node.blocks {
-            if Block::from_id(id).get_id() != id {
-                return Err(format!("invalid block state {id} at {pos}"));
-            }
+    match node.kind {
+        NodeKind::Repeater { delay, .. } if !(1..=4).contains(&delay) => {
+            return Err(format!("has a repeater delay of {delay}, not 1 to 4"));
         }
-        if node.is_input() && node.kind.drive_kind().is_none() {
-            return Err(format!("input {index} can't be driven"));
+        NodeKind::NoteBlock { note, .. } if note > 24 => {
+            return Err(format!("has note {note}, not 0 to 24"));
         }
-        if let Some(QueuedTick { tick, .. }) = node.pending_tick {
-            if tick.delay == 0 {
-                return Err(format!("pending tick of node {index} has no delay"));
-            }
-            if !node.can_tick() {
-                return Err(format!(
-                    "node {index} ({:?}) has a pending tick but can't tick",
-                    node.kind
-                ));
-            }
+        _ => {}
+    }
+    if node.is_input() && node.kind.drive_kind().is_none() {
+        return Err("is an input but can't be driven".to_owned());
+    }
+    if let Some(QueuedTick { tick, .. }) = node.pending_tick {
+        if tick.delay == 0 {
+            return Err("has a pending tick without a delay".to_owned());
         }
+        if !node.can_tick() {
+            return Err("has a pending tick but can't tick".to_owned());
+        }
+    }
+    Ok(())
+}
+
+fn check_link(
+    (source_index, source): (usize, &Node),
+    (target_index, target): (usize, &Node),
+    weight: u8,
+) -> Result<(), InvalidCircuit> {
+    if weight >= 15 {
+        return Err(InvalidCircuit::of(
+            source_index,
+            format!("has a link of weight {weight}, too long to carry power"),
+        ));
+    }
+    if !source.kind.is_link_source() {
+        return Err(InvalidCircuit::of(
+            source_index,
+            "can't have outgoing links".to_owned(),
+        ));
+    }
+    if target.is_input() {
+        return Err(InvalidCircuit::of(
+            target_index,
+            "is an input, so it can't have incoming links".to_owned(),
+        ));
+    }
+    if !target.kind.is_link_target() {
+        return Err(InvalidCircuit::of(
+            target_index,
+            "can't have incoming links".to_owned(),
+        ));
     }
     Ok(())
 }
