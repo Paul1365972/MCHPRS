@@ -23,7 +23,7 @@ schematic @<name> <path>
 ### Tests
 
 `test_args <args>` specifies the default `redpiler_args` used by the tests after it. `args` is a string, and a module has at most one.
-It must list the passes to run, like `--passes=coalesce,prune-orphans`, and can add the `/redpiler compile` flags `--io-only`, `--wire-dot-out`, `--illegal-states-out` and `--wire-cross-out`. Every wire in a schematic becomes a node, as without `--optimize`.
+It must list the passes to run, like `--passes=coalesce,prune-orphans`, and can add the `/redpiler compile` flags `--io-only`, `--wire-dot-out`, `--illegal-states-out` and `--wire-cross-out`. Every wire in a schematic becomes a node, as without `--optimize`. The `--wire-*-out` flags pick wires by their shape, so they only apply to tests of a schematic.
 
 `test(@<src>) <test_result>` or `test(@<src>, <redpiler_args>) <test_result>`
 

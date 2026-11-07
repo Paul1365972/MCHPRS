@@ -305,6 +305,10 @@ impl<'a> Parser<'a> {
                 .clone()
                 .ok_or_else(|| self.error(keyword_offset, "missing test_args"))?
         };
+        if let (Input::Circuit(_), Some(flag)) = (&input, options.wire_port_flag) {
+            let message = format!("--{} only applies to schematic inputs", flag.name());
+            return Err(self.error(input_token.offset, message));
+        }
         let circuit_keyword = self.expect_token(&[TokenKind::Circuit])?;
         let expected = self.parse_circuit(circuit_keyword.offset)?;
         self.globals.insert(expected.name.clone(), Global::Test);

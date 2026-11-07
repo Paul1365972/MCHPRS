@@ -31,6 +31,8 @@ pub const WIRE_CROSS_OUT: Flag = Flag::switch(
     "Treat redstone crosses as outputs",
 );
 
+pub const WIRE_PORT_FLAGS: [Flag; 3] = [WIRE_DOT_OUT, ILLEGAL_STATES_OUT, WIRE_CROSS_OUT];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtractOptions {
     pub ports: Ports,

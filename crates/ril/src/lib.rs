@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use mchprs_commands::flag::{self, Flag};
 use mchprs_commands::reader::Reader;
 use mchprs_redpiler::extract::{
-    ExtractOptions, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT,
+    ExtractOptions, ILLEGAL_STATES_OUT, IO_ONLY, WIRE_CROSS_OUT, WIRE_DOT_OUT, WIRE_PORT_FLAGS,
 };
 use mchprs_redpiler::graph::Graph;
 use mchprs_redpiler::passes::{self, Pass};
@@ -75,6 +75,7 @@ impl std::error::Error for Error {}
 pub struct Options {
     pub extract: ExtractOptions,
     pub passes: Vec<&'static dyn Pass>,
+    wire_port_flag: Option<Flag>,
 }
 
 impl Options {
@@ -90,6 +91,7 @@ impl Options {
         Ok(Options {
             extract: ExtractOptions::from_flags(&flags),
             passes,
+            wire_port_flag: WIRE_PORT_FLAGS.into_iter().find(|flag| flags.is_on(flag)),
         })
     }
 }
