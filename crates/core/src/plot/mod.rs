@@ -46,6 +46,7 @@ use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
@@ -1434,9 +1435,9 @@ impl Plot {
     ) {
         thread::Builder::new()
             .name(format!("p{},{}", x, z))
-            .spawn(
-                move || match Plot::load(x, z, channels, always_running, shared) {
-                    Ok(mut plot) => plot.run(initial_player),
+            .spawn(move || {
+                let mut plot = match Plot::load(x, z, channels, always_running, shared) {
+                    Ok(plot) => plot,
                     Err((err, tx)) => {
                         if let Some(mut player) = initial_player {
                             player.send_error_message("There was an error loading that plot.");
@@ -1446,9 +1447,34 @@ impl Plot {
                         tx.send(Message::PlotUnload(x, z)).unwrap();
                         panic!("{err:?}");
                     }
-                },
-            )
+                };
+                let run = panic::catch_unwind(AssertUnwindSafe(|| plot.run(initial_player)));
+                if run.is_err() {
+                    plot.evacuate_after_crash();
+                }
+                plot.message_sender.send(Message::PlotUnload(x, z)).unwrap();
+            })
             .unwrap();
+    }
+
+    fn evacuate_after_crash(&mut self) {
+        for player in &mut self.players {
+            player.save(); // just in case
+
+            let world = &self.world;
+            Plot::send_player_away(world.x, world.z, player);
+
+            player.send_error_message("The plot you were previously in has crashed!");
+        }
+
+        while !self.players.is_empty() {
+            let uuid = self.players[0].uuid;
+            let player = self.leave_plot(uuid);
+            self.message_sender
+                .send(Message::PlayerLeavePlot(player))
+                .unwrap();
+        }
+        self.save();
     }
 }
 
@@ -1518,34 +1544,6 @@ fn block_entity_in(
 ) -> Option<&BlockEntity> {
     let chunk = &chunks[chunk_index(plot_x, plot_z, pos.x >> 4, pos.z >> 4)?];
     chunk.get_block_entity(BlockPos::new(pos.x & 0xF, pos.y, pos.z & 0xF))
-}
-
-impl Drop for Plot {
-    fn drop(&mut self) {
-        if !self.players.is_empty() {
-            for player in &mut self.players {
-                player.save(); // just in case
-
-                let world = &self.world;
-                Plot::send_player_away(world.x, world.z, player);
-
-                player.send_error_message("The plot you were previously in has crashed!");
-            }
-
-            while !self.players.is_empty() {
-                let uuid = self.players[0].uuid;
-                let player = self.leave_plot(uuid);
-                self.message_sender
-                    .send(Message::PlayerLeavePlot(player))
-                    .unwrap();
-            }
-        }
-        self.save();
-        let world = &self.world;
-        self.message_sender
-            .send(Message::PlotUnload(world.x, world.z))
-            .unwrap();
-    }
 }
 
 #[test]
