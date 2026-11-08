@@ -23,7 +23,7 @@ module node_comparator #(
     output wire [3:0] next_signal
 );
     wire due, pending;
-    wire fire = due && (FACING_DIODE ? firing[2] : firing[3]);
+    wire fire = due && (FACING_DIODE ? firing[1] : firing[3]);
     wire [3:0] rear = HAS_FAR_INPUT && input_strength < 4'd15 ? FAR_INPUT : input_strength;
     wire [3:0] desired = rear < side_strength ? 4'd0 : SUBTRACT ? rear - side_strength : rear;
 

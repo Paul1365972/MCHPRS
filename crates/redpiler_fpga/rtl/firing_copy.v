@@ -7,5 +7,5 @@ module fpga_firing_copy (
     output reg [3:0] firing = 0
 );
     always @(posedge clock)
-        firing <= {firing[2:0], beginning};
+        firing <= {firing[1], 1'b0, firing[0], beginning};
 endmodule

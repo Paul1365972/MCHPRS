@@ -8,6 +8,7 @@ use crate::circuit::{Circuit, Kind, PendingTick, State, PULSE_PRIORITY};
 use crate::engine::Simulator;
 use aggregate::Aggregate;
 use mchprs_redpiler::compile_graph::SignalStrength;
+use mchprs_world::TickPriority;
 use settle::settle_node;
 use std::convert::Infallible;
 use timers::Timers;
@@ -242,7 +243,10 @@ impl Simulator for Reference {
                     self.fire(index);
                 }
                 self.phases[phase].clear();
-                self.settle();
+                let fires_with_high = phase == TickPriority::Higher as usize;
+                if !fires_with_high {
+                    self.settle();
+                }
             }
         }
         self.ticks = target;

@@ -51,7 +51,7 @@ module node_repeater #(
         end else begin : follows_output
             wire due;
             assign pulsing = 1'b0;
-            assign fire = due && (powered ? firing[1] : firing[2]);
+            assign fire = due && firing[1];
             node_timer #(.DELAY(DELAY), .PENDING(PENDING)) tick (
                 .clock(clock), .begin_tick(begin_tick), .fire(fire), .schedule(schedule),
                 .countdown(countdown), .due(due), .pending(tick_pending)
