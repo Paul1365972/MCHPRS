@@ -1485,7 +1485,7 @@ fn plot_path(x: i32, z: i32) -> String {
 fn load_chunks(chunk_data: Vec<ChunkData<'_>>, x: i32, z: i32) -> Vec<Chunk> {
     let chunk_x_offset = x << PLOT_SCALE;
     let chunk_z_offset = z << PLOT_SCALE;
-    let chunks: Vec<Chunk> = chunk_data
+    chunk_data
         .into_iter()
         .enumerate()
         .map(|(i, c)| {
@@ -1494,13 +1494,7 @@ fn load_chunks(chunk_data: Vec<ChunkData<'_>>, x: i32, z: i32) -> Vec<Chunk> {
                 chunk_z_offset + i as i32 % PLOT_WIDTH,
             )
         })
-        .collect();
-    if chunks.len() != NUM_CHUNKS {
-        error!("This plot has the wrong number of chunks!");
-        let possible_scale = (chunks.len() as f64).sqrt().log2();
-        error!("Note: it most likely came from a server running plot scale {}, this server is running a plot scale of {}", possible_scale, PLOT_SCALE);
-    }
-    chunks
+        .collect()
 }
 
 fn load_ticks(pending_ticks: Vec<SavedTick>) -> TickQueue {
