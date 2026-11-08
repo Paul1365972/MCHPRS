@@ -37,7 +37,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 use self::data::sleep_time_for_tps;
 use self::scoreboard::Scoreboard;
@@ -1165,11 +1165,7 @@ impl Plot {
                 )
             })
             .collect();
-        if chunks.len() != NUM_CHUNKS {
-            error!("This plot has the wrong number of chunks!");
-            let possible_scale = (chunks.len() as f64).sqrt().log2();
-            error!("Note: it most likely came from a server running plot scale {}, this server is running a plot scale of {}", possible_scale, PLOT_SCALE);
-        }
+
         let world = PlotWorld {
             x,
             z,
