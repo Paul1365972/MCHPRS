@@ -76,6 +76,15 @@ pub(crate) enum ToolchainError {
     },
 }
 
+/// What the board's seven-segment display shows
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Display {
+    /// The tick rate, tick count or fault code, cycled by the left and right buttons
+    SevenSegment,
+    /// Nothing, which leaves out the display's logic
+    Dark,
+}
+
 pub(super) struct Bitstream {
     pub(super) path: PathBuf,
     pub(super) circuit_clock_hertz: u32,
@@ -83,6 +92,7 @@ pub(super) struct Bitstream {
 
 pub(super) fn build(
     directory: &Path,
+    display: Display,
     progress: &dyn Fn(Stage),
 ) -> Result<Bitstream, ToolchainError> {
     let directory = directory.canonicalize()?;
@@ -90,7 +100,7 @@ pub(super) fn build(
     let database = environment_path("PRJXRAY_DB_DIR")?.join("artix7");
     let nextpnr = environment_path("NEXTPNR_XILINX_DIR")?;
     let chip_database = chip_database(cache, &database, &nextpnr, progress)?;
-    let netlist = synthesize(&directory, progress)?;
+    let netlist = synthesize(&directory, display, progress)?;
     let routed = place_and_route(&directory, &chip_database, &netlist, progress)?;
     let (setting, maximum_megahertz) = circuit_clock_setting(&routed.timing)?;
     let assembly = fs::read_to_string(&routed.assembly)?;
@@ -133,7 +143,11 @@ fn circuit_clock_setting(
     Ok((setting, maximum_megahertz))
 }
 
-fn synthesize(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, ToolchainError> {
+fn synthesize(
+    directory: &Path,
+    display: Display,
+    progress: &dyn Fn(Stage),
+) -> Result<PathBuf, ToolchainError> {
     let netlist = directory.join("circuit.json");
     let script = directory.join("synthesis.ys");
     let sources = rtl::sources()
@@ -146,10 +160,12 @@ fn synthesize(directory: &Path, progress: &dyn Fn(Stage)) -> Result<PathBuf, Too
     // claiming a slice each.
     let synth_xilinx = "synth_xilinx -flatten -abc9 -nosrl -arch xc7 -top basys3 -run";
     let flip_flops = "-cell $_DFFE_?P?P_ 01 -cell $_SDFFE_?P?P_ 01 -cell $_DLATCH_?P?_ 01";
+    let seven_segment_display = u8::from(display == Display::SevenSegment);
     fs::write(
         &script,
         format!(
             "read_verilog -sv {sources}
+chparam -set SEVEN_SEGMENT_DISPLAY {seven_segment_display} basys3
 {synth_xilinx} :map_ffs
 dfflegalize {flip_flops} -mince {CONTROL_SET_FLIP_FLOPS} -minsrst {CONTROL_SET_FLIP_FLOPS}
 {synth_xilinx} map_ffs:

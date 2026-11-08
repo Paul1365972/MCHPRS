@@ -17,9 +17,10 @@ use mchprs_world::{SendRate, TickRate};
 use std::io;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use toolchain::ToolchainError;
+use toolchain::{Display, ToolchainError};
 
 const PORT_VARIABLE: &str = "MCHPRS_FPGA_PORT";
+const DISPLAY_VARIABLE: &str = "MCHPRS_FPGA_DISPLAY";
 /// The frequency of the board's oscillator, which clocks the serial line and the PLL
 const BOARD_CLOCK_HERTZ: u32 = 100_000_000;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -28,6 +29,8 @@ const POLL_INTERVAL: Duration = Duration::from_millis(50);
 pub(crate) enum BoardError {
     #[error("set {PORT_VARIABLE} to the board UART device before compiling")]
     MissingPort,
+    #[error("set {DISPLAY_VARIABLE} to on or off, or leave it unset for on")]
+    InvalidDisplay,
     #[error("could not write the FPGA circuit")]
     Write(#[source] io::Error),
     #[error(transparent)]
@@ -86,13 +89,18 @@ impl BoardEngine {
         progress: &dyn Fn(Stage),
     ) -> Result<BoardEngine, BoardError> {
         let port = std::env::var(PORT_VARIABLE).map_err(|_| BoardError::MissingPort)?;
+        let display = match std::env::var(DISPLAY_VARIABLE).as_deref() {
+            Err(std::env::VarError::NotPresent) | Ok("on") => Display::SevenSegment,
+            Ok("off") => Display::Dark,
+            _ => return Err(BoardError::InvalidDisplay),
+        };
         let directory = cache::unique_build_directory(&cache::board_root(), "", circuit.identity());
         progress(Stage::GenerateVerilog);
         let registers = Registers::new(circuit);
         rtl::write(&registers, reporting, &directory).map_err(BoardError::Write)?;
         progress(Stage::OpenBoardConnection);
         let mut board = Board::open(&port)?;
-        let bitstream = toolchain::build(&directory, progress)?;
+        let bitstream = toolchain::build(&directory, display, progress)?;
         progress(Stage::ProgramBoard);
         toolchain::program(&bitstream.path)?;
         progress(Stage::VerifyCircuit);
