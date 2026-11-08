@@ -18,38 +18,25 @@ macro_rules! nbt_unwrap_val {
 }
 
 impl BlockEntity {
-    fn load_container(slots_nbt: &[Value], ty: ContainerType) -> Option<BlockEntity> {
-        let num_slots = ty.num_slots();
-        let mut inventory = Vec::new();
-        let mut occupied_slots = 0u32;
-        for item in slots_nbt {
-            let item_compound = nbt_unwrap_val!(item, Value::Compound);
-            let count = i8::try_from(nbt_get_int(item_compound, "Count")?).ok()?;
-            let slot = i8::try_from(nbt_get_int(item_compound, "Slot")?).ok()?;
-            let namespaced_name =
-                nbt_unwrap_val!(nbt_case_insensitive(item_compound, "Id")?, Value::String);
-            if count < 0 || slot < 0 || slot as u8 >= num_slots || occupied_slots & (1 << slot) != 0
-            {
-                return None;
-            }
-            occupied_slots |= 1 << slot;
-            let Some(item) = Item::from_name(namespaced_name).filter(|&item| item != Item::Air)
-            else {
+    // Lenient like vanilla's ContainerHelper: bad slots are skipped, later entries win.
+    fn load_container(items: Option<&Value>, ty: ContainerType) -> BlockEntity {
+        let mut inventory: Vec<InventoryEntry> = Vec::new();
+        let Some(Value::List(items)) = items else {
+            return BlockEntity::Container { inventory, ty };
+        };
+        for item in items {
+            let Value::Compound(item) = item else {
                 continue;
             };
-
-            let tag = match item_compound.get("tag") {
-                Some(Value::Compound(tag)) => Some(fastnbt::to_bytes(tag).ok()?),
-                _ => None,
-            };
-            inventory.push(InventoryEntry {
-                slot,
-                count,
-                id: item.get_id(),
-                nbt: tag,
-            });
+            let slot = nbt_get_int(item, "Slot").unwrap_or(0) as u8;
+            if slot >= ty.num_slots() {
+                continue;
+            }
+            let slot = slot as i8;
+            inventory.retain(|entry| entry.slot != slot);
+            inventory.extend(load_stack(item, slot));
         }
-        Some(BlockEntity::Container { inventory, ty })
+        BlockEntity::Container { inventory, ty }
     }
 
     pub fn is_supported(id: &str) -> bool {
@@ -66,18 +53,18 @@ impl BlockEntity {
                     nbt_get_int(nbt, "OutputSignal").unwrap_or(0),
                 ),
             }),
-            "furnace" => BlockEntity::load_container(
-                nbt_unwrap_val!(nbt.get("Items")?, Value::List),
+            "furnace" => Some(BlockEntity::load_container(
+                nbt.get("Items"),
                 ContainerType::Furnace,
-            ),
-            "barrel" => BlockEntity::load_container(
-                nbt_unwrap_val!(nbt.get("Items")?, Value::List),
+            )),
+            "barrel" => Some(BlockEntity::load_container(
+                nbt.get("Items"),
                 ContainerType::Barrel,
-            ),
-            "hopper" => BlockEntity::load_container(
-                nbt_unwrap_val!(nbt.get("Items")?, Value::List),
+            )),
+            "hopper" => Some(BlockEntity::load_container(
+                nbt.get("Items"),
                 ContainerType::Hopper,
-            ),
+            )),
             "sign" => {
                 let sign = if nbt.contains_key("Text1") {
                     // This is the pre-1.20 encoding
@@ -186,6 +173,25 @@ impl BlockEntity {
             }),
         }
     }
+}
+
+fn load_stack(item: &HashMap<String, Value>, slot: i8) -> Option<InventoryEntry> {
+    let count = nbt_get_int(item, "Count").unwrap_or(0) as i8;
+    if count <= 0 {
+        return None;
+    }
+    let name = nbt_unwrap_val!(nbt_case_insensitive(item, "Id")?, Value::String);
+    let item_type = Item::from_name(name).filter(|&item_type| item_type != Item::Air)?;
+    let nbt = match item.get("tag") {
+        Some(Value::Compound(tag)) => Some(fastnbt::to_bytes(tag).ok()?),
+        _ => None,
+    };
+    Some(InventoryEntry {
+        slot,
+        count,
+        id: item_type.get_id(),
+        nbt,
+    })
 }
 
 fn nbt_case_insensitive<'a>(compound: &'a HashMap<String, Value>, name: &str) -> Option<&'a Value> {
