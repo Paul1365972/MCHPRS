@@ -1,7 +1,6 @@
-mod fixer;
 mod v2_to_v3;
 
-use self::fixer::FixInfo;
+use self::v2_to_v3::PlotDataV2;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::BlockPos;
@@ -9,7 +8,7 @@ use mchprs_world::storage::{Chunk, ChunkSection};
 use mchprs_world::TickEntry;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::{fmt, io};
@@ -33,23 +32,11 @@ pub enum PlotLoadError {
     #[error("plot data version {0} too new to be loaded")]
     TooNew(u32),
 
-    #[error("plot data version {0} failed to be converted")]
-    ConversionFailed(u32),
-
     #[error(transparent)]
     Io(#[from] io::Error),
 
     #[error("conversion from plot data version {0} is unavailable")]
     ConversionUnavailable(u32),
-}
-
-impl From<PlotSaveError> for PlotLoadError {
-    fn from(e: PlotSaveError) -> Self {
-        match e {
-            PlotSaveError::Serialize(err) => err.into(),
-            PlotSaveError::Io(err) => err.into(),
-        }
-    }
 }
 
 #[derive(Error, Debug)]
@@ -168,30 +155,30 @@ pub struct PlotData {
 
 impl PlotData {
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<PlotData, PlotLoadError> {
-        let mut file = File::open(&path)?;
-
-        let mut magic = [0; 8];
-        file.read_exact(&mut magic)?;
-        if &magic != PLOT_MAGIC {
-            return fixer::try_fix(path, FixInfo::InvalidHeader)?
-                .ok_or(PlotLoadError::InvalidHeader);
-        }
-
-        let version = file.read_u32::<LittleEndian>()?;
-        if version < VERSION {
-            return fixer::try_fix(path, FixInfo::OldVersion { version })?
-                .ok_or(PlotLoadError::ConversionFailed(version));
-        }
-        if version > VERSION {
-            return Err(PlotLoadError::TooNew(version));
-        }
-
+        let path = path.as_ref();
+        let mut file = File::open(path)?;
+        let version = read_version(&mut file)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
-        Ok(bincode::deserialize(&buf)?)
+        Ok(match version {
+            0..=1 => return Err(PlotLoadError::ConversionUnavailable(version)),
+            2 => bincode::deserialize::<PlotDataV2>(&buf)?.upgrade(),
+            VERSION => bincode::deserialize(&buf)?,
+            _ => return Err(PlotLoadError::TooNew(version)),
+        })
     }
 
+    /// Keeps a file of an older version as `<path>.v<version>` before replacing it.
     pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), PlotSaveError> {
+        let path = path.as_ref();
+        if let Ok(mut file) = File::open(path)
+            && let Ok(version) = read_version(&mut file)
+            && version < VERSION
+        {
+            let mut original = path.as_os_str().to_owned();
+            original.push(format!(".v{version}"));
+            fs::copy(path, original)?;
+        }
         let mut file = File::create(path)?;
 
         file.write_all(PLOT_MAGIC)?;
@@ -201,4 +188,13 @@ impl PlotData {
         file.sync_data()?;
         Ok(())
     }
+}
+
+fn read_version(file: &mut File) -> Result<u32, PlotLoadError> {
+    let mut magic = [0; 8];
+    file.read_exact(&mut magic)?;
+    if &magic != PLOT_MAGIC {
+        return Err(PlotLoadError::InvalidHeader);
+    }
+    Ok(file.read_u32::<LittleEndian>()?)
 }
