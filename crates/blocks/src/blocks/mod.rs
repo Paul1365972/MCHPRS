@@ -109,20 +109,7 @@ impl BlockTransform for BlockFacing {
 
 impl Block {
     pub fn is_sign(self) -> bool {
-        matches!(
-            self,
-            Block::OakSign { .. }
-                | Block::SpruceSign { .. }
-                | Block::BirchSign { .. }
-                | Block::AcaciaSign { .. }
-                | Block::JungleSign { .. }
-                | Block::DarkOakSign { .. }
-                | Block::CrimsonSign { .. }
-                | Block::WarpedSign { .. }
-                | Block::BambooSign { .. }
-                | Block::CherrySign { .. }
-                | Block::MangroveSign { .. }
-        )
+        self.standing_sign().is_some()
     }
 
     pub fn is_wall_sign(self) -> bool {
@@ -170,51 +157,9 @@ impl Block {
         )
     }
 
-    pub(crate) fn complex_rotate(&mut self, amt: RotateAmt) {
-        if let Block::RedstoneWire(wire) = self {
-            return wire.rotate(amt);
-        }
-        let quarter_turns = match amt {
-            RotateAmt::Rotate90 => 1,
-            RotateAmt::Rotate180 => 2,
-            RotateAmt::Rotate270 => 3,
-        };
-        let rotation = self.sign_rotation_mut();
-        *rotation = (*rotation + 4 * quarter_turns) % 16;
-    }
-
-    pub(crate) fn complex_flip(&mut self, dir: FlipDirection) {
-        if let Block::RedstoneWire(wire) = self {
-            return wire.flip(dir);
-        }
-        let rotation = self.sign_rotation_mut();
-        let mirror = match dir {
-            FlipDirection::FlipX => 16,
-            FlipDirection::FlipZ => 24,
-        };
-        *rotation = (mirror - *rotation) % 16;
-    }
-
     /// Sixteenths of a turn clockwise from south
-    pub fn get_sign_rotation(mut self) -> Option<u8> {
-        self.is_sign().then(|| *self.sign_rotation_mut())
-    }
-
-    fn sign_rotation_mut(&mut self) -> &mut u8 {
-        match self {
-            Block::OakSign { rotation, .. }
-            | Block::SpruceSign { rotation, .. }
-            | Block::BirchSign { rotation, .. }
-            | Block::AcaciaSign { rotation, .. }
-            | Block::JungleSign { rotation, .. }
-            | Block::DarkOakSign { rotation, .. }
-            | Block::CrimsonSign { rotation, .. }
-            | Block::WarpedSign { rotation, .. }
-            | Block::BambooSign { rotation, .. }
-            | Block::CherrySign { rotation, .. }
-            | Block::MangroveSign { rotation, .. } => rotation,
-            _ => unreachable!(),
-        }
+    pub fn get_sign_rotation(self) -> Option<u8> {
+        self.standing_sign().map(|sign| sign.rotation)
     }
 
     pub fn get_wall_sign_facing(self) -> Option<BlockDirection> {

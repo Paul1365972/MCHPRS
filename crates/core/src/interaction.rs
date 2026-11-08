@@ -102,9 +102,11 @@ pub fn get_state_for_placement(
         ($standard_block:ident, $wall_block:ident) => {
             get_sign_placement(
                 context,
-                |rotation| Block::$standard_block {
-                    waterlogged: false,
-                    rotation,
+                |rotation| {
+                    Block::$standard_block(StandingSign {
+                        rotation,
+                        waterlogged: false,
+                    })
                 },
                 |facing| Block::$wall_block {
                     waterlogged: false,

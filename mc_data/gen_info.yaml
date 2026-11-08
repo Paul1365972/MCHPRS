@@ -14,7 +14,7 @@
 # item: also creates an item with the same name
 # simple_item: also create an item with the same name that gets simply placed when used.
 #              This attribute cannot be used if the block has properties.
-# complex_transform: used when properties cannot be transformed independently
+# complex_transform: used when properties cannot be transformed independently; transforms the prop_struct as a whole
 # wool: note block instrument material
 # wood: note block instrument material
 # stone: note block instrument material
@@ -37,17 +37,17 @@ blocks:
   "minecraft:bamboo_wall_sign": "wood"
   "minecraft:cherry_wall_sign": "wood"
   "minecraft:mangrove_wall_sign": "wood"
-  "minecraft:oak_sign": "item,wood,complex_transform"
-  "minecraft:spruce_sign": "item,wood,complex_transform"
-  "minecraft:birch_sign": "item,wood,complex_transform"
-  "minecraft:acacia_sign": "item,wood,complex_transform"
-  "minecraft:jungle_sign": "item,wood,complex_transform"
-  "minecraft:dark_oak_sign": "item,wood,complex_transform"
-  "minecraft:crimson_sign": "item,wood,complex_transform"
-  "minecraft:warped_sign": "item,wood,complex_transform"
-  "minecraft:bamboo_sign": "item,wood,complex_transform"
-  "minecraft:cherry_sign": "item,wood,complex_transform"
-  "minecraft:mangrove_sign": "item,wood,complex_transform"
+  "minecraft:oak_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:spruce_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:birch_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:acacia_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:jungle_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:dark_oak_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:crimson_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:warped_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:bamboo_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:cherry_sign": "item,wood,prop_struct:StandingSign,complex_transform"
+  "minecraft:mangrove_sign": "item,wood,prop_struct:StandingSign,complex_transform"
   "minecraft:lever": "item"
   "minecraft:stone_button": "prop_struct:Button,item"
   "minecraft:polished_blackstone_button": "prop_struct:Button,item"

@@ -54,50 +54,17 @@ pub enum Block {
         facing: BlockDirection,
         waterlogged: bool,
     },
-    OakSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    SpruceSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    BirchSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    AcaciaSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    JungleSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    DarkOakSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    CrimsonSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    WarpedSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    BambooSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    CherrySign {
-        rotation: u8,
-        waterlogged: bool,
-    },
-    MangroveSign {
-        rotation: u8,
-        waterlogged: bool,
-    },
+    OakSign(StandingSign),
+    SpruceSign(StandingSign),
+    BirchSign(StandingSign),
+    AcaciaSign(StandingSign),
+    JungleSign(StandingSign),
+    DarkOakSign(StandingSign),
+    CrimsonSign(StandingSign),
+    WarpedSign(StandingSign),
+    BambooSign(StandingSign),
+    CherrySign(StandingSign),
+    MangroveSign(StandingSign),
     Lever {
         face: LeverFace,
         facing: BlockDirection,
@@ -494,17 +461,17 @@ impl Block {
             Block::BambooWallSign { .. } => "minecraft:bamboo_wall_sign",
             Block::CherryWallSign { .. } => "minecraft:cherry_wall_sign",
             Block::MangroveWallSign { .. } => "minecraft:mangrove_wall_sign",
-            Block::OakSign { .. } => "minecraft:oak_sign",
-            Block::SpruceSign { .. } => "minecraft:spruce_sign",
-            Block::BirchSign { .. } => "minecraft:birch_sign",
-            Block::AcaciaSign { .. } => "minecraft:acacia_sign",
-            Block::JungleSign { .. } => "minecraft:jungle_sign",
-            Block::DarkOakSign { .. } => "minecraft:dark_oak_sign",
-            Block::CrimsonSign { .. } => "minecraft:crimson_sign",
-            Block::WarpedSign { .. } => "minecraft:warped_sign",
-            Block::BambooSign { .. } => "minecraft:bamboo_sign",
-            Block::CherrySign { .. } => "minecraft:cherry_sign",
-            Block::MangroveSign { .. } => "minecraft:mangrove_sign",
+            Block::OakSign(_) => "minecraft:oak_sign",
+            Block::SpruceSign(_) => "minecraft:spruce_sign",
+            Block::BirchSign(_) => "minecraft:birch_sign",
+            Block::AcaciaSign(_) => "minecraft:acacia_sign",
+            Block::JungleSign(_) => "minecraft:jungle_sign",
+            Block::DarkOakSign(_) => "minecraft:dark_oak_sign",
+            Block::CrimsonSign(_) => "minecraft:crimson_sign",
+            Block::WarpedSign(_) => "minecraft:warped_sign",
+            Block::BambooSign(_) => "minecraft:bamboo_sign",
+            Block::CherrySign(_) => "minecraft:cherry_sign",
+            Block::MangroveSign(_) => "minecraft:mangrove_sign",
             Block::Lever { .. } => "minecraft:lever",
             Block::StoneButton(_) => "minecraft:stone_button",
             Block::PolishedBlackstoneButton(_) => "minecraft:polished_blackstone_button",
@@ -695,50 +662,50 @@ impl Block {
                 facing: BlockDirection::North,
                 waterlogged: false,
             },
-            "minecraft:oak_sign" => Block::OakSign {
+            "minecraft:oak_sign" => Block::OakSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:spruce_sign" => Block::SpruceSign {
+            }),
+            "minecraft:spruce_sign" => Block::SpruceSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:birch_sign" => Block::BirchSign {
+            }),
+            "minecraft:birch_sign" => Block::BirchSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:acacia_sign" => Block::AcaciaSign {
+            }),
+            "minecraft:acacia_sign" => Block::AcaciaSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:jungle_sign" => Block::JungleSign {
+            }),
+            "minecraft:jungle_sign" => Block::JungleSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:dark_oak_sign" => Block::DarkOakSign {
+            }),
+            "minecraft:dark_oak_sign" => Block::DarkOakSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:crimson_sign" => Block::CrimsonSign {
+            }),
+            "minecraft:crimson_sign" => Block::CrimsonSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:warped_sign" => Block::WarpedSign {
+            }),
+            "minecraft:warped_sign" => Block::WarpedSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:bamboo_sign" => Block::BambooSign {
+            }),
+            "minecraft:bamboo_sign" => Block::BambooSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:cherry_sign" => Block::CherrySign {
+            }),
+            "minecraft:cherry_sign" => Block::CherrySign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
-            "minecraft:mangrove_sign" => Block::MangroveSign {
+            }),
+            "minecraft:mangrove_sign" => Block::MangroveSign(StandingSign {
                 rotation: 0,
                 waterlogged: false,
-            },
+            }),
             "minecraft:lever" => Block::Lever {
                 face: LeverFace::Wall,
                 facing: BlockDirection::North,
@@ -979,6 +946,25 @@ impl Block {
             "minecraft:cave_air" | "minecraft:void_air" => Block::Air,
             _ => return None,
         })
+    }
+    pub fn standing_sign(mut self) -> Option<StandingSign> {
+        self.standing_sign_mut().copied()
+    }
+    pub fn standing_sign_mut(&mut self) -> Option<&mut StandingSign> {
+        match self {
+            Block::OakSign(props)
+            | Block::SpruceSign(props)
+            | Block::BirchSign(props)
+            | Block::AcaciaSign(props)
+            | Block::JungleSign(props)
+            | Block::DarkOakSign(props)
+            | Block::CrimsonSign(props)
+            | Block::WarpedSign(props)
+            | Block::BambooSign(props)
+            | Block::CherrySign(props)
+            | Block::MangroveSign(props) => Some(props),
+            _ => None,
+        }
     }
     pub fn button(mut self) -> Option<Button> {
         self.button_mut().copied()
@@ -1304,80 +1290,80 @@ impl Block {
                 <BlockDirection as BlockProperty>::decode(facing, &props, "facing");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::OakSign {
+            Block::OakSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::SpruceSign {
+            Block::SpruceSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::BirchSign {
+            Block::BirchSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::AcaciaSign {
+            Block::AcaciaSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::JungleSign {
+            Block::JungleSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::DarkOakSign {
+            Block::DarkOakSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::CrimsonSign {
+            Block::CrimsonSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::WarpedSign {
+            Block::WarpedSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::BambooSign {
+            Block::BambooSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::CherrySign {
+            Block::CherrySign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
-            Block::MangroveSign {
+            Block::MangroveSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::decode(rotation, &props, "rotation");
                 <bool as BlockProperty>::decode(waterlogged, &props, "waterlogged");
             }
@@ -1774,61 +1760,61 @@ impl Block {
             (Block::CherryWallSign { .. }, "waterlogged") => Some(&["true", "false"]),
             (Block::MangroveWallSign { .. }, "facing") => Some(&["north", "south", "west", "east"]),
             (Block::MangroveWallSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::OakSign { .. }, "rotation") => Some(&[
+            (Block::OakSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::OakSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::SpruceSign { .. }, "rotation") => Some(&[
+            (Block::OakSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::SpruceSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::SpruceSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::BirchSign { .. }, "rotation") => Some(&[
+            (Block::SpruceSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::BirchSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::BirchSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::AcaciaSign { .. }, "rotation") => Some(&[
+            (Block::BirchSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::AcaciaSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::AcaciaSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::JungleSign { .. }, "rotation") => Some(&[
+            (Block::AcaciaSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::JungleSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::JungleSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::DarkOakSign { .. }, "rotation") => Some(&[
+            (Block::JungleSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::DarkOakSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::DarkOakSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::CrimsonSign { .. }, "rotation") => Some(&[
+            (Block::DarkOakSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::CrimsonSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::CrimsonSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::WarpedSign { .. }, "rotation") => Some(&[
+            (Block::CrimsonSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::WarpedSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::WarpedSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::BambooSign { .. }, "rotation") => Some(&[
+            (Block::WarpedSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::BambooSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::BambooSign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::CherrySign { .. }, "rotation") => Some(&[
+            (Block::BambooSign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::CherrySign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::CherrySign { .. }, "waterlogged") => Some(&["true", "false"]),
-            (Block::MangroveSign { .. }, "rotation") => Some(&[
+            (Block::CherrySign(_), "waterlogged") => Some(&["true", "false"]),
+            (Block::MangroveSign(_), "rotation") => Some(&[
                 "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
                 "15",
             ]),
-            (Block::MangroveSign { .. }, "waterlogged") => Some(&["true", "false"]),
+            (Block::MangroveSign(_), "waterlogged") => Some(&["true", "false"]),
             (Block::Lever { .. }, "face") => Some(&["floor", "wall", "ceiling"]),
             (Block::Lever { .. }, "facing") => Some(&["north", "south", "west", "east"]),
             (Block::Lever { .. }, "powered") => Some(&["true", "false"]),
@@ -2209,80 +2195,80 @@ impl Block {
                 <BlockDirection as BlockProperty>::encode(*facing, &mut props, "facing");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::OakSign {
+            Block::OakSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::SpruceSign {
+            Block::SpruceSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::BirchSign {
+            Block::BirchSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::AcaciaSign {
+            Block::AcaciaSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::JungleSign {
+            Block::JungleSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::DarkOakSign {
+            Block::DarkOakSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::CrimsonSign {
+            Block::CrimsonSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::WarpedSign {
+            Block::WarpedSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::BambooSign {
+            Block::BambooSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::CherrySign {
+            Block::CherrySign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
-            Block::MangroveSign {
+            Block::MangroveSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => {
+            }) => {
                 <u8 as BlockProperty>::encode(*rotation, &mut props, "rotation");
                 <bool as BlockProperty>::encode(*waterlogged, &mut props, "waterlogged");
             }
@@ -2654,13 +2640,7 @@ impl Block {
             Block::Stone => {}
             Block::Glass => {}
             Block::Glowstone => {}
-            Block::RedstoneWire(RedstoneWire {
-                east,
-                north,
-                power,
-                south,
-                west,
-            }) => self.complex_rotate(amt),
+            Block::RedstoneWire(props) => props.rotate(amt),
             Block::OakWallSign {
                 facing,
                 waterlogged,
@@ -2738,50 +2718,17 @@ impl Block {
                 <BlockDirection as BlockTransform>::rotate(facing, amt);
                 <bool as BlockTransform>::rotate(waterlogged, amt);
             }
-            Block::OakSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::SpruceSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::BirchSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::AcaciaSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::JungleSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::DarkOakSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::CrimsonSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::WarpedSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::BambooSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::CherrySign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
-            Block::MangroveSign {
-                rotation,
-                waterlogged,
-            } => self.complex_rotate(amt),
+            Block::OakSign(props) => props.rotate(amt),
+            Block::SpruceSign(props) => props.rotate(amt),
+            Block::BirchSign(props) => props.rotate(amt),
+            Block::AcaciaSign(props) => props.rotate(amt),
+            Block::JungleSign(props) => props.rotate(amt),
+            Block::DarkOakSign(props) => props.rotate(amt),
+            Block::CrimsonSign(props) => props.rotate(amt),
+            Block::WarpedSign(props) => props.rotate(amt),
+            Block::BambooSign(props) => props.rotate(amt),
+            Block::CherrySign(props) => props.rotate(amt),
+            Block::MangroveSign(props) => props.rotate(amt),
             Block::Lever {
                 face,
                 facing,
@@ -3149,13 +3096,7 @@ impl Block {
             Block::Stone => {}
             Block::Glass => {}
             Block::Glowstone => {}
-            Block::RedstoneWire(RedstoneWire {
-                east,
-                north,
-                power,
-                south,
-                west,
-            }) => self.complex_flip(dir),
+            Block::RedstoneWire(props) => props.flip(dir),
             Block::OakWallSign {
                 facing,
                 waterlogged,
@@ -3233,50 +3174,17 @@ impl Block {
                 <BlockDirection as BlockTransform>::flip(facing, dir);
                 <bool as BlockTransform>::flip(waterlogged, dir);
             }
-            Block::OakSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::SpruceSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::BirchSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::AcaciaSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::JungleSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::DarkOakSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::CrimsonSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::WarpedSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::BambooSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::CherrySign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
-            Block::MangroveSign {
-                rotation,
-                waterlogged,
-            } => self.complex_flip(dir),
+            Block::OakSign(props) => props.flip(dir),
+            Block::SpruceSign(props) => props.flip(dir),
+            Block::BirchSign(props) => props.flip(dir),
+            Block::AcaciaSign(props) => props.flip(dir),
+            Block::JungleSign(props) => props.flip(dir),
+            Block::DarkOakSign(props) => props.flip(dir),
+            Block::CrimsonSign(props) => props.flip(dir),
+            Block::WarpedSign(props) => props.flip(dir),
+            Block::BambooSign(props) => props.flip(dir),
+            Block::CherrySign(props) => props.flip(dir),
+            Block::MangroveSign(props) => props.flip(dir),
             Block::Lever {
                 face,
                 facing,
@@ -3701,50 +3609,50 @@ impl Block {
                 facing,
                 waterlogged,
             } => 4818 + (facing.get_id()) * 2 + (!waterlogged as u32),
-            Block::OakSign {
+            Block::OakSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4302 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::SpruceSign {
+            }) => 4302 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::SpruceSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4334 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::BirchSign {
+            }) => 4334 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::BirchSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4366 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::AcaciaSign {
+            }) => 4366 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::AcaciaSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4398 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::JungleSign {
+            }) => 4398 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::JungleSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4462 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::DarkOakSign {
+            }) => 4462 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::DarkOakSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4494 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::CrimsonSign {
+            }) => 4494 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::CrimsonSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 19276 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::WarpedSign {
+            }) => 19276 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::WarpedSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 19308 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::BambooSign {
+            }) => 19308 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::BambooSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4558 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::CherrySign {
+            }) => 4558 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::CherrySign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4430 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
-            Block::MangroveSign {
+            }) => 4430 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            Block::MangroveSign(StandingSign {
                 rotation,
                 waterlogged,
-            } => 4526 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
+            }) => 4526 + (rotation as u32 - 0) * 2 + (!waterlogged as u32),
             Block::Lever {
                 face,
                 facing,
@@ -4085,80 +3993,80 @@ impl Block {
             }
             4302..4334 => {
                 id -= 4302;
-                Block::OakSign {
+                Block::OakSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             4334..4366 => {
                 id -= 4334;
-                Block::SpruceSign {
+                Block::SpruceSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             4366..4398 => {
                 id -= 4366;
-                Block::BirchSign {
+                Block::BirchSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             4398..4430 => {
                 id -= 4398;
-                Block::AcaciaSign {
+                Block::AcaciaSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             4462..4494 => {
                 id -= 4462;
-                Block::JungleSign {
+                Block::JungleSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             4494..4526 => {
                 id -= 4494;
-                Block::DarkOakSign {
+                Block::DarkOakSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             19276..19308 => {
                 id -= 19276;
-                Block::CrimsonSign {
+                Block::CrimsonSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             19308..19340 => {
                 id -= 19308;
-                Block::WarpedSign {
+                Block::WarpedSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             4558..4590 => {
                 id -= 4558;
-                Block::BambooSign {
+                Block::BambooSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             4430..4462 => {
                 id -= 4430;
-                Block::CherrySign {
+                Block::CherrySign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             4526..4558 => {
                 id -= 4526;
-                Block::MangroveSign {
+                Block::MangroveSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5626..5650 => {
                 id -= 5626;
@@ -4861,17 +4769,17 @@ impl Block {
             Block::BambooWallSign { .. } => true,
             Block::CherryWallSign { .. } => true,
             Block::MangroveWallSign { .. } => true,
-            Block::OakSign { .. } => true,
-            Block::SpruceSign { .. } => true,
-            Block::BirchSign { .. } => true,
-            Block::AcaciaSign { .. } => true,
-            Block::JungleSign { .. } => true,
-            Block::DarkOakSign { .. } => true,
-            Block::CrimsonSign { .. } => true,
-            Block::WarpedSign { .. } => true,
-            Block::BambooSign { .. } => true,
-            Block::CherrySign { .. } => true,
-            Block::MangroveSign { .. } => true,
+            Block::OakSign(_) => true,
+            Block::SpruceSign(_) => true,
+            Block::BirchSign(_) => true,
+            Block::AcaciaSign(_) => true,
+            Block::JungleSign(_) => true,
+            Block::DarkOakSign(_) => true,
+            Block::CrimsonSign(_) => true,
+            Block::WarpedSign(_) => true,
+            Block::BambooSign(_) => true,
+            Block::CherrySign(_) => true,
+            Block::MangroveSign(_) => true,
             Block::OakPressurePlate { .. } => true,
             Block::SprucePressurePlate { .. } => true,
             Block::BirchPressurePlate { .. } => true,

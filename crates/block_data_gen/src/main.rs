@@ -501,8 +501,9 @@ fn generate_rotate(blocks: &[ProcessedBlock]) -> TokenStream {
             }
         });
         if block.attrs.complex_transform {
+            let variant = ident(&block.pascal_name);
             quote! {
-                #pat => self.complex_rotate(amt),
+                Block::#variant(props) => props.rotate(amt),
             }
         } else {
             quote! {
@@ -530,8 +531,9 @@ fn generate_flip(blocks: &[ProcessedBlock]) -> TokenStream {
             }
         });
         if block.attrs.complex_transform {
+            let variant = ident(&block.pascal_name);
             quote! {
-                #pat => self.complex_flip(dir),
+                Block::#variant(props) => props.flip(dir),
             }
         } else {
             quote! {
