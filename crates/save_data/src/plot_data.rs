@@ -5,8 +5,12 @@ use self::v2_to_v3::PlotDataV2;
 use self::v3_to_v4::PlotDataV3;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::BlockStore;
+use mchprs_blocks::block_volume::BlockVolume;
+use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
-use mchprs_redstone::tick_queue::TickPriority;
+use mchprs_redstone::tick_queue::{TickEntry, TickPriority};
 use mchprs_world::storage::{Chunk, ChunkSection};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -204,6 +208,72 @@ impl PlotData<'_> {
             VERSION => bincode::deserialize(&buf)?,
             _ => return Err(PlotLoadError::TooNew(version)),
         })
+    }
+
+    /// The plot's blocks and pending ticks, at positions relative to the plot's corner, which
+    /// are the world's positions for the plot at the origin.
+    pub fn into_volume(self) -> (BlockVolume, Vec<TickEntry>) {
+        let chunk_width = self.chunk_data.len().isqrt().max(1);
+        let sections = self.chunk_data.iter().map(|chunk| chunk.sections.len());
+        let block_height = sections.max().unwrap_or(0).max(1) * 16;
+        let block_width = chunk_width * 16;
+        let region = Region::new(
+            BlockPos::zero(),
+            BlockPos::new(
+                block_width as i32 - 1,
+                block_height as i32 - 1,
+                block_width as i32 - 1,
+            ),
+        );
+        let mut volume = BlockVolume::empty(region);
+        for (index, chunk_data) in self.chunk_data.into_iter().enumerate() {
+            let chunk_x = (index / chunk_width) as i32;
+            let chunk_z = (index % chunk_width) as i32;
+            let chunk = chunk_data.load(chunk_x, chunk_z);
+            for (section_y, section) in chunk.sections.iter().enumerate() {
+                if section.block_count() == 0 {
+                    continue;
+                }
+                for y in 0..16 {
+                    for z in 0..16 {
+                        for x in 0..16 {
+                            let id = section.get_block(x, y, z);
+                            if id == 0 {
+                                continue;
+                            }
+                            let pos = BlockPos::new(
+                                chunk_x * 16 + x as i32,
+                                section_y as i32 * 16 + y as i32,
+                                chunk_z * 16 + z as i32,
+                            );
+                            volume.set_block(pos, Block::from_id(id));
+                        }
+                    }
+                }
+            }
+            for (local, block_entity) in chunk.block_entities {
+                let pos = BlockPos::new(chunk_x * 16 + local.x, local.y, chunk_z * 16 + local.z);
+                volume.set_block_entity(pos, Some(block_entity));
+            }
+        }
+        let ticks = self
+            .pending_ticks
+            .into_iter()
+            .map(|tick| {
+                let pos = BlockPos::new(
+                    tick.pos.x.rem_euclid(block_width as i32),
+                    tick.pos.y,
+                    tick.pos.z.rem_euclid(block_width as i32),
+                );
+                TickEntry::new(
+                    pos,
+                    tick.ticks_left,
+                    tick.priority,
+                    Block::from_id(tick.block_id),
+                )
+            })
+            .collect();
+        (volume, ticks)
     }
 
     /// Keeps a file of an older version as `<path>.v<version>` before replacing it.
