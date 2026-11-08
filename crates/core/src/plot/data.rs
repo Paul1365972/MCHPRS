@@ -1,5 +1,5 @@
-use super::{Plot, PlotWorld, PLOT_WIDTH};
-use anyhow::{Context, Result};
+use super::{Plot, PlotWorld, NUM_CHUNKS, PLOT_SCALE, PLOT_WIDTH};
+use anyhow::{ensure, Context, Result};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use std::collections::HashMap;
 use std::path::Path;
@@ -22,12 +22,15 @@ pub fn sleep_time_for_tps(tps: Tps) -> Duration {
 
 pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData<'static>> {
     let path = path.as_ref();
-    if path.exists() {
-        Ok(PlotData::load_from_file(path)
-            .with_context(|| format!("error loading plot save file at {}", path.display()))?)
-    } else {
-        Ok(EMPTY_PLOT.clone())
-    }
+    let data = PlotData::load_from_file(path)
+        .with_context(|| format!("error loading plot save file at {}", path.display()))?;
+    let chunk_count = data.chunk_data.len();
+    ensure!(
+        chunk_count == NUM_CHUNKS,
+        "{} has {chunk_count} chunks, but plot scale {PLOT_SCALE} needs {NUM_CHUNKS}",
+        path.display()
+    );
+    Ok(data)
 }
 
 pub fn empty_plot() -> PlotData<'static> {
@@ -37,7 +40,7 @@ pub fn empty_plot() -> PlotData<'static> {
 static EMPTY_PLOT: LazyLock<PlotData<'static>> = LazyLock::new(|| {
     let template_path = Path::new("./world/plots/pTEMPLATE");
     if template_path.exists() {
-        PlotData::load_from_file(template_path).expect("failed to read template plot")
+        load_plot(template_path).expect("failed to read template plot")
     } else {
         let mut chunks = Vec::new();
         for chunk_x in 0..PLOT_WIDTH {
