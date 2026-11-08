@@ -7,52 +7,7 @@ use std::collections::HashMap;
 const EMPTY_TEXT_COMPONENT: &str = r#""""#;
 const PRE_1_20_SIGN_ROWS: [&str; 4] = ["Text1", "Text2", "Text3", "Text4"];
 
-macro_rules! nbt_unwrap_val {
-    // I'm not sure if path is the right type here.
-    // It works though!
-    ($e:expr, $p:path) => {
-        match $e {
-            $p(val) => val,
-            _ => return None,
-        }
-    };
-}
-
 impl BlockEntity {
-    fn load_container(slots_nbt: &[Value], ty: ContainerType) -> Option<BlockEntity> {
-        let num_slots = ty.num_slots();
-        let mut fullness_sum: f32 = 0.0;
-        let mut inventory = Vec::new();
-        for item in slots_nbt {
-            let item_compound = nbt_unwrap_val!(item, Value::Compound);
-            let count = nbt_get_int(item_compound, "Count")? as i8;
-            let slot = nbt_get_int(item_compound, "Slot")? as i8;
-            let namespaced_name =
-                nbt_unwrap_val!(nbt_get_or_lowercase(item_compound, "Id")?, Value::String);
-            let item_type = Item::from_name(namespaced_name);
-
-            let tag = match item_compound.get("tag") {
-                Some(Value::Compound(tag)) => Some(fastnbt::to_bytes(tag).ok()?),
-                _ => None,
-            };
-            inventory.push(InventoryEntry {
-                slot,
-                count,
-                id: item_type.unwrap_or(Item::Redstone).get_id(),
-                nbt: tag,
-            });
-
-            fullness_sum += count as f32 / item_type.map_or(64, Item::max_stack_size) as f32;
-        }
-        Some(BlockEntity::Container {
-            comparator_override: (if fullness_sum > 0.0 { 1.0 } else { 0.0 }
-                + (fullness_sum / num_slots as f32) * 14.0)
-                .floor() as u8,
-            inventory,
-            ty,
-        })
-    }
-
     pub fn is_supported(id: &str) -> bool {
         matches!(
             id.trim_start_matches("minecraft:"),
@@ -65,18 +20,6 @@ impl BlockEntity {
             "comparator" => Some(BlockEntity::Comparator {
                 output_strength: nbt_get_int(nbt, "OutputSignal").unwrap_or(0).clamp(0, 15) as u8,
             }),
-            "furnace" => BlockEntity::load_container(
-                nbt_unwrap_val!(&nbt["Items"], Value::List),
-                ContainerType::Furnace,
-            ),
-            "barrel" => BlockEntity::load_container(
-                nbt_unwrap_val!(&nbt["Items"], Value::List),
-                ContainerType::Barrel,
-            ),
-            "hopper" => BlockEntity::load_container(
-                nbt_unwrap_val!(&nbt["Items"], Value::List),
-                ContainerType::Hopper,
-            ),
             // Lenient: tools write sign NBT in many wrong ways.
             "sign" => {
                 let row = |value: Option<&Value>| match value {
@@ -107,7 +50,46 @@ impl BlockEntity {
                 };
                 Some(BlockEntity::Sign(Box::new(sign)))
             }
-            _ => None,
+            name => {
+                let ty = name.parse().ok()?;
+                Some(BlockEntity::load_container(nbt.get("Items"), ty))
+            }
+        }
+    }
+
+    // Vanilla's ContainerHelper.loadAllItems
+    fn load_container(items: Option<&Value>, ty: ContainerType) -> BlockEntity {
+        let mut inventory: Vec<InventoryEntry> = Vec::new();
+        let Some(Value::List(items)) = items else {
+            return BlockEntity::Container {
+                inventory,
+                ty,
+                comparator_override: 0,
+            };
+        };
+        for item in items {
+            let Value::Compound(item) = item else {
+                continue;
+            };
+            let slot = nbt_get_int(item, "Slot").unwrap_or(0) as u8;
+            if slot >= ty.num_slots() {
+                continue;
+            }
+            let slot = slot as i8;
+            inventory.retain(|entry| entry.slot != slot);
+            inventory.extend(load_stack(item, slot));
+        }
+        let num_slots = ty.num_slots();
+        let fullness_sum: f32 = inventory
+            .iter()
+            .map(|entry| entry.count as f32 / Item::from_id(entry.id).max_stack_size() as f32)
+            .sum();
+        BlockEntity::Container {
+            comparator_override: (if fullness_sum > 0.0 { 1.0 } else { 0.0 }
+                + (fullness_sum / num_slots as f32) * 14.0)
+                .floor() as u8,
+            inventory,
+            ty,
         }
     }
 
@@ -183,6 +165,27 @@ impl BlockEntity {
             }),
         }
     }
+}
+
+fn load_stack(item: &HashMap<String, Value>, slot: i8) -> Option<InventoryEntry> {
+    let count = nbt_get_int(item, "Count").unwrap_or(0) as i8;
+    if count <= 0 {
+        return None;
+    }
+    let Value::String(name) = nbt_get_or_lowercase(item, "Id")? else {
+        return None;
+    };
+    let item_type = Item::from_name(name).filter(|&item_type| item_type != Item::Air)?;
+    let nbt = match item.get("tag") {
+        Some(Value::Compound(tag)) => Some(fastnbt::to_bytes(tag).ok()?),
+        _ => None,
+    };
+    Some(InventoryEntry {
+        slot,
+        count,
+        id: item_type.get_id(),
+        nbt,
+    })
 }
 
 fn nbt_get_or_lowercase<'a>(compound: &'a HashMap<String, Value>, name: &str) -> Option<&'a Value> {
