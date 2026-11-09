@@ -1,7 +1,7 @@
 use crate::input::{Input, InputError};
 use crate::sound::Sound;
 use crate::tick_queue::{run_scheduled_ticks, PendingTick, TickEntry, TickQueue};
-use crate::{behavior, plate, Redstone, RedstoneWorld};
+use crate::{behavior, plate, Aabb, Redstone, RedstoneWorld};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
@@ -34,6 +34,10 @@ impl<B: BlockStore> Interpreter<B> {
 
     pub fn tick(&mut self) {
         run_scheduled_ticks(self);
+        for index in 0..self.standing.len() {
+            let pos = self.standing[index];
+            plate::entity_inside(self, pos);
+        }
     }
 
     pub fn use_block(&mut self, pos: BlockPos) {
@@ -79,12 +83,11 @@ impl<B: BlockStore> Interpreter<B> {
         if !self.is_standing_on(pos) {
             self.standing.push(pos);
         }
-        plate::set_pressure_plate(self, pos, true);
+        plate::entity_inside(self, pos);
     }
 
     pub fn step_off(&mut self, pos: BlockPos) {
         self.standing.retain(|&standing| standing != pos);
-        plate::set_pressure_plate(self, pos, false);
     }
 
     pub fn is_standing_on(&self, pos: BlockPos) -> bool {
@@ -153,7 +156,21 @@ impl<B: BlockStore> RedstoneWorld for Interpreter<B> {
         &mut self.redstone
     }
 
+    fn has_entity_in(&self, area: Aabb) -> bool {
+        self.standing
+            .iter()
+            .any(|&pos| block_box(pos).intersects(&area))
+    }
+
     fn play_sound(&mut self, pos: BlockPos, sound: Sound) {
         self.sounds.push((pos, sound));
+    }
+}
+
+fn block_box(pos: BlockPos) -> Aabb {
+    let min = [pos.x, pos.y, pos.z].map(f64::from);
+    Aabb {
+        min,
+        max: min.map(|coord| coord + 1.0),
     }
 }

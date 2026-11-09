@@ -4,7 +4,7 @@ use mchprs_blocks::blocks::ComparatorMode;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redstone::input::Input;
 use mchprs_redstone::tick_queue::{PendingTick, TickPriority};
-use mchprs_redstone::{attached, comparator, repeater, torch, LAMP_OFF_DELAY_TICKS};
+use mchprs_redstone::{attached, comparator, plate, repeater, torch, LAMP_OFF_DELAY_TICKS};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct InputStrengths {
@@ -154,7 +154,13 @@ impl NodeKind {
             ))),
             NodeKind::Lamp if !powered => Outcome::of(NodeState::from_powered(false)),
             NodeKind::Button { .. } => Outcome::of(NodeState::from_powered(false)),
-            NodeKind::PressurePlate => Outcome::of(state),
+            NodeKind::PressurePlate if state.is_powered() && state.plate_touched => {
+                Outcome::scheduled(state, plate::PRESS_TICKS, plate::RECHECK_PRIORITY)
+            }
+            NodeKind::PressurePlate => Outcome::of(NodeState {
+                power: SignalStrength::Zero,
+                ..state
+            }),
             NodeKind::Repeater { .. }
             | NodeKind::Lamp
             | NodeKind::Lever
@@ -231,18 +237,28 @@ impl AcceptedInput {
                     (false, Pending::DueThisTick | Pending::Later) => Outcome::of(pressed),
                 }
             }
-            AcceptedInput::Touch(touched) => touch(state, touched),
-            AcceptedInput::ToggleTouch => touch(state, !state.plate_touched),
+            AcceptedInput::Touch(touched) => touch(state, touched, pending),
+            AcceptedInput::ToggleTouch => touch(state, !state.plate_touched, pending),
         }
     }
 }
 
-fn touch(state: NodeState, plate_touched: bool) -> Outcome {
-    Outcome::of(NodeState {
-        power: plate_touched.into(),
+fn touch(state: NodeState, plate_touched: bool, pending: Pending) -> Outcome {
+    let state = NodeState {
         plate_touched,
         ..state
-    })
+    };
+    if !plate_touched || state.is_powered() {
+        return Outcome::of(state);
+    }
+    let pressed = NodeState {
+        power: SignalStrength::Fifteen,
+        ..state
+    };
+    match pending {
+        Pending::None => Outcome::scheduled(pressed, plate::PRESS_TICKS, plate::RECHECK_PRIORITY),
+        Pending::DueThisTick | Pending::Later => Outcome::of(pressed),
+    }
 }
 
 #[inline]
