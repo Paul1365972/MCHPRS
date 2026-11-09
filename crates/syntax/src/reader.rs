@@ -68,7 +68,7 @@ impl<'a> Reader<'a> {
         Self { input, cursor: 0 }
     }
 
-    pub fn at(input: &'a str, cursor: usize) -> Self {
+    pub(crate) fn at(input: &'a str, cursor: usize) -> Self {
         Self { input, cursor }
     }
 
@@ -134,7 +134,7 @@ impl<'a> Reader<'a> {
         ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '+')
     }
 
-    pub fn custom_string(&mut self) -> Result<String, SyntaxError> {
+    pub(crate) fn custom_string(&mut self) -> Result<String, SyntaxError> {
         match self.peek() {
             Some('\'' | '"') => self.quoted(),
             _ => self.token().map(str::to_owned),

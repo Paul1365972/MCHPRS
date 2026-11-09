@@ -3,7 +3,12 @@ use indexmap::IndexMap;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::{quote, ToTokens};
 use serde::Deserialize;
-use std::{collections::HashMap, fs, path::PathBuf, process::Command};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    fs,
+    path::PathBuf,
+    process::Command,
+};
 
 #[derive(Deserialize)]
 struct BlockState {
@@ -276,6 +281,15 @@ fn generate_block_enum(blocks: &[ProcessedBlock]) -> TokenStream {
     }
 }
 
+fn generate_names(blocks: &[ProcessedBlock]) -> TokenStream {
+    let names = blocks.iter().map(|block| &block.name);
+    quote! {
+        pub fn names() -> &'static [&'static str] {
+            &[#(#names),*]
+        }
+    }
+}
+
 fn generate_get_name(blocks: &[ProcessedBlock]) -> TokenStream {
     let match_arms = blocks.iter().map(|block| {
         let name = &block.name;
@@ -408,6 +422,27 @@ fn generate_property_values(blocks: &[ProcessedBlock]) -> TokenStream {
                 #(#match_arms)*
                 _ => None,
             }
+        }
+    }
+}
+
+fn generate_known_properties(blocks: &[ProcessedBlock]) -> TokenStream {
+    let mut all_values = BTreeMap::<&str, BTreeSet<&str>>::new();
+    for block in blocks {
+        for prop in &block.props {
+            all_values
+                .entry(&prop.name)
+                .or_default()
+                .extend(prop.values.iter().map(String::as_str));
+        }
+    }
+    let known_properties = all_values.iter().map(|(name, values)| {
+        let values = values.iter();
+        quote! { PropertyDefinition { name: #name, values: &[#(#values),*] }, }
+    });
+    quote! {
+        pub fn known_properties() -> &'static [PropertyDefinition] {
+            &[#(#known_properties)*]
         }
     }
 }
@@ -827,6 +862,7 @@ fn generate_module(
 ) -> TokenStream {
     let block_enum = generate_block_enum(blocks);
 
+    let names = generate_names(blocks);
     let get_name = generate_get_name(blocks);
     let from_name = generate_from_name(blocks);
     let is_solid = generate_is_attr(
@@ -849,6 +885,7 @@ fn generate_module(
     );
     let set_props = generate_set_props(blocks);
     let property_values = generate_property_values(blocks);
+    let known_properties = generate_known_properties(blocks);
     let gen_props = generate_gen_props(blocks);
     let rotate = generate_rotate(blocks);
     let flip = generate_flip(blocks);
@@ -884,6 +921,7 @@ fn generate_module(
         #block_enum
 
         impl Block {
+            #names
             #get_name
             #from_name
             #is_solid
@@ -892,6 +930,7 @@ fn generate_module(
             #set_props
             #gen_props
             #property_values
+            #known_properties
             #rotate
             #flip
             #get_id

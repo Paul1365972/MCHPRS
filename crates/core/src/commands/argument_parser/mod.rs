@@ -3,6 +3,7 @@ mod coordinates;
 use super::argument::{ArgParser, ClientArgument};
 use super::suggestions::SuggestionSource;
 use super::value::{Direction, DirectionWithDiagonals, PlayerTarget};
+use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_network::packets::clientbound::CDeclareCommandsNodeParser as ProtocolParser;
@@ -275,14 +276,25 @@ impl ArgParser for PatternParser {
         reader: &mut Reader<'_>,
         expect: &mut Expect,
     ) -> Result<WorldEditPattern, SyntaxError> {
-        {
-            let start = reader.cursor();
-            let word = reader.custom_string()?;
-            word.parse()
-                .map_err(|error: crate::worldedit::pattern::PatternParseError| {
-                    expect.fail(start, error.to_string())
-                })
-        }
+        WorldEditPattern::parse(reader, expect)
+    }
+
+    fn client(&self) -> ClientArgument {
+        ClientArgument::Opaque
+    }
+}
+
+pub(super) struct MaskParser;
+
+impl ArgParser for MaskParser {
+    type Output = WorldEditMask;
+
+    fn parse(
+        &self,
+        reader: &mut Reader<'_>,
+        expect: &mut Expect,
+    ) -> Result<WorldEditMask, SyntaxError> {
+        WorldEditMask::parse(reader, expect)
     }
 
     fn client(&self) -> ClientArgument {

@@ -1,114 +1,184 @@
+//! Patterns as in WorldEdit: <https://worldedit.enginehub.org/en/latest/usage/general/patterns/>
+
+use mchprs_blocks::block_state::{block_state, state_id, state_list, StateList};
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::BlockPos;
+use mchprs_syntax::expect::{quotable, Expect};
+use mchprs_syntax::reader::{Reader, SyntaxError};
+use mchprs_world::World;
 use rand::RngExt;
-use regex::Regex;
-use std::fmt;
-use std::str::FromStr;
-use std::sync::LazyLock;
+use std::collections::HashMap;
 
-pub type PatternParseResult<T> = std::result::Result<T, PatternParseError>;
-
-#[derive(Debug, Clone)]
-pub struct WorldEditPatternPart {
-    pub weight: f32,
-    pub block_id: u32,
-}
-
-pub enum PatternParseError {
-    UnknownBlock(String),
-    InvalidPattern(String),
-}
-
-impl fmt::Display for PatternParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PatternParseError::UnknownBlock(block) => write!(f, "unknown block: {}", block),
-            PatternParseError::InvalidPattern(pattern) => write!(f, "invalid pattern: {}", pattern),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct WorldEditPattern {
-    pub parts: Vec<WorldEditPatternPart>,
-}
-
-impl FromStr for WorldEditPattern {
-    type Err = PatternParseError;
-
-    fn from_str(pattern_str: &str) -> PatternParseResult<WorldEditPattern> {
-        let mut pattern = WorldEditPattern { parts: Vec::new() };
-        for part in pattern_str.split(',') {
-            static RE: LazyLock<Regex> = LazyLock::new(|| {
-                Regex::new(r"^(([0-9]+(\.[0-9]+)?)%)?(=)?([0-9]+|(minecraft:)?[a-zA-Z_]+)(:([0-9]+)|\[(([a-zA-Z_]+=[a-zA-Z0-9]+,?)+?)\])?((\|([^|]*?)){1,4})?$").unwrap()
-            });
-
-            let pattern_match = RE
-                .captures(part)
-                .ok_or_else(|| PatternParseError::InvalidPattern(part.to_owned()))?;
-
-            let block = if pattern_match.get(4).is_some() {
-                Block::from_id(
-                    pattern_match
-                        .get(5)
-                        .map_or("0", |m| m.as_str())
-                        .parse::<u32>()
-                        .unwrap(),
-                )
-            } else {
-                let mut block_name = pattern_match.get(5).unwrap().as_str().to_string();
-                if !block_name.contains(':') {
-                    block_name.insert_str(0, "minecraft:");
-                }
-
-                Block::from_name(&block_name)
-                    .ok_or_else(|| PatternParseError::UnknownBlock(part.to_owned()))?
-            };
-
-            let weight = pattern_match
-                .get(2)
-                .map_or("100", |m| m.as_str())
-                .parse::<f32>()
-                .unwrap()
-                / 100.0;
-
-            pattern.parts.push(WorldEditPatternPart {
-                weight,
-                block_id: block.get_id(),
-            });
-        }
-
-        Ok(pattern)
-    }
+#[derive(Clone, Debug)]
+pub enum WorldEditPattern {
+    Single(BlockPattern),
+    Random {
+        patterns: Vec<WeightedPattern>,
+        weight_total: f32,
+    },
 }
 
 impl WorldEditPattern {
-    pub fn matches(&self, block: Block) -> bool {
-        let block_id = block.get_id();
-        self.parts.iter().any(|part| part.block_id == block_id)
+    pub fn parse(reader: &mut Reader<'_>, expect: &mut Expect) -> Result<Self, SyntaxError> {
+        quotable(reader, expect, |reader, expect, quoted| {
+            let start = reader.cursor();
+            let skip_spaces = |reader: &mut Reader<'_>| {
+                if quoted {
+                    reader.take_while(char::is_whitespace);
+                }
+            };
+            let mut patterns = Vec::new();
+            let mut weighted = false;
+            loop {
+                skip_spaces(reader);
+                let weight = weight(reader, expect)?;
+                if weight.is_some() {
+                    weighted = true;
+                    skip_spaces(reader);
+                }
+                let pattern = block_pattern(reader, expect)?;
+                patterns.push(WeightedPattern {
+                    weight: weight.unwrap_or(1.0),
+                    pattern,
+                });
+                skip_spaces(reader);
+                if reader.peek() != Some(',') {
+                    break;
+                }
+                reader.read();
+            }
+            if patterns.len() == 1 && !weighted {
+                return Ok(Self::Single(patterns.swap_remove(0).pattern));
+            }
+            let weight_total: f32 = patterns.iter().map(|pattern| pattern.weight).sum();
+            if !weight_total.is_finite() {
+                return Err(expect.fail(start, "Pattern weight total is too large"));
+            }
+            if weight_total <= 0.0 {
+                return Err(expect.fail(start, "Pattern weights must add up to more than zero"));
+            }
+            patterns.retain(|pattern| pattern.weight > 0.0);
+            Ok(Self::Random {
+                patterns,
+                weight_total,
+            })
+        })
     }
 
-    pub fn pick(&self) -> Block {
-        let mut weight_sum = 0.0;
-        for part in &self.parts {
-            weight_sum += part.weight;
-        }
+    pub fn place(&self, world: &mut impl World, pos: BlockPos) -> bool {
+        world.set_block(pos, self.select().pick(world, pos))
+    }
 
-        let mut rng = rand::rng();
-        let mut random = rng.random_range(0.0..weight_sum);
-
-        let mut selected = &WorldEditPatternPart {
-            block_id: 0,
-            weight: 0.0,
-        };
-
-        for part in &self.parts {
-            random -= part.weight;
-            if random <= 0.0 {
-                selected = part;
-                break;
+    fn select(&self) -> &BlockPattern {
+        match self {
+            Self::Single(pattern) => pattern,
+            Self::Random {
+                patterns,
+                weight_total,
+            } => {
+                let mut random = rand::rng().random_range(0.0..*weight_total);
+                let selected = patterns.iter().find(|pattern| {
+                    random -= pattern.weight;
+                    random < 0.0
+                });
+                &selected.unwrap_or_else(|| patterns.last().unwrap()).pattern
             }
         }
+    }
+}
 
-        Block::from_id(selected.block_id)
+#[derive(Clone, Debug)]
+pub struct WeightedPattern {
+    weight: f32,
+    pattern: BlockPattern,
+}
+
+#[derive(Clone, Debug)]
+pub enum BlockPattern {
+    Fixed(Block),
+    TypeApplying {
+        block: Option<Block>,
+        states: StateList,
+    },
+}
+
+impl BlockPattern {
+    fn pick(&self, world: &impl World, pos: BlockPos) -> Block {
+        match self {
+            Self::Fixed(block) => *block,
+            Self::TypeApplying { block, states } => {
+                let existing = world.get_block(pos);
+                let mut block = block.unwrap_or(existing);
+                let existing_properties = existing.properties();
+                let mut properties: HashMap<&str, &str> = existing_properties
+                    .iter()
+                    .map(|(name, value)| (*name, value.as_str()))
+                    .collect();
+                for (name, value) in states.states() {
+                    properties.insert(name, value);
+                }
+                properties.retain(|name, value| {
+                    block
+                        .property_values(name)
+                        .is_some_and(|values| values.contains(value))
+                });
+                block.set_properties(properties);
+                block
+            }
+        }
+    }
+}
+
+fn weight(reader: &mut Reader<'_>, expect: &mut Expect) -> Result<Option<f32>, SyntaxError> {
+    let start = reader.cursor();
+    let mut ahead = *reader;
+    let text = ahead.take_while(|ch| !matches!(ch, '%' | ',' | '[') && !ch.is_whitespace());
+    if ahead.read() != Some('%') {
+        return Ok(None);
+    }
+    let weight = text
+        .parse::<f32>()
+        .ok()
+        .filter(|weight| weight.is_finite() && *weight >= 0.0)
+        .ok_or_else(|| expect.fail(start, format!("Invalid pattern weight: {text}")))?;
+    let mut rest = ahead;
+    let block = rest.take_while(|ch| !matches!(ch, ',' | '[') && !ch.is_whitespace());
+    if block.contains('%') {
+        return Err(expect.fail(start, format!("Invalid pattern weight: {text}%{block}")));
+    }
+    *reader = ahead;
+    Ok(Some(weight))
+}
+
+fn block_pattern(
+    reader: &mut Reader<'_>,
+    expect: &mut Expect,
+) -> Result<BlockPattern, SyntaxError> {
+    let start = reader.cursor();
+    match reader.peek() {
+        Some('^') => {
+            reader.read();
+            if reader.peek() == Some('[') {
+                let states = state_list(reader, expect, None)?;
+                return Ok(BlockPattern::TypeApplying {
+                    block: None,
+                    states,
+                });
+            }
+            let (block, states) = block_state(reader, expect)?;
+            Ok(BlockPattern::TypeApplying {
+                block: Some(block),
+                states,
+            })
+        }
+        Some('=') => {
+            reader.read();
+            state_id(reader, expect).map(BlockPattern::Fixed)
+        }
+        Some('*' | '#') => Err(expect.fail(start, "This pattern type isn't supported")),
+        _ => {
+            let (block, states) = block_state(reader, expect)?;
+            Ok(BlockPattern::Fixed(states.applied_to(block)))
+        }
     }
 }
