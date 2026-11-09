@@ -119,6 +119,7 @@ impl NodeKind {
                 role: Some(Role::Input),
                 drive: Some(DriveKind::Touch),
                 emits: ON_OFF,
+                ticks: true,
                 ..plain
             },
             NodeKind::Trapdoor | NodeKind::NoteBlock { .. } => Traits {

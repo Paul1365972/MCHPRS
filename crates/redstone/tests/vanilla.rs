@@ -187,6 +187,16 @@ impl Replay {
         self.record(&changes);
         self.difference(moment)
     }
+
+    fn stand_on(&mut self, operands: &[&str]) -> Option<String> {
+        self.world.tick();
+        self.game_tick += GAME_TICKS_PER_REDSTONE_TICK;
+        self.act(
+            operands,
+            Interpreter::stand_on,
+            "after the steps onto plates in",
+        )
+    }
 }
 
 fn words(line: &str) -> (&str, Vec<&str>) {
@@ -214,6 +224,12 @@ fn first_difference(trace: &str) -> Option<String> {
                 &operands,
                 Interpreter::use_block,
                 "after the uses following",
+            ),
+            "stand_on" => replay.stand_on(&operands),
+            "step_off" => replay.act(
+                &operands,
+                Interpreter::step_off,
+                "after the steps off plates following",
             ),
             _ => panic!("unknown trace line: {line}"),
         };

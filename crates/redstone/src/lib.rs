@@ -19,6 +19,7 @@ use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use sound::Sound;
+use std::array;
 use tick_queue::{TickPriority, TickQueue};
 
 pub use behavior::{
@@ -69,6 +70,8 @@ impl Redstone {
 pub trait RedstoneWorld: BlockStore {
     fn redstone(&mut self) -> &mut Redstone;
 
+    fn has_entity_in(&self, area: Aabb) -> bool;
+
     fn play_sound(&mut self, pos: BlockPos, sound: Sound);
 
     fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority, block: Block) {
@@ -76,8 +79,37 @@ pub trait RedstoneWorld: BlockStore {
     }
 }
 
-/// Updates every block in `region`, then runs at most `limit` ticks until no tick or block event
-/// is pending, and returns how many it ran if it got there.
+#[derive(Clone, Copy, Debug)]
+pub struct Aabb {
+    pub min: [f64; 3],
+    pub max: [f64; 3],
+}
+
+impl Aabb {
+    pub fn intersects(&self, other: &Aabb) -> bool {
+        (0..3).all(|axis| self.min[axis] < other.max[axis] && self.max[axis] > other.min[axis])
+    }
+
+    pub fn block_positions(&self) -> impl Iterator<Item = BlockPos> {
+        // Vanilla's checkInsideBlocks shrinks the box by this much
+        const MARGIN: f64 = 1.0e-7;
+        let min = self.min.map(|coord| (coord + MARGIN).floor() as i32);
+        let max = self.max.map(|coord| (coord - MARGIN).floor() as i32);
+        (min[0]..=max[0]).flat_map(move |x| {
+            (min[1]..=max[1])
+                .flat_map(move |y| (min[2]..=max[2]).map(move |z| BlockPos::new(x, y, z)))
+        })
+    }
+
+    fn offset(self, pos: BlockPos) -> Aabb {
+        let delta = [pos.x as f64, pos.y as f64, pos.z as f64];
+        Aabb {
+            min: array::from_fn(|axis| self.min[axis] + delta[axis]),
+            max: array::from_fn(|axis| self.max[axis] + delta[axis]),
+        }
+    }
+}
+
 pub fn settle(world: &mut impl RedstoneWorld, region: Region, limit: u64) -> Option<u64> {
     update_region(world, region);
     for ticks in 0..limit {

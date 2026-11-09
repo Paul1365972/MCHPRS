@@ -87,7 +87,7 @@ impl Plot {
         always_running: bool,
         shared: Arc<Shared>,
     ) -> Plot {
-        let world = PlotWorld {
+        let mut world = PlotWorld {
             x,
             z,
             chunks: load_chunks(plot_data.chunk_data, x, z),
@@ -98,11 +98,14 @@ impl Plot {
                     .map(TickEntry::from)
                     .collect(),
             )),
+            entity_boxes: Vec::new(),
             packet_senders: HashMap::new(),
             world_send_rate: plot_data.world_send_rate,
             pending_block_entities: FxHashMap::default(),
             pending_sounds: Vec::new(),
         };
+        let region = world.region();
+        plate::recheck_pressed_plates(&mut world, region);
         let tps = plot_data.tps;
         Plot {
             last_player_time: Instant::now(),

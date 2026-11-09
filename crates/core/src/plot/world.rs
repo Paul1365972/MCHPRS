@@ -6,6 +6,7 @@ pub struct PlotWorld {
     pub z: i32,
     pub chunks: Vec<Chunk>,
     pub(super) redstone: Redstone,
+    pub(super) entity_boxes: Vec<Aabb>,
     pub packet_senders: HashMap<EntityId, PlayerPacketSender>,
     pub(super) world_send_rate: WorldSendRate,
     pub(super) pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
@@ -13,6 +14,15 @@ pub struct PlotWorld {
 }
 
 impl PlotWorld {
+    pub(super) fn press_touched_plates(&mut self) -> bool {
+        let boxes = self.entity_boxes.clone();
+        let mut pressed = false;
+        for pos in boxes.iter().flat_map(Aabb::block_positions) {
+            pressed |= plate::entity_inside(self, pos);
+        }
+        pressed
+    }
+
     fn get_chunk_index_for_chunk(&self, chunk_x: i32, chunk_z: i32) -> Option<usize> {
         let local_x = chunk_x - self.x * PLOT_WIDTH;
         let local_z = chunk_z - self.z * PLOT_WIDTH;
@@ -158,6 +168,12 @@ impl RedstoneWorld for PlotWorld {
     fn redstone(&mut self) -> &mut Redstone {
         &mut self.redstone
     }
+    fn has_entity_in(&self, area: Aabb) -> bool {
+        self.entity_boxes
+            .iter()
+            .any(|entity| entity.intersects(&area))
+    }
+
     fn play_sound(&mut self, pos: BlockPos, sound: Sound) {
         if self.world_send_rate.0 == 0.0 {
             return;

@@ -6,7 +6,7 @@ use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::input::{is_drivable, Input, InputError};
 use mchprs_redstone::interpreter::Interpreter;
-use mchprs_redstone::noteblock;
+use mchprs_redstone::{noteblock, plate};
 use mchprs_simulation::backend::{
     Backend, CompileContext, CompileError, CompileStep, PortError, Source,
 };
@@ -53,7 +53,8 @@ impl Backend for VanillaBackend {
             changed: Vec::new(),
             changed_entities: Vec::new(),
         };
-        let interpreter = Interpreter::new(log, source.ticks.to_vec());
+        let mut interpreter = Interpreter::new(log, source.ticks.to_vec());
+        plate::recheck_pressed_plates(&mut interpreter, source.region);
         let simulation = VanillaSimulation {
             interpreter,
             region: source.region,

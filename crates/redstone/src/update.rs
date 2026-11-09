@@ -1,4 +1,4 @@
-use crate::{behavior, comparator, wire, RedstoneWorld, DIRECTIONS, HORIZONTAL};
+use crate::{attached, behavior, comparator, plate, wire, RedstoneWorld, DIRECTIONS, HORIZONTAL};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFace, BlockPos};
@@ -128,6 +128,12 @@ pub fn neighbor_changed_at(world: &mut impl RedstoneWorld, pos: BlockPos) {
 pub fn update_region(world: &mut impl RedstoneWorld, region: Region) {
     for pos in world.occupied_positions(region) {
         neighbor_changed_at(world, pos);
+        let block = world.block(pos);
+        if block.button().is_some_and(|button| button.powered) {
+            attached::schedule_release(world, pos, block);
+        } else if block.pressure_plate().is_some_and(|plate| plate.powered) {
+            plate::schedule_recheck(world, pos, block);
+        }
     }
 }
 

@@ -7,7 +7,7 @@ use mchprs_blocks::BlockDirection;
 use mchprs_redstone::input::Input;
 use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_redstone::wire;
-use mchprs_redstone::RedstoneWorld;
+use mchprs_redstone::{update_region, RedstoneWorld};
 
 test_all_backends!(lever_on_off);
 fn lever_on_off(setup: Setup) {
@@ -64,6 +64,30 @@ fn pressure_plate_on_off(setup: Setup) {
     runner.drive(plate_pos, Input::Touch(true));
     runner.check_block_powered(trapdoor_pos, true);
 
+    runner.drive(plate_pos, Input::Touch(false));
+    for _ in 0..10 {
+        runner.tick();
+    }
+    runner.check_block_powered(trapdoor_pos, false);
+}
+
+test_all_backends!(pressure_plate_saved_pressed_turns_off);
+fn pressure_plate_saved_pressed_turns_off(setup: Setup) {
+    let plate_pos = pos(0, 1, 0);
+    let trapdoor_pos = pos(1, 0, 0);
+
+    let mut world = test_world(16, 16, 16);
+    place_on_block(
+        &mut world,
+        plate_pos,
+        Block::StonePressurePlate(PressurePlate { powered: true }),
+    );
+    world.set_block(trapdoor_pos, trapdoor());
+    let region = world.blocks().region();
+    update_region(&mut world, region);
+
+    let mut runner = Runner::new(&world, &setup);
+    runner.check_block_powered(trapdoor_pos, true);
     runner.drive(plate_pos, Input::Touch(false));
     for _ in 0..10 {
         runner.tick();

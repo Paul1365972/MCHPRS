@@ -150,14 +150,15 @@ impl Claims {
 }
 
 impl Plot {
-    pub fn claim_plot(&mut self, plot_x: i32, plot_z: i32, player: usize) {
-        let player = &mut self.players[player];
+    pub fn claim_plot(&mut self, plot_x: i32, plot_z: i32, player_idx: usize) {
+        let uuid = self.players[player_idx].uuid;
         self.shared
             .claims
-            .claim_plot(plot_x, plot_z, &format!("{:032x}", player.uuid));
+            .claim_plot(plot_x, plot_z, &format!("{:032x}", uuid));
         let center = Plot::get_center(plot_x, plot_z);
-        player.teleport(PlayerPos::new(center.0, 64.0, center.1));
-        player.send_system_message(&format!("Claimed plot {},{}", plot_x, plot_z));
+        self.teleport_player(player_idx, PlayerPos::new(center.0, 64.0, center.1));
+        self.players[player_idx]
+            .send_system_message(&format!("Claimed plot {},{}", plot_x, plot_z));
     }
 
     pub fn get_next_plot(plot_x: i32, plot_z: i32) -> (i32, i32) {

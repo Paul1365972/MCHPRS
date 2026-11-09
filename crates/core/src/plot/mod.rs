@@ -33,7 +33,7 @@ use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redstone::sound::Sound;
 use mchprs_redstone::tick_queue::TickQueue;
-use mchprs_redstone::{plate, Redstone, RedstoneWorld};
+use mchprs_redstone::{plate, Aabb, Redstone, RedstoneWorld};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use mchprs_simulation::backend::{Backend, CompileContext, Source};
 use mchprs_world::occupied_regions;
@@ -119,6 +119,7 @@ impl Plot {
     }
 
     pub fn tickn(&mut self, ticks: u64) {
+        self.update_entity_boxes();
         if self.redpiler.is_active() {
             self.timings.tickn(ticks);
             if let Err(error) = self.redpiler.tickn(ticks) {
@@ -134,6 +135,7 @@ impl Plot {
 
     fn tick(&mut self) {
         self.timings.tick();
+        self.update_entity_boxes();
         if self.redpiler.is_active() {
             if let Err(error) = self.redpiler.tick() {
                 self.compiler_failed(error);
@@ -141,10 +143,12 @@ impl Plot {
             return;
         }
         mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world);
+        self.world.press_touched_plates();
     }
 
     pub fn change_player_gamemode(&mut self, player_idx: usize, gamemode: Gamemode) {
         self.players[player_idx].set_gamemode(gamemode);
+        self.update_entity_boxes();
         let _ = self.message_sender.send(Message::PlayerUpdateGamemode(
             self.players[player_idx].uuid,
             gamemode,
@@ -152,57 +156,66 @@ impl Plot {
     }
 
     pub fn teleport_player(&mut self, player_idx: usize, pos: PlayerPos) {
-        let old = self.players[player_idx].pos;
         self.players[player_idx].teleport(pos);
-        self.on_player_move(player_idx, old, pos);
+        self.on_players_moved();
     }
 
-    fn on_player_move(&mut self, player_idx: usize, old: PlayerPos, new: PlayerPos) {
-        let old_block = old.block_pos();
-        let new_block = new.block_pos();
-
-        if self
-            .world
-            .block(old_block)
-            .pressure_plate()
-            .is_some_and(|plate| plate.powered)
-            && !self.are_players_on_block(old_block)
-        {
-            self.set_pressure_plate(old_block, false);
-        }
-
-        if self
-            .world
-            .block(new_block)
-            .pressure_plate()
-            .is_some_and(|plate| !plate.powered)
-            && self.players[player_idx].on_ground
-        {
-            self.set_pressure_plate(new_block, true);
+    fn on_players_moved(&mut self) {
+        self.update_entity_boxes();
+        if !self.redpiler.is_active() && self.world.press_touched_plates() {
+            self.publish_world();
         }
     }
 
-    fn set_pressure_plate(&mut self, pos: BlockPos, pressed: bool) {
-        if self.world.block(pos).pressure_plate().is_none() {
+    fn update_entity_boxes(&mut self) {
+        let boxes: Vec<Aabb> = self
+            .players
+            .iter()
+            .filter_map(|player| player.collision_box(player.pos))
+            .collect();
+        if !self.redpiler.is_active() {
+            self.world.entity_boxes = boxes;
             return;
         }
-        if self.redpiler.is_active() {
-            if let Err(error) = self.redpiler.set_pressure_plate(pos, pressed) {
+        let plates: HashSet<BlockPos> = self
+            .world
+            .entity_boxes
+            .iter()
+            .chain(&boxes)
+            .flat_map(Aabb::block_positions)
+            .filter(|&pos| self.world.block(pos).pressure_plate().is_some())
+            .collect();
+        let was_touched: Vec<_> = plates
+            .into_iter()
+            .map(|pos| (pos, plate::is_touched(&self.world, pos)))
+            .collect();
+        self.world.entity_boxes = boxes;
+        for (pos, was_touched) in was_touched {
+            let touched = plate::is_touched(&self.world, pos);
+            if touched != was_touched
+                && let Err(error) = self.redpiler.set_pressure_plate(pos, touched)
+            {
                 self.compiler_failed(error);
             }
-        } else {
-            plate::set_pressure_plate(&mut self.world, pos, pressed);
         }
-        self.publish_world();
     }
 
-    fn are_players_on_block(&mut self, pos: BlockPos) -> bool {
-        for player in &self.players {
-            if player.pos.block_pos() == pos && player.on_ground {
-                return true;
+    fn sync_compiled_pressure_plates(&mut self) {
+        self.update_entity_boxes();
+        let region = self.world.region();
+        for pos in self
+            .world
+            .occupied_regions(region)
+            .into_iter()
+            .flat_map(Region::positions)
+        {
+            if self.world.block(pos).pressure_plate().is_some() {
+                let touched = plate::is_touched(&self.world, pos);
+                if let Err(error) = self.redpiler.set_pressure_plate(pos, touched) {
+                    self.compiler_failed(error);
+                }
             }
         }
-        false
     }
 
     fn enter_plot(&mut self, player: Player) {
@@ -241,6 +254,7 @@ impl Plot {
         self.scoreboard.add_player(&player);
         self.players.push(player);
         self.update_view_pos_for_player(self.players.len() - 1, true);
+        self.on_players_moved();
     }
 
     fn get_chunk_distance(x1: i32, z1: i32, x2: i32, z2: i32) -> u32 {
@@ -382,6 +396,7 @@ impl Plot {
         match result {
             Ok(()) => {
                 self.world.redstone.ticks = TickQueue::default();
+                self.sync_compiled_pressure_plates();
                 self.scoreboard
                     .set_redpiler_options(&self.players, &options);
                 self.scoreboard
@@ -488,6 +503,7 @@ impl Plot {
         self.destroy_entity(player.entity_id);
         self.locked_players.remove(&player.entity_id);
         self.scoreboard.remove_player(&player);
+        self.on_players_moved();
         player
     }
 
@@ -574,6 +590,7 @@ impl Plot {
                         player.save();
                         player.kick("Server closed".into());
                     }
+                    self.on_players_moved();
                     self.always_running = false;
                     self.running = false;
                     return;
@@ -652,10 +669,12 @@ impl Plot {
             self.world.packet_senders.remove(&entity_id);
             self.destroy_entity(entity_id);
         }
+        self.on_players_moved();
     }
 
     /// Update player view positions and handle packets
     fn update_players(&mut self) {
+        self.update_entity_boxes();
         for player_idx in 0..self.players.len() {
             if self.players[player_idx].update() {
                 self.update_view_pos_for_player(player_idx, false);
