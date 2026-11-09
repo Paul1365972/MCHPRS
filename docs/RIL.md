@@ -1,137 +1,91 @@
 # Redstone Intermediate Language
 
-## Syntax
+RIL is the text format of the [graph](Circuits.md) that Redpiler compiles.
+[rilc](rilc.md) reads and writes it.
 
-### Circuits
+A RIL file contains circuits, schematics and tests.
+A circuit or schematic has a name prefixed with `@`, which is unique in the file and by which a later test refers to it.
+`#` starts a comment that runs to the end of the line.
 
-```
-circuit @<name> {}
-backend_circuit(<backend_name>) @<name> {}
-```
-
-Backends each have their own printer and parser to suit their own needs
-
-### Schematics
+## Circuits
 
 ```
-schematic @<name> <path>
+circuit @<name> {
+  %<label>[, %<label>…] = <kind>[(<field>, …)] [input|output|internal] [tick(…)] [at[…]] [-> […]]
+}
 ```
 
-`path` is a string path relative to the RIL file. If the file is stdin, the path is relative to the working directory.
-
-### Tests
-
-`test_args <args>` specifies the default `redpiler_args` used in test blocks. `args` is a string.
-
-`test(@<src>) <test_result>` or `test(@<src>, <redpiler_args>) <test_result>`
-
-`redpiler_args` is a string. If `redpiler_args` is not specified, it must be specified through `test_args`.
-
-`test_result` can either be a `circuit` or `backend_circuit`. `test_result` can be automatically updated with the `--update-tests` flag.
+Each `%<label>… = …` defines one component. A line break counts as a space.
 
 ```
-test_args <args>
-test(@<src>) circuit @<test_name> {}
-test(@<src>) backend_circuit(<backend_name>) @<test_name> {}
+circuit @example {
+  %lever = lever(powered) -> [%repeater:0]
+  %repeater = repeater(delay=2) tick(delay=1, priority=high) -> [%lamp:0]
+  %lamp = lamp
+}
 ```
 
-### Values
+A label consists of ASCII letters, digits and underscores. A link can name a component that is defined later.
+A label made only of digits is not a name: rilc writes a component that has no name by its position in the circuit, counted from 0. A [scenario](rilc.md#scenarios) finds a component by any of its labels.
+A circuit must satisfy the [invariants](Circuits.md#invariants).
 
-Values are a name given to a component prefixed with `%`. They can include any alphanumeric characters.
+### Components
 
-Examples: `%a`, `%repeater`, `%123`
+| Kind | Fields |
+| --- | --- |
+| `repeater` | `delay=<1 to 4>` (required), `prioritized`, `locked`, `powered` |
+| `comparator` | `mode=<compare\|subtract>` (default `compare`), `power=<0 to 15>` (default 0), `far=<0 to 15>`, `prioritized` |
+| `torch`, `lamp`, `lever`, `trapdoor` | `powered` |
+| `button` | `press_ticks=<10\|15>` (default 10), `powered` |
+| `pressure_plate` | `touched`, `powered` |
+| `wire` | `power=<0 to 15>` (default 0) |
+| `constant` | `power=<0 to 15>` (default 0), `locked` |
+| `note_block` | `instrument=<name>` (default `harp`), `note=<0 to 24>` (default 0), `powered` |
 
-### Input lists
+`powered` is the signal strength 15, and `far` is the strength of the container that a comparator reads through a block.
+`instrument` is one of `harp`, `basedrum`, `snare`, `hat`, `bass`, `flute`, `bell`, `guitar`, `chime`, `xylophone`, `iron_xylophone`, `cow_bell`, `didgeridoo`, `bit`, `banjo`, `pling`, `zombie`, `skeleton`, `creeper`, `dragon`, `wither_skeleton`, `piglin`, or `custom_head`.
 
-Input lists are defined as a list of value and distance pairs. The distance must be between 0 and 15 inclusive.
+`input`, `output` or `internal` overrides the [port role](Circuits.md#ports-and-observed-nodes) of a component. `internal` is no role.
 
-`[%<name>:<distance>, ...]`
-
-For example: `[%a:12, %12:2]`
-
-## Components
-
-All components have a type and a list of arguments.
-
-These arguments have a standard type:
-- `powered`: boolean
-- `base_inputs`, `side_inputs`, `inputs`: input list
-- `output_strength`: integer between 0 and 15
-
-### repeater
-
-```
-%x = repeater <delay>, <prioritized>, <locked>, <powered>, <base_inputs>, <side_inputs>
-```
-
-`delay` is an integer between 1 and 4.\
-`prioritized` is a boolean.\
-`locked` is a boolean.
-
-### torch
+### Pending Ticks
 
 ```
-%x = torch <powered>, <inputs>
+tick(delay=<n>, priority=<normal|high|higher|highest>, order=<n>)
 ```
 
-### comparator
+`priority` defaults to `normal`. The [invariants](Circuits.md#invariants) limit which components take a tick, and its `delay` and `priority`.
+Ticks with the same delay and priority need an `order`, which is the order they were scheduled in. Other ticks take none.
+
+### Blocks
+
+`at[(2,1,0) minecraft:repeater[delay=2,facing=west,locked=false,powered=false]]` lists the blocks a component stands for, each as a position and a block state, separated by commas.
+
+### Links
+
+`-> [%<label>:<weight>, side %<label>:<weight>, …]`
+
+Each entry is a link to the named component with a weight from 0 to 14, and `side` marks a side link.
+The order of the entries is the order of the links in the graph.
+Two entries of the same kind to the same component are refused, since a graph holds [one link](Circuits.md#links) of each kind from one node into another.
+
+## Schematics
 
 ```
-%x = comparator <mode>, <far_input>, <prioritized>, <output_strength>, <base_inputs>, <side_inputs>
+schematic @<name> "<path>"
 ```
 
-`mode` can either be `compare` or `subtract`.\
-`far_input` can either be `none` or a value.\
-`prioritized` is a boolean.
+`path` is a schematic file, relative to the RIL file.
 
-### lamp
+## Tests
 
 ```
-%x = lamp <powered>, <inputs>
+test_args "<args>"
+test(@<input>) circuit @<name> { … }
+test(@<input>, "<args>") circuit @<name> { … }
 ```
 
-### button
+A test runs passes on a circuit or schematic of the file and compares the result with the circuit that follows.
+Components are matched by their first name, or by position where they have none, and compared in everything but their blocks. The order of links counts; the order of named components does not.
 
-```
-%x = button <powered>
-```
-
-### lever
-
-```
-%x = lever <powered>
-```
-
-### pressure_plate
-
-```
-%x = pressure_plate <powered>
-```
-
-### trapdoor
-
-```
-%x = trapdoor <powered>, <inputs>
-```
-
-### wire
-
-```
-%x = wire <output_strength>, <inputs>
-```
-
-### constant
-
-```
-%x = constant <output_strength>
-```
-
-### note_block
-
-```
-%x = note_block <instrument>, <note>, <inputs>
-```
-
-`instrument` is one of `harp`, `basedrum`, `snare`, `hat`, `bass`, `flute`, `bell`, `guitar`, `chime`, `xylophone`, `iron_xylophone`, `cow_bell`, `didgeridoo`, `bit`, `banjo`, or `pling`.\
-`note` is an integer between 0 and 24.
-
+`args` holds `--passes=<names>`, a comma-separated list of [passes](Circuits.md#passes), and optionally `--io-only`. A schematic also takes `--wire-dot-out`, `--wire-cross-out` and `--illegal-states-out`.
+`test_args` sets the arguments of every later test that gives none. A file has at most one.

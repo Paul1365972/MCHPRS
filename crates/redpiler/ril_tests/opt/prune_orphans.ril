@@ -1,27 +1,24 @@
-test_args "--passes=prune-orphans"
-
+test_args "--passes=prune-orphans --io-only"
 
 circuit @unused_torch_input {
-  %lever = lever false
-  %lamp = lamp false, [%lever:10]
-
-  %torch = torch true, [%lever:2]
+  %lever = lever -> [%lamp:10, %torch:2]
+  %lamp = lamp
+  %torch = torch(powered)
 }
 
 test(@unused_torch_input) circuit @unused_torch {
-  %lever = lever false
-  %lamp = lamp false, [%lever:10]
+  %lever = lever -> [%lamp:10]
+  %lamp = lamp
 }
 
 circuit @orphan_repeaters_input {
-  %lever = lever false
-  %lamp = lamp false, [%lever:10]
-
-  %repeater1 = repeater 1, false, false, false, [], []
-  %repeater2 = repeater 1, false, false, false, [%repeater1:5], []
+  %lever = lever -> [%lamp:10]
+  %lamp = lamp
+  %repeater1 = repeater(delay=1) -> [%repeater2:5]
+  %repeater2 = repeater(delay=1)
 }
 
-test(@orphan_repeaters_input) circuit @orphan_repeaters  {
-  %lever = lever false
-  %lamp = lamp false, [%lever:10]
+test(@orphan_repeaters_input) circuit @orphan_repeaters {
+  %lever = lever -> [%lamp:10]
+  %lamp = lamp
 }

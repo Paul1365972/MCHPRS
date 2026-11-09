@@ -15,6 +15,7 @@ include.workspace = true
 [dependencies]
 mchprs_syntax = { path = "../syntax" }
 serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
 fastnbt = { workspace = true, optional = true }
 
 [features]

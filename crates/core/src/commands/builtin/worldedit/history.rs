@@ -4,9 +4,7 @@ use crate::commands::define::Command;
 use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
 use crate::plot::world::PlotWorld;
-use crate::worldedit::WorldEditUndo;
-use mchprs_blocks::BlockPos;
-use mchprs_schematic::{create_clipboard, paste_clipboard};
+use crate::worldedit::{RegionSnapshot, WorldEditUndo};
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     let mut undo = Command::new("/undo").alias("undo");
@@ -73,28 +71,18 @@ fn exec_history(ctx: &mut ExecutionContext<'_>, history: History, times: i32) ->
 }
 
 fn apply_history(world: &mut PlotWorld, entry: &WorldEditUndo) -> WorldEditUndo {
-    let inverse_clipboards = entry
-        .clipboards
+    let inverse_snapshots = entry
+        .snapshots
         .iter()
-        .map(|cb| {
-            let offset = BlockPos::new(cb.offset_x, cb.offset_y, cb.offset_z);
-            let first_pos = entry.pos - offset;
-            let size = BlockPos::new(
-                cb.size_x as i32 - 1,
-                cb.size_y as i32 - 1,
-                cb.size_z as i32 - 1,
-            );
-            create_clipboard(world, entry.pos, first_pos, first_pos + size)
-        })
+        .map(|snapshot| RegionSnapshot::take(world, snapshot.region()))
         .collect();
 
-    for clipboard in &entry.clipboards {
-        paste_clipboard(world, clipboard, entry.pos, false);
+    for snapshot in &entry.snapshots {
+        snapshot.restore(world);
     }
 
     WorldEditUndo {
-        clipboards: inverse_clipboards,
-        pos: entry.pos,
+        snapshots: inverse_snapshots,
         plot_x: entry.plot_x,
         plot_z: entry.plot_z,
     }

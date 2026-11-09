@@ -38,6 +38,18 @@ jobs:
       - name: Lint
         run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
 
+      - name: Check simulation, redpiler and backends for WebAssembly
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo check --locked -p mchprs_simulation -p mchprs_redpiler -p mchprs_backends --target wasm32-unknown-unknown
+
+      - name: Check each feature alone
+        run: |
+          cargo check --locked -p mchprs_backends --no-default-features
+          for feature in $(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "mchprs_backends") | .features | keys[] | select(. != "default")'); do
+            cargo check --locked -p mchprs_backends --no-default-features --features "$feature"
+          done
+
       - name: Test
         run: cargo test --locked --workspace --all-features --all-targets
 

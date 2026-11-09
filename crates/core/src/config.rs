@@ -1,8 +1,10 @@
+use mchprs_backends::{backends, Setup};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io;
 use tracing::warn;
+
 const PATH: &str = "Config.toml";
 
 #[derive(Serialize, Deserialize)]
@@ -18,6 +20,7 @@ pub struct ServerConfig {
     pub block_in_hitbox: bool,
     pub autosave_interval_seconds: i64,
     pub velocity: VelocityConfig,
+    pub redpiler: RedpilerConfig,
     pub command_aliases: HashMap<String, String>,
 }
 
@@ -34,6 +37,7 @@ impl Default for ServerConfig {
             block_in_hitbox: true,
             autosave_interval_seconds: 0,
             velocity: VelocityConfig::default(),
+            redpiler: RedpilerConfig::default(),
             command_aliases: HashMap::new(),
         }
     }
@@ -106,4 +110,68 @@ impl ServerConfig {
 pub struct VelocityConfig {
     pub enabled: bool,
     pub secret: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
+pub struct RedpilerConfig {
+    default_backend: String,
+    flags: BTreeMap<String, String>,
+}
+
+impl Default for RedpilerConfig {
+    fn default() -> Self {
+        let first = backends().into_iter().next();
+        RedpilerConfig {
+            default_backend: first
+                .map(|backend| backend.name().to_owned())
+                .unwrap_or_default(),
+            flags: BTreeMap::new(),
+        }
+    }
+}
+
+impl RedpilerConfig {
+    pub fn backends(&self) -> Result<Backends, Vec<String>> {
+        for name in self.flags.keys() {
+            if !backends().iter().any(|backend| backend.name() == name) {
+                warn!("Ignoring `redpiler.flags.{name}` in {PATH}: unknown backend");
+            }
+        }
+        let mut problems = Vec::new();
+        let mut all = Vec::new();
+        for backend in backends() {
+            match self.configured(backend.name()) {
+                Ok(setup) => all.push(setup),
+                Err(problem) => problems.push(problem),
+            }
+        }
+        let default = match Setup::parse(&self.default_backend) {
+            Ok(given) => all
+                .iter()
+                .find(|configured| configured.name() == given.name())
+                .map(|configured| configured.with_flags(given.flags().clone())),
+            Err(error) => {
+                problems.push(format!(
+                    "Invalid `redpiler.default_backend` in {PATH}: {error}"
+                ));
+                None
+            }
+        };
+        match default {
+            Some(default) if problems.is_empty() => Ok(Backends { default, all }),
+            _ => Err(problems),
+        }
+    }
+
+    fn configured(&self, name: &str) -> Result<Setup, String> {
+        let flags = self.flags.get(name).map_or("", String::as_str);
+        Setup::parse(&format!("{name} {flags}"))
+            .map_err(|error| format!("Invalid `redpiler.flags.{name}` in {PATH}: {error}"))
+    }
+}
+
+pub struct Backends {
+    pub default: Setup,
+    pub all: Vec<Setup>,
 }

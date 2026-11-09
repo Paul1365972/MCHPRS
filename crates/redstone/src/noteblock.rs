@@ -1,21 +1,72 @@
+use crate::sound::Sound;
+use crate::update::{self, Notify};
+use crate::{signal, RedstoneWorld};
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::{BlockFace, BlockPos};
-use mchprs_world::World;
 
-pub fn is_noteblock_unblocked(world: &impl World, pos: BlockPos) -> bool {
-    matches!(world.get_block(pos.offset(BlockFace::Top)), Block::Air)
+pub fn is_unblocked(world: &impl BlockView, pos: BlockPos) -> bool {
+    matches!(world.block(pos.offset(BlockFace::Top)), Block::Air)
 }
 
-pub fn get_noteblock_instrument(world: &impl World, pos: BlockPos) -> Instrument {
-    Instrument::from_block_below(world.get_block(pos.offset(BlockFace::Bottom)))
+fn instrument(world: &impl BlockView, pos: BlockPos) -> Instrument {
+    Instrument::from_block_below(world.block(pos.offset(BlockFace::Bottom)))
 }
 
-pub fn play_note(world: &mut impl World, pos: BlockPos, instrument: Instrument, note: u8) {
-    let sound_category = 2; // Sound Caregory ID for Records
-    let volume = 3.0;
-    // The note is mapped to [0, 31] to avoid ultra high pitches in case of invalid values.
-    // The range [0, 31] is used even though it is different from the noteblock's note range
-    // of [0, 24] because mapping to [0, 31] can be done efficiently using bitwise AND.
-    let pitch = f32::exp2(((note % 32) as f32 - 12.0) / 12.0);
-    world.play_sound(pos, instrument.to_sound_id(), sound_category, volume, pitch);
+pub(crate) fn state_for_placement(
+    world: &impl BlockView,
+    pos: BlockPos,
+    note: u8,
+    powered: bool,
+) -> Block {
+    Block::NoteBlock {
+        instrument: instrument(world, pos),
+        note,
+        powered,
+    }
+}
+
+pub(crate) fn neighbor_changed(
+    world: &mut impl RedstoneWorld,
+    pos: BlockPos,
+    instrument: Instrument,
+    note: u8,
+    powered: bool,
+) {
+    let should_be_powered = signal::has_neighbor_signal(world, pos);
+    if should_be_powered == powered {
+        return;
+    }
+    if should_be_powered {
+        play_note(world, pos, instrument, note);
+    }
+    let state = Block::NoteBlock {
+        instrument,
+        note,
+        powered: should_be_powered,
+    };
+    update::set_block(world, pos, state, Notify::All);
+}
+
+pub(crate) fn use_block(
+    world: &mut impl RedstoneWorld,
+    pos: BlockPos,
+    instrument: Instrument,
+    note: u8,
+    powered: bool,
+) {
+    let note = (note + 1) % 25;
+    let state = Block::NoteBlock {
+        instrument,
+        note,
+        powered,
+    };
+    update::set_block(world, pos, state, Notify::All);
+    play_note(world, pos, instrument, note);
+}
+
+fn play_note(world: &mut impl RedstoneWorld, pos: BlockPos, instrument: Instrument, note: u8) {
+    if is_unblocked(world, pos) {
+        world.play_sound(pos, Sound::note(instrument, note));
+    }
 }

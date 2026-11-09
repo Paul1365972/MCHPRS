@@ -1,11 +1,12 @@
 //! Patterns as in WorldEdit: <https://worldedit.enginehub.org/en/latest/usage/general/patterns/>
 
+use super::replace_block;
 use mchprs_blocks::block_state::{block_state, state_id, state_list, StateList};
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use mchprs_syntax::expect::{quotable, Expect};
 use mchprs_syntax::reader::{Reader, SyntaxError};
-use mchprs_world::World;
 use rand::RngExt;
 use std::collections::HashMap;
 
@@ -65,8 +66,14 @@ impl WorldEditPattern {
         })
     }
 
-    pub fn place(&self, world: &mut impl World, pos: BlockPos) -> bool {
-        world.set_block(pos, self.select().pick(world, pos))
+    pub fn place(&self, world: &mut impl BlockStore, pos: BlockPos) -> bool {
+        let pattern = self.select();
+        let block = pattern.pick(world, pos);
+        if pattern.keeps_block_entity() {
+            world.set_block(pos, block)
+        } else {
+            replace_block(world, pos, block)
+        }
     }
 
     fn select(&self) -> &BlockPattern {
@@ -103,11 +110,11 @@ pub enum BlockPattern {
 }
 
 impl BlockPattern {
-    fn pick(&self, world: &impl World, pos: BlockPos) -> Block {
+    fn pick(&self, world: &impl BlockView, pos: BlockPos) -> Block {
         match self {
             Self::Fixed(block) => *block,
             Self::TypeApplying { block, states } => {
-                let existing = world.get_block(pos);
+                let existing = world.block(pos);
                 let mut block = block.unwrap_or(existing);
                 let existing_properties = existing.properties();
                 let mut properties: HashMap<&str, &str> = existing_properties
@@ -126,6 +133,10 @@ impl BlockPattern {
                 block
             }
         }
+    }
+
+    fn keeps_block_entity(&self) -> bool {
+        matches!(self, Self::TypeApplying { block: None, .. })
     }
 }
 

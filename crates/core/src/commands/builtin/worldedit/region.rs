@@ -10,16 +10,16 @@ use crate::commands::value::Direction;
 use crate::item_stack::ItemStack;
 use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
-use crate::worldedit::{clear_area, region_positions, update as update_region};
+use crate::worldedit::{clear_area, create_clipboard, paste_clipboard};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
-use mchprs_blocks::blocks::Block;
+use mchprs_blocks::block_store::{BlockStore, BlockView};
 use mchprs_blocks::items::Item;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_network::packets::clientbound::ClientBoundPacket;
-use mchprs_schematic::{create_clipboard, paste_clipboard};
+use mchprs_redstone::update_region;
 use mchprs_syntax::flag::Flag;
-use mchprs_world::World;
 use rustc_hash::FxHashMap;
 use std::time::Instant;
 
@@ -57,7 +57,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
         let start_time = Instant::now();
         let world = ctx.world();
-        let blocks_counted = region_positions(first_pos, second_pos)
+        let blocks_counted = Region::new(first_pos, second_pos)
+            .positions()
             .filter(|&pos| mask.matches(world, pos))
             .count();
 
@@ -76,19 +77,16 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
         if ctx.get(of_clipboard) {
             let clipboard = ctx.clipboard()?;
-            let volume = clipboard.size_x * clipboard.size_y * clipboard.size_z;
-            for i in 0..volume as usize {
-                let block = Block::from_id(clipboard.data.get_entry(i))
-                    .expect("the clipboard holds known block states");
-                *block_counts.entry(block.get_name()).or_insert(0) += 1;
+            for pos in clipboard.region().positions() {
+                *block_counts
+                    .entry(clipboard.block(pos).get_name())
+                    .or_insert(0) += 1;
             }
         } else {
             let (first_pos, second_pos) = ctx.selection()?;
             let world = ctx.world();
-            for pos in region_positions(first_pos, second_pos) {
-                *block_counts
-                    .entry(world.get_block(pos).get_name())
-                    .or_insert(0) += 1;
+            for pos in Region::new(first_pos, second_pos).positions() {
+                *block_counts.entry(world.block(pos).get_name()).or_insert(0) += 1;
             }
         }
 
@@ -124,18 +122,13 @@ pub(super) fn register(registry: &mut CommandRegistry) {
         let start_time = Instant::now();
 
         let offset_amount = direction.offset_pos(BlockPos::zero(), count);
-        let destination = (
-            first_pos.min(second_pos) + offset_amount,
-            first_pos.max(second_pos) + offset_amount,
-        );
-        if ctx.clip_region(destination.0, destination.1).is_none() {
+        let selected = Region::new(first_pos, second_pos);
+        let destination = selected.translated(offset_amount);
+        if ctx.clip_region(destination).is_none() {
             return Err(CommandError::destination_outside_plot());
         }
 
-        let clipped = ctx.capture_undo_regions(
-            [(first_pos, second_pos), destination],
-            first_pos.min(second_pos),
-        )?;
+        let clipped = ctx.capture_undo_regions([selected, destination])?;
 
         let origin = BlockPos::zero();
         let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
@@ -167,12 +160,12 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     let whole_plot = update.flag(PLOT);
     registry.register(update.executes(move |ctx| {
         if ctx.get(whole_plot) {
-            let corners = ctx.plot().world.get_corners();
-            update_region(ctx.world_mut(), corners.0, corners.1);
+            let region = ctx.plot().world.region();
+            update_region(ctx.world_mut(), region);
             ctx.worldedit_message("Updated entire plot.")
         } else {
             let (first_pos, second_pos) = ctx.selection()?;
-            update_region(ctx.world_mut(), first_pos, second_pos);
+            update_region(ctx.world_mut(), Region::new(first_pos, second_pos));
             ctx.worldedit_message("Updated selection.")
         }
     }));
@@ -212,14 +205,14 @@ fn exec_set(
 ) -> CommandResult<()> {
     let (first_pos, second_pos) = ctx.selection()?;
 
-    let origin = first_pos.min(second_pos);
-    ctx.capture_undo_regions([(first_pos, second_pos)], origin)?;
+    let region = Region::new(first_pos, second_pos);
+    ctx.capture_undo_regions([region])?;
 
     let start_time = Instant::now();
     let mut blocks_updated = 0;
 
     let world = ctx.world_mut();
-    for pos in region_positions(first_pos, second_pos) {
+    for pos in region.positions() {
         if mask.is_none_or(|mask| mask.matches(world, pos)) && pattern.place(world, pos) {
             blocks_updated += 1;
         }
@@ -239,20 +232,20 @@ fn exec_replace_container(
 ) -> CommandResult<()> {
     let (first_pos, second_pos) = ctx.selection()?;
 
-    let origin = first_pos.min(second_pos);
-    ctx.capture_undo_regions([(first_pos, second_pos)], origin)?;
+    let region = Region::new(first_pos, second_pos);
+    ctx.capture_undo_regions([region])?;
 
     let start_time = Instant::now();
 
     let new_block = to.block(BlockDirection::North, false);
 
     let world = ctx.world_mut();
-    for pos in region_positions(first_pos, second_pos) {
-        let Some(block_container) = world.get_block(pos).container_type() else {
+    for pos in Region::new(first_pos, second_pos).positions() {
+        let Some(block_container) = world.block(pos).container_type() else {
             continue;
         };
 
-        let (container, strength) = match world.get_block_entity(pos) {
+        let (container, ss) = match world.block_entity(pos) {
             Some(BlockEntity::Container {
                 comparator_override,
                 ty,
@@ -265,7 +258,7 @@ fn exec_replace_container(
             continue;
         }
 
-        let items_needed = to.items_needed_for_signal_strength(strength);
+        let items_needed = to.items_needed_for_signal_strength(ss);
         let inventory = (0..items_needed)
             .step_by(64)
             .enumerate()
@@ -278,11 +271,11 @@ fn exec_replace_container(
             .collect();
 
         let new_entity = BlockEntity::Container {
-            comparator_override: strength,
+            comparator_override: ss,
             inventory,
             ty: to,
         };
-        world.set_block_entity(pos, new_entity);
+        world.set_block_entity(pos, Some(new_entity));
         world.set_block(pos, new_block);
     }
 

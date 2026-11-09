@@ -12,6 +12,7 @@ use crate::utils;
 use crate::utils::HyphenatedUUID;
 use bus::Bus;
 use hmac::{Hmac, Mac};
+use mchprs_blocks::MC_VERSION;
 use mchprs_network::packets::clientbound::{
     CCommandSuggestionsResponse, CConfigurationPluginMessage, CDisconnectLogin,
     CFinishConfiguration, CGameEvent, CGameEventType, CLogin, CLoginPluginRequest, CLoginSuccess,
@@ -28,8 +29,7 @@ use mchprs_network::packets::{PacketEncoderExt, PlayerProperty, SlotData, COMPRE
 use mchprs_network::text::TextComponent;
 #[cfg(feature = "whitelist")]
 use mchprs_network::PlayerPacketSender;
-use mchprs_network::{HandshakingConn, NetworkServer, NetworkState};
-use mchprs_world::{MC_VERSION, PROTOCOL_VERSION};
+use mchprs_network::{HandshakingConn, NetworkServer, NetworkState, PROTOCOL_VERSION};
 use rustc_hash::FxHashMap;
 #[cfg(feature = "whitelist")]
 use serde::{Deserialize, Serialize};
@@ -189,7 +189,11 @@ impl MinecraftServer {
             .ok();
         let (config, config_problems) = ServerConfig::load();
         problems.extend(config_problems);
-        let commands = config.as_ref().map(command_registry);
+        let commands = config.as_ref().and_then(|config| {
+            command_registry(config)
+                .map_err(|registry_problems| problems.extend(registry_problems))
+                .ok()
+        });
         #[cfg(feature = "whitelist")]
         let whitelist = match &config {
             Some(config) if config.whitelist => load_whitelist()

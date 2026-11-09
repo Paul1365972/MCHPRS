@@ -1,10 +1,10 @@
 use crate::player::{PacketSender, Player};
+use crate::plot::stepped::CompilerOptions;
 use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
 use mchprs_network::text::{ColorCode, TextComponent, TextComponentBuilder};
-use mchprs_redpiler::CompilerOptions;
 
 #[derive(PartialEq, Eq, Default, Clone, Copy)]
 pub enum RedpilerState {
@@ -143,23 +143,15 @@ impl Scoreboard {
         let mut new_lines = vec![self.current_state[0].clone()];
 
         let mut flags = Vec::new();
-        if options.optimize {
-            flags.push(("o", "- optimize"));
-        }
-        if options.io_only {
-            flags.push(("i", "- io only"));
+        for flag in options
+            .flags
+            .flags()
+            .filter(|flag| options.flags.is_on(flag))
+        {
+            flags.push((flag.name().to_owned(), format!("- {}", flag.description())));
         }
         if options.update {
-            flags.push(("u", "- update"));
-        }
-        if options.wire_dot_out {
-            flags.push(("d", "- wire dot out"));
-        }
-        if options.illegal_states_out {
-            flags.push(("l", "- illegal states out"));
-        }
-        if options.wire_cross_out {
-            flags.push(("c", "- wire cross out"));
+            flags.push(("update".to_owned(), "- update".to_owned()));
         }
 
         if !flags.is_empty() {

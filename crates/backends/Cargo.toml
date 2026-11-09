@@ -1,0 +1,30 @@
+[package]
+name = "mchprs_backends"
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+keywords.workspace = true
+readme.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["direct", "vanilla"]
+graph = ["dep:mchprs_redpiler"]
+direct = ["graph", "dep:mchprs_redpiler_direct"]
+vanilla = ["dep:mchprs_redstone", "dep:rustc-hash"]
+
+[dependencies]
+mchprs_blocks = { path = "../blocks" }
+mchprs_syntax = { path = "../syntax" }
+mchprs_redpiler = { path = "../redpiler", optional = true }
+mchprs_redpiler_direct = { path = "../redpiler_direct", optional = true }
+mchprs_redstone = { path = "../redstone", optional = true }
+mchprs_simulation = { path = "../simulation" }
+rustc-hash = { workspace = true, optional = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+mchprs_redstone = { path = "../redstone" }

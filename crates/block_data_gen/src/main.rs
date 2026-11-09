@@ -10,6 +10,8 @@ use std::{
     process::Command,
 };
 
+const SIGNAL_STRENGTH: &str = "SignalStrength";
+
 type RegistriesJson = HashMap<String, Registry>;
 
 #[derive(Deserialize)]
@@ -56,11 +58,10 @@ struct InfoYaml {
 
 #[derive(Default, Debug)]
 struct BlockAttrs {
-    solid: bool,
-    cube: bool,
+    conductor: bool,
+    full_cube: bool,
     transparent: bool,
-    maybe_solid: bool,
-    maybe_cube: bool,
+    maybe_conductor: bool,
     maybe_transparent: bool,
     prop_struct: Option<String>,
     item: bool,
@@ -170,9 +171,14 @@ fn process_block(
             .find_map(|(name, values)| (values == prop_values).then_some((name, values.len())));
         match prop_type {
             Some((prop_type, num_values)) => {
+                let is_signal_strength = prop_name == "power" && num_values == 16;
                 props.push(Prop {
                     name: prop_name.clone(),
-                    ty: prop_type.clone(),
+                    ty: if is_signal_strength {
+                        SIGNAL_STRENGTH.to_owned()
+                    } else {
+                        prop_type.clone()
+                    },
                     default: default_props[prop_name].clone(),
                     num_values,
                     values: prop_values.clone(),
@@ -207,11 +213,10 @@ fn process_block(
     let mut attrs = BlockAttrs::default();
     for attr in attrs_str.split(',').filter(|s| !s.is_empty()) {
         match attr {
-            "solid" => attrs.solid = true,
-            "cube" => attrs.cube = true,
+            "conductor" => attrs.conductor = true,
+            "full_cube" => attrs.full_cube = true,
             "transparent" => attrs.transparent = true,
-            "maybe_solid" => attrs.maybe_solid = true,
-            "maybe_cube" => attrs.maybe_cube = true,
+            "maybe_conductor" => attrs.maybe_conductor = true,
             "maybe_transparent" => attrs.maybe_transparent = true,
             "prop_struct" => attrs.prop_struct = Some(pascal_name.clone()),
             "simple_item" => attrs.simple_item = true,
@@ -251,6 +256,10 @@ fn prop_literal(ty: &str, val: &str) -> TokenStream {
             let val = val.parse().unwrap();
             let lit = Literal::u8_unsuffixed(val);
             quote! { #lit }
+        }
+        SIGNAL_STRENGTH => {
+            let lit = Literal::u8_suffixed(val.parse().unwrap());
+            quote! { SignalStrength::try_from(#lit).unwrap() }
         }
         "bool" => {
             // bools are idents for some reason
@@ -587,6 +596,7 @@ fn get_prop_id(name: &str, ty: &str, u8_offset: u8) -> TokenStream {
     match ty {
         "bool" => quote! { !#name_ident as u32 },
         "u8" => quote! { #name_ident as u32 - #offset_lit },
+        SIGNAL_STRENGTH => quote! { #name_ident.get() as u32 },
         _ => quote! { #name_ident.get_id() },
     }
 }
@@ -597,6 +607,7 @@ fn from_prop_id(ty: &str, id: TokenStream, u8_offset: u8) -> TokenStream {
     match ty {
         "bool" => quote! { (#id & 1) == 0 },
         "u8" => quote! { #id as u8 + #offset_lit },
+        SIGNAL_STRENGTH => quote! { SignalStrength::try_from(#id).unwrap() },
         _ => quote! { #ty_ident::from_id(#id) },
     }
 }
@@ -917,18 +928,14 @@ fn generate_module(
     let get_name = generate_get_name(blocks);
     let from_name = generate_from_name(blocks);
     let shared_property_accessors = generate_shared_property_accessors(blocks);
-    let is_solid = generate_is_attr(
+    let is_conductor = generate_is_attr(
         blocks,
-        "is_solid",
-        |block| block.attrs.solid,
-        Some(|block| block.attrs.maybe_solid),
+        "is_conductor",
+        |block| block.attrs.conductor,
+        Some(|block| block.attrs.maybe_conductor),
     );
-    let is_cube = generate_is_attr(
-        blocks,
-        "is_cube",
-        |block| block.attrs.cube,
-        Some(|block| block.attrs.maybe_cube),
-    );
+    let is_full_cube =
+        generate_is_attr(blocks, "is_full_cube", |block| block.attrs.full_cube, None);
     let is_transparent = generate_is_attr(
         blocks,
         "is_transparent",
@@ -969,6 +976,7 @@ fn generate_module(
         #![allow(warnings)]
 
         use crate::{*, blocks::*};
+        use crate::signal_strength::SignalStrength;
 
         #block_enum
 
@@ -977,8 +985,8 @@ fn generate_module(
             #get_name
             #from_name
             #shared_property_accessors
-            #is_solid
-            #is_cube
+            #is_conductor
+            #is_full_cube
             #is_transparent
             #set_props
             #gen_props

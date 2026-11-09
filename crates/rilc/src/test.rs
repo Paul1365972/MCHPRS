@@ -1,163 +1,168 @@
+use crate::compile::{compile_test, stage_lines, StageNames};
+use crate::input::{read_world, Loaded};
+use crate::numbers::{counted, grouped};
+use crate::{Error, Outcome};
 use anstream::println;
-use mchprs_redpiler::{
-    passes::{build_pass_pipeline, PassRegistry},
-    ril::{self, RILModule, RILTest},
-    string_replacer::StringReplacer,
-    CompilerInput, TaskMonitor,
-};
+use anyhow::{anyhow, Context};
+use mchprs_redpiler::graph::Graph;
+use mchprs_ril::{Input, Module, Printed, Test};
 use owo_colors::OwoColorize as _;
-use std::{
-    ffi::OsStr,
-    fs, io,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::ffi::OsStr;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 
-/// Recursively search for ril files starting from `path` and collect into `paths`.
-fn search_path(path: PathBuf, paths: &mut Vec<PathBuf>) -> io::Result<()> {
-    if path.metadata()?.is_dir() {
-        for dir_entry in path.read_dir()? {
-            search_path(dir_entry?.path(), paths)?;
-        }
-    } else if path.extension() == Some(OsStr::new("ril")) {
-        paths.push(path);
-    }
-    Ok(())
+#[derive(Default)]
+struct Tally {
+    passed: usize,
+    updated: usize,
+    failed: usize,
+    broken_modules: usize,
 }
 
-fn find_test_root(path: &Path) -> Option<&Path> {
-    if path.is_file() {
-        return find_test_root(path.parent()?);
-    }
-
-    if path.join(".ril_test_root").exists() {
-        Some(path)
+pub fn run_tests(path: &Path, update: bool, print_after_all: bool) -> Outcome {
+    let test_root = if path.is_dir() {
+        path
     } else {
-        find_test_root(path.parent()?)
-    }
-}
-
-enum TestOutcome {
-    Passed,
-    Updated,
-    Failed,
-}
-
-fn run_test(
-    test_root: &Option<&Path>,
-    test_path: &Path,
-    module: &RILModule,
-    test: RILTest,
-    update: bool,
-    test_src: &mut StringReplacer,
-) -> TestOutcome {
-    let Some((world, bounds)) = crate::load_world(test_path, &test.schematic_path) else {
-        return TestOutcome::Failed;
+        path.parent().unwrap_or(path)
     };
+    let ril_paths = files_under(path, "ril")
+        .with_context(|| format!("couldn't search {} for tests", path.display()))?;
+    println!(
+        "Found {}.",
+        counted(ril_paths.len() as u64, "RIL test module")
+    );
 
-    let input = CompilerInput {
-        world: &world,
-        bounds,
-        ticks: &[],
-    };
-
-    let registry = PassRegistry::default();
-    let pass_pipeline = match &test.options.passes {
-        Some(passes) => match crate::parse_pass_pipeline(&registry, passes) {
-            Some(pipeline) => pipeline,
-            None => return TestOutcome::Failed,
-        },
-        None => build_pass_pipeline(&registry, &test.options),
-    };
-    let monitor = Arc::new(TaskMonitor::default());
-    let result_graph = pass_pipeline.run_passes(&test.options, &input, test.graph, monitor);
-    let test_path = match test_root {
-        Some(test_root) => test_path.strip_prefix(test_root).unwrap(),
-        None => test_path,
-    };
-    let full_name = format!("{}:{}", test_path.with_extension("").display(), test.name);
-    if !module.compare_test_result(&test.name, &result_graph) {
-        let mut result_ril = String::new();
-        ril::dump_graph(&mut result_ril, &result_graph, &test.name).unwrap();
-        if update {
-            println!("{} {}", "[UPDATED]".blue(), full_name);
-            module.update_test(test_src, &test.name, &result_ril);
-            TestOutcome::Updated
-        } else {
-            println!("{} {}", "[FAIL]".red(), full_name);
-            println!("Actual RIL:");
-            println!("{}", result_ril);
-            TestOutcome::Failed
-        }
-    } else {
-        println!("{} {}", "[PASS]".green(), full_name);
-        TestOutcome::Passed
-    }
-}
-
-pub fn run_tests(path: PathBuf, update: bool) -> bool {
-    let mut ril_paths = Vec::new();
-    let test_root = find_test_root(&path);
-    if test_root.is_none() {
-        eprintln!("warning: failed to find .ril_test_root");
-    }
-    if let Err(error) = search_path(path.clone(), &mut ril_paths) {
-        eprintln!(
-            "error: failed to discover tests at {}: {error}",
-            path.display()
-        );
-        return false;
-    }
-    ril_paths.sort();
-    println!("Found {} RIL test modules.", ril_paths.len());
-
-    let mut num_passed = 0;
-    let mut num_failed = 0;
-    let mut num_updated = 0;
-    for path in ril_paths {
-        let src = match fs::read_to_string(&path) {
-            Ok(src) => src,
+    let mut tally = Tally::default();
+    for ril_path in &ril_paths {
+        let relative = ril_path.strip_prefix(test_root).unwrap_or(ril_path);
+        let module_name = slash_separated(&relative.with_extension(""));
+        let loaded = fs::read_to_string(ril_path)
+            .map_err(|error| error.to_string())
+            .and_then(|source| Module::parse(&source).map_err(|error| error.to_string()));
+        let module = match loaded {
+            Ok(module) => module,
             Err(error) => {
-                eprintln!("error: failed to read {}: {error}", path.display());
-                num_failed += 1;
+                eprintln!("error: {}:{error}", slash_separated(relative));
+                tally.broken_modules += 1;
                 continue;
             }
         };
-        let Some(module) = crate::load_ril(&path, &src) else {
-            num_failed += 1;
-            continue;
-        };
-        let tests = module.get_tests();
-        let mut updated = 0;
-
-        let mut src = StringReplacer::new(&src);
-
-        for test in tests {
-            match run_test(&test_root, &path, &module, test, update, &mut src) {
-                TestOutcome::Passed => num_passed += 1,
-                TestOutcome::Updated => updated += 1,
-                TestOutcome::Failed => num_failed += 1,
-            }
-        }
-        if updated > 0 {
-            match fs::write(&path, src.finish().as_ref()) {
-                Ok(()) => num_updated += updated,
+        let mut results = Vec::new();
+        for test in module.tests() {
+            let full_name = format!("{module_name}:{}", test.name);
+            let graph = match run_test(ril_path, test, print_after_all) {
+                Ok(graph) => graph,
                 Err(error) => {
-                    eprintln!("error: failed to update {}: {error}", path.display());
-                    num_failed += updated;
+                    println!("{} {full_name}", "[FAIL]".red());
+                    eprintln!("error: {error:#}");
+                    tally.failed += 1;
+                    continue;
                 }
+            };
+            let mismatches = test.compare(&graph);
+            if mismatches.is_empty() {
+                println!("{} {full_name}", "[PASS]".green());
+                tally.passed += 1;
+            } else if update {
+                println!("{} {full_name}", "[UPDATED]".blue());
+                results.push((test, graph));
+            } else {
+                println!("{} {full_name}", "[FAIL]".red());
+                for mismatch in mismatches {
+                    if let Some(expected) = mismatch.expected {
+                        println!("{}", format!("- {expected}").red());
+                    }
+                    if let Some(actual) = mismatch.actual {
+                        println!("{}", format!("+ {actual}").green());
+                    }
+                }
+                tally.failed += 1;
             }
+        }
+        if !results.is_empty() {
+            fs::write(ril_path, module.with_results(&results))
+                .with_context(|| format!("couldn't update {}", ril_path.display()))?;
+            tally.updated += results.len();
         }
     }
 
-    if update {
-        println!("{num_passed} tests passed, {num_updated} updated, {num_failed} failed.");
+    let total = tally.passed + tally.updated + tally.failed;
+    if total == 0 && tally.broken_modules == 0 {
+        return Err(anyhow!("no tests found at {}", path.display()));
+    }
+    let mut summary = if update {
+        format!(
+            "{} passed, {} updated, {} failed",
+            counted(tally.passed as u64, "test"),
+            grouped(tally.updated as u64),
+            grouped(tally.failed as u64)
+        )
     } else {
-        println!("{}/{} tests passed.", num_passed, num_passed + num_failed)
+        format!(
+            "{}/{} passed",
+            grouped(tally.passed as u64),
+            counted(total as u64, "test")
+        )
+    };
+    match tally.broken_modules {
+        0 => {}
+        broken => summary.push_str(&format!(
+            ", {} failed to load",
+            counted(broken as u64, "module")
+        )),
     }
-    if num_passed + num_updated + num_failed == 0 {
-        eprintln!("error: no tests found at {}", path.display());
-        return false;
+    println!("{summary}.");
+    Ok(tally.failed == 0 && tally.broken_modules == 0)
+}
+
+fn run_test(ril_path: &Path, test: &Test, print_after_all: bool) -> Result<Graph, Error> {
+    let mut printed = String::new();
+    let mut names = StageNames::default();
+    let mut inspect = |stage, graph: &Graph| {
+        if print_after_all {
+            let name = names.next(stage);
+            printed.push_str(&format!("\n{}\n", Printed::new(graph, &name)));
+        }
+    };
+    let input = match &test.input {
+        Input::Schematic(schematic) => {
+            let path = ril_path
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(&schematic.path);
+            Loaded::World(read_world(&path)?)
+        }
+        Input::Circuit(circuit) => Loaded::Circuit(circuit.clone()),
+    };
+    let (graph, stages) = compile_test(&input, &test.options, &mut inspect)?;
+    if print_after_all {
+        println!("{}{printed}", stage_lines(&stages));
     }
-    num_failed == 0
+    Ok(graph)
+}
+
+fn slash_separated(path: &Path) -> String {
+    let components: Vec<_> = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect();
+    components.join("/")
+}
+
+fn files_under(path: &Path, extension: &str) -> io::Result<Vec<PathBuf>> {
+    fn search(path: PathBuf, extension: &OsStr, files: &mut Vec<PathBuf>) -> io::Result<()> {
+        if path.metadata()?.is_dir() {
+            for entry in path.read_dir()? {
+                search(entry?.path(), extension, files)?;
+            }
+        } else if path.extension() == Some(extension) {
+            files.push(path);
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    search(path.to_owned(), OsStr::new(extension), &mut files)?;
+    files.sort();
+    Ok(files)
 }

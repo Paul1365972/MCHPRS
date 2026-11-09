@@ -5,12 +5,14 @@ use crate::commands::define::Command;
 use crate::commands::error::{CommandError, CommandResult};
 use crate::commands::registry::CommandRegistry;
 use crate::commands::value::Direction;
-use crate::worldedit::{clear_area, update};
+use crate::worldedit::{clear_area, create_clipboard, paste_clipboard};
+use mchprs_blocks::block_store::{BlockStore, BlockView};
+use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::{Block, FlipDirection, RotateAmt};
+use mchprs_blocks::region::Region;
 use mchprs_blocks::{BlockFacing, BlockPos};
-use mchprs_schematic::{create_clipboard, paste_clipboard, WorldEditClipboard};
+use mchprs_redstone::update_region;
 use mchprs_syntax::flag::Flag;
-use mchprs_world::storage::PalettedBitBuffer;
 use std::time::Instant;
 
 const IGNORE_AIR: Flag = Flag::switch("ignore-air", Some('a'), "Paste without air blocks");
@@ -36,8 +38,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(Command::new("/cut").alias("/x").executes(|ctx| {
         let (first_pos, second_pos) = ctx.selection()?;
 
-        let origin = first_pos.min(second_pos);
-        ctx.capture_undo_regions([(first_pos, second_pos)], origin)?;
+        let region = Region::new(first_pos, second_pos);
+        ctx.capture_undo_regions([region])?;
 
         let start_time = Instant::now();
         let origin = ctx.player()?.pos.block_pos();
@@ -173,14 +175,8 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>, pasting: Pasting) -> CommandResult
     let start_time = Instant::now();
 
     let pos = ctx.player()?.pos.block_pos();
-    let clipboard = ctx.clipboard()?;
-    let paste_min = pos - BlockPos::new(clipboard.offset_x, clipboard.offset_y, clipboard.offset_z);
-    let paste_max = paste_min
-        + BlockPos::new(
-            clipboard.size_x as i32 - 1,
-            clipboard.size_y as i32 - 1,
-            clipboard.size_z as i32 - 1,
-        );
+    let paste_region = ctx.clipboard()?.region().translated(pos);
+    let (paste_min, paste_max) = (paste_region.min(), paste_region.max());
     let select =
         |ctx: &mut ExecutionContext<'_>| update_selection(ctx, None, (paste_min, paste_max));
 
@@ -189,15 +185,15 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>, pasting: Pasting) -> CommandResult
         return ctx.worldedit_message(&format!("Region selected. ({:?})", start_time.elapsed()));
     }
 
-    let clipped = ctx.capture_undo_regions([(paste_min, paste_max)], paste_min)?;
+    let clipped = ctx.capture_undo_regions([paste_region])?;
     let (world, player) = ctx.world_and_player_mut()?;
     let clipboard = player
         .worldedit_clipboard
         .as_ref()
         .ok_or_else(CommandError::empty_clipboard)?;
     paste_clipboard(world, clipboard, pos, ignore_air);
-    if should_update && let Some((region_min, region_max)) = ctx.clip_region(paste_min, paste_max) {
-        update(ctx.world_mut(), region_min, region_max);
+    if should_update && let Some(region) = ctx.clip_region(paste_region) {
+        update_region(ctx.world_mut(), region);
     }
     if select_region {
         select(ctx)?;
@@ -211,57 +207,32 @@ fn exec_paste(ctx: &mut ExecutionContext<'_>, pasting: Pasting) -> CommandResult
     ctx.worldedit_message(&format!("{message} ({:?})", start_time.elapsed()))
 }
 
-fn clipboard_size(clipboard: &WorldEditClipboard) -> BlockPos {
-    BlockPos::new(
-        clipboard.size_x as i32,
-        clipboard.size_y as i32,
-        clipboard.size_z as i32,
-    )
+fn clipboard_size(clipboard: &BlockVolume) -> BlockPos {
+    let region = clipboard.region();
+    region.max() - region.min() + BlockPos::new(1, 1, 1)
 }
 
 fn transform_clipboard(
-    clipboard: &WorldEditClipboard,
+    clipboard: &BlockVolume,
     new_size: BlockPos,
     map_pos: impl Fn(BlockPos) -> BlockPos,
     map_block: impl Fn(&mut Block),
-) -> WorldEditClipboard {
-    let (size_x, size_y, size_z) = (clipboard.size_x, clipboard.size_y, clipboard.size_z);
-    let (n_size_x, n_size_y, n_size_z) = (new_size.x as u32, new_size.y as u32, new_size.z as u32);
-    let volume = size_x * size_y * size_z;
-    let mut data = PalettedBitBuffer::new(volume as usize, 9);
+) -> BlockVolume {
+    let region = clipboard.region();
+    let min = BlockPos::zero() - map_pos(BlockPos::zero() - region.min());
+    let mut transformed =
+        BlockVolume::empty(Region::new(min, min + new_size - BlockPos::new(1, 1, 1)));
 
-    for y in 0..size_y {
-        for z in 0..size_z {
-            for x in 0..size_x {
-                let i = y * size_x * size_z + z * size_x + x;
-                let n = map_pos(BlockPos::new(x as i32, y as i32, z as i32));
-                let n_i = n.y as u32 * n_size_x * n_size_z + n.z as u32 * n_size_x + n.x as u32;
-
-                let mut block = Block::from_id(clipboard.data.get_entry(i as usize))
-                    .expect("the clipboard holds known block states");
-                map_block(&mut block);
-                data.set_entry(n_i as usize, block.get_id());
-            }
-        }
+    for pos in region.positions() {
+        let mut block = clipboard.block(pos);
+        map_block(&mut block);
+        transformed.set_block(min + map_pos(pos - region.min()), block);
     }
-
-    let offset = map_pos(BlockPos::new(
-        clipboard.offset_x,
-        clipboard.offset_y,
-        clipboard.offset_z,
-    ));
-    WorldEditClipboard {
-        offset_x: offset.x,
-        offset_y: offset.y,
-        offset_z: offset.z,
-        size_x: n_size_x,
-        size_y: n_size_y,
-        size_z: n_size_z,
-        data,
-        block_entities: clipboard
-            .block_entities
-            .iter()
-            .map(|(pos, e)| (map_pos(*pos), e.clone()))
-            .collect(),
+    for (pos, block_entity) in clipboard.block_entities() {
+        transformed.set_block_entity(
+            min + map_pos(pos - region.min()),
+            Some(block_entity.clone()),
+        );
     }
+    transformed
 }

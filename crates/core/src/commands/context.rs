@@ -3,12 +3,13 @@ use super::error::{CommandError, CommandResult, InternalError};
 use super::value::{BlockCoordinates, PositionCoordinates};
 use crate::player::{PacketSender, Player, PlayerPos};
 use crate::plot::world::PlotWorld;
-use crate::plot::{Plot, PLOT_BLOCK_HEIGHT};
+use crate::plot::Plot;
 use crate::shared::Shared;
-use crate::worldedit::{ray_trace_block, WorldEditUndo};
+use crate::worldedit::{ray_trace_block, RegionSnapshot, WorldEditUndo};
+use mchprs_blocks::block_volume::BlockVolume;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_network::text::TextComponent;
-use mchprs_schematic::{create_clipboard, WorldEditClipboard};
 
 const WORLD_LIMIT_HORIZONTAL: f64 = 30_000_000.0;
 const WORLD_LIMIT_VERTICAL: f64 = 20_000_000.0;
@@ -80,8 +81,10 @@ impl<'a> ExecutionContext<'a> {
 
     pub(super) fn world(&mut self) -> &PlotWorld {
         if self.world_access == WorldAccess::Unobserved {
-            if self.plot.redpiler.is_active() {
-                self.plot.redpiler.flush_all(&mut self.plot.world);
+            if self.plot.redpiler.is_active()
+                && let Err(error) = self.plot.redpiler.flush_all(&mut self.plot.world)
+            {
+                self.plot.compiler_failed(error);
             }
             self.world_access = WorldAccess::Synchronized;
         }
@@ -157,8 +160,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     pub(super) fn selection(&self) -> CommandResult<(BlockPos, BlockPos)> {
-        let plot_x = self.plot.world.x;
-        let plot_z = self.plot.world.z;
+        let bounds = self.plot.world.region();
         let player = self.player()?;
 
         let (first, second) = match (player.first_position, player.second_position) {
@@ -167,9 +169,7 @@ impl<'a> ExecutionContext<'a> {
         };
 
         for (position, pos) in [("First", first), ("Second", second)] {
-            if !Plot::in_plot_bounds(plot_x, plot_z, pos.x, pos.z)
-                || !(0..PLOT_BLOCK_HEIGHT).contains(&pos.y)
-            {
+            if !bounds.contains(pos) {
                 return Err(CommandError::runtime(format!(
                     "{position} position is outside plot bounds"
                 )));
@@ -179,43 +179,34 @@ impl<'a> ExecutionContext<'a> {
         Ok((first, second))
     }
 
-    pub(super) fn clip_region(
-        &self,
-        first: BlockPos,
-        second: BlockPos,
-    ) -> Option<(BlockPos, BlockPos)> {
-        let (plot_min, plot_max) = self.plot.world.get_corners();
-        let min = first.min(second).max(plot_min);
-        let max = first.max(second).min(plot_max);
-        (min.x <= max.x && min.y <= max.y && min.z <= max.z).then_some((min, max))
+    pub(super) fn clip_region(&self, region: Region) -> Option<Region> {
+        region.intersection(self.plot.world.region())
     }
 
     pub(super) fn capture_undo_regions(
         &mut self,
-        regions: impl IntoIterator<Item = (BlockPos, BlockPos)>,
-        origin: BlockPos,
+        regions: impl IntoIterator<Item = Region>,
     ) -> CommandResult<bool> {
         let mut clipped = false;
         let regions: Vec<_> = regions
             .into_iter()
-            .filter_map(|(first, second)| {
-                let region = self.clip_region(first, second);
-                clipped |= region != Some((first.min(second), first.max(second)));
-                region
+            .filter_map(|region| {
+                let inside = self.clip_region(region);
+                clipped |= inside != Some(region);
+                inside
             })
             .collect();
         if regions.is_empty() {
             return Err(CommandError::destination_outside_plot());
         }
         let (world, player) = self.world_and_player_mut()?;
-        let clipboards = regions
+        let snapshots = regions
             .into_iter()
-            .map(|(first_pos, second_pos)| create_clipboard(world, origin, first_pos, second_pos))
+            .map(|region| RegionSnapshot::take(world, region))
             .collect();
 
         let undo = WorldEditUndo {
-            clipboards,
-            pos: origin,
+            snapshots,
             plot_x: world.x,
             plot_z: world.z,
         };
@@ -230,14 +221,14 @@ impl<'a> ExecutionContext<'a> {
         Ok(())
     }
 
-    pub(super) fn clipboard(&self) -> CommandResult<&WorldEditClipboard> {
+    pub(super) fn clipboard(&self) -> CommandResult<&BlockVolume> {
         self.player()?
             .worldedit_clipboard
             .as_ref()
             .ok_or_else(CommandError::empty_clipboard)
     }
 
-    pub(super) fn set_clipboard(&mut self, clipboard: WorldEditClipboard) -> CommandResult<()> {
+    pub(super) fn set_clipboard(&mut self, clipboard: BlockVolume) -> CommandResult<()> {
         self.player_mut()?.worldedit_clipboard = Some(clipboard);
         Ok(())
     }

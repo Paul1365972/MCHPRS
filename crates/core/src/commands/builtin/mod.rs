@@ -10,11 +10,12 @@ use super::error::CommandResult;
 use super::graph::NodeKind;
 use super::help::generate_help;
 use super::registry::CommandRegistry;
+use crate::config::Backends;
 
-pub(super) fn register_commands(registry: &mut CommandRegistry) {
+pub(super) fn register_commands(registry: &mut CommandRegistry, backends: Backends) {
     core::register_commands(registry);
     plot::register_commands(registry);
-    redpiler::register_commands(registry);
+    redpiler::register_commands(registry, backends);
     worldedit::register_commands(registry);
     let mut help = Command::new("help").alias("/help");
     let command = help.optional("command", GreedyParser);
