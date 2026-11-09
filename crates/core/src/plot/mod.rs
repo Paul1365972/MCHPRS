@@ -13,14 +13,14 @@ pub(crate) mod stepped;
 #[cfg(feature = "whitelist")]
 mod whitelist;
 pub mod world;
-use world::PlotWorld;
+use world::{PlotWorld, SaveState};
 
 use self::data::sleep_time_for_tps;
 use self::scoreboard::Scoreboard;
 use crate::interaction;
 use crate::interaction::UseOnBlockContext;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
-use crate::server::{BroadcastMessage, Message, PrivMessage};
+use crate::server::{BroadcastMessage, Message, PlotFailure, PrivMessage};
 use anyhow::Error;
 use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
@@ -33,7 +33,7 @@ use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redstone::sound::Sound;
-use mchprs_redstone::tick_queue::TickQueue;
+use mchprs_redstone::tick_queue::{TickPriority, TickQueue};
 use mchprs_redstone::{plate, Aabb, Redstone, RedstoneWorld};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use mchprs_simulation::backend::{Backend, CompileContext, Source};
@@ -44,6 +44,8 @@ use rustc_hash::FxHashMap;
 use scoreboard::RedpilerState;
 use std::collections::HashSet;
 use std::mem;
+use std::ops::ControlFlow;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
@@ -69,6 +71,8 @@ const ERROR_IO_ONLY: &str = "This plot cannot be interacted with while redpiler 
 
 const MAX_BATCH_SIZE: u32 = 50_000;
 
+const IDLE_TIME: Duration = Duration::from_secs(600);
+
 pub struct Plot {
     pub shared: Arc<Shared>,
     pub world: PlotWorld,
@@ -78,7 +82,6 @@ pub struct Plot {
     // Thread communication
     message_receiver: BusReader<BroadcastMessage>,
     message_sender: Sender<Message>,
-    priv_message_receiver: Receiver<PrivMessage>,
 
     locked_players: HashSet<EntityId>,
 
@@ -92,14 +95,12 @@ pub struct Plot {
     last_player_time: Instant,
     /// The last time the world changes were sent to the player
     last_world_send_time: Instant,
-    last_autosave_time: Instant,
     /// The duration we should sleep for after every update
     sleep_time: Duration,
     /// When this is false, the update loop will end and the thread will stop.
     /// This will be set to false if no players are on the plot for a certain amount of time.
-    running: bool,
     /// If true, the plot will remain running even if no players are on for a long time.
-    always_running: bool,
+    reported_idle: bool,
 
     scoreboard: Scoreboard,
 }
@@ -112,6 +113,7 @@ pub struct PlotChannels {
 
 impl Plot {
     pub(crate) fn compiler_failed(&mut self, error: impl std::fmt::Display) -> ! {
+        self.world.mark_unsaved();
         error!("Redpiler failed: {error}");
         for player in &mut self.players {
             player.send_error_message(&format!("Redpiler failed: {error}"));
@@ -142,6 +144,9 @@ impl Plot {
                 self.compiler_failed(error);
             }
             return;
+        }
+        if !self.world.redstone.ticks.entries().is_empty() {
+            self.world.mark_unsaved();
         }
         mchprs_redstone::tick_queue::run_scheduled_ticks(&mut self.world);
         self.world.press_touched_plates();
@@ -220,7 +225,7 @@ impl Plot {
     }
 
     fn enter_plot(&mut self, player: Player) {
-        self.save();
+        self.reported_idle = false;
         if self.players.is_empty() {
             self.world.pending_sounds.clear();
         }
@@ -361,6 +366,10 @@ impl Plot {
         if self.redpiler.is_active() {
             return Err("Reset the running compiler before compiling".into());
         }
+        self.save();
+        if !self.world.save_state.is_saved() {
+            return Err("Redpiler did not start because the plot could not be saved".into());
+        }
         self.scoreboard
             .set_redpiler_state(&self.players, RedpilerState::Compiling);
         let region = self.world.region();
@@ -423,6 +432,7 @@ impl Plot {
             if let Err(error) = self.redpiler.reset(&mut self.world, bounds) {
                 self.compiler_failed(error);
             }
+            self.world.mark_unsaved();
             self.scoreboard
                 .set_redpiler_state(&self.players, RedpilerState::Stopped);
             self.scoreboard
@@ -447,6 +457,7 @@ impl Plot {
 
     pub fn set_tps(&mut self, tps: Tps) {
         self.tps = tps;
+        self.world.mark_unsaved();
         self.sleep_time = sleep_time_for_tps(tps);
         self.timings.set_tps(tps);
         self.reset_timings();
@@ -458,6 +469,7 @@ impl Plot {
 
     pub fn set_world_send_rate(&mut self, rate: WorldSendRate) {
         self.world.world_send_rate = rate;
+        self.world.mark_unsaved();
         self.world.pending_sounds.clear();
         self.last_world_send_time = Instant::now();
     }
@@ -551,7 +563,7 @@ impl Plot {
         }
     }
 
-    fn handle_messages(&mut self) {
+    fn handle_messages(&mut self, private: &Receiver<PrivMessage>) -> ControlFlow<()> {
         while let Ok(message) = self.message_receiver.try_recv() {
             match message {
                 BroadcastMessage::Chat(_sender, message) => {
@@ -593,9 +605,8 @@ impl Plot {
                         player.kick("Server closed".into());
                     }
                     self.on_players_moved();
-                    self.always_running = false;
-                    self.running = false;
-                    return;
+                    self.reset_redpiler();
+                    return ControlFlow::Break(());
                 }
                 BroadcastMessage::PlayerUpdateGamemode(uuid, gamemode) => {
                     let player_info = CPlayerInfoUpdate {
@@ -615,7 +626,7 @@ impl Plot {
             }
         }
         // Handle messages from the private message channel
-        while let Ok(message) = self.priv_message_receiver.try_recv() {
+        while let Ok(message) = private.try_recv() {
             match message {
                 PrivMessage::PlayerEnterPlot(player) => {
                     self.enter_plot(player);
@@ -626,8 +637,14 @@ impl Plot {
                     }
                     self.enter_plot(player);
                 }
+                PrivMessage::Unload => {
+                    if self.unload() {
+                        return ControlFlow::Break(());
+                    }
+                }
             }
         }
+        ControlFlow::Continue(())
     }
 
     /// Remove players outside of the plot
@@ -688,8 +705,8 @@ impl Plot {
         }
     }
 
-    fn update(&mut self) {
-        self.handle_messages();
+    fn update(&mut self, private: &Receiver<PrivMessage>) -> ControlFlow<()> {
+        self.handle_messages(private)?;
 
         // Only tick if there are players in the plot
         if !self.players.is_empty() {
@@ -758,11 +775,7 @@ impl Plot {
             }
         } else {
             self.timings.set_ticking(false);
-            // Unload plot after 600 seconds unless the plot should be always loaded
-            if self.last_player_time.elapsed().as_secs() > 600 && !self.always_running {
-                self.running = false;
-                self.timings.stop();
-            }
+            self.report_idle();
         }
 
         self.update_players();
@@ -773,58 +786,117 @@ impl Plot {
         self.remove_dc_players();
         self.remove_oob_players();
 
-        let autosave_interval =
-            Duration::from_secs(self.shared.config.autosave_interval_seconds as u64);
-        if self.shared.config.autosave_interval_seconds != 0
-            && self.last_autosave_time.elapsed() >= autosave_interval
-            && self.last_player_time >= self.last_autosave_time
-            && !self.redpiler.is_active()
-        {
-            let start_time = Instant::now();
-            self.save();
-            self.last_autosave_time = Instant::now();
-            debug!(
-                "autosaving plot ({}, {}) took {:?}",
-                self.world.x,
-                self.world.z,
-                start_time.elapsed()
-            );
+        self.autosave_if_due();
+        ControlFlow::Continue(())
+    }
+
+    fn recheck_pressure_plates(&mut self) {
+        let region = self.world.region();
+        plate::recheck_pressed_plates(&mut self.world, region);
+    }
+
+    fn is_idle(&self) -> bool {
+        self.players.is_empty() && self.last_player_time.elapsed() >= IDLE_TIME
+    }
+
+    fn report_idle(&mut self) {
+        if self.reported_idle || !self.is_idle() || self.world.save_state.is_failing() {
+            return;
+        }
+        self.reported_idle = true;
+        let _ = self
+            .message_sender
+            .send(Message::PlotIdle(self.world.x, self.world.z));
+    }
+
+    fn unload(&mut self) -> bool {
+        if self.is_idle() {
+            self.reset_redpiler();
+            self.save_for_unload();
+            if self.world.save_state.is_saved() {
+                return true;
+            }
+        }
+        self.reported_idle = false;
+        let _ = self
+            .message_sender
+            .send(Message::UnloadRefused(self.world.x, self.world.z));
+        false
+    }
+
+    fn evict_players(&mut self, evicted: &mut Vec<Player>) {
+        while let Some(player) = self.players.first() {
+            let uuid = player.uuid;
+            evicted.push(self.leave_plot(uuid));
         }
     }
 
-    fn run(&mut self, initial_player: Option<Player>) {
+    fn run_until_exit(
+        &mut self,
+        initial_player: Option<Player>,
+        private: &Receiver<PrivMessage>,
+        departed: &mut Vec<Player>,
+    ) -> Option<PlotFailure> {
+        let run = panic::catch_unwind(AssertUnwindSafe(|| self.run(initial_player, private)));
+        let failure = match run {
+            Ok(players) => {
+                departed.extend(players);
+                None
+            }
+            Err(_) => {
+                let evacuate = || self.evacuate_after_crash(departed);
+                let _ = panic::catch_unwind(AssertUnwindSafe(evacuate));
+                departed.append(&mut self.players);
+                Some(PlotFailure::Crash)
+            }
+        };
+        self.timings.stop();
+        failure
+    }
+
+    fn evacuate_after_crash(&mut self, evacuated: &mut Vec<Player>) {
+        let (x, z) = (self.world.x, self.world.z);
+        for player in &mut self.players {
+            player.save();
+            Plot::send_player_away(x, z, player);
+            player.send_error_message(PlotFailure::Crash.message());
+        }
+        self.evict_players(evacuated);
+    }
+
+    fn run(
+        &mut self,
+        initial_player: Option<Player>,
+        private: &Receiver<PrivMessage>,
+    ) -> Vec<Player> {
         if let Some(player) = initial_player {
             self.enter_plot(player);
         }
-
-        while self.running {
-            // Fast path, for super high RTPS
-            if self.sleep_time <= Duration::from_millis(5) && !self.players.is_empty() {
-                self.update();
-                if self.tps != Tps::Unlimited {
-                    thread::yield_now();
-                }
-                continue;
-            }
-
+        loop {
             let before = Instant::now();
-            self.update();
-            let delta = Instant::now().duration_since(before);
-
-            if delta < self.sleep_time {
-                let sleep_time = self.sleep_time - delta;
-                thread::sleep(sleep_time);
+            if self.update(private).is_break() {
+                break;
+            }
+            let elapsed = before.elapsed();
+            if let Some(wait) = self
+                .sleep_time
+                .checked_sub(elapsed)
+                .filter(|wait| !wait.is_zero())
+            {
+                thread::sleep(wait);
             } else {
                 thread::yield_now();
             }
         }
-
-        self.save();
+        let mut players = Vec::new();
+        self.evict_players(&mut players);
+        self.save_for_unload();
+        players
     }
 
     /// This function is used in case of an error. It will try to send the player to spawn if this
     /// isn't already a spawn plot.
-    fn send_player_away(plot_x: i32, plot_z: i32, player: &mut Player) {
+    pub(crate) fn send_player_away(plot_x: i32, plot_z: i32, player: &mut Player) {
         let (px, pz) = if plot_x == 0 && plot_z == 0 {
             // Can't send players to spawn if spawn crashed!
             Plot::get_center(1, 0)
@@ -838,65 +910,46 @@ impl Plot {
         x: i32,
         z: i32,
         channels: PlotChannels,
-        always_running: bool,
         initial_player: Option<Player>,
         shared: Arc<Shared>,
     ) {
         thread::Builder::new()
             .name(format!("p{},{}", x, z))
-            .spawn(
-                move || match Plot::load(x, z, channels, always_running, shared) {
-                    Ok(mut plot) => plot.run(initial_player),
-                    Err((err, tx)) => {
-                        if let Some(mut player) = initial_player {
-                            player.send_error_message("There was an error loading that plot.");
+            .spawn(move || {
+                let PlotChannels {
+                    broadcasts,
+                    server,
+                    private,
+                } = channels;
+                let plot_sender = server.clone();
+                let mut players = Vec::new();
+                let mut saved = false;
+                let exit = panic::catch_unwind(AssertUnwindSafe(|| {
+                    let load = || {
+                        Plot::load(x, z, broadcasts, plot_sender, shared)
+                            .inspect_err(|error| error!("{error:?}"))
+                    };
+                    let Ok(Ok(mut plot)) = panic::catch_unwind(AssertUnwindSafe(load)) else {
+                        players.extend(initial_player.map(|mut player| {
+                            player.send_error_message(PlotFailure::Load.message());
                             Plot::send_player_away(x, z, &mut player);
-                            tx.send(Message::PlayerLeavePlot(player)).unwrap();
-                        }
-                        tx.send(Message::PlotUnload(x, z)).unwrap();
-                        panic!("{err:?}");
-                    }
-                },
-            )
-            .unwrap();
-    }
-}
-
-impl Drop for Plot {
-    fn drop(&mut self) {
-        if !self.players.is_empty() {
-            for player in &mut self.players {
-                player.save(); // just in case
-
-                let world = &self.world;
-                Plot::send_player_away(world.x, world.z, player);
-
-                player.send_error_message("The plot you were previously in has crashed!");
-            }
-
-            while !self.players.is_empty() {
-                let uuid = self.players[0].uuid;
-                let player = self.leave_plot(uuid);
-                self.message_sender
-                    .send(Message::PlayerLeavePlot(player))
-                    .unwrap();
-            }
-        }
-        if thread::panicking() {
-            let _ = self
-                .message_sender
-                .send(Message::PlotUnload(self.world.x, self.world.z));
-            return;
-        }
-        self.reset_redpiler();
-        self.world
-            .chunks
-            .iter_mut()
-            .for_each(|chunk| chunk.compress());
-        self.save();
-        let world = &self.world;
-        self.message_sender
-            .send(Message::PlotUnload(world.x, world.z))
+                            player
+                        }));
+                        return Some(PlotFailure::Load);
+                    };
+                    let failure = plot.run_until_exit(initial_player, &private, &mut players);
+                    saved = plot.world.save_state.is_saved();
+                    failure
+                }));
+                let _ = server.send(Message::PlotExited {
+                    x,
+                    z,
+                    players,
+                    private,
+                    failure: exit.unwrap_or(Some(PlotFailure::Crash)),
+                    saved,
+                });
+            })
             .unwrap();
     }
 }

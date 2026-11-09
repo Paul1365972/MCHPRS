@@ -1,5 +1,33 @@
 use super::*;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+const SAVE_RETRY_INTERVAL: Duration = Duration::from_secs(60);
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum SaveState {
+    Saved,
+    Unsaved { since: Instant },
+    Failed { at: Instant },
+}
+
+impl SaveState {
+    pub(super) fn is_saved(self) -> bool {
+        matches!(self, SaveState::Saved)
+    }
+
+    pub(super) fn is_failing(self) -> bool {
+        matches!(self, SaveState::Failed { at } if at.elapsed() < SAVE_RETRY_INTERVAL)
+    }
+
+    pub(super) fn is_due(self, interval: Duration) -> bool {
+        match self {
+            SaveState::Saved => false,
+            SaveState::Unsaved { since } => since.elapsed() >= interval,
+            SaveState::Failed { at } => at.elapsed() >= SAVE_RETRY_INTERVAL,
+        }
+    }
+}
 
 pub struct PlotWorld {
     pub x: i32,
@@ -11,6 +39,7 @@ pub struct PlotWorld {
     pub(super) world_send_rate: WorldSendRate,
     pub(super) pending_block_entities: FxHashMap<BlockPos, CBlockEntityData>,
     pub(super) pending_sounds: FxHashMap<BlockPos, Sound>,
+    pub(super) save_state: SaveState,
 }
 
 impl PlotWorld {
@@ -55,6 +84,14 @@ impl PlotWorld {
 
     pub fn chunk(&self, x: i32, z: i32) -> Option<&Chunk> {
         self.chunks.get(self.get_chunk_index_for_chunk(x, z)?)
+    }
+
+    pub(super) fn mark_unsaved(&mut self) {
+        if self.save_state.is_saved() {
+            self.save_state = SaveState::Unsaved {
+                since: Instant::now(),
+            };
+        }
     }
 
     fn sign_data(&self, pos: BlockPos) -> Option<CBlockEntityData> {
@@ -112,15 +149,20 @@ impl BlockStore for PlotWorld {
         }
 
         let chunk = &mut self.chunks[chunk_index];
-        chunk.set_block(
+        let changed = chunk.set_block(
             (pos.x & 0xF) as u32,
             pos.y as u32,
             (pos.z & 0xF) as u32,
             block.get_id(),
-        )
+        );
+        if changed {
+            self.mark_unsaved();
+        }
+        changed
     }
 
     fn set_block_entity(&mut self, pos: BlockPos, block_entity: Option<BlockEntity>) {
+        self.mark_unsaved();
         let Some(block_entity) = block_entity else {
             let had_sign = matches!(self.block_entity(pos), Some(BlockEntity::Sign(_)));
             self.pending_block_entities.remove(&pos);
@@ -165,6 +207,10 @@ impl BlockStore for PlotWorld {
 }
 
 impl RedstoneWorld for PlotWorld {
+    fn schedule_tick(&mut self, pos: BlockPos, delay: u32, priority: TickPriority, block: Block) {
+        self.redstone.ticks.schedule(pos, delay, priority, block);
+        self.mark_unsaved();
+    }
     fn redstone(&mut self) -> &mut Redstone {
         &mut self.redstone
     }
