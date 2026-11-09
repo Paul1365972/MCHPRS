@@ -1,8 +1,9 @@
 use super::error::{CommandError, CommandResult};
 use crate::utils::HyphenatedUUID;
 use mchprs_syntax::reader::Reader;
-use std::path::PathBuf;
-use std::{fs, io};
+use std::fs::{self, File};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 pub(super) fn schematic_path(
     schemati: bool,
@@ -13,6 +14,19 @@ pub(super) fn schematic_path(
         return Err(CommandError::runtime("Filename is invalid"));
     }
     Ok(schematic_directory(schemati, player_uuid).join(filename))
+}
+
+pub(super) fn save_schematic(path: &Path, bytes: &[u8], overwrite: bool) -> io::Result<()> {
+    if let Some(directory) = path.parent() {
+        fs::create_dir_all(directory)?;
+    }
+    File::options()
+        .write(true)
+        .create(true)
+        .create_new(!overwrite)
+        .truncate(overwrite)
+        .open(path)?
+        .write_all(bytes)
 }
 
 pub fn schematic_names(schemati: bool, player_uuid: u128) -> io::Result<Vec<String>> {

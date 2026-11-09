@@ -1,12 +1,16 @@
 mod v2_to_v3;
+mod v3_to_v4;
 
 use crate::replace_file;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::block_store::BlockStore;
+use mchprs_blocks::block_volume::BlockVolume;
 use mchprs_blocks::blocks::Block;
+use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
+use mchprs_redstone::tick_queue::{TickEntry, TickPriority};
 use mchprs_world::storage::{Chunk, ChunkSection, PalettedBitBuffer, BLOCK_STATE_DIRECT_THRESHOLD};
-use mchprs_world::TickEntry;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -16,13 +20,15 @@ use std::path::Path;
 use std::{fmt, io};
 use thiserror::Error;
 use v2_to_v3::PlotDataV2;
+use v3_to_v4::PlotDataV3;
 
 /// Version History:
 /// 0: Initial plot data file with header (MC 1.18.2)
 /// 1: Add world send rate
 /// 2: Update to MC 1.20.4
 /// 3: Change Tps and WorldSendRate to support real values (f32)
-pub const VERSION: u32 = 3;
+/// 4: Save the block each pending tick is for
+pub const VERSION: u32 = 4;
 
 const WRITE_BUFFER_SIZE: usize = 1 << 20;
 
@@ -119,7 +125,6 @@ pub struct ChunkData<'a> {
 }
 
 impl<'a> ChunkData<'a> {
-    /// Takes a mutable Chunk to flush it first
     pub fn new(chunk: &'a mut Chunk) -> Self {
         chunk.flush();
         let chunk: &'a Chunk = chunk;
@@ -192,14 +197,57 @@ impl fmt::Display for Tps {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavedTick {
+    pub ticks_left: u32,
+    pub priority: TickPriority,
+    pub pos: BlockPos,
+    pub block_id: u32,
+}
+
+impl From<&TickEntry> for SavedTick {
+    fn from(tick: &TickEntry) -> SavedTick {
+        SavedTick {
+            ticks_left: tick.ticks_left,
+            priority: tick.priority,
+            pos: tick.pos,
+            block_id: tick.block.get_id(),
+        }
+    }
+}
+
+impl From<SavedTick> for TickEntry {
+    fn from(tick: SavedTick) -> TickEntry {
+        TickEntry::new(
+            tick.pos,
+            tick.ticks_left,
+            tick.priority,
+            Block::from_id(tick.block_id).expect("loaded plot data holds known block states"),
+        )
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlotData<'a> {
     pub tps: Tps,
     pub world_send_rate: WorldSendRate,
     pub chunk_data: Vec<ChunkData<'a>>,
-    pub pending_ticks: Vec<TickEntry>,
+    pub pending_ticks: Vec<SavedTick>,
 }
 
 impl PlotData<'_> {
+    pub fn chunk_width(&self) -> i32 {
+        chunk_width(self.chunk_data.len())
+    }
+
+    pub fn chunk_pos(chunk_width: i32, idx: usize) -> (i32, i32) {
+        let idx = idx as i32;
+        (idx / chunk_width, idx % chunk_width)
+    }
+
+    pub fn chunk_idx(chunk_width: i32, x: i32, z: i32) -> usize {
+        (x * chunk_width + z) as usize
+    }
+
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<PlotData<'static>, PlotLoadError> {
         let path = path.as_ref();
         let mut file = File::open(path)?;
@@ -208,7 +256,10 @@ impl PlotData<'_> {
         file.read_to_end(&mut buf)?;
         let data = match version {
             0..=1 => return Err(PlotLoadError::ConversionUnavailable(version)),
-            2 => bincode::deserialize::<PlotDataV2>(&buf)?.upgrade(),
+            2 => bincode::deserialize::<PlotDataV2>(&buf)?
+                .upgrade()
+                .upgrade(),
+            3 => bincode::deserialize::<PlotDataV3>(&buf)?.upgrade(),
             VERSION => bincode::deserialize(&buf)?,
             _ => return Err(PlotLoadError::TooNew(version)),
         };
@@ -223,7 +274,67 @@ impl PlotData<'_> {
             .chunk_data
             .iter()
             .flat_map(|chunk| chunk.sections.iter().flatten());
-        sections.find_map(ChunkSectionData::unknown_block_state)
+        let mut ticks = self.pending_ticks.iter().map(|tick| tick.block_id);
+        sections
+            .find_map(ChunkSectionData::unknown_block_state)
+            .or_else(|| ticks.find(|&id| Block::from_id(id).is_none()))
+    }
+
+    /// Positions are relative to the plot's corner.
+    pub fn into_volume(self) -> (BlockVolume, Vec<TickEntry>) {
+        let chunk_width = self.chunk_width().max(1);
+        let sections = self.chunk_data.iter().map(|chunk| chunk.sections.len());
+        let block_height = sections.max().unwrap_or(0).max(1) * 16;
+        let block_width = chunk_width * 16;
+        let region = Region::new(
+            BlockPos::zero(),
+            BlockPos::new(block_width - 1, block_height as i32 - 1, block_width - 1),
+        );
+        let mut volume = BlockVolume::empty(region);
+        for (idx, chunk_data) in self.chunk_data.into_iter().enumerate() {
+            let (chunk_x, chunk_z) = Self::chunk_pos(chunk_width, idx);
+            let chunk = chunk_data.load(chunk_x, chunk_z);
+            for (section_y, section) in chunk.sections.iter().enumerate() {
+                if section.block_count() == 0 {
+                    continue;
+                }
+                for y in 0..16 {
+                    for z in 0..16 {
+                        for x in 0..16 {
+                            let id = section.get_block(x, y, z);
+                            if id == 0 {
+                                continue;
+                            }
+                            let pos = BlockPos::new(
+                                chunk_x * 16 + x as i32,
+                                section_y as i32 * 16 + y as i32,
+                                chunk_z * 16 + z as i32,
+                            );
+                            let block = Block::from_id(id)
+                                .expect("loaded plot data holds known block states");
+                            volume.set_block(pos, block);
+                        }
+                    }
+                }
+            }
+            for (local, block_entity) in chunk.block_entities {
+                let pos = BlockPos::new(chunk_x * 16 + local.x, local.y, chunk_z * 16 + local.z);
+                volume.set_block_entity(pos, Some(block_entity));
+            }
+        }
+        let ticks = self
+            .pending_ticks
+            .into_iter()
+            .map(|tick| {
+                let pos = BlockPos::new(
+                    tick.pos.x.rem_euclid(block_width),
+                    tick.pos.y,
+                    tick.pos.z.rem_euclid(block_width),
+                );
+                TickEntry { pos, ..tick.into() }
+            })
+            .collect();
+        (volume, ticks)
     }
 
     pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), PlotSaveError> {
@@ -244,6 +355,10 @@ impl PlotData<'_> {
             Ok(file.flush()?)
         })
     }
+}
+
+fn chunk_width(chunk_count: usize) -> i32 {
+    chunk_count.isqrt() as i32
 }
 
 fn read_version(file: &mut File) -> Result<u32, PlotLoadError> {

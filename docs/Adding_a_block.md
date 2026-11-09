@@ -16,7 +16,7 @@ Some attributes need code in [`crates/blocks/src/blocks`](../crates/blocks/src/b
 | --- | --- |
 | `prop_struct`, `prop_struct:<Name>` | A struct with a public field per property, named like the property, `ty` for `type` |
 | `complex_transform` | `BlockTransform` for that struct |
-| `maybe_solid`, `maybe_transparent` | An arm in `Block::is_solid_dynamic` or `Block::is_transparent_dynamic` |
+| `maybe_conductor`, `maybe_transparent` | An arm in `Block::is_conductor_dynamic` or `Block::is_transparent_dynamic` |
 
 ### Properties
 
@@ -25,7 +25,7 @@ The generator types each property by its list of values in `blocks.json`:
 | Values | Type |
 | --- | --- |
 | `true`, `false` | `bool` |
-| `0` to `6`, `0` to `8`, `0` to `15`, `0` to `24`, `1` to `3`, `1` to `4` | `u8` |
+| `0` to `6`, `0` to `8`, `0` to `15`, `0` to `24`, `1` to `3`, `1` to `4` | `u8`, or `SignalStrength` for a property `power` with 16 values |
 | Any other list | The entry of `prop_types` in `gen_info.yaml` with the same values in the same order |
 
 The generator panics with `could not find prop type` on a list that has no type. Another integer range is added in `main` of the generator.

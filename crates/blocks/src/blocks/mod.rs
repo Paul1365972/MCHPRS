@@ -1,8 +1,10 @@
 mod props;
 
 pub use crate::generated::Block;
-use crate::{BlockDirection, BlockFacing};
+use crate::signal_strength::SignalStrength;
+use crate::{BlockDirection, BlockFace, BlockFacing};
 pub use props::*;
+use std::mem;
 
 #[derive(Clone, Copy, Debug)]
 pub struct PropertyDefinition {
@@ -63,6 +65,7 @@ noop_block_transform!(
     ComparatorMode,
     Instrument,
     SlabType,
+    SignalStrength,
 );
 
 impl BlockTransform for BlockDirection {
@@ -116,6 +119,10 @@ impl Block {
         self.is_sign() || self.wall_sign().is_some()
     }
 
+    pub fn is_same_kind(self, other: Block) -> bool {
+        mem::discriminant(&self) == mem::discriminant(&other)
+    }
+
     pub fn has_block_entity(self) -> bool {
         self.is_any_sign()
             || self.container_type().is_some()
@@ -138,7 +145,7 @@ impl Block {
         )
     }
 
-    pub(crate) fn is_solid_dynamic(self) -> bool {
+    pub(crate) fn is_conductor_dynamic(self) -> bool {
         match self {
             Block::SmoothStoneSlab { ty, .. } | Block::QuartzSlab { ty, .. } => {
                 ty == SlabType::Double
@@ -156,32 +163,36 @@ impl Block {
         }
     }
 
-    pub(crate) fn is_cube_dynamic(self) -> bool {
+    pub fn is_face_sturdy(self, face: BlockFace) -> bool {
         match self {
-            Block::SmoothStoneSlab { ty, .. } | Block::QuartzSlab { ty, .. } => {
-                ty != SlabType::Bottom
+            _ if self.is_full_cube() => true,
+            Block::Repeater(_) | Block::Comparator(_) | Block::EndPortalFrame { .. } => {
+                face == BlockFace::Bottom
             }
-            _ => unreachable!(),
+            Block::Composter { .. } => face != BlockFace::Top,
+            Block::SmoothStoneSlab { ty, .. } | Block::QuartzSlab { ty, .. } => match ty {
+                SlabType::Top => face == BlockFace::Top,
+                SlabType::Bottom => face == BlockFace::Bottom,
+                SlabType::Double => true,
+            },
+            _ => false,
         }
     }
 
-    pub fn get_pressure_plate_powered(&mut self) -> Option<&mut bool> {
-        match self {
-            Block::OakPressurePlate { powered }
-            | Block::SprucePressurePlate { powered }
-            | Block::BirchPressurePlate { powered }
-            | Block::JunglePressurePlate { powered }
-            | Block::AcaciaPressurePlate { powered }
-            | Block::DarkOakPressurePlate { powered }
-            | Block::MangrovePressurePlate { powered }
-            | Block::CherryPressurePlate { powered }
-            | Block::BambooPressurePlate { powered }
-            | Block::CrimsonPressurePlate { powered }
-            | Block::WarpedPressurePlate { powered }
-            | Block::StonePressurePlate { powered }
-            | Block::PolishedBlackstonePressurePlate { powered } => Some(powered),
-            _ => None,
-        }
+    pub fn can_support_rigid_block(self) -> bool {
+        self.is_face_sturdy(BlockFace::Top)
+            || matches!(
+                self,
+                Block::Hopper { .. }
+                    | Block::Cauldron
+                    | Block::WaterCauldron { .. }
+                    | Block::Composter { .. }
+            )
+    }
+
+    pub fn can_support_center(self) -> bool {
+        self.is_face_sturdy(BlockFace::Top)
+            || matches!(self, Block::EndPortalFrame { eye: true, .. })
     }
 }
 

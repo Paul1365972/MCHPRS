@@ -8,13 +8,6 @@ const EMPTY_TEXT_COMPONENT: &str = r#""""#;
 const PRE_1_20_SIGN_ROWS: [&str; 4] = ["Text1", "Text2", "Text3", "Text4"];
 
 impl BlockEntity {
-    pub fn is_supported(id: &str) -> bool {
-        matches!(
-            id.trim_start_matches("minecraft:"),
-            "comparator" | "furnace" | "barrel" | "hopper" | "sign"
-        )
-    }
-
     pub fn from_nbt(id: &str, nbt: &HashMap<String, Value>) -> Option<BlockEntity> {
         match id.trim_start_matches("minecraft:") {
             "comparator" => Some(BlockEntity::Comparator {

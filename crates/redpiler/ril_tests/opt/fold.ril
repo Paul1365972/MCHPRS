@@ -1,0 +1,101 @@
+test_args "--passes=fold"
+
+circuit @simple_input {
+  %constant = constant(power=1) -> [%repeater1:0]
+  %repeater1 = repeater(delay=1, powered) -> [%repeater2:0]
+  %repeater2 = repeater(delay=1, powered) -> [%lamp:0]
+  %lamp = lamp(powered)
+}
+
+test(@simple_input) circuit @simple {
+  %constant = constant(power=1)
+  %repeater1 = constant(power=15)
+  %repeater2 = constant(power=15)
+  %lamp = constant(power=15) output
+}
+
+# %comp_sub1 is 5 - 4.
+# %comp_sub2 is 4 - 5 = 0, and %comp_sub3 is (10 - 1) - (10 - 5) = 4.
+circuit @comparator_input {
+  %constant5 = constant(power=5) -> [%comp_sub1:0, side %comp_sub2:0]
+  %constant4 = constant(power=4) -> [side %comp_sub1:0, %comp_sub2:0]
+  %constant10 = constant(power=10) -> [%comp_sub3:1, side %comp_sub3:5]
+  %comp_sub1 = comparator(mode=subtract, power=1)
+  %comp_sub2 = comparator(mode=subtract)
+  %comp_sub3 = comparator(mode=subtract, power=4)
+}
+
+test(@comparator_input) circuit @comparator {
+  %constant5 = constant(power=5)
+  %constant4 = constant(power=4)
+  %constant10 = constant(power=10)
+  %comp_sub1 = constant(power=1)
+  %comp_sub2 = constant
+  %comp_sub3 = constant(power=4)
+}
+
+# %locking_rep should be untouched
+circuit @locking_rep_input {
+  %constant = constant(power=1) -> [%locking_rep:0]
+  %lever = lever -> [%side_rep:0]
+  %side_rep = repeater(delay=1, prioritized) -> [side %locking_rep:0]
+  %locking_rep = repeater(delay=1, powered)
+}
+
+test(@locking_rep_input) circuit @locking_rep {
+  %constant = constant(power=1) -> [%locking_rep:0]
+  %lever = lever -> [%side_rep:0]
+  %side_rep = repeater(delay=1, prioritized) -> [side %locking_rep:0]
+  %locking_rep = repeater(delay=1, powered)
+}
+
+# %sub outputs at most 3, so the loop through %loop cannot exceed 3 either
+circuit @bounded_loop_input {
+  %button = button -> [%sub:0]
+  %constant = constant(power=12) -> [side %sub:0]
+  %sub = comparator(mode=subtract) -> [%loop:0, %lamp_sub:3]
+  %loop = comparator -> [%loop:1, %lamp_near:2, %lamp_far:3]
+  %lamp_sub = lamp
+  %lamp_near = lamp
+  %lamp_far = lamp
+}
+
+test(@bounded_loop_input) circuit @bounded_loop {
+  %button = button -> [%sub:0]
+  %constant = constant(power=12) -> [side %sub:0]
+  %sub = comparator(mode=subtract) -> [%loop:0]
+  %loop = comparator -> [%loop:1, %lamp_near:2]
+  %lamp_sub = constant output
+  %lamp_near = lamp
+  %lamp_far = constant output
+}
+
+# The current output stays reachable until the pending tick drops it
+circuit @current_output_input {
+  %constant = constant -> [%cmp:0]
+  %cmp = comparator(power=9) tick(delay=1) -> [%lamp_near:8, %lamp_far:9]
+  %lamp_near = lamp(powered)
+  %lamp_far = lamp
+}
+
+test(@current_output_input) circuit @current_output {
+  %constant = constant
+  %cmp = comparator(power=9) tick(delay=1) -> [%lamp_near:8]
+  %lamp_near = lamp(powered)
+  %lamp_far = constant output
+}
+
+# A repeater whose side input is never off keeps its output
+circuit @locked_repeater_input {
+  %lever = lever -> [%locked:0]
+  %constant = constant(power=15) -> [side %locked:0]
+  %locked = repeater(delay=1, locked) -> [%lamp:0]
+  %lamp = lamp
+}
+
+test(@locked_repeater_input) circuit @locked_repeater {
+  %lever = lever
+  %constant = constant(power=15)
+  %locked = constant(locked)
+  %lamp = constant output
+}

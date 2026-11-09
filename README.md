@@ -10,6 +10,8 @@ MCHPRS is very different from traditional servers. Because this server is tailor
 
 MCHPRS has made it possible to run programs such as [a limited form of Minecraft](https://www.youtube.com/watch?v=-BP7DhHTU-I) on CPUs in Minecraft. To accomplish these speeds, we created [Redpiler](docs/Redpiler.md), the "Redstone Compiler".
 
+[Semantics](docs/Semantics.md) lists the supported components and the differences from vanilla.
+
 ## Table of Contents
 
 - [Table of Contents](#table-of-contents)
@@ -116,10 +118,28 @@ enabled = true
 secret = "<secret>"
 ```
 
+### Redpiler
+
+| Key | Description | Default |
+| --- | --- | --- |
+| `redpiler.default_backend` | The [backend](docs/Redpiler.md#backends) of `/redpiler compile`, optionally with flags that are added to its configured flags: `"direct -o"` | `direct` |
+| `redpiler.flags.<backend>` | The default [flags](docs/Redpiler.md#flags) of a backend, written as in the command | None |
+
+```toml
+[redpiler]
+default_backend = "direct"
+
+[redpiler.flags]
+direct = "--optimize --io-only"
+```
+
 ## Documentation
 
-- [Redpiler](docs/Redpiler.md): compiling a plot in game, and flags.
+- [Semantics](docs/Semantics.md): supported redstone and the differences from vanilla, with and without Redpiler.
+- The backends, each with its tick order, passes, flags and limits: [vanilla](docs/backends/Vanilla.md), [direct](docs/backends/Direct.md).
 - [Commands](docs/Commands.md): every command. `/help` lists them in game.
+- [Circuits](docs/Circuits.md): the graph Redpiler compiles, the behaviour of its components and the passes.
+- [RIL](docs/RIL.md): the text format of a circuit.
 - [Adding a Block](docs/Adding_a_block.md): the block data generator.
 
 ## Acknowledgments

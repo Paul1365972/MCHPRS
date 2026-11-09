@@ -1,10 +1,11 @@
-use super::{MC_DATA_VERSION, OVERWORLD_MIN_Y};
+use super::OVERWORLD_MIN_Y;
 use anyhow::Result;
 use fastnbt::{LongArray, Value};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
+use mchprs_blocks::MC_DATA_VERSION;
 use mchprs_save_data::plot_data::{ChunkData, PlotData};
 use mchprs_world::storage::{ChunkSection, PalettedBitBuffer};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -140,7 +141,7 @@ pub fn generate_regions(world_path: &Path, output_path: &Path) -> Result<()> {
         };
 
         let plot_data = PlotData::load_from_file(dir_entry.path())?;
-        let plot_chunk_width = (plot_data.chunk_data.len() as f64).sqrt() as i32;
+        let plot_chunk_width = plot_data.chunk_width();
         let last_plot_chunk_width = last_plot_chunk_width.replace(plot_chunk_width);
         if last_plot_chunk_width.is_some() && last_plot_chunk_width != Some(plot_chunk_width) {
             panic!("Found plot scale mismatch");
@@ -153,9 +154,9 @@ pub fn generate_regions(world_path: &Path, output_path: &Path) -> Result<()> {
             .into_par_iter()
             .enumerate()
             .map(|(chunk_idx, chunk_data)| {
-                let chunk_idx = chunk_idx as i32;
-                let chunk_x = chunk_idx / plot_chunk_width + plot_x * plot_chunk_width;
-                let chunk_z = chunk_idx % plot_chunk_width + plot_z * plot_chunk_width;
+                let (local_x, local_z) = PlotData::chunk_pos(plot_chunk_width, chunk_idx);
+                let chunk_x = local_x + plot_x * plot_chunk_width;
+                let chunk_z = local_z + plot_z * plot_chunk_width;
                 let region_pos = (chunk_x >> 5, chunk_z >> 5);
                 let pos_in_region = ((chunk_x & 31) as u8, (chunk_z & 31) as u8);
                 let data = serialize_chunk(chunk_x, chunk_z, chunk_data)?;

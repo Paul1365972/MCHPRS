@@ -20,9 +20,10 @@ use itertools::Itertools;
 use registry::CommandRegistry;
 use tracing::warn;
 
-pub fn command_registry(config: &ServerConfig) -> CommandRegistry {
+pub fn command_registry(config: &ServerConfig) -> Result<CommandRegistry, Vec<String>> {
+    let backends = config.redpiler.backends()?;
     let mut registry = CommandRegistry::new();
-    builtin::register_commands(&mut registry);
+    builtin::register_commands(&mut registry, backends);
     let aliases: Vec<_> = config
         .command_aliases
         .iter()
@@ -39,5 +40,5 @@ pub fn command_registry(config: &ServerConfig) -> CommandRegistry {
             warn!("Ignoring alias `{name}` in Config.toml: {error}");
         }
     }
-    registry
+    Ok(registry)
 }

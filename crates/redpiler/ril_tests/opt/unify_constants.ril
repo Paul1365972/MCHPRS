@@ -1,0 +1,33 @@
+test_args "--passes=unify-constants --io-only"
+
+# A link moves to the strength 15 constant, longer by the strength its constant lacks, and the
+# shortest link per target and kind stays. A link too long to carry the weak constant's strength
+# goes, and so does every constant that is neither a port nor observed.
+circuit @strengths_input {
+  %weak = constant(power=10) -> [%lamp_a:2, side %comparator:1, %lamp_b:12]
+  %strong = constant(power=15) -> [%lamp_a:9, %comparator:4, side %comparator:8]
+  %comparator = comparator(power=11) -> [%lamp_c:0]
+  %lamp_a = lamp(powered)
+  %lamp_b = lamp
+  %lamp_c = lamp(powered)
+}
+
+test(@strengths_input) circuit @strengths {
+  %0 = constant(power=15) -> [%comparator:4, side %comparator:6, %lamp_a:7]
+  %comparator = comparator(power=11) -> [%lamp_c:0]
+  %lamp_a = lamp(powered)
+  %lamp_b = lamp
+  %lamp_c = lamp(powered)
+}
+
+# A constant that is a port stays, without its links
+circuit @port_input {
+  %block = constant(power=15) output -> [%lamp:0]
+  %lamp = lamp(powered)
+}
+
+test(@port_input) circuit @port {
+  %block = constant(power=15) output
+  %lamp = lamp(powered)
+  %2 = constant(power=15) -> [%lamp:0]
+}

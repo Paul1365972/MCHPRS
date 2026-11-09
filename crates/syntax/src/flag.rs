@@ -2,6 +2,7 @@ use crate::expect::Expect;
 use crate::reader::{Reader, SyntaxError};
 use std::fmt;
 use std::iter;
+use std::mem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Flag {
@@ -103,6 +104,14 @@ impl FlagValues {
             text: text.to_owned(),
             error,
         })
+    }
+
+    pub fn take(&mut self, flags: &[Flag]) -> FlagValues {
+        let is_taken =
+            |(flag, _): &(Flag, FlagValue)| flags.iter().any(|taken| taken.name == flag.name);
+        let (taken, kept) = mem::take(&mut self.0).into_iter().partition(is_taken);
+        self.0 = kept;
+        FlagValues(taken)
     }
 
     pub fn extend(&mut self, overrides: FlagValues) {

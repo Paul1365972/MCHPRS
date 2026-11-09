@@ -9,15 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "aho-corasick"
-version = "1.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -439,18 +430,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
-name = "enum_dispatch"
-version = "0.3.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa18ce2bc66555b3218614519ac839ddb759a7d6720732f979ef8d13be147ecd"
-dependencies = [
- "once_cell",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -485,12 +464,6 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
-
-[[package]]
-name = "fixedbitset"
-version = "0.5.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flate2"
@@ -827,16 +800,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "line-index"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e27e0ed5a392a7f5ba0b3808a2afccff16c64933312c84b57618b49d1209bd2"
-dependencies = [
- "nohash-hasher",
- "text-size",
-]
-
-[[package]]
 name = "litemap"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -858,14 +821,24 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 name = "mchprs"
 version = "0.5.2-dev"
 dependencies = [
- "mchprs_blocks",
  "mchprs_core",
- "mchprs_redpiler",
- "mchprs_redstone",
- "mchprs_world",
- "paste",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "mchprs_backends"
+version = "0.5.2-dev"
+dependencies = [
+ "anyhow",
+ "mchprs_blocks",
+ "mchprs_redpiler",
+ "mchprs_redpiler_direct",
+ "mchprs_redstone",
+ "mchprs_simulation",
+ "mchprs_syntax",
+ "rustc-hash",
+ "thiserror",
 ]
 
 [[package]]
@@ -888,6 +861,7 @@ dependencies = [
  "fastnbt",
  "mchprs_syntax",
  "serde",
+ "thiserror",
 ]
 
 [[package]]
@@ -903,12 +877,13 @@ dependencies = [
  "fastnbt",
  "hmac",
  "itertools",
+ "mchprs_backends",
  "mchprs_blocks",
  "mchprs_network",
- "mchprs_redpiler",
  "mchprs_redstone",
  "mchprs_save_data",
  "mchprs_schematic",
+ "mchprs_simulation",
  "mchprs_syntax",
  "mchprs_world",
  "md5",
@@ -942,17 +917,29 @@ dependencies = [
 name = "mchprs_redpiler"
 version = "0.5.2-dev"
 dependencies = [
- "enum_dispatch",
- "indexmap",
  "itertools",
  "mchprs_blocks",
  "mchprs_redstone",
- "mchprs_world",
- "petgraph",
+ "mchprs_simulation",
+ "mchprs_syntax",
  "rustc-hash",
+ "serde",
  "serde_json",
  "smallvec",
+ "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "mchprs_redpiler_direct"
+version = "0.5.2-dev"
+dependencies = [
+ "mchprs_blocks",
+ "mchprs_redpiler",
+ "mchprs_redstone",
+ "mchprs_simulation",
+ "mchprs_syntax",
+ "thiserror",
 ]
 
 [[package]]
@@ -960,9 +947,23 @@ name = "mchprs_redstone"
 version = "0.5.2-dev"
 dependencies = [
  "mchprs_blocks",
- "mchprs_world",
- "rustc-hash",
+ "serde",
+ "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "mchprs_ril"
+version = "0.5.2-dev"
+dependencies = [
+ "indexmap",
+ "mchprs_blocks",
+ "mchprs_redpiler",
+ "mchprs_redstone",
+ "mchprs_simulation",
+ "mchprs_syntax",
+ "rustc-hash",
+ "thiserror",
 ]
 
 [[package]]
@@ -972,6 +973,7 @@ dependencies = [
  "bincode",
  "byteorder",
  "mchprs_blocks",
+ "mchprs_redstone",
  "mchprs_world",
  "rustc-hash",
  "serde",
@@ -983,15 +985,24 @@ dependencies = [
 name = "mchprs_schematic"
 version = "0.5.2-dev"
 dependencies = [
- "anyhow",
  "fastnbt",
  "flate2",
  "mchprs_blocks",
- "mchprs_world",
- "regex",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "mchprs_simulation"
+version = "0.5.2-dev"
+dependencies = [
+ "anyhow",
+ "mchprs_blocks",
+ "mchprs_redstone",
+ "mchprs_syntax",
  "rustc-hash",
  "serde",
- "tracing",
+ "thiserror",
 ]
 
 [[package]]
@@ -1007,7 +1018,6 @@ version = "0.5.2-dev"
 dependencies = [
  "mchprs_blocks",
  "rustc-hash",
- "serde",
 ]
 
 [[package]]
@@ -1059,12 +1069,6 @@ dependencies = [
  "cfg_aliases",
  "libc",
 ]
-
-[[package]]
-name = "nohash-hasher"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
 name = "nu-ansi-term"
@@ -1147,28 +1151,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "petgraph"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
-dependencies = [
- "fixedbitset",
- "hashbrown 0.15.5",
- "indexmap",
- "serde",
-]
 
 [[package]]
 name = "pin-project-lite"
@@ -1278,46 +1264,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "regex"
-version = "1.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
-]
-
-[[package]]
-name = "regex-automata"
-version = "0.4.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e1dd4122fc1595e8162618945476892eefca7b88c52820e74af6262213cae8f"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-syntax",
-]
-
-[[package]]
-name = "regex-syntax"
-version = "0.8.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
-
-[[package]]
 name = "rilc"
 version = "0.5.2-dev"
 dependencies = [
  "anstream",
+ "anyhow",
  "clap",
- "line-index",
  "mchprs_blocks",
  "mchprs_redpiler",
+ "mchprs_redstone",
+ "mchprs_ril",
+ "mchprs_save_data",
  "mchprs_schematic",
- "mchprs_world",
+ "mchprs_simulation",
+ "mchprs_syntax",
  "owo-colors",
+ "rustc-hash",
+ "serde",
+ "thiserror",
  "tracing-subscriber",
 ]
 
@@ -1587,12 +1551,6 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[package]]
-name = "text-size"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
 
 [[package]]
 name = "thiserror"

@@ -1,20 +1,11 @@
-use super::{Plot, ERROR_IO_ONLY};
-use crate::interaction;
-use crate::interaction::UseOnBlockContext;
-use crate::player::PacketSender;
-use mchprs_blocks::blocks::Block;
-use mchprs_blocks::items::Item;
-use mchprs_blocks::{BlockFace, BlockPos};
-use mchprs_network::packets::clientbound::{CBlockUpdate, CWorldEvent, ClientBoundPacket};
-use mchprs_network::packets::serverbound::SUseItemOn;
-use mchprs_world::World;
+use super::*;
 
 impl Plot {
     pub fn send_block_corrections(&mut self, positions: &[BlockPos]) {
         self.publish_world();
         for pos in positions {
             let block_change = CBlockUpdate {
-                block_id: self.world.get_block_raw(*pos) as i32,
+                block_id: self.world.block(*pos).get_id() as i32,
                 x: pos.x,
                 y: pos.y,
                 z: pos.z,
@@ -63,15 +54,26 @@ impl Plot {
         }
 
         if self.redpiler.is_active() {
-            let block = self.world.get_block(block_pos);
-            let lever_or_button = matches!(block, Block::Lever { .. } | Block::StoneButton { .. });
+            let block = self.world.block(block_pos);
+            let lever_or_button = matches!(
+                block,
+                Block::Lever { .. } | Block::StoneButton(mchprs_blocks::blocks::Button { .. })
+            );
             if lever_or_button && !self.players[player].crouching {
-                self.redpiler.on_use_block(block_pos);
+                if let Err(error) = self.redpiler.on_use_block(block_pos, block) {
+                    self.compiler_failed(error);
+                }
                 self.publish_world();
                 return;
             } else {
                 match self.redpiler.current_flags() {
-                    Some(flags) if flags.io_only => {
+                    Some(flags)
+                        if flags.flags.is_on(&mchprs_syntax::flag::Flag::switch(
+                            "io-only",
+                            Some('i'),
+                            "Only show inputs and outputs",
+                        )) =>
+                    {
                         self.players[player].send_error_message(ERROR_IO_ONLY);
                         cancel(self);
                         return;
@@ -101,7 +103,7 @@ impl Plot {
             return;
         }
 
-        let block = self.world.get_block(block_pos);
+        let block = self.world.block(block_pos);
         if !self.players[player].crouching {
             interaction::on_use(
                 block,
@@ -115,7 +117,7 @@ impl Plot {
     }
 
     pub(super) fn handle_player_digging(&mut self, block_pos: BlockPos, player: usize) {
-        let block = self.world.get_block(block_pos);
+        let block = self.world.block(block_pos);
 
         if !Plot::in_plot_bounds(self.world.x, self.world.z, block_pos.x, block_pos.z) {
             self.players[player].send_system_message("Can't break blocks outside of plot");
@@ -141,7 +143,13 @@ impl Plot {
         }
 
         match self.redpiler.current_flags() {
-            Some(flags) if flags.io_only => {
+            Some(flags)
+                if flags.flags.is_on(&mchprs_syntax::flag::Flag::switch(
+                    "io-only",
+                    Some('i'),
+                    "Only show inputs and outputs",
+                )) =>
+            {
                 self.players[player].send_error_message(ERROR_IO_ONLY);
                 self.send_block_corrections(&[block_pos]);
                 return;
@@ -151,7 +159,12 @@ impl Plot {
 
         self.reset_redpiler();
 
-        interaction::destroy(block, &mut self.world, block_pos);
+        mchprs_redstone::set_block(
+            &mut self.world,
+            block_pos,
+            Block::Air,
+            mchprs_redstone::Notify::All,
+        );
         self.world.flush_block_changes();
 
         let effect = CWorldEvent {

@@ -255,7 +255,13 @@ impl ChunkSection {
         block_count: u32,
     ) -> ChunkSection {
         let entries = 16 * 16 * 16;
-        let buffer = PalettedBitBuffer::load(entries, bits_per_block, data, palette, 9);
+        let buffer = PalettedBitBuffer::load(
+            entries,
+            bits_per_block,
+            data,
+            palette,
+            BLOCK_STATE_DIRECT_THRESHOLD,
+        );
         ChunkSection {
             buffer,
             block_count,
@@ -311,7 +317,7 @@ impl ChunkSection {
     }
 
     fn compress(&mut self) {
-        let mut new_buffer = PalettedBitBuffer::new(4096, 9);
+        let mut new_buffer = PalettedBitBuffer::new(4096, BLOCK_STATE_DIRECT_THRESHOLD);
         for i in 0..4096 {
             new_buffer.set_entry(i, self.buffer.get_entry(i));
         }
@@ -355,7 +361,7 @@ impl ChunkSection {
 impl Default for ChunkSection {
     fn default() -> ChunkSection {
         ChunkSection {
-            buffer: PalettedBitBuffer::new(4096, 9),
+            buffer: PalettedBitBuffer::new(4096, BLOCK_STATE_DIRECT_THRESHOLD),
             block_count: 0,
             changed_blocks: None,
         }

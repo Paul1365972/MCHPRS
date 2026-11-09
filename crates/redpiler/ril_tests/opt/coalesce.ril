@@ -1,0 +1,217 @@
+test_args "--passes=coalesce"
+
+# Both torches read the same inputs. Merging them makes their repeaters identical too, and the
+# wire's two links from the merged repeater merge into the stronger one
+circuit @same_inputs_input {
+  %lever_a = lever -> [%torch1:3, %torch2:0]
+  %lever_b = lever -> [%torch1:0, %torch2:7]
+  %repeater1 = repeater(delay=1, powered) -> [%wire:0]
+  %repeater2 = repeater(delay=1, powered) -> [%wire:4]
+  %torch1 = torch(powered) -> [%repeater1:0]
+  %torch2 = torch(powered) -> [%repeater2:5]
+  %wire = wire(power=15)
+}
+
+test(@same_inputs_input) circuit @same_inputs {
+  %lever_a = lever -> [%torch1:3]
+  %lever_b = lever -> [%torch1:0]
+  %repeater1, %repeater2 = repeater(delay=1, powered) -> [%wire:0]
+  %torch1, %torch2 = torch(powered) -> [%repeater1:0]
+  %wire = wire(power=15)
+}
+
+# The loop ticks first, so the reader already sees its new output
+circuit @self_loop_input {
+  %lever = lever(powered) -> [%loop:0, %reader:0]
+  %loop = comparator(power=15) -> [%loop:1, %reader:1, %lamp_loop:0]
+  %reader = comparator(power=15) -> [%lamp_reader:0]
+  %lamp_loop = lamp(powered)
+  %lamp_reader = lamp(powered)
+}
+
+test(@self_loop_input) circuit @self_loop {
+  %lever = lever(powered) -> [%loop:0, %reader:0]
+  %loop = comparator(power=15) -> [%loop:1, %reader:1, %lamp_loop:0]
+  %reader = comparator(power=15) -> [%lamp_reader:0]
+  %lamp_loop = lamp(powered)
+  %lamp_reader = lamp(powered)
+}
+
+# The middle torch feeds the other two and is due together with them, so the two may as well tick
+# one right after the other
+circuit @input_ticks_between_input {
+  %lever = lever(powered) -> [%torch_a:0, %torch_x:0, %torch_b:0]
+  %torch_a = torch -> [%lamp_a:0]
+  %torch_x = torch -> [%torch_a:0, %torch_b:0]
+  %torch_b = torch -> [%lamp_b:0]
+  %lamp_a = lamp
+  %lamp_b = lamp
+}
+
+test(@input_ticks_between_input) circuit @input_ticks_between {
+  %lever = lever(powered) -> [%torch_a:0, %torch_x:0]
+  %torch_a, %torch_b = torch -> [%lamp_a:0]
+  %torch_x = torch -> [%torch_a:0]
+  %lamp_a, %lamp_b = lamp
+}
+
+# Each comparator sees the other's change in the same tick, so no order of the two matches a
+# merged node
+circuit @mutual_loop_input {
+  %lever = lever -> [%comparator_a:0, %comparator_b:0]
+  %comparator_a = comparator -> [%comparator_a:1, %comparator_b:1, %lamp_a:0]
+  %comparator_b = comparator -> [%comparator_a:1, %comparator_b:1, %lamp_b:0]
+  %lamp_a = lamp
+  %lamp_b = lamp
+}
+
+test(@mutual_loop_input) circuit @mutual_loop {
+  %lever = lever -> [%comparator_a:0, %comparator_b:0]
+  %comparator_a = comparator -> [%comparator_a:1, %comparator_b:1, %lamp_a:0]
+  %comparator_b = comparator -> [%comparator_a:1, %comparator_b:1, %lamp_b:0]
+  %lamp_a = lamp
+  %lamp_b = lamp
+}
+
+# A comparator reads the signal strength, so the weight must match
+circuit @analog_reader_input {
+  %lever = lever -> [%comparator1:0, %comparator2:5]
+  %comparator1 = comparator -> [%lamp1:0]
+  %comparator2 = comparator -> [%lamp2:0]
+  %lamp1 = lamp
+  %lamp2 = lamp
+}
+
+test(@analog_reader_input) circuit @analog_reader {
+  %lever = lever -> [%comparator1:0, %comparator2:5]
+  %comparator1 = comparator -> [%lamp1:0]
+  %comparator2 = comparator -> [%lamp2:0]
+  %lamp1 = lamp
+  %lamp2 = lamp
+}
+
+# Another torch ticks between the two identical ones and changes a lamp one of them feeds. The
+# three are due together, so the two may as well tick one right after the other
+circuit @tick_between_input {
+  %lever = lever(powered) -> [%torch_a:0, %torch_x:0, %torch_b:0]
+  %other = lever -> [%torch_x:0]
+  %torch_a = torch -> [%lamp_a:0]
+  %torch_x = torch -> [%lamp_a:0]
+  %torch_b = torch -> [%lamp_b:0]
+  %lamp_a = lamp
+  %lamp_b = lamp
+}
+
+test(@tick_between_input) circuit @tick_between {
+  %lever = lever(powered) -> [%torch_a:0, %torch_x:0]
+  %other = lever -> [%torch_x:0]
+  %torch_a, %torch_b = torch -> [%lamp_a:0, %lamp_b:0]
+  %torch_x = torch -> [%lamp_a:0]
+  %lamp_a = lamp
+  %lamp_b = lamp
+}
+
+# The side input changes with the first torch and the rear input only with the second, however
+# the two torches tick
+circuit @inputs_cross_input {
+  %lever = lever -> [%torch_a:0, %torch_b:0]
+  %torch_a = torch(powered) -> [side %comparator:0]
+  %torch_b = torch(powered) -> [%comparator:0]
+  %other = lever(powered) -> [%comparator:0, side %comparator:1]
+  %comparator = comparator(power=15)
+}
+
+test(@inputs_cross_input) circuit @inputs_cross {
+  %lever = lever -> [%torch_a:0]
+  %torch_a, %torch_b = torch(powered) -> [side %comparator:0, %comparator:0]
+  %other = lever(powered) -> [%comparator:0, side %comparator:1]
+  %comparator = comparator(power=15)
+}
+
+# The merged torch updates what the first torch fed and then what the second one fed, never the
+# targets of the two in turns
+circuit @links_stay_together_input {
+  %lever = lever(powered) -> [%torch_a:0, %torch_b:0]
+  %torch_a = torch -> [%comparator_a:0, %comparator_b:1]
+  %torch_b = torch -> [%comparator_c:2, %comparator_d:3]
+  %comparator_a = comparator
+  %comparator_b = comparator
+  %comparator_c = comparator
+  %comparator_d = comparator
+}
+
+test(@links_stay_together_input) circuit @links_stay_together {
+  %lever = lever(powered) -> [%torch_a:0]
+  %torch_a, %torch_b = torch -> [%comparator_a:0, %comparator_b:1, %comparator_c:2, %comparator_d:3]
+  %comparator_a = comparator
+  %comparator_b = comparator
+  %comparator_c = comparator
+  %comparator_d = comparator
+}
+
+# Both torches power the shared torch, so each of them updates it as they tick one after the other.
+# A merged torch would update it once, so the two stay apart
+circuit @shared_target_input {
+  %lever = lever -> [%torch_a:0, %torch_b:0]
+  %shared = torch -> [%lamp:0]
+  %torch_a = torch(powered) -> [%shared:0, %beside_a:0]
+  %torch_b = torch(powered) -> [%beside_b:0, %shared:0]
+  %beside_a = torch -> [%shared:0]
+  %beside_b = torch -> [%shared:0]
+  %lamp = lamp
+}
+
+test(@shared_target_input) circuit @shared_target {
+  %lever = lever -> [%torch_a:0, %torch_b:0]
+  %shared = torch -> [%lamp:0]
+  %torch_a = torch(powered) -> [%shared:0, %beside_a:0]
+  %torch_b = torch(powered) -> [%beside_b:0, %shared:0]
+  %beside_a = torch -> [%shared:0]
+  %beside_b = torch -> [%shared:0]
+  %lamp = lamp
+}
+
+# The two middle torches merge between what the first and what the second source feeds. The two
+# last torches would then tick together, though each is fed by the middle torch of the other row
+circuit @rows_cross_input {
+  %lever = lever -> [%source_a:0, %source_b:0]
+  %source_a = torch(powered) -> [%middle_a:0, %last_a:0]
+  %source_b = torch(powered) -> [%middle_b:0, %last_b:0]
+  %middle_a = torch -> [%last_b:0]
+  %middle_b = torch -> [%last_a:0]
+  %last_a = torch
+  %last_b = torch
+}
+
+test(@rows_cross_input) circuit @rows_cross {
+  %lever = lever -> [%source_a:0]
+  %source_a, %source_b = torch(powered) -> [%last_a:0, %middle_a:0, %last_b:0]
+  %middle_a, %middle_b = torch -> [%last_b:0, %last_a:0]
+  %last_a = torch
+  %last_b = torch
+}
+
+# Each source schedules its torch and its comparator, so a comparator ticks between the two
+# torches. No node of one row meets a node of the other, so the order of the rows never matters
+circuit @rows_apart_input {
+  %lever = lever -> [%source_a:0, %source_b:0]
+  %source_a = torch(powered) -> [%torch_a:0, %comparator_a:0]
+  %source_b = torch(powered) -> [%torch_b:0, %comparator_b:0]
+  %torch_a = torch -> [%lamp_a:0]
+  %torch_b = torch -> [%lamp_b:0]
+  %comparator_a = comparator(power=15) -> [%wire_a:0]
+  %comparator_b = comparator(power=15) -> [%wire_b:0]
+  %lamp_a = lamp
+  %lamp_b = lamp
+  %wire_a = wire(power=15)
+  %wire_b = wire(power=15)
+}
+
+test(@rows_apart_input) circuit @rows_apart {
+  %lever = lever -> [%source_a:0]
+  %source_a, %source_b = torch(powered) -> [%torch_a:0, %comparator_a:0]
+  %torch_a, %torch_b = torch -> [%lamp_a:0]
+  %comparator_a, %comparator_b = comparator(power=15) -> [%wire_a:0]
+  %lamp_a, %lamp_b = lamp
+  %wire_a, %wire_b = wire(power=15)
+}

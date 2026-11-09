@@ -1,11 +1,11 @@
 //! Masks as in WorldEdit: <https://worldedit.enginehub.org/en/latest/usage/general/masks/>
 
 use mchprs_blocks::block_state::{block_state, state_id, state_list, StateList};
+use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_syntax::expect::{quotable, Expect};
 use mchprs_syntax::reader::{Reader, SyntaxError};
-use mchprs_world::World;
 use rand::RngExt;
 
 const NAMED_MASKS: &[(&str, WorldEditMask)] = &[
@@ -50,23 +50,23 @@ impl WorldEditMask {
         })
     }
 
-    pub fn matches(&self, world: &impl World, pos: BlockPos) -> bool {
+    pub fn matches(&self, world: &impl BlockView, pos: BlockPos) -> bool {
         match self {
             Self::All(masks) => masks.iter().all(|mask| mask.matches(world, pos)),
             Self::Not(mask) => !mask.matches(world, pos),
             Self::Offset { y, mask } => mask.matches(world, BlockPos::new(pos.x, pos.y + y, pos.z)),
             Self::Noise(chance) => rand::rng().random::<f32>() < *chance,
-            Self::States { lenient, states } => states.matches(world.get_block(pos), *lenient),
-            Self::Existing => world.get_block(pos) != Block::Air,
-            Self::Solid => is_movement_blocker(world.get_block(pos)),
+            Self::States { lenient, states } => states.matches(world.block(pos), *lenient),
+            Self::Existing => world.block(pos) != Block::Air,
+            Self::Solid => is_movement_blocker(world.block(pos)),
             Self::Surface => {
-                world.get_block(pos) != Block::Air
+                world.block(pos) != Block::Air
                     && BlockFace::values()
                         .into_iter()
-                        .any(|face| world.get_block(pos.offset(face)) == Block::Air)
+                        .any(|face| world.block(pos.offset(face)) == Block::Air)
             }
             Self::Blocks(matchers) => {
-                let block = world.get_block(pos);
+                let block = world.block(pos);
                 matchers.iter().any(|matcher| matcher.matches(block))
             }
         }
@@ -192,6 +192,5 @@ fn is_movement_blocker(block: Block) -> bool {
             | Block::TripwireHook { .. }
             | Block::Comparator(_)
             | Block::SeaPickle { .. }
-            | Block::StoneButton { .. }
-    )
+    ) && block.button().is_none()
 }

@@ -1,16 +1,22 @@
 pub mod block_entities;
 pub mod block_state;
+pub mod block_store;
+pub mod block_volume;
 pub mod blocks;
 mod generated;
 pub mod items;
 pub mod region;
 pub mod registries;
+pub mod signal_strength;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Serialize, Deserialize, Hash)]
+pub const MC_VERSION: &str = "1.20.4";
+pub const MC_DATA_VERSION: i32 = 3700;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug, Serialize, Deserialize, Hash)]
 pub struct BlockPos {
     pub x: i32,
     pub y: i32,
@@ -151,6 +157,18 @@ impl BlockFace {
     pub fn is_horizontal(self) -> bool {
         use BlockFace::*;
         matches!(self, North | South | East | West)
+    }
+
+    pub fn opposite(self) -> BlockFace {
+        use BlockFace::*;
+        match self {
+            Bottom => Top,
+            Top => Bottom,
+            North => South,
+            South => North,
+            West => East,
+            East => West,
+        }
     }
 
     pub fn unwrap_direction(self) -> BlockDirection {

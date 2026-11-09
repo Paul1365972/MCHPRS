@@ -1,4 +1,6 @@
 use crate::registries::sound_event;
+use crate::signal_strength::SignalStrength;
+use serde::{Deserialize, Serialize};
 
 use super::{Block, BlockDirection, BlockTransform, FlipDirection};
 
@@ -32,7 +34,7 @@ impl Repeater {
     }
 }
 
-#[derive(Copy, Clone, Default, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ComparatorMode {
     #[default]
     Compare,
@@ -100,20 +102,25 @@ pub struct WallSign {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-pub struct Lever {
+pub struct Button {
     pub face: LeverFace,
     pub facing: BlockDirection,
     pub powered: bool,
 }
 
-impl Lever {
-    pub fn new(face: LeverFace, facing: BlockDirection, powered: bool) -> Lever {
-        Lever {
+impl Button {
+    pub fn new(face: LeverFace, facing: BlockDirection, powered: bool) -> Button {
+        Button {
             face,
             facing,
             powered,
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct PressurePlate {
+    pub powered: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -136,7 +143,7 @@ pub struct RedstoneWire {
     pub south: RedstoneWireSide,
     pub east: RedstoneWireSide,
     pub west: RedstoneWireSide,
-    pub power: u8,
+    pub power: SignalStrength,
 }
 
 impl RedstoneWire {
@@ -145,7 +152,7 @@ impl RedstoneWire {
         south: RedstoneWireSide,
         east: RedstoneWireSide,
         west: RedstoneWireSide,
-        power: u8,
+        power: SignalStrength,
     ) -> RedstoneWire {
         RedstoneWire {
             north,
@@ -154,6 +161,25 @@ impl RedstoneWire {
             west,
             power,
         }
+    }
+
+    pub fn side(self, direction: BlockDirection) -> RedstoneWireSide {
+        match direction {
+            BlockDirection::North => self.north,
+            BlockDirection::South => self.south,
+            BlockDirection::East => self.east,
+            BlockDirection::West => self.west,
+        }
+    }
+
+    pub fn with_side(mut self, direction: BlockDirection, side: RedstoneWireSide) -> RedstoneWire {
+        match direction {
+            BlockDirection::North => self.north = side,
+            BlockDirection::South => self.south = side,
+            BlockDirection::East => self.east = side,
+            BlockDirection::West => self.west = side,
+        }
+        self
     }
 }
 
@@ -191,7 +217,7 @@ pub enum TrapdoorHalf {
     Bottom,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Instrument {
     Harp,
     Basedrum,
