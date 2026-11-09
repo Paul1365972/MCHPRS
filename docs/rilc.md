@@ -10,7 +10,10 @@ cargo run --release -p rilc -- <command>
 | --- | --- |
 | `compile <input>` | Write a world or circuit as RIL after the passes of a setup, or as Graphviz DOT with `--dot`. The setup defaults to `direct`. |
 | `run <scenario> -b <setup>` | Play a scenario of a world or a RIL circuit on a setup, the way the server runs it, and print the ticks per second. |
+| `diff <scenario> -b <setup> -b <setup>` | Play a scenario on two setups and print the first tick after which a component that both show differs. |
 | `test <path>` | Run the [tests](RIL.md#tests) of a RIL file, or of every RIL file under a directory. |
+
+`rilc <command> --help` lists the options of a command, and for `compile`, `run` and `diff` also the backends and their flags.
 
 ## Inputs and Setups
 
@@ -24,6 +27,7 @@ A setup is a backend followed by its flags, written as after `/redpiler compile`
 ## Scenarios
 
 A scenario is a TOML file that names an input and the inputs to drive.
+`run` and `diff` take one.
 `run` takes a scenario of a world or a RIL circuit. It starts the setup running by itself and times each step from the command that runs its ticks until the simulation reports them run.
 `run --repeat <n>` plays it n times, each on a fresh engine, and `run --save-outputs <file>` writes the final state of every output port to the file, one line per position or, in a RIL circuit, per label.
 `run --unlimited <seconds>` then runs the setup without a tick limit for that long and prints that rate too. It is the rate of `/rtps unlimited`.

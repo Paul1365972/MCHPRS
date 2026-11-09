@@ -1,4 +1,5 @@
 mod compile;
+mod diff;
 mod dot;
 mod input;
 mod numbers;
@@ -10,7 +11,8 @@ mod setup;
 mod test;
 
 use anyhow::Error;
-use clap::{Parser, Subcommand};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser, Subcommand};
 use setup::Setup;
 use std::io;
 use std::num::NonZeroUsize;
@@ -82,6 +84,22 @@ enum Command {
         #[arg(long, value_name = "FILE")]
         save_outputs: Option<PathBuf>,
     },
+    /// Play a scenario on two setups and show the first tick after which a component that both
+    /// show differs
+    #[command(after_help = setup::help())]
+    Diff {
+        /// The scenario, a TOML file
+        scenario: PathBuf,
+        /// Each of the two setups, like -b direct -b "direct -o"
+        #[arg(
+            short = 'b',
+            long = "backend",
+            value_name = "SETUP",
+            value_parser = Setup::parse,
+            required = true
+        )]
+        setups: Vec<Setup>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -121,6 +139,10 @@ fn main() -> ExitCode {
             unlimited,
             save_outputs.as_deref(),
         ),
+        Command::Diff { scenario, setups } => {
+            let [first, second] = two_setups(setups);
+            diff::command(&scenario, [&first, &second])
+        }
     };
     match outcome {
         Ok(true) => ExitCode::SUCCESS,
@@ -130,4 +152,19 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+fn two_setups(setups: Vec<Setup>) -> [Setup; 2] {
+    let Ok(setups) = <[Setup; 2]>::try_from(setups) else {
+        let mut cli = Cli::command();
+        cli.build();
+        cli.find_subcommand_mut("diff")
+            .expect("diff is a subcommand")
+            .error(
+                ErrorKind::WrongNumberOfValues,
+                "diff takes exactly two setups",
+            )
+            .exit();
+    };
+    setups
 }

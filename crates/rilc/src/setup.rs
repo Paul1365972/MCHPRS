@@ -13,6 +13,7 @@ use mchprs_redpiler::ports::WireOutputs;
 use mchprs_ril::passes::{self, PASSES};
 use mchprs_simulation::backend::{Backend, CompileContext};
 use mchprs_simulation::layout::Layout;
+use mchprs_simulation::simulated_world::SimulatedWorld;
 use mchprs_simulation::{Blocks, Simulation};
 use mchprs_syntax::flag::FlagValues;
 use std::fmt;
@@ -77,6 +78,15 @@ impl Setup {
             self.flags(),
             context,
         )?)
+    }
+
+    pub fn simulate(&self, world: &World) -> Result<SimulatedWorld, Error> {
+        let (simulation, layout) = self.compile(world)?;
+        Ok(SimulatedWorld::new(
+            world.blocks().clone(),
+            simulation,
+            layout,
+        ))
     }
 
     pub fn world_graph(

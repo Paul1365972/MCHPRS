@@ -141,6 +141,7 @@ direct = "--optimize --io-only"
 - [Commands](docs/Commands.md): every command. `/help` lists them in game.
 - [Circuits](docs/Circuits.md): the graph Redpiler compiles, the behaviour of its components and the passes.
 - [RIL](docs/RIL.md): the text format of a circuit.
+- [rilc](docs/rilc.md): the development tool that compiles, runs and compares Redpiler setups.
 - [Adding a Block](docs/Adding_a_block.md): the block data generator.
 
 ## Acknowledgments

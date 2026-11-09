@@ -15,6 +15,13 @@ pub fn counted(count: u64, noun: &str) -> String {
     format!("{} {noun}{plural}", grouped(count))
 }
 
+pub fn when(tick: u64) -> String {
+    match tick {
+        0 => "before the first tick".to_owned(),
+        tick => format!("after tick {}", grouped(tick)),
+    }
+}
+
 pub fn change(change: i64, noun: &str) -> String {
     let sign = if change < 0 { '-' } else { '+' };
     format!("{sign}{}", counted(change.unsigned_abs(), noun))
