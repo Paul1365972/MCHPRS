@@ -1,3 +1,5 @@
+mod plots;
+
 use crate::commands::command_registry;
 use crate::commands::suggestions::{CommandSuggestions, SuggestionSource};
 use crate::commands::value::PlayerTarget;
@@ -5,7 +7,7 @@ use crate::config::ServerConfig;
 use crate::player::{Gamemode, PacketSender, Player};
 #[cfg(feature = "claims")]
 use crate::plot::claims::Claims;
-use crate::plot::{data, Plot, PlotChannels, PLOT_BLOCK_HEIGHT};
+use crate::plot::{data, PLOT_BLOCK_HEIGHT};
 use crate::shared::Shared;
 use crate::utils;
 #[cfg(feature = "whitelist")]
@@ -30,6 +32,7 @@ use mchprs_network::text::TextComponent;
 #[cfg(feature = "whitelist")]
 use mchprs_network::PlayerPacketSender;
 use mchprs_network::{HandshakingConn, NetworkServer, NetworkState, PROTOCOL_VERSION};
+use plots::PlotListEntry;
 use rustc_hash::FxHashMap;
 #[cfg(feature = "whitelist")]
 use serde::{Deserialize, Serialize};
@@ -66,8 +69,17 @@ pub enum Message {
     PlayerTeleportOther(Player, PlayerTarget),
     /// This message is sent to the server thread when a player changes their gamemode.
     PlayerUpdateGamemode(u128, Gamemode),
-    /// This message is sent to the server thread when a plot unloads itself.
-    PlotUnload(i32, i32),
+    PlotIdle(i32, i32),
+    UnloadRefused(i32, i32),
+    /// `private` may hold transfers the plot thread didn't read.
+    PlotExited {
+        x: i32,
+        z: i32,
+        players: Vec<Player>,
+        private: Receiver<PrivMessage>,
+        failure: Option<PlotFailure>,
+        saved: bool,
+    },
     /// This message is sent to the server thread when a player runs /whitelist add.
     #[cfg(feature = "whitelist")]
     WhitelistAdd(u128, String, PlayerPacketSender),
@@ -100,11 +112,37 @@ pub enum BroadcastMessage {
 }
 
 /// `PrivMessage` gets send from the server thread directly to a plot thread.
-/// This only happens when a player is getting transfered to a plot.
 #[derive(Debug)]
 pub enum PrivMessage {
     PlayerEnterPlot(Player),
     PlayerTeleportOther(Player, String),
+    Unload,
+}
+
+impl PrivMessage {
+    fn into_player(self) -> Option<Player> {
+        match self {
+            PrivMessage::PlayerEnterPlot(player) | PrivMessage::PlayerTeleportOther(player, _) => {
+                Some(player)
+            }
+            PrivMessage::Unload => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlotFailure {
+    Load,
+    Crash,
+}
+
+impl PlotFailure {
+    pub fn message(self) -> &'static str {
+        match self {
+            PlotFailure::Load => "There was an error loading that plot.",
+            PlotFailure::Crash => "The plot you were previously in has crashed!",
+        }
+    }
 }
 
 /// This is the data that gets sent in the `PlayerJoinedInfo` broadcast message.
@@ -124,12 +162,6 @@ struct PlayerListEntry {
     username: String,
     properties: Vec<PlayerProperty>,
     gamemode: Gamemode,
-}
-
-struct PlotListEntry {
-    plot_x: i32,
-    plot_z: i32,
-    priv_message_sender: mpsc::Sender<PrivMessage>,
 }
 
 #[cfg(feature = "whitelist")]
@@ -275,94 +307,22 @@ impl MinecraftServer {
         }
     }
 
-    /// Removes the plot entry from the `running_plots` list
-    fn handle_plot_unload(&mut self, plot_x: i32, plot_z: i32) {
-        let index = self
-            .running_plots
-            .iter()
-            .position(|p| p.plot_x == plot_x && p.plot_z == plot_z);
-        if let Some(index) = index {
-            self.running_plots.remove(index);
-        }
-    }
-
     fn graceful_shutdown(&mut self) {
         info!("Commencing graceful shutdown...");
         self.broadcaster.broadcast(BroadcastMessage::Shutdown);
+        let mut all_saved = true;
         // Wait for all plots to save and unload
         while !self.running_plots.is_empty() {
             let Ok(message) = self.receiver.recv() else {
                 break;
             };
-            if let Message::PlotUnload(plot_x, plot_z) = message {
-                self.handle_plot_unload(plot_x, plot_z);
+            if let Message::PlotExited { x, z, saved, .. } = message {
+                self.remove_plot(x, z);
+                all_saved &= saved;
             }
         }
 
-        process::exit(0);
-    }
-
-    fn spawn_plot(
-        &mut self,
-        plot_x: i32,
-        plot_z: i32,
-        always_running: bool,
-        initial_player: Option<Player>,
-    ) {
-        let (priv_message_sender, private) = mpsc::channel();
-        let channels = PlotChannels {
-            broadcasts: self.broadcaster.add_rx(),
-            server: self.plot_sender.clone(),
-            private,
-        };
-        let shared = Arc::clone(&self.shared);
-        Plot::load_and_run(
-            plot_x,
-            plot_z,
-            channels,
-            always_running,
-            initial_player,
-            shared,
-        );
-        self.running_plots.push(PlotListEntry {
-            plot_x,
-            plot_z,
-            priv_message_sender,
-        });
-    }
-
-    fn send_player_to_plot(&mut self, player: Player, new_entry: bool) {
-        let (plot_x, plot_z) = player.pos.plot_pos();
-
-        if new_entry {
-            let player_list_entry = PlayerListEntry {
-                plot_x,
-                plot_z,
-                username: player.username.clone(),
-                properties: player.properties.clone(),
-                gamemode: player.gamemode,
-            };
-            self.online_players.insert(player.uuid, player_list_entry);
-        } else {
-            self.update_player_entry(player.uuid, plot_x, plot_z);
-        }
-
-        let plot_loaded = self
-            .running_plots
-            .iter()
-            .any(|p| p.plot_x == plot_x && p.plot_z == plot_z);
-        if !plot_loaded {
-            self.spawn_plot(plot_x, plot_z, false, Some(player));
-        } else {
-            let plot_list_entry = self
-                .running_plots
-                .iter()
-                .find(|p| p.plot_x == plot_x && p.plot_z == plot_z)
-                .unwrap();
-            let _ = plot_list_entry
-                .priv_message_sender
-                .send(PrivMessage::PlayerEnterPlot(player));
-        }
+        process::exit(if all_saved { 0 } else { 1 });
     }
 
     fn handle_player_enter_play(&mut self, client_idx: usize) {
@@ -600,7 +560,16 @@ impl MinecraftServer {
                 self.broadcaster
                     .broadcast(BroadcastMessage::PlayerLeft(uuid));
             }
-            Message::PlotUnload(plot_x, plot_z) => self.handle_plot_unload(plot_x, plot_z),
+            Message::PlotIdle(plot_x, plot_z) => self.handle_plot_idle(plot_x, plot_z),
+            Message::UnloadRefused(plot_x, plot_z) => self.handle_unload_refused(plot_x, plot_z),
+            Message::PlotExited {
+                x,
+                z,
+                players,
+                private,
+                failure,
+                ..
+            } => self.handle_plot_exited(x, z, players, private, failure),
             Message::ChatInfo(uuid, username, message) => {
                 info!("<{}> {}", username, message);
                 self.broadcaster.broadcast(BroadcastMessage::Chat(
@@ -635,24 +604,15 @@ impl MinecraftServer {
                     let plot_z = other_player.plot_z;
                     let target_name = other_player.username.clone();
 
-                    let plot_loaded = self
-                        .running_plots
-                        .iter()
-                        .any(|p| p.plot_x == plot_x && p.plot_z == plot_z);
-                    if !plot_loaded {
+                    if self.running_plot(plot_x, plot_z).is_none() {
                         player
                             .send_system_message("Their plot wasn't loaded. How did this happen??");
                         self.send_player_to_plot(player, false);
                     } else {
                         self.update_player_entry(player.uuid, plot_x, plot_z);
-                        let plot_list_entry = self
-                            .running_plots
-                            .iter()
-                            .find(|p| p.plot_x == plot_x && p.plot_z == plot_z)
-                            .unwrap();
-                        let _ = plot_list_entry
-                            .priv_message_sender
-                            .send(PrivMessage::PlayerTeleportOther(player, target_name));
+                        if let Some(entry) = self.running_plot(plot_x, plot_z) {
+                            entry.send(PrivMessage::PlayerTeleportOther(player, target_name));
+                        }
                     }
                 } else {
                     player.send_system_message("Player not found!");

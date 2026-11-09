@@ -83,11 +83,11 @@ impl Plot {
         plot_data: PlotData<'_>,
         x: i32,
         z: i32,
-        channels: PlotChannels,
-        always_running: bool,
+        broadcasts: BusReader<BroadcastMessage>,
+        server: Sender<Message>,
         shared: Arc<Shared>,
     ) -> Plot {
-        let mut world = PlotWorld {
+        let world = PlotWorld {
             x,
             z,
             chunks: load_chunks(plot_data.chunk_data, x, z),
@@ -103,9 +103,8 @@ impl Plot {
             world_send_rate: plot_data.world_send_rate,
             pending_block_entities: FxHashMap::default(),
             pending_sounds: FxHashMap::default(),
+            save_state: SaveState::Saved,
         };
-        let region = world.region();
-        plate::recheck_pressed_plates(&mut world, region);
         let tps = plot_data.tps;
         Plot {
             last_player_time: Instant::now(),
@@ -114,56 +113,70 @@ impl Plot {
             lag_time: Duration::new(0, 0),
             sleep_time: sleep_time_for_tps(tps),
             last_nspt: None,
-            message_receiver: channels.broadcasts,
-            message_sender: channels.server,
-            priv_message_receiver: channels.private,
+            message_receiver: broadcasts,
+            message_sender: server,
             shared,
             players: Vec::new(),
             locked_players: HashSet::new(),
-            running: true,
             tps,
-            always_running,
+            reported_idle: false,
             redpiler: Default::default(),
             timings: TimingsMonitor::new(tps),
             scoreboard: Default::default(),
             world,
-            last_autosave_time: Instant::now(),
         }
     }
 
     pub(super) fn load(
         x: i32,
         z: i32,
-        channels: PlotChannels,
-        always_running: bool,
+        broadcasts: BusReader<BroadcastMessage>,
+        server: Sender<Message>,
         shared: Arc<Shared>,
-    ) -> Result<Plot, (Error, Sender<Message>)> {
+    ) -> Result<Plot, Error> {
         let plot_path = plot_path(x, z);
-        Ok(if Path::new(&plot_path).exists() {
-            match load_plot(plot_path) {
-                Ok(data) => Plot::from_data(data, x, z, channels, always_running, shared),
-                Err(err) => {
-                    return Result::Err((
-                        err.context(format!("error loading plot {},{}", x, z)),
-                        channels.server,
-                    ))
-                }
-            }
+        let mut plot = if Path::new(&plot_path).exists() {
+            let data =
+                load_plot(plot_path).with_context(|| format!("error loading plot {},{}", x, z))?;
+            Plot::from_data(data, x, z, broadcasts, server, shared)
         } else {
-            Plot::from_data(
-                shared.empty_plot.clone(),
-                x,
-                z,
-                channels,
-                always_running,
-                shared,
-            )
-        })
+            let data = shared.empty_plot.clone();
+            let mut plot = Plot::from_data(data, x, z, broadcasts, server, shared);
+            plot.world.mark_unsaved();
+            plot
+        };
+        plot.recheck_pressure_plates();
+        Ok(plot)
+    }
+
+    fn needs_saving(&self) -> bool {
+        !self.redpiler.is_active() && !self.world.save_state.is_saved()
+    }
+
+    pub(super) fn save_for_unload(&mut self) {
+        if self.needs_saving() {
+            for chunk in &mut self.world.chunks {
+                chunk.flush();
+                chunk.compress();
+            }
+        }
+        self.save();
+    }
+
+    pub(super) fn autosave_if_due(&mut self) {
+        let interval = Duration::from_secs(self.shared.config.autosave_interval_seconds);
+        if !interval.is_zero() && self.world.save_state.is_due(interval) {
+            self.save();
+        }
     }
 
     pub(super) fn save(&mut self) {
+        if !self.needs_saving() {
+            return;
+        }
         // A saved plot holds no block events.
         noteblock::run_block_events(&mut self.world);
+        let start = Instant::now();
         let world = &mut self.world;
         let chunk_data: Vec<ChunkData<'_>> = world.chunks.iter_mut().map(ChunkData::new).collect();
         let data = PlotData {
@@ -178,9 +191,21 @@ impl Plot {
                 .map(SavedTick::from)
                 .collect(),
         };
-        data.save_to_file(plot_path(world.x, world.z)).unwrap();
-
-        self.reset_timings();
+        match data.save_to_file(plot_path(world.x, world.z)) {
+            Ok(()) => {
+                world.save_state = SaveState::Saved;
+                debug!(
+                    "Saved plot ({}, {}) in {:?}",
+                    world.x,
+                    world.z,
+                    start.elapsed()
+                );
+            }
+            Err(error) => {
+                world.save_state = SaveState::Failed { at: Instant::now() };
+                error!("Failed to save plot ({}, {}): {error}", world.x, world.z);
+            }
+        }
     }
 }
 
