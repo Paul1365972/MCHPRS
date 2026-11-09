@@ -66,7 +66,7 @@ MCHPRS implements a subset of [WorldEdit](https://worldedit.enginehub.org/en/lat
 | Command | Alias | Description |
 | --- | --- | --- |
 | `//set <pattern>` | | Fill the selection with the pattern. |
-| `//replace <from> <to>` |  | Replace blocks matching `<from>` with `<to>`. |
+| `//replace [<mask>] <pattern>` |  | Replace the blocks that match the mask with the pattern. Without a mask, every block except air is replaced. |
 | `//count <mask>` | | Count the blocks in the selection that match the mask. |
 | `//stack [<count>] [<direction>]` | `//s` | Repeat the selection `<count>` times in the direction. `-a`/`--ignore-air` skips air. |
 | `//rstack [<count>] [<direction>] [<offset>]` | `//rs` | Repeat the selection `<count>` times, each copy `<offset>` blocks from the previous one, 2 by default. Copies can overlap, air is skipped and the direction can be diagonal. `-w`/`--with-air` copies air. `-e`/`--expand-selection` selects all copies. |
@@ -122,7 +122,38 @@ A server can define more aliases in [`Config.toml`](../README.md#command-aliases
 | `<direction>` of `//rstack` | `leftup`/`lu`, `northdown`/`nd` | Every `<direction>`, and each horizontal direction combined with `up` or `down`. |
 | `<type>` | `barrel`, `furnace`, `hopper` | A container type. |
 | `<angle>` | `90`, `180`, `270`, `-90` | Degrees, a multiple of 90. |
-| `^repeater[delay=3]` | The given block, with the values of the properties it shares with the existing block, and the given properties changed. |
+| `<pattern>` | `stone`, `minecraft:glass`, `repeater[delay=3]`, `stone,20%glass`, `^[powered=true]` | The blocks to place. |
+| `<mask>` | `stone,glass`, `repeater[delay=2]`, `!stone`, `#existing`, `>stone`, `%50` | The blocks to match. |
+
+### Patterns
+
+| Pattern | Places |
+| --- | --- |
+| `stone` | The block in its default state. |
+| `repeater[delay=3]` | The block with the given properties. |
 | `=5922` | The block state with this id. |
-| `<pattern>` | `stone`, `minecraft:glass`, `stone,20%glass`, `=5922` | Blocks to place in their default state. Commas separate random choices; prefixes such as `20%` set weights (default `100%`). `=` followed by a number selects an exact block state ID. |
-| `<mask>` | `stone,glass`, `=5922` | Blocks to match, written like a pattern. Each block name matches only its default state. |
+| `stone,glass` | One of the listed blocks, chosen at random per position. |
+| `stone,20%glass` | As above, with a weight per block. A block without a weight has weight 1. |
+| `^[powered=true]` | The existing block with the given properties changed. Blocks without these properties are kept unchanged. |
+| `^repeater[delay=3]` | The given block, with the values of the properties it shares with the existing block, and the given properties changed. |
+
+### Masks
+
+| Mask | Matches |
+| --- | --- |
+| `stone,glass` | Any of the listed blocks, in any state. |
+| `repeater[delay=2,powered=true]` | The block with the given properties. |
+| `=5922` | The block state with this id. |
+| `!stone` | Every block the following mask does not match. |
+| `#existing` | Every block except air. |
+| `#solid` | Every solid block. |
+| `#surface`, `#exposed` | Every block except air that has air next to it. |
+| `>stone` | Blocks above a block that matches. |
+| `<stone` | Blocks below a block that matches. |
+| `%50` | The given percentage of blocks, chosen at random. |
+| `^[delay=2]` | Blocks whose property has this value, and blocks without the property. |
+| `^=[delay=2]` | Blocks whose property has this value. |
+| `"stone #solid"` | Blocks that match every mask in the quotes. |
+
+A pattern or mask that contains spaces is written in single or double quotes.
+Inside quotes, `\` escapes the quote character and `\` itself.

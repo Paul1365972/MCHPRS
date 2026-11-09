@@ -112,18 +112,70 @@ impl Expect {
         Some((self.completion_start?, self.offers))
     }
 
-    pub fn offered(&self) -> usize {
+    fn offered(&self) -> usize {
         self.offers.len()
     }
 
-    pub fn silenced<T>(&mut self, parse: impl FnOnce(&mut Expect) -> T) -> T {
+    fn silenced<T>(&mut self, parse: impl FnOnce(&mut Expect) -> T) -> T {
         let suggesting = mem::replace(&mut self.suggesting, false);
         let result = parse(self);
         self.suggesting = suggesting;
         result
     }
 
-    pub fn offers_since(&mut self, mark: usize) -> &mut [Suggestion] {
+    fn offers_since(&mut self, mark: usize) -> &mut [Suggestion] {
         &mut self.offers[mark..]
     }
+}
+
+pub fn quotable<T>(
+    reader: &mut Reader<'_>,
+    expect: &mut Expect,
+    parse: impl Fn(&mut Reader<'_>, &mut Expect, bool) -> Result<T, SyntaxError>,
+) -> Result<T, SyntaxError> {
+    let Some(quote @ ('\'' | '"')) = reader.peek() else {
+        return parse(reader, expect, false);
+    };
+    let input = reader.input();
+    let open = reader.cursor();
+    let content = open + quote.len_utf8();
+    let close = input[content..].find(quote).map(|length| content + length);
+    if let Some(close) = close
+        && input[content..close].contains('\\')
+    {
+        let text = reader.quoted()?;
+        let mut inner = Reader::new(&text);
+        let value = parse(&mut inner, &mut Expect::executing(), true)
+            .map_err(|error| expect.fail(open, error.message))?;
+        if inner.can_read() {
+            return Err(expect.fail(open, "Expected the closing quote"));
+        }
+        return Ok(value);
+    }
+    let end = close.unwrap_or(input.len());
+    let after = close.map_or(end, |close| close + quote.len_utf8());
+    let mut inner = Reader::at(&input[..end], content);
+    let mark = expect.offered();
+    let parsed = if after == input.len() {
+        parse(&mut inner, expect, true)
+    } else {
+        expect.silenced(|expect| parse(&mut inner, expect, true))
+    };
+    for offer in expect.offers_since(mark) {
+        let completed = format!("{}{}", &input[content..offer.span.start], offer.text);
+        let mut reader = Reader::new(&completed);
+        if parse(&mut reader, &mut Expect::executing(), true).is_ok() && !reader.can_read() {
+            offer.text.push(quote);
+        }
+        offer.span.end = input.len();
+    }
+    let value = parsed?;
+    if inner.can_read() {
+        return Err(expect.fail(inner.cursor(), "Expected the closing quote"));
+    }
+    if close.is_none() {
+        return Err(expect.fail(input.len(), "Unclosed quoted string"));
+    }
+    *reader = Reader::at(input, after);
+    Ok(value)
 }

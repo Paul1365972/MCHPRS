@@ -1212,6 +1212,7 @@ version = "0.5.2-dev"
 dependencies = [
  "fastnbt",
  "mchprs_proc_macros",
+ "mchprs_syntax",
  "serde",
 ]
 
@@ -1240,7 +1241,6 @@ dependencies = [
  "mchprs_world",
  "md5",
  "rand",
- "regex",
  "reqwest",
  "rusqlite",
  "rustc-hash",

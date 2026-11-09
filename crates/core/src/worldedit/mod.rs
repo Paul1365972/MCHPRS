@@ -1,5 +1,5 @@
+pub mod mask;
 pub mod pattern;
-
 use crate::player::PlayerPos;
 use crate::plot::PlotWorld;
 use mchprs_blocks::blocks::Block;
