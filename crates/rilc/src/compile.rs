@@ -1,11 +1,17 @@
+use crate::dot::Dot;
 use crate::input::{self, Loaded};
 use crate::numbers::{change, counted};
-use crate::Error;
+use crate::setup::Setup;
+use crate::{Error, Outcome};
+use anyhow::Context;
 use mchprs_redpiler::backend::GraphContext;
 use mchprs_redpiler::extract;
 use mchprs_redpiler::graph::Graph;
-use mchprs_ril::Options;
+use mchprs_ril::{Options, Printed};
 use rustc_hash::FxHashMap;
+use std::fs;
+use std::io::{self, Write as _};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 type Inspect<'a> = &'a mut dyn FnMut(&'static str, &Graph);
@@ -58,6 +64,66 @@ impl StageNames {
             runs => format!("{name}_{runs}"),
         }
     }
+}
+
+pub fn command(
+    path: &Path,
+    setup: &Setup,
+    circuit: Option<&str>,
+    print_after_all: bool,
+    dot: bool,
+    output: Option<&Path>,
+) -> Outcome {
+    let input = Loaded::read(path, circuit)?;
+    let write = |graph: &Graph, name: &str| {
+        if dot {
+            Dot::new(graph, name).to_string()
+        } else {
+            Printed::new(graph, name).to_string()
+        }
+    };
+    let mut stage_circuits = String::new();
+    let mut names = StageNames::default();
+    let (graph, stages) = compile(&input, setup, &mut |stage, graph| {
+        if print_after_all {
+            let name = names.next(stage);
+            stage_circuits.push_str(&format!("\n{}\n", write(graph, &name)));
+        }
+    })?;
+
+    let mut ril = format!("# setup: {setup}\n# input: {}", path.display());
+    let name = match &input {
+        Loaded::World(_) => circuit_name(path),
+        Loaded::Circuit(circuit) => {
+            ril.push_str(&format!(", circuit @{}", circuit.name));
+            circuit.name.clone()
+        }
+    };
+    ril.push('\n');
+    ril.push_str(&stage_lines(&stages));
+    if print_after_all {
+        ril.push_str(&stage_circuits);
+    } else {
+        ril.push_str(&format!("\n{}\n", write(&graph, &name)));
+    }
+
+    match output {
+        Some(output) => fs::write(output, ril)
+            .with_context(|| format!("couldn't write {}", output.display()))?,
+        None => io::stdout().write_all(ril.as_bytes())?,
+    }
+    Ok(true)
+}
+
+pub fn compile(
+    input: &Loaded,
+    setup: &Setup,
+    inspect: Inspect<'_>,
+) -> Result<(Graph, Vec<TimedStage>), Error> {
+    timed(inspect, |context| match input {
+        Loaded::World(world) => setup.world_graph(world, context),
+        Loaded::Circuit(circuit) => setup.circuit_graph(circuit.graph(), context),
+    })
 }
 
 pub fn compile_test(
@@ -123,4 +189,18 @@ pub fn stage_lines(stages: &[TimedStage]) -> String {
         previous = Some(stage);
     }
     lines
+}
+
+fn circuit_name(path: &Path) -> String {
+    let stem = path.file_stem().map(|stem| stem.to_string_lossy());
+    let name: String = stem
+        .unwrap_or_default()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    if name.is_empty() {
+        "circuit".to_owned()
+    } else {
+        name
+    }
 }

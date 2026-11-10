@@ -1,10 +1,14 @@
 mod compile;
+mod dot;
 mod input;
 mod numbers;
+mod oracle;
+mod setup;
 mod test;
 
 use anyhow::Error;
 use clap::{Parser, Subcommand};
+use setup::Setup;
 use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -34,6 +38,27 @@ enum Command {
         #[arg(long)]
         print_after_all: bool,
     },
+    /// Compile a world or a RIL circuit and write the result as RIL, or as Graphviz DOT
+    #[command(after_help = setup::help())]
+    Compile {
+        /// A schematic, a plot file or a RIL file
+        input: PathBuf,
+        /// The setup to compile for, like "direct -o"; defaults to the first backend
+        #[arg(short = 'b', long = "backend", value_name = "SETUP", value_parser = Setup::parse)]
+        setup: Option<Setup>,
+        /// The circuit to compile, if the RIL file holds several
+        #[arg(long, value_name = "NAME")]
+        circuit: Option<String>,
+        /// Write the circuit after every stage, each named after its stage
+        #[arg(long)]
+        print_after_all: bool,
+        /// Write Graphviz DOT instead of RIL
+        #[arg(long)]
+        dot: bool,
+        /// Write to FILE instead of stdout
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -45,6 +70,21 @@ fn main() -> ExitCode {
             update,
             print_after_all,
         } => test::run_tests(&path, update, print_after_all),
+        Command::Compile {
+            input,
+            setup,
+            circuit,
+            print_after_all,
+            dot,
+            output,
+        } => compile::command(
+            &input,
+            &setup.unwrap_or_default(),
+            circuit.as_deref(),
+            print_after_all,
+            dot,
+            output.as_deref(),
+        ),
     };
     match outcome {
         Ok(true) => ExitCode::SUCCESS,

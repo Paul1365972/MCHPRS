@@ -1270,6 +1270,7 @@ dependencies = [
  "anstream",
  "anyhow",
  "clap",
+ "mchprs_backends",
  "mchprs_blocks",
  "mchprs_redpiler",
  "mchprs_redstone",
