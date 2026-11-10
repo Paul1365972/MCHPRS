@@ -26,7 +26,7 @@ MCHPRS has made it possible to run programs such as [a limited form of Minecraft
 If the Rust compiler is not already installed, you can find out how [on their official website](https://www.rust-lang.org/tools/install).
 
 ```shell
-git clone https://github.com/MCHPR/MCHPRS.git
+git clone https://github.com/Paul1365972/MCHPRS.git
 cd MCHPRS
 cargo build --release
 ```
@@ -43,15 +43,27 @@ Once complete, the optimized executable will be located at `./target/release/mch
 `cargo build --release --features claims,whitelist` enables both.
 Prebuilt releases have both enabled, and so does the image the `Dockerfile` builds.
 
+The image runs the server in the volume `/data` and exposes port 25565.
+
 ## Running
+
+The server reads and writes its files in the working directory.
 
 | Path | Content |
 | --- | --- |
+| `Config.toml` | The configuration. The server writes the defaults if the file does not exist. |
 | `world/plots` | The plots. If `world/plots/pTEMPLATE` exists at startup, new plots start as a copy of it. Before a plot file of an older version is replaced, it is kept as `p<x>,<z>.v<version>`. |
 | `world/plots.db` | The plot claims. Requires the [`claims` feature](#features). |
+| `world/players` | The player data. |
+| `whitelist.json` | The whitelist. The server creates an empty one if the `whitelist` setting is on and the file does not exist. |
 | `logs` | The logs. `logs/latest.log` is the log of the current run. At startup the previous one is renamed to `logs/<n>.log`. |
+| `schems` | The schematics of `/schematic`. |
 
 MCHPRS has no permissions: every player can use every command and edit every plot.
+
+The environment variable `MCHPRS_LOG` sets the log level, for example `MCHPRS_LOG=debug`. The default is `info`.
+
+`mchprs --version` prints the version and exits.
 
 `cargo run --release -p mchprs_world_exporter -- world <saves>` writes the plots of `world` as a new Minecraft save in the directory `<saves>`.
 
