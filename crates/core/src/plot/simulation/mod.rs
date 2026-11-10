@@ -12,6 +12,7 @@ use mchprs_save_data::plot_data::Tps;
 use mchprs_simulation::layout::Layout;
 use mchprs_simulation::ports::Role;
 use mchprs_simulation::schedule::Schedule;
+use mchprs_simulation::watch::Watch;
 use mchprs_simulation::{Blocks, Capabilities, Command, Event, Run, Running, View};
 use rustc_hash::FxHashSet;
 use std::mem;
@@ -38,6 +39,13 @@ impl PlotSimulation {
         match self {
             PlotSimulation::World(schedule) => schedule.next_tick(),
             PlotSimulation::Compiling(_) | PlotSimulation::Compiled(_) => None,
+        }
+    }
+
+    pub(super) fn halts_on_breakpoints(&self) -> bool {
+        match self {
+            PlotSimulation::Compiled(compiled) => compiled.capabilities.breakpoints,
+            PlotSimulation::World(_) | PlotSimulation::Compiling(_) => true,
         }
     }
 
@@ -84,15 +92,26 @@ pub struct Compiled {
     capabilities: Capabilities,
     before: Before,
     written: FxHashSet<BlockPos>,
+    start_tick: u64,
     ticks: u64,
     behind: bool,
     observing: bool,
 }
 
 impl Compiled {
+    pub(super) fn layout(&self) -> &Layout {
+        &self.layout
+    }
+
     fn takes_input_at(&self, pos: BlockPos) -> bool {
         let component = self.layout.at(pos);
         component.is_some_and(|component| component.port == Some(Role::Input))
+    }
+
+    pub(super) fn watch(&mut self, watch: Watch<BlockPos>) {
+        if self.capabilities.breakpoints {
+            self.simulation.send(Command::Watch(watch));
+        }
     }
 
     fn observe(&mut self) {
@@ -140,7 +159,7 @@ impl Plot {
             Some(run) => schedule.set(run, Instant::now(), &mut events),
             None => schedule.pause(&mut events),
         }
-        self.handle_events(&events);
+        self.handle_events(&events, 0);
     }
 
     pub(super) fn update_simulation(&mut self) {
@@ -169,11 +188,16 @@ impl Plot {
         self.tick_history.record(ticks);
     }
 
-    fn handle_events(&mut self, events: &[Event<BlockPos>]) {
+    fn handle_events(&mut self, events: &[Event<BlockPos>], halt_tick_origin: u64) {
         for &event in events {
             match event {
                 Event::RunFinished => self.advances.end(self.ticks, true),
                 Event::RunInterrupted => self.advances.end(self.ticks, false),
+                Event::Halted(hit) => {
+                    self.halted = true;
+                    self.set_paused();
+                    self.report_halt(hit, halt_tick_origin + hit.tick);
+                }
                 Event::Refused(pos, error) => {
                     warn!("Redpiler refused a drive: the block at {pos} {error}");
                 }

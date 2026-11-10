@@ -12,16 +12,21 @@ use mchprs_simulation::readback::Readback;
 use mchprs_simulation::simulated_world::SimulatedWorld;
 use mchprs_simulation::stepper;
 use mchprs_simulation::ticks::{Ran, SimulationError, Stop};
+use mchprs_simulation::watch::{BreakpointId, Hit, Watch};
 use mchprs_simulation::write_back::WriteBack;
 use mchprs_simulation::{
     Blocks, Capabilities, Command, End, Event, Run, Running, Simulation, Update, View,
 };
 use std::sync::{Arc, Mutex};
 use std::thread::{self, ThreadId};
+use std::time::Duration;
+
+const HALTING_TICK: u64 = 10;
 
 #[derive(Default)]
 struct Counter {
     ticks: u64,
+    halting_tick: Option<u64>,
     driven_at: Arc<Mutex<Vec<u64>>>,
     ran_on: Arc<Mutex<Vec<ThreadId>>>,
     unshown: Vec<BlockPos>,
@@ -41,6 +46,7 @@ impl Counter {
 impl Simulation<Blocks> for Counter {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            breakpoints: true,
             settling: true,
             write_back: true,
         }
@@ -53,6 +59,22 @@ impl Simulation<Blocks> for Counter {
     fn run(&mut self, ticks: u64) -> Result<Ran, SimulationError> {
         self.ran_on.lock().unwrap().push(thread::current().id());
         let end = self.ticks + ticks;
+        if let Some(tick) = self
+            .halting_tick
+            .filter(|&tick| (self.ticks + 1..=end).contains(&tick))
+        {
+            let ran = tick - self.ticks;
+            self.ticks = tick;
+            let hit = Hit {
+                breakpoint: BreakpointId(0),
+                tick,
+                value: 1,
+            };
+            return Ok(Ran {
+                ticks: ran,
+                stop: Some(Stop::Breakpoint(hit)),
+            });
+        }
         self.ticks = end;
         Ok(Ran { ticks, stop: None })
     }
@@ -67,6 +89,11 @@ impl Simulation<Blocks> for Counter {
     fn drive(&mut self, pos: BlockPos, _: Input) -> Result<(), DriveError> {
         self.driven_at.lock().unwrap().push(self.ticks);
         self.unshown.push(pos);
+        Ok(())
+    }
+
+    fn watch(&mut self, _: Watch<BlockPos>) -> Result<(), SimulationError> {
+        self.halting_tick = Some(HALTING_TICK);
         Ok(())
     }
 
@@ -169,6 +196,28 @@ fn runs_with_a_goal_end_in_the_order_sent() {
 }
 
 #[test]
+fn a_breakpoint_leaves_the_simulation_paused() {
+    let mut simulation = start(Counter::default());
+    simulation.send(Command::Watch(Watch {
+        breakpoints: Vec::new(),
+    }));
+    simulation.send(Command::Run(Run::Unlimited));
+    let mut events = Vec::new();
+    let halted = wait_for(
+        &mut *simulation,
+        &mut events,
+        Event::Halted(Hit {
+            breakpoint: BreakpointId(0),
+            tick: HALTING_TICK,
+            value: 1,
+        }),
+    );
+    assert_eq!(halted.ticks, HALTING_TICK);
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(shown(&mut *simulation).ticks, HALTING_TICK);
+}
+
+#[test]
 fn stopping_a_paused_simulation_returns_its_pending_ticks_without_running_a_tick() {
     let pending_ticks = vec![
         (
@@ -214,4 +263,30 @@ fn a_stepped_simulation_runs_on_the_callers_thread() {
     assert_eq!(*ran_on.lock().unwrap(), [thread::current().id()]);
     let (blocks, _) = world.stop().unwrap();
     assert_eq!(blocks.block(pos), Block::RedstoneBlock);
+}
+
+#[test]
+fn starting_keeps_the_state_the_watches_and_the_tick_count() {
+    let mut counter = Box::new(Counter::default());
+    let pos = BlockPos::new(2, 0, 0);
+    counter.run(4).unwrap();
+    counter.drive(pos, Input::Toggle).unwrap();
+    counter
+        .watch(Watch {
+            breakpoints: Vec::new(),
+        })
+        .unwrap();
+    let mut simulation = counter.start().unwrap();
+    let paused = shown(&mut *simulation);
+    assert_eq!(paused.ticks, 4);
+    assert_eq!(paused.changes.blocks, [(pos, Block::RedstoneBlock)]);
+    simulation.send(Command::Run(Run::Unlimited));
+    let mut events = Vec::new();
+    let hit = Hit {
+        breakpoint: BreakpointId(0),
+        tick: HALTING_TICK,
+        value: 1,
+    };
+    let halted = wait_for(&mut *simulation, &mut events, Event::Halted(hit));
+    assert_eq!(halted.ticks, HALTING_TICK);
 }

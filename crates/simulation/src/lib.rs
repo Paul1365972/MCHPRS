@@ -10,12 +10,14 @@ pub mod schedule;
 pub mod simulated_world;
 pub mod stepper;
 pub mod ticks;
+pub mod watch;
 pub mod write_back;
 
 use crate::block_changes::BlockChanges;
 use crate::input::DriveError;
 use crate::readback::Readback;
 use crate::ticks::{Ran, SimulationError};
+use crate::watch::{Hit, Watch};
 use crate::write_back::WriteBack;
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::input::{Input, InputError};
@@ -48,11 +50,14 @@ pub trait Simulation<S: Space>: Send {
     /// Ticks run since it was compiled.
     fn ticks(&self) -> u64;
 
+    /// Runs exactly `ticks`, fewer only when a breakpoint fires.
     fn run(&mut self, ticks: u64) -> Result<Ran, SimulationError>;
 
     fn settle(&mut self, limit: u64) -> Result<Ran, SimulationError>;
 
     fn drive(&mut self, at: S::Address, input: Input) -> Result<(), DriveError>;
+
+    fn watch(&mut self, watch: Watch<S::Address>) -> Result<(), SimulationError>;
 
     /// Appends what `view` asks for.
     fn show(&mut self, view: View, changes: &mut S::Changes) -> Result<(), SimulationError>;
@@ -62,6 +67,8 @@ pub trait Simulation<S: Space>: Send {
 
     fn stop(self: Box<Self>) -> Result<End<S>, SimulationError>;
 
+    /// Lets it run by itself from here, paused, with its state, pending ticks, watches and tick
+    /// count. The backend decides how. Fails where no thread can be spawned.
     fn start(self: Box<Self>) -> Result<Box<dyn Running<S>>, SimulationError>;
 }
 
@@ -99,6 +106,8 @@ pub struct End<S: Space> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
+    /// It halts on breakpoints: `Command::Watch` has an effect.
+    pub breakpoints: bool,
     /// It can tell when no tick is pending: `Run::UntilSettled` is supported.
     pub settling: bool,
     /// `read` and `stop` return the state it reached. Without it, the world keeps the state from
@@ -108,11 +117,13 @@ pub struct Capabilities {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command<A> {
+    /// No tick runs. A simulation starts paused, and pauses itself after `RunFinished` and `Halted`.
     Pause,
     /// How ticks run from now on. Replaces what ran before.
     Run(Run),
     /// While it runs, the input lands at whichever tick boundary the backend reaches next.
     Drive(A, Input),
+    Watch(Watch<A>),
     /// Answered by one update, read at one tick boundary.
     Show(View),
 }
@@ -174,7 +185,10 @@ pub enum Event<A> {
     /// A run of `Ticks` or `UntilSettled` met its goal. Every such run ends with exactly one of
     /// `RunFinished` and `RunInterrupted`, in the order the runs were sent.
     RunFinished,
+    /// A later command or a breakpoint ended a run of `Ticks` or `UntilSettled` before its goal.
     RunInterrupted,
+    /// A breakpoint fired. The simulation is paused.
+    Halted(Hit),
     /// The input at this address was not applied.
     Refused(A, InputError),
     /// This update answers a `Show`.

@@ -142,6 +142,10 @@ impl Schedule {
         } else if current.next_tick().is_some_and(|next_tick| next_tick > end) {
             self.behind = false;
         }
+        if let Some(Stop::Breakpoint(hit)) = ran.stop {
+            self.pause(events);
+            events.push(Event::Halted(hit));
+        }
     }
 
     fn interrupt<A>(&mut self, events: &mut Vec<Event<A>>) {

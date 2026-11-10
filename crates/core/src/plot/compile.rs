@@ -2,6 +2,7 @@ use super::world::PlotBlocks;
 use anyhow::{anyhow, Result};
 use mchprs_backends::Setup;
 use mchprs_blocks::region::Region;
+use mchprs_blocks::BlockPos;
 use mchprs_redstone::tick_queue::TickEntry;
 use mchprs_simulation::backend::{CompileContext, CompileStep, Source};
 use mchprs_simulation::layout::Layout;
@@ -30,6 +31,7 @@ impl CompileJob {
         world: Arc<PlotBlocks>,
         region: Region,
         ticks: Vec<TickEntry>,
+        observed: Vec<BlockPos>,
         setup: Setup,
         name: String,
     ) -> io::Result<CompileJob> {
@@ -46,6 +48,7 @@ impl CompileJob {
                 let mut context = CompileContext::new(&mut progress, &flag);
                 let source = Source {
                     ticks: &ticks,
+                    observed: &observed,
                     ..Source::new(&*world, region)
                 };
                 let compiled = setup.compile(&source, &mut context).map_err(Into::into);

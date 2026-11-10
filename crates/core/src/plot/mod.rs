@@ -5,6 +5,7 @@ pub mod claims;
 mod compile;
 pub mod data;
 mod packet_handlers;
+pub mod probe;
 mod scoreboard;
 mod send_schedule;
 pub mod simulation;
@@ -24,6 +25,7 @@ use mchprs_network::packets::clientbound::*;
 use mchprs_network::PlayerPacketSender;
 use mchprs_redstone::{plate, Aabb};
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
+use probe::Probes;
 use scoreboard::{PlotStatus, Scoreboard};
 use send_schedule::SendSchedule;
 use simulation::PlotSimulation;
@@ -67,6 +69,8 @@ pub struct Plot {
     pub shared: Arc<Shared>,
     advances: Advances,
     ticks: u64,
+    halted: bool,
+    probes: Probes,
 
     // Thread communication
     message_receiver: BusReader<BroadcastMessage>,
@@ -279,6 +283,8 @@ impl Plot {
             tps_target: self.tps,
             world_send_rate: self.world.world_send_rate,
             running_behind: behind,
+            halted: self.halted,
+            probes: self.probe_statuses(),
         }
     }
 
@@ -302,6 +308,7 @@ impl Plot {
 
     pub fn set_tps(&mut self, tps: Tps) {
         self.tps = tps;
+        self.halted = false;
         self.world.mark_unsaved();
         self.update_tick_rate();
     }

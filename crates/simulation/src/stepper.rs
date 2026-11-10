@@ -99,6 +99,7 @@ impl<S: Space> Stepper<S> {
                 Err(DriveError::Refused(error)) => events.push(Event::Refused(at, error)),
                 Err(DriveError::Simulation(error)) => return Err(error),
             },
+            Command::Watch(watch) => self.simulation.watch(watch)?,
             Command::Show(view) => {
                 self.simulation.show(view, &mut self.pending.changes)?;
                 events.push(Event::Shown(view));
