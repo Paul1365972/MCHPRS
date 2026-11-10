@@ -13,6 +13,7 @@ cargo run --release -p rilc -- <command>
 | `run <scenario> -b <setup>` | Play a scenario of a world or a RIL circuit on a setup, the way the server runs it, and print the ticks per second. |
 | `diff <scenario> -b <setup> -b <setup>` | Play a scenario on two setups and print the first tick after which a component that both show differs. |
 | `test <path>` | Run the [tests](RIL.md#tests) of a RIL file, or of every RIL file under a directory. |
+| `fuzz (engine \| passes \| worlds)` | Check a property on random cases. |
 | `update <input> <output>` | Update every block of a world, run it until no tick is pending and write it as a schematic. |
 
 `rilc <command> --help` lists the options of a command, and for `compile`, `run` and `diff` also the backends and their flags.
@@ -80,10 +81,13 @@ A failing circuit is also written to `.scratch/fuzz` as `<seed>.ril` and `<seed>
 | --- | --- | --- |
 | `fuzz engine` | `direct` on random circuits, or on the worlds and RIL circuits it is given. | After every input and every tick, the state of every node and the pending ticks are legal, and the reported changes bring the observed nodes to the state of the snapshot. |
 | `fuzz passes` | Passes on a small random circuit, or on the worlds and RIL circuits it is given: each pass alone, and each pass of `direct --optimize --io-only` after its predecessors, or the list given with `--passes`. | What the observed nodes of the result show on `reference` is legal for the circuit without the passes. |
+| `fuzz worlds` | Random worlds on the interpreter of `mchprs_redstone` and on `reference`, `direct -o` and `direct -o -i`. | After every input and every tick, what the interpreter shows and its pending ticks are legal for the world's circuit. A setup may differ from the interpreter only in the components it shows, and only if its run is legal too. |
 
+`fuzz worlds` also stops `reference` after a random tick and lets `vanilla` run on from what it wrote back.
 
 ### The Order Oracle
 
+All three fuzzers judge by the [tick order of `direct`](backends/Direct.md#tick-order). *Legal* means allowed by it.
 The order oracle in [`crates/rilc/src/oracle`](../crates/rilc/src/oracle/mod.rs) decides it: it runs the `reference` engine in every order that the tick order leaves unspecified.
 What was seen is legal if one of these runs shows it.
 
