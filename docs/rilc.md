@@ -12,6 +12,7 @@ cargo run --release -p rilc -- <command>
 | `run <scenario> -b <setup>` | Play a scenario of a world or a RIL circuit on a setup, the way the server runs it, and print the ticks per second. |
 | `diff <scenario> -b <setup> -b <setup>` | Play a scenario on two setups and print the first tick after which a component that both show differs. |
 | `test <path>` | Run the [tests](RIL.md#tests) of a RIL file, or of every RIL file under a directory. |
+| `update <input> <output>` | Update every block of a world, run it until no tick is pending and write it as a schematic. |
 
 `rilc <command> --help` lists the options of a command, and for `compile`, `run` and `diff` also the backends and their flags.
 

@@ -9,6 +9,7 @@ mod runner;
 mod scenario;
 mod setup;
 mod test;
+mod update;
 
 use anyhow::Error;
 use clap::error::ErrorKind;
@@ -100,6 +101,17 @@ enum Command {
         )]
         setups: Vec<Setup>,
     },
+    /// Update every block of a schematic or plot, run it until no tick is pending and write it as
+    /// a schematic
+    Update {
+        /// A schematic or a plot file
+        input: PathBuf,
+        /// The schematic to write
+        output: PathBuf,
+        /// Fail if ticks are still pending after N ticks
+        #[arg(long, value_name = "N", default_value = "10000")]
+        settle_limit: u64,
+    },
 }
 
 fn main() -> ExitCode {
@@ -143,6 +155,12 @@ fn main() -> ExitCode {
             let [first, second] = two_setups(setups);
             diff::command(&scenario, [&first, &second])
         }
+
+        Command::Update {
+            input,
+            output,
+            settle_limit,
+        } => update::command(&input, &output, settle_limit),
     };
     match outcome {
         Ok(true) => ExitCode::SUCCESS,
