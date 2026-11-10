@@ -15,6 +15,7 @@ use mchprs_simulation::input::DriveError;
 use mchprs_simulation::layout::Layout;
 use mchprs_simulation::readback::Readback;
 use mchprs_simulation::ticks::{Ran, SimulationError};
+use mchprs_simulation::watch::Watch;
 use mchprs_simulation::write_back::WriteBack;
 use mchprs_simulation::{Blocks, Capabilities, End, Running, Simulation, View};
 use mchprs_syntax::flag::FlagValues;
@@ -92,6 +93,10 @@ impl Simulation<Blocks> for GraphSimulation {
     fn drive(&mut self, pos: BlockPos, input: Input) -> Result<(), DriveError> {
         let node = self.blocks.node_at(pos).ok_or(InputError::NotAnInput)?;
         self.simulation.drive(node, input)
+    }
+
+    fn watch(&mut self, watch: Watch<BlockPos>) -> Result<(), SimulationError> {
+        self.simulation.watch(self.blocks.watch(watch))
     }
 
     fn show(&mut self, view: View, changes: &mut BlockChanges) -> Result<(), SimulationError> {

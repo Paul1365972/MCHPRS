@@ -120,6 +120,7 @@ impl Plot {
             start_tick: self.ticks,
             stopped: false,
         });
+        self.halted = false;
         self.set_paused();
         self.send_run(Some(goal.run()));
         self.publish_world();

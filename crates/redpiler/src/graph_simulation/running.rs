@@ -46,6 +46,7 @@ impl GraphRunning {
                 Some(match event {
                     Event::RunFinished => Event::RunFinished,
                     Event::RunInterrupted => Event::RunInterrupted,
+                    Event::Halted(hit) => Event::Halted(hit),
                     Event::Refused(node, error) => {
                         Event::Refused(self.blocks.position(node)?, error)
                     }
@@ -75,6 +76,7 @@ impl Running<Blocks> for GraphRunning {
                 Some(node) => Command::Drive(node, input),
                 None => return self.refused.push(pos),
             },
+            Command::Watch(watch) => Command::Watch(self.blocks.watch(watch)),
             Command::Show(view) => Command::Show(view),
         };
         self.running.send(command);

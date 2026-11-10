@@ -66,6 +66,8 @@ Two inputs of different nodes are exempt from the second condition if the order 
 
 | Flag | Short | Description |
 | --- | --- | --- |
+| `--optimize` | `-o` | Run the passes. Redstone wire is removed from the graph unless it is an output or a probe reads it. |
+| `--io-only` | `-i` | Send block changes only for inputs, outputs and the components probes read. |
 | `--wire-dot-out` | `-d` | Treat redstone wire without connections (dots) as outputs. |
 | `--wire-cross-out` | `-c` | Treat redstone wire connected on all four sides (crosses) as outputs. |
 | `--illegal-states-out` | `-l` | Treat redstone wire connected on exactly one side as outputs. |

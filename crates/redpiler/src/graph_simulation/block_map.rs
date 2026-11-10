@@ -9,6 +9,7 @@ use mchprs_blocks::BlockPos;
 use mchprs_redstone::sound::Sound;
 use mchprs_simulation::block_changes::BlockChanges;
 use mchprs_simulation::layout::{Component, Layout};
+use mchprs_simulation::watch::{Bit, Breakpoint, Watch};
 use mchprs_simulation::write_back::WriteBack;
 use mchprs_simulation::{Blocks, End};
 use rustc_hash::FxHashMap;
@@ -72,6 +73,21 @@ impl BlockMap {
     pub fn position(&self, node: NodeId) -> Option<BlockPos> {
         let blocks = self.blocks.get(node.index())?;
         blocks.first().map(|&(pos, _)| pos)
+    }
+
+    pub fn watch(&self, watch: Watch<BlockPos>) -> Watch<NodeId> {
+        let node_bit = |bit| match bit {
+            Bit::At(pos) => self.node_at(pos).map_or(Bit::Fixed(false), Bit::At),
+            Bit::Fixed(on) => Bit::Fixed(on),
+        };
+        let breakpoints = watch.breakpoints.into_iter().map(|breakpoint| Breakpoint {
+            id: breakpoint.id,
+            bits: breakpoint.bits.iter().copied().map(node_bit).collect(),
+            condition: breakpoint.condition,
+        });
+        Watch {
+            breakpoints: breakpoints.collect(),
+        }
     }
 
     /// A block that changed and is back as it was sounds once.

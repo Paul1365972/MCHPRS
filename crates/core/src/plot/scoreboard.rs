@@ -41,6 +41,13 @@ pub struct PlotStatus {
     pub tps_target: Tps,
     pub world_send_rate: WorldSendRate,
     pub running_behind: bool,
+    pub halted: bool,
+    pub probes: Vec<ProbeStatus>,
+}
+
+pub struct ProbeStatus {
+    pub name: String,
+    pub value: Option<String>,
 }
 
 #[derive(PartialEq)]
@@ -180,6 +187,9 @@ fn layout(status: &PlotStatus) -> Vec<Line> {
     };
     rate.extra.push(colored(&format!(" / {target}"), LABEL));
     lines.push(Line::new("RTPS", rate));
+    if status.halted {
+        lines.push(Line::text("⏸ Halted at a breakpoint", BUSY));
+    }
     if let Some(progress) = status.advance {
         push_advance(&mut lines, progress);
     }
@@ -191,8 +201,32 @@ fn layout(status: &PlotStatus) -> Vec<Line> {
     if status.running_behind {
         lines.push(Line::text("⚠ Running behind", BAD));
     }
+    if !status.probes.is_empty() {
+        lines.push(Line::blank());
+        push_probes(&mut lines, &status.probes);
+    }
     lines.truncate(CLIENT_MAX_LINES);
     lines
+}
+
+fn push_probes(lines: &mut Vec<Line>, probes: &[ProbeStatus]) {
+    let room = CLIENT_MAX_LINES.saturating_sub(lines.len());
+    let shown = if probes.len() <= room {
+        probes.len()
+    } else {
+        room.saturating_sub(1)
+    };
+    for probe in &probes[..shown] {
+        let value = match &probe.value {
+            Some(value) => colored(value, VALUE),
+            None => colored("broken", BAD),
+        };
+        lines.push(Line::new(&probe.name, value));
+    }
+    if shown < probes.len() {
+        let hidden = probes.len() - shown;
+        lines.push(Line::text(&format!("and {hidden} more"), LABEL));
+    }
 }
 
 fn push_setup(lines: &mut Vec<Line>, setup: &Setup) {

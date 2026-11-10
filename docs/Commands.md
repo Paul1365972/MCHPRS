@@ -24,6 +24,10 @@ Flags go after all other arguments. Short flags can be combined, and `=false` tu
 
 `/whitelist` requires the [`whitelist` feature](../README.md#features) and the [`whitelist` setting](../README.md#configuration).
 
+## Redpiler and Probes
+
+[Redpiler](Redpiler.md) documents `/redpiler` and `/probe`.
+
 ## Plots
 
 | Command | Alias | Description |

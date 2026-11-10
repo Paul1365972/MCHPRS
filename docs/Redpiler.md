@@ -55,3 +55,45 @@ Flags go after the backend. Short flags can be combined: `/redpiler compile dire
 The [config](../README.md#redpiler) sets default flags per backend.
 Flags given to the command are added to the defaults.
 `--<flag>=false` or `-<short>=false` turns a default off: `/redpiler compile -o=false`.
+
+## Probes
+
+A probe reads up to 64 components as one number, one bit per component.
+A bit is 1 while the signal strength of its component is above 0.
+The sidebar shows the value of every probe in hexadecimal.
+A probe shows `broken` while one of its positions holds no component.
+
+| Command | Description |
+| --- | --- |
+| `/probe add <name> [<mask>] [<direction>]` | Add a probe on the components in the WorldEdit selection that match the mask. Without a mask, every component in the selection is read. |
+| `/probe remove <name>` | Remove a probe. |
+| `/probe list` | Show the value and breakpoint of every probe. |
+| `/probe clear` | Remove every probe. |
+
+The bits of a probe are ordered along `<direction>`, lowest bit first.
+The default direction is `me`, the direction the player faces.
+Components at the same position along the direction are ordered by y, then x, then z.
+
+Probes are not saved with the plot.
+
+## Breakpoints
+
+A breakpoint halts the plot when the value of a probe meets a condition.
+A probe has at most one breakpoint.
+
+| Command | Description |
+| --- | --- |
+| `/probe break <name> == <value>` | Halt when the value becomes `<value>`. |
+| `/probe break <name> != <value>` | Halt when the value changes from `<value>` to another value. |
+| `/probe break <name> changes` | Halt when the value changes. |
+| `/probe unbreak <name>` | Remove the breakpoint of the probe. |
+
+`<value>` is decimal, hexadecimal or binary: `47`, `0x2F` or `0b101111`.
+
+The condition is checked at the end of every redstone tick against the value at the end of the previous tick.
+`== 5` set while the probe reads 5 halts only after the value has left 5 and returned.
+A value that changes and changes back within one tick does not halt the plot.
+
+A halt ends a running `/radvance` and pauses the plot, as `/rtps 0` does.
+`/rtps`, `/radvance` and `/redpiler compile` end a halt, and so does `/redpiler reset` while Redpiler runs.
+A backend that cannot halt refuses `/probe break`.

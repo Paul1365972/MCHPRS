@@ -1,4 +1,5 @@
 use super::advance::Advances;
+use super::probe::Probes;
 use super::scoreboard::Scoreboard;
 use super::send_schedule::SendSchedule;
 use super::simulation::PlotSimulation;
@@ -124,6 +125,8 @@ impl Plot {
             tps,
             advances: Advances::default(),
             ticks: 0,
+            halted: false,
+            probes: Probes::default(),
             tick_history: TickHistory::new(now),
             scoreboard: Scoreboard::new(x, z),
             shared,

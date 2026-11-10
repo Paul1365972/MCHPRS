@@ -1,5 +1,6 @@
 mod core;
 mod plot;
+mod probe;
 mod redpiler;
 mod worldedit;
 
@@ -15,6 +16,7 @@ use crate::config::Backends;
 pub(super) fn register_commands(registry: &mut CommandRegistry, backends: Backends) {
     core::register_commands(registry);
     plot::register_commands(registry);
+    probe::register_commands(registry);
     redpiler::register_commands(registry, backends);
     worldedit::register_commands(registry);
     let mut help = Command::new("help").alias("/help");

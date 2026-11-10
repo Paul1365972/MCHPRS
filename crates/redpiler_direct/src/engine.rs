@@ -2,6 +2,7 @@
 mod spec_tests;
 mod tick;
 mod update;
+mod watching;
 
 use crate::lower;
 use crate::node::{ForwardLinks, Node, Nodes, Slot};
@@ -16,9 +17,11 @@ use mchprs_simulation::backend::CompileError;
 use mchprs_simulation::input::DriveError;
 use mchprs_simulation::readback::Readback;
 use mchprs_simulation::stepper;
-use mchprs_simulation::ticks::{Ran, SimulationError, Stop};
+use mchprs_simulation::ticks::{run_until_hit, settle_until_hit, Ran, SimulationError, Stop};
+use mchprs_simulation::watch::{Hit, Watch};
 use mchprs_simulation::{Capabilities, End, Running, Simulation, View};
 use std::mem;
+use watching::Watching;
 
 #[derive(Debug)]
 pub struct DirectEngine {
@@ -28,6 +31,7 @@ pub struct DirectEngine {
     forward_links: ForwardLinks,
     scheduler: TickScheduler,
     ticks_run: u64,
+    watching: Option<Box<Watching>>,
 }
 
 impl DirectEngine {
@@ -48,6 +52,7 @@ impl DirectEngine {
             forward_links,
             scheduler: TickScheduler::default(),
             ticks_run: 0,
+            watching: None,
         };
         engine.init_inputs();
         engine.schedule(&initial.pending_ticks);
@@ -80,10 +85,10 @@ impl DirectEngine {
     }
 
     #[inline(always)]
-    fn tick(&mut self) {
+    fn tick<const WATCHED: bool>(&mut self) {
         let queues = self.scheduler.queues_this_tick();
         queues.for_each(|slot| {
-            self.tick_node(slot);
+            self.tick_node::<WATCHED>(slot);
         });
 
         self.scheduler.end_tick(queues);
@@ -93,7 +98,7 @@ impl DirectEngine {
         !self.scheduler.has_pending_ticks()
     }
 
-    fn apply(&mut self, slot: Slot, outcome: Outcome) {
+    fn apply<const WATCHED: bool>(&mut self, slot: Slot, outcome: Outcome) {
         let node = &mut self.nodes[slot];
         if let Some(tick) = outcome.schedule {
             schedule_tick(&mut self.scheduler, slot, node, tick.delay, tick.priority);
@@ -104,14 +109,20 @@ impl DirectEngine {
         node.state.plate_touched = outcome.state.plate_touched;
         node.played_note |= outcome.plays_note;
         if outcome.state.power != self.nodes[slot].state.power {
-            self.set_power_and_propagate(slot, outcome.state.power);
+            self.set_power_and_propagate::<WATCHED>(slot, outcome.state.power);
         }
     }
 
-    fn set_power_and_propagate(&mut self, slot: Slot, power: SignalStrength) {
+    fn set_power_and_propagate<const WATCHED: bool>(&mut self, slot: Slot, power: SignalStrength) {
         let node = &mut self.nodes[slot];
         let old_power = node.state.power;
         node.set_power(power);
+        if WATCHED
+            && old_power.is_zero() != power.is_zero()
+            && let Some(watching) = &mut self.watching
+        {
+            watching.notice(slot);
+        }
 
         for forward_link in self.forward_links.get(&node.forward_links) {
             let side = forward_link.side();
@@ -134,14 +145,44 @@ impl DirectEngine {
 
             inputs.update_power(old_input, new_input);
 
+            let was_powered = WATCHED && self.nodes[update].is_powered();
             update::update_node(&mut self.scheduler, &mut self.nodes, update);
+            if WATCHED
+                && self.nodes[update].is_powered() != was_powered
+                && let Some(watching) = &mut self.watching
+            {
+                watching.notice(update);
+            }
         }
+    }
+
+    #[inline(never)]
+    fn run_watched(&mut self, ticks: u64) -> Ran {
+        run_until_hit(self, ticks, DirectEngine::tick_watched)
+    }
+
+    #[inline(never)]
+    fn settle_watched(&mut self, limit: u64) -> Ran {
+        settle_until_hit(
+            self,
+            limit,
+            DirectEngine::is_idle,
+            DirectEngine::tick_watched,
+        )
+    }
+
+    fn tick_watched(&mut self) -> Option<Hit> {
+        self.tick::<true>();
+        self.ticks_run += 1;
+        let watching = self.watching.as_deref_mut()?;
+        watching.end_tick(self.ticks_run, &self.nodes)
     }
 }
 
 impl Simulation<nodes::Nodes> for DirectEngine {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            breakpoints: true,
             settling: true,
             write_back: true,
         }
@@ -152,17 +193,23 @@ impl Simulation<nodes::Nodes> for DirectEngine {
     }
 
     fn run(&mut self, ticks: u64) -> Result<Ran, SimulationError> {
+        if self.watching.is_some() {
+            return Ok(self.run_watched(ticks));
+        }
         self.ticks_run += ticks;
         for _ in 0..ticks {
-            self.tick();
+            self.tick::<false>();
         }
         Ok(Ran { ticks, stop: None })
     }
 
     fn settle(&mut self, limit: u64) -> Result<Ran, SimulationError> {
+        if self.watching.is_some() {
+            return Ok(self.settle_watched(limit));
+        }
         let mut ticks = 0;
         while !self.is_idle() && ticks < limit {
-            self.tick();
+            self.tick::<false>();
             ticks += 1;
         }
         self.ticks_run += ticks;
@@ -178,7 +225,17 @@ impl Simulation<nodes::Nodes> for DirectEngine {
         let node = &self.nodes[slot];
         let pending = node.pending(self.scheduler.current_tick());
         let outcome = input.drive(node.state, pending);
-        self.apply(slot, outcome);
+        if self.watching.is_some() {
+            self.apply::<true>(slot, outcome);
+        } else {
+            self.apply::<false>(slot, outcome);
+        }
+        Ok(())
+    }
+
+    fn watch(&mut self, watch: Watch<NodeId>) -> Result<(), SimulationError> {
+        let previous = self.watching.take();
+        self.watching = Watching::new(watch, previous.as_deref(), &self.nodes).map(Box::new);
         Ok(())
     }
 

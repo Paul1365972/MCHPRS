@@ -7,6 +7,7 @@ use crate::worldedit::mask::WorldEditMask;
 use crate::worldedit::pattern::WorldEditPattern;
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_network::packets::clientbound::CDeclareCommandsNodeParser as ProtocolParser;
+use mchprs_simulation::watch::Condition;
 use mchprs_syntax::expect::Expect;
 use mchprs_syntax::reader::{Reader, SyntaxError};
 
@@ -281,6 +282,49 @@ impl ArgParser for PatternParser {
 
     fn client(&self) -> ClientArgument {
         ClientArgument::Opaque
+    }
+}
+
+pub(super) struct ConditionParser;
+
+impl ArgParser for ConditionParser {
+    type Output = Condition;
+
+    fn parse(
+        &self,
+        reader: &mut Reader<'_>,
+        expect: &mut Expect,
+    ) -> Result<Condition, SyntaxError> {
+        let start = reader.cursor();
+        let comparison = reader.take_token();
+        expect.offer(reader, start, || ["==", "!=", "changes"]);
+        let condition: fn(u64) -> Condition = match comparison {
+            "changes" => return Ok(Condition::Changes),
+            "==" => Condition::Becomes,
+            "!=" => Condition::Leaves,
+            _ => return Err(expect.fail(start, "Expected ==, != or changes")),
+        };
+        if reader.read() != Some(' ') {
+            return Err(expect.fail(reader.cursor(), "Expected a value"));
+        }
+        let start = reader.cursor();
+        let text = reader.take_token();
+        let value = match text.get(..2) {
+            Some("0x") => u64::from_str_radix(&text[2..], 16),
+            Some("0b") => u64::from_str_radix(&text[2..], 2),
+            _ => text.parse(),
+        };
+        value
+            .map(condition)
+            .map_err(|_| expect.fail(start, "Expected a value like 47, 0x2F or 0b101111"))
+    }
+
+    fn client(&self) -> ClientArgument {
+        ClientArgument::AskServer(ProtocolParser::String(2))
+    }
+
+    fn consumes_remaining(&self) -> bool {
+        true
     }
 }
 

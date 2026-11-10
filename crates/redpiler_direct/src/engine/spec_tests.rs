@@ -120,7 +120,7 @@ fn repeaters_torches_and_comparators_update_and_tick_as_the_spec_says() {
                     assert_eq!(result(&engine, slot), spec, "{case}");
                 }
                 let slot = set_up(&mut engine, state, inputs, Pending::DueThisTick);
-                engine.tick_node(slot);
+                engine.tick_node::<false>(slot);
                 let spec = expected(kind.tick(state, inputs));
                 let case = format!("tick of {kind:?} in {state:?} with {inputs:?}");
                 assert_eq!(result(&engine, slot), spec, "{case}");

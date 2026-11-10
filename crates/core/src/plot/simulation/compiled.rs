@@ -91,10 +91,16 @@ impl Plot {
         }
         debug!("Starting redpiler with {setup}");
         let blocks = Arc::new(self.world.copy_blocks());
+        let observed = self
+            .probes
+            .iter()
+            .flat_map(|probe| probe.positions().iter().copied())
+            .collect();
         let job = CompileJob::spawn(
             Arc::clone(&blocks),
             self.world.region(),
             self.world.redstone.ticks.entries().to_vec(),
+            observed,
             setup.clone(),
             format!("p{},{}", self.world.x, self.world.z),
         )
@@ -103,6 +109,7 @@ impl Plot {
             StartError::CompileThread
         })?;
         self.advances.abandon(self.ticks);
+        self.halted = false;
         let ticks = mem::take(&mut self.world.redstone.ticks).into_entries();
         self.simulation = PlotSimulation::Compiling(Compiling {
             setup,
@@ -229,9 +236,10 @@ impl Plot {
         if update.events.contains(&Event::Shown(View::Observed)) {
             compiled.observing = false;
         }
+        let start_tick = compiled.start_tick;
         update.changes.apply(&mut self.world);
         self.record_ticks(ran);
-        self.handle_events(&update.events);
+        self.handle_events(&update.events, start_tick);
         self.show_world();
     }
 
@@ -255,6 +263,7 @@ impl Plot {
             simulation,
             before: compiling.before,
             written: FxHashSet::default(),
+            start_tick: self.ticks,
             ticks: 0,
             behind: false,
             observing: false,
@@ -270,10 +279,18 @@ impl Plot {
                     .send(Command::Drive(pos, Input::Touch(touched)));
             }
         }
+        let halts = compiled.capabilities.breakpoints;
         self.simulation = PlotSimulation::Compiled(compiled);
+        self.restart_watch();
         self.update_tick_rate();
         debug!("{message}");
         self.broadcast(&message);
+        let watched = self.probes.iter().any(|probe| probe.breakpoint.is_some());
+        if watched && !halts {
+            self.broadcast(&format!(
+                "The {backend} backend can't watch probes, so breakpoints wait until Redpiler stops."
+            ));
+        }
         self.refresh_scoreboard();
     }
 

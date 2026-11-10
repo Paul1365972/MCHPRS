@@ -11,13 +11,14 @@ use mchprs_simulation::backend::{
     Backend, CompileContext, CompileError, CompileStep, PortError, Source,
 };
 use mchprs_simulation::block_changes::BlockChanges;
-use mchprs_simulation::component::{default_role, strength_at};
+use mchprs_simulation::component::{default_role, powered_at, strength_at};
 use mchprs_simulation::input::DriveError;
 use mchprs_simulation::layout::{Component, Layout};
 use mchprs_simulation::ports::Role;
 use mchprs_simulation::readback::Readback;
 use mchprs_simulation::stepper;
-use mchprs_simulation::ticks::{Ran, SimulationError, Stop};
+use mchprs_simulation::ticks::{run_until_hit, settle_until_hit, Ran, SimulationError};
+use mchprs_simulation::watch::{Breakpoints, Hit, Watch};
 use mchprs_simulation::write_back::WriteBack;
 use mchprs_simulation::{Blocks, Capabilities, End, Running, Simulation, View};
 use mchprs_syntax::flag::{Flag, FlagValues};
@@ -61,6 +62,7 @@ impl Backend for VanillaBackend {
             region: source.region,
             inputs,
             ticks_run: 0,
+            breakpoints: Breakpoints::default(),
         };
         Ok((Box::new(simulation), components.into_iter().collect()))
     }
@@ -158,9 +160,18 @@ struct VanillaSimulation {
     region: Region,
     inputs: FxHashSet<BlockPos>,
     ticks_run: u64,
+    breakpoints: Breakpoints<BlockPos>,
 }
 
 impl VanillaSimulation {
+    fn tick(&mut self) -> Option<Hit> {
+        self.interpreter.tick();
+        self.ticks_run += 1;
+        let world = &self.interpreter;
+        let powered = |pos| powered_at(world, pos) == Some(true);
+        self.breakpoints.fire_all(self.ticks_run, powered)
+    }
+
     fn is_idle(&self) -> bool {
         self.interpreter.is_idle()
     }
@@ -169,6 +180,7 @@ impl VanillaSimulation {
 impl Simulation<Blocks> for VanillaSimulation {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            breakpoints: true,
             settling: true,
             write_back: true,
         }
@@ -179,24 +191,17 @@ impl Simulation<Blocks> for VanillaSimulation {
     }
 
     fn run(&mut self, ticks: u64) -> Result<Ran, SimulationError> {
-        for _ in 0..ticks {
-            self.interpreter.tick();
-        }
-        self.ticks_run += ticks;
-        Ok(Ran { ticks, stop: None })
+        Ok(run_until_hit(self, ticks, VanillaSimulation::tick))
     }
 
     fn settle(&mut self, limit: u64) -> Result<Ran, SimulationError> {
-        let mut ticks = 0;
-        while !self.is_idle() && ticks < limit {
-            self.interpreter.tick();
-            ticks += 1;
-        }
-        self.ticks_run += ticks;
-        Ok(Ran {
-            ticks,
-            stop: self.is_idle().then_some(Stop::Settled),
-        })
+        let ran = settle_until_hit(
+            self,
+            limit,
+            VanillaSimulation::is_idle,
+            VanillaSimulation::tick,
+        );
+        Ok(ran)
     }
 
     fn drive(&mut self, pos: BlockPos, input: Input) -> Result<(), DriveError> {
@@ -204,6 +209,13 @@ impl Simulation<Blocks> for VanillaSimulation {
             return Err(InputError::NotAnInput.into());
         }
         Ok(self.interpreter.drive(pos, input)?)
+    }
+
+    fn watch(&mut self, watch: Watch<BlockPos>) -> Result<(), SimulationError> {
+        let world = &self.interpreter;
+        let powered = |pos| powered_at(world, pos) == Some(true);
+        self.breakpoints = Breakpoints::new(watch.breakpoints, Some(&self.breakpoints), powered);
+        Ok(())
     }
 
     fn show(&mut self, _: View, changes: &mut BlockChanges) -> Result<(), SimulationError> {

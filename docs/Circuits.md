@@ -69,6 +69,7 @@ A repeater, torch or comparator declared as input never ticks.
 
 An observed node reports its state changes, and the host writes them into the world.
 Without `--io-only`, every node is observed. With it, only ports and the positions in `Source::observed` are.
+The server puts the positions of the plot's probes into `Source::observed`.
 
 ## Node Behaviour
 
