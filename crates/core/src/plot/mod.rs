@@ -348,6 +348,7 @@ impl Plot {
         self.scoreboard
             .set_redpiler_state(&self.players, RedpilerState::Compiling);
         let region = self.world.region();
+        mchprs_redstone::noteblock::run_block_events(&mut self.world);
         let ticks = self.world.redstone.ticks.entries().to_vec();
         let mut players_need_updates = HashSet::new();
         let world = &self.world;

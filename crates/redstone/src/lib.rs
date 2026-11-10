@@ -49,6 +49,7 @@ pub const HORIZONTAL: [BlockDirection; 4] = [
 pub struct Redstone {
     pub ticks: TickQueue,
     updater: update::NeighborUpdater,
+    block_events: Vec<BlockPos>,
 }
 
 impl Redstone {
@@ -56,11 +57,12 @@ impl Redstone {
         Redstone {
             ticks,
             updater: Default::default(),
+            block_events: Vec::new(),
         }
     }
 
     pub fn is_idle(&self) -> bool {
-        self.ticks.entries().is_empty()
+        self.ticks.entries().is_empty() && self.block_events.is_empty()
     }
 }
 
@@ -74,8 +76,8 @@ pub trait RedstoneWorld: BlockStore {
     }
 }
 
-/// Updates every block in `region`, then runs at most `limit` ticks until none is pending, and
-/// returns how many it ran if it got there.
+/// Updates every block in `region`, then runs at most `limit` ticks until no tick or block event
+/// is pending, and returns how many it ran if it got there.
 pub fn settle(world: &mut impl RedstoneWorld, region: Region, limit: u64) -> Option<u64> {
     update_region(world, region);
     for ticks in 0..limit {

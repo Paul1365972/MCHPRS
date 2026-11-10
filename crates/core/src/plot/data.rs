@@ -1,5 +1,6 @@
 use super::*;
 use anyhow::{ensure, Context, Result};
+use mchprs_redstone::noteblock;
 use mchprs_redstone::tick_queue::TickEntry;
 use mchprs_save_data::plot_data::SavedTick;
 use std::collections::HashMap;
@@ -158,6 +159,8 @@ impl Plot {
     }
 
     pub(super) fn save(&mut self) {
+        // A saved plot holds no block events.
+        noteblock::run_block_events(&mut self.world);
         let world = &mut self.world;
         let chunk_data: Vec<ChunkData<'_>> = world.chunks.iter_mut().map(ChunkData::new).collect();
         let data = PlotData {

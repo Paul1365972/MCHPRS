@@ -4,6 +4,7 @@ use crate::{signal, RedstoneWorld};
 use mchprs_blocks::block_store::BlockView;
 use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::{BlockFace, BlockPos};
+use std::mem;
 
 pub fn is_unblocked(world: &impl BlockView, pos: BlockPos) -> bool {
     matches!(world.block(pos.offset(BlockFace::Top)), Block::Air)
@@ -38,7 +39,7 @@ pub(crate) fn neighbor_changed(
         return;
     }
     if should_be_powered {
-        play_note(world, pos, instrument, note);
+        play_note(world, pos);
     }
     let state = Block::NoteBlock {
         instrument,
@@ -62,11 +63,35 @@ pub(crate) fn use_block(
         powered,
     };
     update::set_block(world, pos, state, Notify::All);
-    play_note(world, pos, instrument, note);
+    play_note(world, pos);
 }
 
-fn play_note(world: &mut impl RedstoneWorld, pos: BlockPos, instrument: Instrument, note: u8) {
+fn play_note(world: &mut impl RedstoneWorld, pos: BlockPos) {
     if is_unblocked(world, pos) {
+        queue_block_event(world, pos);
+    }
+}
+
+/// Vanilla's `ServerLevel.blockEvent`
+fn queue_block_event(world: &mut impl RedstoneWorld, pos: BlockPos) {
+    let events = &mut world.redstone().block_events;
+    if !events.contains(&pos) {
+        events.push(pos);
+    }
+}
+
+/// Vanilla's `ServerLevel.runBlockEvents`
+pub fn run_block_events(world: &mut impl RedstoneWorld) {
+    for pos in mem::take(&mut world.redstone().block_events) {
+        trigger_event(world, pos);
+    }
+}
+
+fn trigger_event(world: &mut impl RedstoneWorld, pos: BlockPos) {
+    if let Block::NoteBlock {
+        instrument, note, ..
+    } = world.block(pos)
+    {
         world.play_sound(pos, Sound::note(instrument, note));
     }
 }
