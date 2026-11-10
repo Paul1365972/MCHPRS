@@ -6,6 +6,7 @@ use mchprs_blocks::region::Region;
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::input::{is_drivable, Input, InputError};
 use mchprs_redstone::interpreter::Interpreter;
+use mchprs_redstone::noteblock;
 use mchprs_simulation::backend::{
     Backend, CompileContext, CompileError, CompileStep, PortError, Source,
 };
@@ -220,6 +221,7 @@ impl Simulation<Blocks> for VanillaSimulation {
     }
 
     fn stop(mut self: Box<Self>) -> Result<End<Blocks>, SimulationError> {
+        noteblock::run_block_events(&mut self.interpreter);
         let mut changes = BlockChanges::default();
         self.show(View::All, &mut changes)?;
         Ok(End {

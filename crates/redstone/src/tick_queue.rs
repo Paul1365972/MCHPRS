@@ -1,4 +1,4 @@
-use crate::{behavior, RedstoneWorld};
+use crate::{behavior, noteblock, RedstoneWorld};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
 use serde::{Deserialize, Serialize};
@@ -146,4 +146,5 @@ pub fn run_scheduled_ticks(world: &mut impl RedstoneWorld) {
             behavior::tick(world, entry.pos, block);
         }
     }
+    noteblock::run_block_events(world);
 }
