@@ -1,5 +1,5 @@
 use super::rng::Rng;
-use crate::numbers::when;
+use crate::numbers::{counted, when};
 use crate::oracle::Step;
 use crate::scenario::{self, Action, Target};
 use crate::Error;
@@ -63,6 +63,12 @@ pub fn moment(circuit: &Circuit, played: &[Step]) -> String {
         Some(Step::Drive(..)) => format!("after {last_input}"),
         Some(Step::Tick) | None => format!("{}, the last input being {last_input}", when(ticks)),
     }
+}
+
+pub fn describe(circuit: &Circuit, steps: &[Step]) -> String {
+    let (mut lines, ticks) = timed_inputs(circuit, steps);
+    lines.push(counted(ticks, "tick"));
+    lines.join("\n")
 }
 
 fn timed_inputs(circuit: &Circuit, steps: &[Step]) -> (Vec<String>, u64) {

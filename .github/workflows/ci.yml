@@ -64,6 +64,9 @@ jobs:
           cargo run --locked -p rilc fuzz passes --cases 10000
           cargo run --locked -p rilc fuzz passes crates/redpiler/fuzz_regressions/*.ril
 
+      - name: Fuzz the backends against the interpreter on worlds
+        run: cargo run --locked -p rilc fuzz worlds --cases 10000
+
   build:
     strategy:
       fail-fast: false

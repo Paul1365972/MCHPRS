@@ -4,6 +4,8 @@ mod passes;
 mod report;
 mod rng;
 mod scenario_generator;
+mod world_generator;
+mod worlds;
 
 use crate::input::Loaded;
 use crate::runner::labelled_graph;
@@ -42,6 +44,13 @@ pub enum Property {
         #[command(flatten)]
         cases: Cases,
     },
+    /// On random worlds, the interpreter's states and pending ticks are what the world's circuit
+    /// shows in some order it may run in, and `reference`, `direct -o` and `direct -o -i` show
+    /// the same or, where a component differs, what the circuit shows in another such order
+    Worlds {
+        #[command(flatten)]
+        cases: Cases,
+    },
 }
 
 #[derive(Args)]
@@ -62,6 +71,7 @@ pub fn command(property: Property) -> Outcome {
             passes,
             cases,
         } => passes::command(&inputs, passes.as_deref(), &cases),
+        Property::Worlds { cases } => worlds::command(&cases),
     }
 }
 

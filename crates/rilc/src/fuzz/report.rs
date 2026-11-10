@@ -28,6 +28,7 @@ impl Failure {
         println!("FAILED rilc fuzz {} --seed {seed} --cases 1", self.command);
         println!("{:#}", self.problem);
         match &self.case {
+            FailedCase::World(described) => println!("{described}"),
             FailedCase::Circuit(case, [first, second]) => {
                 let write = |extension: &str, text: &str| {
                     let path = Path::new(FAILED_CASE_DIRECTORY).join(format!("{seed}.{extension}"));
@@ -53,6 +54,7 @@ impl Failure {
 
 pub enum FailedCase {
     Circuit(Box<CircuitCase>, [String; 2]),
+    World(String),
 }
 
 struct Checking {
