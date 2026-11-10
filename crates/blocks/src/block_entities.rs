@@ -2,10 +2,12 @@ use crate::items::Item;
 use mchprs_proc_macros::protocol_id;
 use mchprs_utils::{map, nbt_unwrap_val};
 use serde::{Deserialize, Serialize};
+use std::array;
 use std::collections::HashMap;
 use std::str::FromStr;
 
 const EMPTY_TEXT_COMPONENT: &str = r#""""#;
+const PRE_1_20_SIGN_ROWS: [&str; 4] = ["Text1", "Text2", "Text3", "Text4"];
 
 /// A single item in an inventory
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -179,34 +181,32 @@ impl BlockEntity {
                 nbt_unwrap_val!(&nbt["Items"], Value::List),
                 ContainerType::Hopper,
             ),
+            // Lenient: tools write sign NBT in many wrong ways.
             "sign" => {
-                let sign = if nbt.contains_key("Text1") {
-                    // This is the pre-1.20 encoding
+                let row = |value: Option<&Value>| match value {
+                    Some(Value::String(text)) => text.clone(),
+                    _ => String::new(),
+                };
+                let side = |name| {
+                    let messages = match nbt.get(name) {
+                        Some(Value::Compound(side)) => side.get("messages"),
+                        _ => None,
+                    };
+                    let rows = match messages {
+                        Some(Value::List(rows)) => rows.as_slice(),
+                        _ => &[],
+                    };
+                    array::from_fn(|index| row(rows.get(index)))
+                };
+                let sign = if nbt.contains_key(PRE_1_20_SIGN_ROWS[0]) {
                     SignBlockEntity {
-                        front_rows: [
-                            // This cloning is really dumb
-                            nbt_unwrap_val!(nbt["Text1"].clone(), Value::String),
-                            nbt_unwrap_val!(nbt["Text2"].clone(), Value::String),
-                            nbt_unwrap_val!(nbt["Text3"].clone(), Value::String),
-                            nbt_unwrap_val!(nbt["Text4"].clone(), Value::String),
-                        ],
+                        front_rows: PRE_1_20_SIGN_ROWS.map(|key| row(nbt.get(key))),
                         back_rows: Default::default(),
                     }
                 } else {
-                    let get_side = |side| {
-                        let messages =
-                            nbt_unwrap_val!(&nbt[side], Value::Compound).get("messages")?;
-                        let mut messages = nbt_unwrap_val!(messages, Value::List).iter().cloned();
-                        Some([
-                            nbt_unwrap_val!(messages.next()?, Value::String),
-                            nbt_unwrap_val!(messages.next()?, Value::String),
-                            nbt_unwrap_val!(messages.next()?, Value::String),
-                            nbt_unwrap_val!(messages.next()?, Value::String),
-                        ])
-                    };
                     SignBlockEntity {
-                        front_rows: get_side("front_text")?,
-                        back_rows: get_side("back_text")?,
+                        front_rows: side("front_text"),
+                        back_rows: side("back_text"),
                     }
                 };
                 Some(BlockEntity::Sign(Box::new(sign)))
