@@ -1,0 +1,35 @@
+origin -61 45 68
+size 6 4 9
+state 0 stone
+state 1 redstone_wire[east=side,north=side,power=0,south=side,west=none]
+state 2 redstone_wire[east=up,north=side,power=0,south=side,west=none]
+state 3 repeater[delay=2,facing=west,locked=false,powered=false]
+state 4 redstone_wire[east=side,north=none,power=0,south=none,west=side]
+state 5 redstone_wire[east=side,north=none,power=0,south=side,west=up]
+state 6 redstone_wire[east=side,north=side,power=0,south=none,west=side]
+state 7 lever[face=floor,facing=north,powered=false]
+state 8 redstone_lamp[lit=false]
+state 9 redstone_wire[east=side,north=side,power=11,south=side,west=none]
+state 10 redstone_wire[east=up,north=side,power=12,south=side,west=none]
+state 11 redstone_wire[east=side,north=none,power=13,south=none,west=side]
+state 12 redstone_wire[east=side,north=none,power=14,south=side,west=up]
+state 13 redstone_wire[east=side,north=side,power=15,south=none,west=side]
+state 14 lever[face=floor,facing=north,powered=true]
+state 15 redstone_lamp[lit=true]
+state 16 redstone_wire[east=side,north=side,power=12,south=side,west=none]
+state 17 redstone_wire[east=up,north=side,power=13,south=side,west=none]
+state 18 repeater[delay=2,facing=west,locked=false,powered=true]
+state 19 redstone_wire[east=side,north=none,power=14,south=none,west=side]
+state 20 redstone_wire[east=side,north=none,power=15,south=side,west=up]
+state 21 redstone_wire[east=side,north=side,power=14,south=none,west=side]
+start 1,0,4=0 1,0,5=0 1,1,4=1 1,1,5=2 2,0,4=0 2,1,4=3 2,1,5=0 2,2,5=4 3,0,5=0 3,0,6=0 3,1,4=0 3,1,5=5 3,1,6=6 4,0,6=0 4,0,7=0 4,1,6=7 4,1,7=8
+wait 6
+use 4,1,6 1,1,4=9 1,1,5=10 2,2,5=11 3,1,5=12 3,1,6=13 4,1,6=14 4,1,7=15
+wait 2
+use 4,1,6 1,1,4=1 1,1,5=2 2,2,5=4 3,1,5=5 3,1,6=6 4,1,6=7
+wait 2 1,1,4=16 1,1,5=17 2,1,4=18 2,2,5=19 3,1,5=20 3,1,6=21
+use 4,1,6 3,1,6=13 4,1,6=14
+wait 2
+use 4,1,6 3,1,6=21 4,1,6=7
+wait 4 4,1,7=8
+wait 64

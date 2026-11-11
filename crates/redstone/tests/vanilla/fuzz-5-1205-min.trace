@@ -1,0 +1,11 @@
+origin 77 16 18
+size 9 4 7
+state 0 stone
+state 1 redstone_wire[east=side,north=side,power=0,south=side,west=side]
+state 2 lever[face=floor,facing=west,powered=false]
+state 3 redstone_wire[east=none,north=side,power=15,south=side,west=none]
+state 4 lever[face=floor,facing=west,powered=true]
+start 6,0,4=0 6,0,5=0 6,1,4=1 6,1,5=2
+wait 22
+use 6,1,5 6,1,4=3 6,1,5=4
+wait 58

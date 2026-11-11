@@ -1,0 +1,14 @@
+origin 90 45 29
+size 9 4 9
+state 0 stone
+state 1 comparator[facing=south,mode=subtract,powered=false]{OutputSignal:0}
+state 2 lever[face=floor,facing=east,powered=false]
+state 3 redstone_wire[east=side,north=side,power=0,south=side,west=side]
+state 4 lever[face=floor,facing=east,powered=true]
+state 5 comparator[facing=south,mode=subtract,powered=true]{OutputSignal:15}
+state 6 redstone_wire[east=side,north=none,power=0,south=none,west=side]
+start 1,0,5=0 1,0,6=0 1,1,5=1 1,1,6=2 2,0,5=0 2,1,5=3
+wait 36
+use 1,1,6 1,1,6=4
+wait 2 1,1,5=5 2,1,5=6
+wait 42
