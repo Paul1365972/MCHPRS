@@ -1,0 +1,44 @@
+origin -94 35 -39
+size 9 4 8
+state 0 stone
+state 1 redstone_wire[east=side,north=none,power=15,south=side,west=none]
+state 2 repeater[delay=3,facing=south,locked=false,powered=true]
+state 3 redstone_wire[east=side,north=side,power=15,south=side,west=none]
+state 4 redstone_torch[lit=true]
+state 5 comparator[facing=north,mode=compare,powered=true]{OutputSignal:15}
+state 6 redstone_wire[east=side,north=side,power=15,south=none,west=none]
+state 7 redstone_lamp[lit=true]
+state 8 lever[face=floor,facing=east,powered=false]
+state 9 redstone_wire[east=up,north=side,power=15,south=side,west=side]
+state 10 redstone_wire[east=side,north=side,power=15,south=side,west=side]
+state 11 lever[face=floor,facing=south,powered=false]
+state 12 note_block[instrument=basedrum,note=0,powered=false]
+state 13 repeater[delay=2,facing=north,locked=false,powered=false]
+state 14 redstone_block
+state 15 redstone_wire[east=side,north=side,power=15,south=none,west=side]
+state 16 redstone_wire[east=side,north=none,power=14,south=none,west=side]
+state 17 repeater[delay=4,facing=east,locked=false,powered=false]
+state 18 smooth_stone_slab[type=bottom,waterlogged=false]
+state 19 repeater[delay=4,facing=north,locked=false,powered=false]
+state 20 redstone_wire[east=none,north=side,power=15,south=none,west=side]
+state 21 repeater[delay=3,facing=west,locked=false,powered=true]
+state 22 smooth_stone_slab[type=top,waterlogged=false]
+state 23 redstone_wire[east=side,north=none,power=0,south=none,west=side]
+state 24 repeater[delay=2,facing=west,locked=false,powered=false]
+state 25 lever[face=floor,facing=west,powered=false]
+state 26 redstone_wall_torch[facing=south,lit=true]
+state 27 glass
+state 28 comparator[facing=south,mode=compare,powered=false]{OutputSignal:0}
+state 29 note_block[instrument=basedrum,note=0,powered=true]
+state 30 lever[face=floor,facing=west,powered=true]
+state 31 lever[face=floor,facing=south,powered=true]
+start 1,0,1=0 1,0,2=0 1,0,3=0 1,0,4=0 1,0,5=0 1,0,6=0 1,1,1=1 1,1,2=2 1,1,3=3 1,1,4=4 1,1,5=5 1,1,6=6 2,0,1=0 2,0,2=0 2,0,3=0 2,0,4=0 2,0,5=0 2,0,6=0 2,1,1=4 2,1,2=7 2,1,3=8 2,1,4=9 2,1,5=10 2,1,6=11 3,0,1=0 3,0,2=0 3,0,3=0 3,0,4=0 3,0,5=0 3,0,6=0 3,1,1=0 3,1,2=12 3,1,3=13 3,1,4=0 3,1,5=14 3,1,6=15 3,2,1=4 3,2,4=16 4,0,1=0 4,0,2=0 4,0,3=0 4,0,4=0 4,0,5=0 4,0,6=0 4,1,1=17 4,1,2=18 4,1,3=19 4,1,4=13 4,1,5=20 4,1,6=21 5,0,1=0 5,0,2=0 5,0,3=0 5,0,4=0 5,0,5=0 5,0,6=0 5,1,1=22 5,1,3=0 5,1,4=4 5,1,5=0 5,1,6=22 5,2,3=23 5,2,5=24 6,0,1=0 6,0,2=0 6,0,3=0 6,0,4=0 6,0,5=0 6,0,6=0 6,1,1=0 6,1,2=25 6,1,3=0 6,1,4=26 6,1,5=6 6,1,6=22 6,2,3=23 7,0,1=0 7,0,2=0 7,0,3=0 7,0,4=0 7,0,5=0 7,0,6=0 7,1,1=27 7,1,2=28 7,1,3=0 7,1,4=29 7,1,5=16 7,2,3=23
+wait 22
+use 6,1,2 6,1,2=30
+wait 24
+use 2,1,6 2,1,6=31
+wait 14
+use 6,1,2 6,1,2=25
+wait 24
+use 6,1,2 6,1,2=30
+wait 36

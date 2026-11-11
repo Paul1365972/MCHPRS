@@ -1,0 +1,18 @@
+origin 87 40 -30
+size 7 4 7
+state 0 stone
+state 1 redstone_lamp[lit=false]
+state 2 lever[face=floor,facing=south,powered=false]
+state 3 redstone_lamp[lit=true]
+state 4 lever[face=floor,facing=south,powered=true]
+start 1,0,5=0 1,1,5=1 2,0,5=0 2,1,5=2
+wait 10
+use 2,1,5 1,1,5=3 2,1,5=4
+wait 8
+use 2,1,5 2,1,5
+wait 2
+use 2,1,5 2,1,5=2
+wait 2 1,1,5=1
+use 2,1,5 2,1,5 1,1,5=3
+wait 4 1,1,5=1
+wait 54
