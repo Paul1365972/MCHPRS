@@ -3,5 +3,6 @@
 mod common;
 
 mod components;
+mod handoff;
 mod ports;
 mod timings;

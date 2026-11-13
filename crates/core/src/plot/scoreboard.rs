@@ -1,113 +1,101 @@
+use super::advance::{Goal, Progress};
 use crate::player::{PacketSender, Player};
-use crate::plot::stepped::CompilerOptions;
+use mchprs_backends::Setup;
 use mchprs_network::packets::clientbound::{
     CDisplayObjective, CResetScore, CUpdateObjectives, CUpdateScore, ClientBoundPacket,
     ObjectiveNumberFormat,
 };
-use mchprs_network::text::{ColorCode, TextComponent, TextComponentBuilder};
+use mchprs_network::text::{TextColor, TextComponent};
+use mchprs_save_data::plot_data::{Tps, WorldSendRate};
+use mchprs_simulation::backend::CompileStep;
 
-#[derive(PartialEq, Eq, Default, Clone, Copy)]
-pub enum RedpilerState {
-    #[default]
+const OBJECTIVE: &str = "plot_status";
+const SIDEBAR: u8 = 1;
+const CLIENT_MAX_LINES: usize = 15;
+const PROGRESS_BAR_WIDTH: usize = 20;
+
+const TITLE: &str = "#FFB000";
+const LABEL: &str = "#E5E7EB";
+const VALUE: &str = "#FFFFFF";
+const ACCENT: &str = "#5EEAD4";
+const GOOD: &str = "#4ADE80";
+const BUSY: &str = "#FACC15";
+const BAD: &str = "#F87171";
+const MUTED: &str = "#4B5563";
+
+pub enum RedpilerStatus {
     Stopped,
-    Compiling,
-    Running,
+    Compiling {
+        setup: Setup,
+        step: Option<CompileStep>,
+    },
+    Running {
+        setup: Setup,
+    },
 }
 
-impl RedpilerState {
-    fn to_str(self) -> TextComponent {
-        let (text, color) = match self {
-            RedpilerState::Stopped => ("Stopped", ColorCode::LightPurple.into()),
-            RedpilerState::Compiling => ("Compiling", ColorCode::Yellow.into()),
-            RedpilerState::Running => ("Running", ColorCode::Green.into()),
-        };
-        TextComponentBuilder::new(text.into())
-            .color(color)
-            .bold()
-            .finish()
+pub struct PlotStatus {
+    pub redpiler: RedpilerStatus,
+    pub advance: Option<Progress>,
+    pub tps: Option<f64>,
+    pub tps_target: Tps,
+    pub world_send_rate: WorldSendRate,
+    pub running_behind: bool,
+}
+
+#[derive(PartialEq)]
+struct Line {
+    label: TextComponent,
+    value: Option<TextComponent>,
+}
+
+impl Line {
+    fn new(label: &str, value: TextComponent) -> Line {
+        Line {
+            label: colored(label, LABEL),
+            value: Some(value),
+        }
     }
-}
 
-#[derive(Clone)]
-pub struct ScoreboardLine {
-    entity_name: String,
-    text: TextComponent,
-}
+    fn text(text: &str, color: &str) -> Line {
+        Line {
+            label: colored(text, color),
+            value: None,
+        }
+    }
 
-impl ScoreboardLine {
-    pub fn new(entity_name: String, text: TextComponent) -> Self {
-        Self { entity_name, text }
+    fn blank() -> Line {
+        Line {
+            label: TextComponent::default(),
+            value: None,
+        }
     }
 }
 
 pub struct Scoreboard {
-    current_state: Vec<ScoreboardLine>,
-}
-
-impl Default for Scoreboard {
-    fn default() -> Scoreboard {
-        let mut sb = Scoreboard {
-            current_state: vec![],
-        };
-        sb.set_redpiler_state(&[], RedpilerState::Stopped);
-        sb
-    }
+    title: TextComponent,
+    lines: Vec<Line>,
 }
 
 impl Scoreboard {
-    fn make_update_packet(&self, line: usize) -> CUpdateScore {
-        CUpdateScore {
-            entity_name: self.current_state[line].entity_name.clone(),
-            objective_name: "redpiler_status".to_string(),
-            value: (self.current_state.len() - line) as i32,
-            display_name: Some(self.current_state[line].text.clone()),
-            number_format: Some(ObjectiveNumberFormat::Blank),
+    pub fn new(plot_x: i32, plot_z: i32) -> Scoreboard {
+        let mut title = colored("Plot ", TITLE);
+        title.bold = true;
+        title
+            .extra
+            .push(colored(&format!("{plot_x}, {plot_z}"), VALUE));
+        Scoreboard {
+            title,
+            lines: Vec::new(),
         }
-    }
-
-    fn make_removal_packet(&self, line: usize) -> CResetScore {
-        CResetScore {
-            entity_name: self.current_state[line].entity_name.clone(),
-            objective_name: Some("redpiler_status".to_string()),
-        }
-    }
-
-    fn set_lines(&mut self, players: &[Player], lines: Vec<ScoreboardLine>) {
-        for line in 0..self.current_state.len() {
-            let removal_packet = self.make_removal_packet(line).encode();
-            players.iter().for_each(|p| p.send_packet(&removal_packet));
-        }
-
-        self.current_state = lines;
-
-        for line in 0..self.current_state.len() {
-            let update_packet = self.make_update_packet(line).encode();
-            players.iter().for_each(|p| p.send_packet(&update_packet));
-        }
-    }
-
-    fn set_line(&mut self, players: &[Player], line: usize, text: ScoreboardLine) {
-        if line == self.current_state.len() {
-            self.current_state.push(text);
-        } else {
-            let removal_packet = self.make_removal_packet(line).encode();
-            players.iter().for_each(|p| p.send_packet(&removal_packet));
-
-            self.current_state[line] = text;
-        }
-
-        let update_packet = self.make_update_packet(line).encode();
-        players.iter().for_each(|p| p.send_packet(&update_packet));
     }
 
     pub fn add_player(&self, player: &Player) {
         player.send_packet(
             &CUpdateObjectives {
-                objective_name: "redpiler_status".into(),
+                objective_name: OBJECTIVE.into(),
                 mode: 0,
-                objective_value: TextComponentBuilder::new("Redpiler Status".into())
-                    .color_code(ColorCode::Red)
-                    .finish(),
+                objective_value: self.title.clone(),
                 ty: 0,
                 number_format: Some(ObjectiveNumberFormat::Blank),
             }
@@ -115,61 +103,186 @@ impl Scoreboard {
         );
         player.send_packet(
             &CDisplayObjective {
-                position: 1,
-                score_name: "redpiler_status".into(),
+                position: SIDEBAR,
+                score_name: OBJECTIVE.into(),
             }
             .encode(),
         );
-        for i in 0..self.current_state.len() {
-            player.send_packet(&self.make_update_packet(i).encode());
+        for (index, line) in self.lines.iter().enumerate() {
+            player.send_packet(&update_packet(index, line).encode());
         }
     }
 
-    pub fn remove_player(&mut self, player: &Player) {
-        for i in 0..self.current_state.len() {
-            player.send_packet(&self.make_removal_packet(i).encode());
-        }
-    }
-
-    pub fn set_redpiler_state(&mut self, players: &[Player], state: RedpilerState) {
-        self.set_line(
-            players,
-            0,
-            ScoreboardLine::new("redpiler_state".into(), state.to_str()),
+    pub fn remove_player(&self, player: &Player) {
+        player.send_packet(
+            &CUpdateObjectives {
+                objective_name: OBJECTIVE.into(),
+                mode: 1,
+                objective_value: TextComponent::default(),
+                ty: 0,
+                number_format: None,
+            }
+            .encode(),
         );
     }
 
-    pub fn set_redpiler_options(&mut self, players: &[Player], options: &CompilerOptions) {
-        let mut new_lines = vec![self.current_state[0].clone()];
+    pub fn show(&mut self, players: &[Player], status: &PlotStatus) {
+        let lines = layout(status);
+        for (index, line) in lines.iter().enumerate() {
+            if self.lines.get(index) != Some(line) {
+                let packet = update_packet(index, line).encode();
+                players
+                    .iter()
+                    .for_each(|player| player.send_packet(&packet));
+            }
+        }
+        for index in lines.len()..self.lines.len() {
+            let packet = CResetScore {
+                entity_name: entity_name(index),
+                objective_name: Some(OBJECTIVE.into()),
+            }
+            .encode();
+            players
+                .iter()
+                .for_each(|player| player.send_packet(&packet));
+        }
+        self.lines = lines;
+    }
+}
 
-        let mut flags = Vec::new();
-        for flag in options
-            .flags
-            .flags()
-            .filter(|flag| options.flags.is_on(flag))
-        {
-            flags.push((flag.name().to_owned(), format!("- {}", flag.description())));
+fn layout(status: &PlotStatus) -> Vec<Line> {
+    let mut lines = Vec::new();
+    match &status.redpiler {
+        RedpilerStatus::Stopped => {
+            lines.push(Line::new("Redpiler", colored("● Stopped", LABEL)));
         }
-        if options.update {
-            flags.push(("update".to_owned(), "- update".to_owned()));
+        RedpilerStatus::Compiling { setup, step } => {
+            lines.push(Line::new("Redpiler", colored("● Compiling", BUSY)));
+            push_setup(&mut lines, setup);
+            if let Some(step) = step {
+                push_step(&mut lines, step);
+            }
         }
+        RedpilerStatus::Running { setup } => {
+            lines.push(Line::new("Redpiler", colored("● Running", GOOD)));
+            push_setup(&mut lines, setup);
+        }
+    }
 
-        if !flags.is_empty() {
-            new_lines.push(ScoreboardLine::new(
-                "flags".into(),
-                TextComponentBuilder::new("Flags:".into())
-                    .color_code(ColorCode::Gray)
-                    .finish(),
-            ));
-            new_lines.extend(flags.iter().map(|flag| {
-                ScoreboardLine::new(
-                    format!("flag_{}", flag.0),
-                    TextComponentBuilder::new(flag.1.to_string())
-                        .color_code(ColorCode::Aqua)
-                        .finish(),
-                )
-            }));
+    lines.push(Line::blank());
+    let rate_color = if status.running_behind { BAD } else { GOOD };
+    let measured = status.tps.map_or("–".to_owned(), format_rate);
+    let mut rate = colored(&measured, rate_color);
+    let target = match status.tps_target {
+        Tps::Limited(rate) if rate <= 0.0 => "paused".to_owned(),
+        Tps::Limited(rate) => format_rate(f64::from(rate)),
+        Tps::Unlimited => "∞".to_owned(),
+    };
+    rate.extra.push(colored(&format!(" / {target}"), LABEL));
+    lines.push(Line::new("RTPS", rate));
+    if let Some(progress) = status.advance {
+        push_advance(&mut lines, progress);
+    }
+    let send_rate = match status.world_send_rate.0 {
+        rate if rate > 0.0 => format!("{} Hz", format_rate(f64::from(rate))),
+        _ => "off".to_owned(),
+    };
+    lines.push(Line::new("World sends", colored(&send_rate, VALUE)));
+    if status.running_behind {
+        lines.push(Line::text("⚠ Running behind", BAD));
+    }
+    lines.truncate(CLIENT_MAX_LINES);
+    lines
+}
+
+fn push_setup(lines: &mut Vec<Line>, setup: &Setup) {
+    lines.push(Line::new("Backend", colored(setup.name(), ACCENT)));
+    let flags = setup.flags().to_string();
+    if !flags.is_empty() {
+        lines.push(Line::new("Flags", colored(&flags, ACCENT)));
+    }
+}
+
+fn push_step(lines: &mut Vec<Line>, step: &CompileStep) {
+    lines.push(Line::text(step.name, VALUE));
+    if step.total > 1 {
+        let count = format!("{}/{}", step.completed, step.total);
+        lines.push(Line {
+            label: bar(step.completed as u64, step.total as u64),
+            value: Some(colored(&count, LABEL)),
+        });
+    }
+}
+
+fn push_advance(lines: &mut Vec<Line>, progress: Progress) {
+    let mut ran = colored(&format_count(progress.ran), BUSY);
+    match progress.goal {
+        Goal::Ticks(ticks) => {
+            ran.extra
+                .push(colored(&format!(" / {}", format_count(ticks)), LABEL));
+            lines.push(Line::new("Advancing", ran));
+            lines.push(Line {
+                label: bar(progress.ran, ticks),
+                value: None,
+            });
         }
-        self.set_lines(players, new_lines);
+        Goal::Settled => lines.push(Line::new("Settling", ran)),
+    }
+}
+
+fn bar(completed: u64, total: u64) -> TextComponent {
+    let fraction = match total {
+        0 => 0.0,
+        total => completed as f64 / total as f64,
+    };
+    let filled = ((fraction * PROGRESS_BAR_WIDTH as f64) as usize).min(PROGRESS_BAR_WIDTH);
+    let mut bar = colored(&"|".repeat(filled), GOOD);
+    bar.extra
+        .push(colored(&"|".repeat(PROGRESS_BAR_WIDTH - filled), MUTED));
+    bar
+}
+
+fn update_packet(index: usize, line: &Line) -> CUpdateScore {
+    CUpdateScore {
+        entity_name: entity_name(index),
+        objective_name: OBJECTIVE.into(),
+        value: (CLIENT_MAX_LINES - index) as i32,
+        display_name: Some(line.label.clone()),
+        number_format: Some(match &line.value {
+            Some(value) => ObjectiveNumberFormat::Fixed {
+                content: value.clone(),
+            },
+            None => ObjectiveNumberFormat::Blank,
+        }),
+    }
+}
+
+fn entity_name(index: usize) -> String {
+    format!("line_{index}")
+}
+
+fn colored(text: &str, color: &str) -> TextComponent {
+    TextComponent {
+        text: text.to_owned(),
+        color: Some(TextColor::Hex(color.to_owned())),
+        ..Default::default()
+    }
+}
+
+fn format_rate(rate: f64) -> String {
+    match rate {
+        rate if rate >= 1e6 => format!("{:.2}M", rate / 1e6),
+        rate if rate >= 1e4 => format!("{:.1}k", rate / 1e3),
+        rate if rate >= 100.0 => format!("{rate:.0}"),
+        rate if rate.fract() == 0.0 => format!("{rate:.0}"),
+        rate => format!("{rate:.1}"),
+    }
+}
+
+fn format_count(count: u64) -> String {
+    match count {
+        1_000_000.. => format!("{:.2}M", count as f64 / 1e6),
+        10_000.. => format!("{:.1}k", count as f64 / 1e3),
+        _ => count.to_string(),
     }
 }

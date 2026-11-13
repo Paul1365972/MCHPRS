@@ -1,4 +1,4 @@
-use super::{Plot, PLOT_BLOCK_HEIGHT};
+use super::{Plot, ERROR_REDPILER_ACTIVE, PLOT_BLOCK_HEIGHT};
 use crate::commands::schematic::schematic_names;
 use crate::commands::suggestions::SuggestionSource;
 use crate::item_stack::ItemStack;
@@ -281,7 +281,6 @@ impl ServerBoundPacketHandler for Plot {
         self.players[player].yaw = player_rotation.yaw;
         self.players[player].pitch = player_rotation.pitch;
         self.players[player].on_ground = player_rotation.on_ground;
-        self.on_players_moved();
         let rotation_packet = CEntityRotation {
             entity_id: self.players[player].entity_id as i32,
             yaw: player_rotation.yaw,
@@ -305,7 +304,6 @@ impl ServerBoundPacketHandler for Plot {
 
     fn handle_set_player_on_ground(&mut self, player_movement: SSetPlayerOnGround, player: usize) {
         self.players[player].on_ground = player_movement.on_ground;
-        self.on_players_moved();
     }
 
     fn handle_player_action(&mut self, player_action: SPlayerAction, player: usize) {
@@ -395,7 +393,7 @@ impl ServerBoundPacketHandler for Plot {
         self.players[player].selected_slot = held_item_change.slot as u32;
     }
 
-    fn handle_update_sign(&mut self, packet: SUpdateSign, _player: usize) {
+    fn handle_update_sign(&mut self, packet: SUpdateSign, player: usize) {
         let pos = BlockPos::new(packet.x, packet.y, packet.z);
         if !Plot::in_plot_bounds(self.world.x, self.world.z, pos.x, pos.z)
             || !(0..PLOT_BLOCK_HEIGHT).contains(&pos.y)
@@ -404,6 +402,14 @@ impl ServerBoundPacketHandler for Plot {
         }
         let block = self.world.block(pos);
         if !block.is_any_sign() {
+            return;
+        }
+        if !self.simulation.is_editable() {
+            let player = &self.players[player];
+            player.send_error_message(ERROR_REDPILER_ACTIVE);
+            if let Some(correction) = self.world.sign_data(pos) {
+                player.client.send_packet(&correction.encode());
+            }
             return;
         }
         let mut rows = packet

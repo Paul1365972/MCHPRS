@@ -1,23 +1,27 @@
-use super::*;
-use anyhow::{ensure, Context, Result};
-use mchprs_redstone::noteblock;
-use mchprs_redstone::tick_queue::TickEntry;
-use mchprs_save_data::plot_data::SavedTick;
-use std::collections::HashMap;
-
-// TODO: where to put this?
-pub fn sleep_time_for_tps(tps: Tps) -> Duration {
-    match tps {
-        Tps::Limited(tps) => {
-            if tps > 10.0 {
-                Duration::from_secs_f64(1.0 / f64::from(tps))
-            } else {
-                Duration::from_millis(50)
-            }
-        }
-        Tps::Unlimited => Duration::ZERO,
-    }
-}
+use super::advance::Advances;
+use super::scoreboard::Scoreboard;
+use super::send_schedule::SendSchedule;
+use super::simulation::PlotSimulation;
+use super::tick_history::TickHistory;
+use super::world::{PlotWorld, SaveState};
+use super::{Plot, NUM_CHUNKS, PLOT_BLOCK_WIDTH, PLOT_SCALE, PLOT_SECTIONS, PLOT_WIDTH};
+use crate::server::{BroadcastMessage, Message};
+use crate::shared::Shared;
+use anyhow::{ensure, Context, Error, Result};
+use bus::BusReader;
+use mchprs_blocks::blocks::Block;
+use mchprs_redstone::tick_queue::{TickEntry, TickQueue};
+use mchprs_redstone::{noteblock, Redstone};
+use mchprs_save_data::plot_data::{ChunkData, PlotData, SavedTick, Tps, WorldSendRate};
+use mchprs_simulation::schedule::Schedule;
+use mchprs_world::storage::Chunk;
+use rustc_hash::FxHashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tracing::{debug, error};
 
 pub fn load_plot(path: impl AsRef<Path>) -> Result<PlotData<'static>> {
     let path = path.as_ref();
@@ -106,23 +110,23 @@ impl Plot {
             save_state: SaveState::Saved,
         };
         let tps = plot_data.tps;
+        let now = Instant::now();
         Plot {
-            last_player_time: Instant::now(),
-            last_update_time: Instant::now(),
-            last_world_send_time: Instant::now(),
-            lag_time: Duration::new(0, 0),
-            sleep_time: sleep_time_for_tps(tps),
-            last_nspt: None,
+            last_player_time: now,
+            last_scoreboard_time: now,
+            simulation: PlotSimulation::World(Schedule::default()),
+            send_schedule: SendSchedule::new(plot_data.world_send_rate, now),
             message_receiver: broadcasts,
             message_sender: server,
-            shared,
             players: Vec::new(),
             locked_players: HashSet::new(),
-            tps,
             reported_idle: false,
-            redpiler: Default::default(),
-            timings: TimingsMonitor::new(tps),
-            scoreboard: Default::default(),
+            tps,
+            advances: Advances::default(),
+            ticks: 0,
+            tick_history: TickHistory::new(now),
+            scoreboard: Scoreboard::new(x, z),
+            shared,
             world,
         }
     }
@@ -150,7 +154,7 @@ impl Plot {
     }
 
     fn needs_saving(&self) -> bool {
-        !self.redpiler.is_active() && !self.world.save_state.is_saved()
+        self.simulation.is_editable() && !self.world.save_state.is_saved()
     }
 
     pub(super) fn save_for_unload(&mut self) {

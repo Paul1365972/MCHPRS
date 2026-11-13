@@ -1,4 +1,14 @@
-use super::*;
+use super::{Plot, ERROR_REDPILER_ACTIVE};
+use crate::interaction;
+use crate::interaction::UseOnBlockContext;
+use crate::player::PacketSender;
+use mchprs_blocks::block_store::BlockView;
+use mchprs_blocks::blocks::Block;
+use mchprs_blocks::items::Item;
+use mchprs_blocks::{BlockFace, BlockPos};
+use mchprs_network::packets::clientbound::{CBlockUpdate, CWorldEvent, ClientBoundPacket};
+use mchprs_network::packets::serverbound::SUseItemOn;
+use mchprs_redstone::{set_block, Notify};
 
 impl Plot {
     pub fn send_block_corrections(&mut self, positions: &[BlockPos]) {
@@ -48,38 +58,20 @@ impl Plot {
                 self.players[player].worldedit_set_second_position(block_pos);
             }
             cancel(self);
-            // FIXME: Because the client sends another packet after this for the left hand for
-            // most blocks, redpiler will get reset anyways.
             return;
         }
 
-        if self.redpiler.is_active() {
-            let block = self.world.block(block_pos);
-            let lever_or_button = matches!(block, Block::Lever { .. }) || block.button().is_some();
-            if lever_or_button && !self.players[player].crouching {
+        let block = self.world.block(block_pos);
+        if !self.simulation.is_editable() {
+            if !self.players[player].crouching && self.use_block_in_circuit(block_pos) {
                 self.play_use_sound(player, block_pos, block);
-                if let Err(error) = self.redpiler.on_use_block(block_pos, block) {
-                    self.compiler_failed(error);
-                }
-                self.publish_world();
                 return;
-            } else {
-                match self.redpiler.current_flags() {
-                    Some(flags)
-                        if flags.flags.is_on(&mchprs_syntax::flag::Flag::switch(
-                            "io-only",
-                            Some('i'),
-                            "Only show inputs and outputs",
-                        )) =>
-                    {
-                        self.players[player].send_error_message(ERROR_IO_ONLY);
-                        cancel(self);
-                        return;
-                    }
-                    _ => {}
-                }
-                self.reset_redpiler();
             }
+            if use_item_on.hand == 0 {
+                self.players[player].send_error_message(ERROR_REDPILER_ACTIVE);
+            }
+            cancel(self);
+            return;
         }
 
         if let Some(item) = item_in_hand {
@@ -97,12 +89,7 @@ impl Plot {
             if cancelled {
                 cancel(self);
             }
-            self.world.flush_block_changes();
-            return;
-        }
-
-        let block = self.world.block(block_pos);
-        if !self.players[player].crouching {
+        } else if !self.players[player].crouching {
             interaction::on_use(
                 block,
                 &mut self.world,
@@ -110,8 +97,12 @@ impl Plot {
                 block_pos,
                 None,
             );
-            self.world.flush_block_changes();
         }
+        if self.world.block(block_pos) != block {
+            self.play_use_sound(player, block_pos, block);
+        }
+        self.world.flush_block_changes();
+        self.send_sounds();
     }
 
     pub(super) fn handle_player_digging(&mut self, block_pos: BlockPos, player: usize) {
@@ -140,30 +131,15 @@ impl Plot {
             return;
         }
 
-        match self.redpiler.current_flags() {
-            Some(flags)
-                if flags.flags.is_on(&mchprs_syntax::flag::Flag::switch(
-                    "io-only",
-                    Some('i'),
-                    "Only show inputs and outputs",
-                )) =>
-            {
-                self.players[player].send_error_message(ERROR_IO_ONLY);
-                self.send_block_corrections(&[block_pos]);
-                return;
-            }
-            _ => {}
+        if !self.simulation.is_editable() {
+            self.players[player].send_error_message(ERROR_REDPILER_ACTIVE);
+            self.send_block_corrections(&[block_pos]);
+            return;
         }
 
-        self.reset_redpiler();
-
-        mchprs_redstone::set_block(
-            &mut self.world,
-            block_pos,
-            Block::Air,
-            mchprs_redstone::Notify::All,
-        );
+        set_block(&mut self.world, block_pos, Block::Air, Notify::All);
         self.world.flush_block_changes();
+        self.send_sounds();
 
         let effect = CWorldEvent {
             event: 2001,

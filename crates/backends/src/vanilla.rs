@@ -16,9 +16,10 @@ use mchprs_simulation::input::DriveError;
 use mchprs_simulation::layout::{Component, Layout};
 use mchprs_simulation::ports::Role;
 use mchprs_simulation::readback::Readback;
+use mchprs_simulation::stepper;
 use mchprs_simulation::ticks::{Ran, SimulationError, Stop};
 use mchprs_simulation::write_back::WriteBack;
-use mchprs_simulation::{Blocks, Capabilities, End, Simulation, View};
+use mchprs_simulation::{Blocks, Capabilities, End, Running, Simulation, View};
 use mchprs_syntax::flag::{Flag, FlagValues};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -233,5 +234,9 @@ impl Simulation<Blocks> for VanillaSimulation {
                 region: self.region,
             }),
         })
+    }
+
+    fn start(self: Box<Self>) -> Result<Box<dyn Running<Blocks>>, SimulationError> {
+        stepper::start(self, "vanilla")
     }
 }

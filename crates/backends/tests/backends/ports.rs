@@ -6,12 +6,13 @@ use mchprs_blocks::blocks::{Block, Button, Instrument, LeverFace, PressurePlate}
 use mchprs_blocks::{BlockDirection, BlockPos};
 use mchprs_redstone::input::{Input, InputError};
 use mchprs_redstone::interpreter::Interpreter;
-use mchprs_simulation::backend::{CompileError, PortError, Source};
+use mchprs_simulation::backend::{CompileContext, CompileError, PortError, Source};
 use mchprs_simulation::input::DriveError;
 use mchprs_simulation::layout::Component;
 use mchprs_simulation::ports::Role;
 use mchprs_simulation::simulated_world::SimulatedWorld;
 use mchprs_simulation::ticks::Stop;
+use mchprs_simulation::{Command, Event};
 
 fn simulate(
     world: &Interpreter<BlockVolume>,
@@ -124,6 +125,35 @@ fn lever_declared_as_output_refuses_drive(setup: Setup) {
         matches!(refused, Err(DriveError::Refused(InputError::NotAnInput))),
         "with `{setup}`"
     );
+}
+
+test_all_backends!(a_running_simulation_refuses_a_drive_without_a_component);
+fn a_running_simulation_refuses_a_drive_without_a_component(setup: Setup) {
+    let world = lever_to_lamp();
+    let source = Source::new(&world, world.blocks().region());
+    let compiled = setup.compile(&source, &mut CompileContext::silent());
+    let (simulation, _) = compiled.expect("the world compiles");
+    let mut running = simulation.start().expect("the simulation starts");
+    let empty = pos(3, 3, 3);
+    running.send(Command::Drive(empty, Input::Toggle));
+    let update = running.wait().expect("the simulation runs");
+    let refused = Event::Refused(empty, InputError::NotAnInput);
+    assert_eq!(update.events, [refused], "with `{setup}`");
+    running.stop().expect("the simulation stops");
+}
+
+test_all_backends!(a_running_simulation_continues_the_tick_count);
+fn a_running_simulation_continues_the_tick_count(setup: Setup) {
+    let world = lever_to_lamp();
+    let source = Source::new(&world, world.blocks().region());
+    let compiled = setup.compile(&source, &mut CompileContext::silent());
+    let (mut simulation, _) = compiled.expect("the world compiles");
+    simulation.run(3).expect("the simulation runs");
+    let mut running = simulation.start().expect("the simulation starts");
+    running.send(Command::Drive(pos(3, 3, 3), Input::Toggle));
+    let update = running.wait().expect("the simulation runs");
+    assert_eq!(update.ticks, 3, "with `{setup}`");
+    running.stop().expect("the simulation stops");
 }
 
 test_all_backends!(declared_port_without_component_is_refused);

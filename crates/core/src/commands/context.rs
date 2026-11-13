@@ -3,7 +3,7 @@ use super::error::{CommandError, CommandResult, InternalError};
 use super::value::{BlockCoordinates, PositionCoordinates};
 use crate::player::{PacketSender, Player, PlayerPos};
 use crate::plot::world::PlotWorld;
-use crate::plot::Plot;
+use crate::plot::{Plot, ERROR_REDPILER_ACTIVE};
 use crate::shared::Shared;
 use crate::worldedit::{ray_trace_block, RegionSnapshot, WorldEditUndo};
 use mchprs_blocks::block_volume::BlockVolume;
@@ -81,11 +81,7 @@ impl<'a> ExecutionContext<'a> {
 
     pub(super) fn world(&mut self) -> &PlotWorld {
         if self.world_access == WorldAccess::Unobserved {
-            if self.plot.redpiler.is_active()
-                && let Err(error) = self.plot.redpiler.flush_all(&mut self.plot.world)
-            {
-                self.plot.compiler_failed(error);
-            }
+            self.plot.sync_redpiler();
             self.world_access = WorldAccess::Synchronized;
         }
         &self.plot.world
@@ -95,13 +91,13 @@ impl<'a> ExecutionContext<'a> {
         self.world_access == WorldAccess::Mutable
     }
 
-    pub(super) fn world_mut(&mut self) -> &mut PlotWorld {
-        self.begin_edit();
-        &mut self.plot.world
+    pub(super) fn world_mut(&mut self) -> CommandResult<&mut PlotWorld> {
+        self.begin_edit()?;
+        Ok(&mut self.plot.world)
     }
 
     pub(super) fn world_and_player_mut(&mut self) -> CommandResult<(&mut PlotWorld, &mut Player)> {
-        self.begin_edit();
+        self.begin_edit()?;
         let index = self.player_idx;
         let plot = &mut *self.plot;
         let player = plot
@@ -111,12 +107,12 @@ impl<'a> ExecutionContext<'a> {
         Ok((&mut plot.world, player))
     }
 
-    fn begin_edit(&mut self) {
-        if self.world_access != WorldAccess::Mutable {
-            self.world();
-            self.plot.reset_redpiler();
-            self.world_access = WorldAccess::Mutable;
+    fn begin_edit(&mut self) -> CommandResult<()> {
+        if !self.plot.simulation.is_editable() {
+            return Err(CommandError::runtime(ERROR_REDPILER_ACTIVE));
         }
+        self.world_access = WorldAccess::Mutable;
+        Ok(())
     }
 
     pub(super) fn player(&self) -> Result<&Player, InternalError> {

@@ -10,14 +10,13 @@ use crate::commands::registry::CommandRegistry;
 use crate::commands::value::{PlayerTarget, PositionCoordinates};
 use crate::item_stack::ItemStack;
 use crate::player::{Gamemode, PlayerPos};
+use crate::plot::advance::Goal;
 use crate::server::{get_version_string, Message};
 use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::ContainerType;
 use mchprs_blocks::signal_strength::UncappedSignalStrength;
-#[cfg(feature = "whitelist")]
 use mchprs_network::PlayerPacketSender;
 use mchprs_save_data::plot_data::{Tps, WorldSendRate};
-use std::time::Instant;
 
 pub(super) fn register_commands(registry: &mut CommandRegistry) {
     let mut speed = Command::new("speed");
@@ -77,11 +76,19 @@ pub(super) fn register_commands(registry: &mut CommandRegistry) {
     registry.alias("gmc", "gamemode creative");
     registry.alias("gmsp", "gamemode spectator");
 
-    let mut radvance = Command::new("radvance").alias("radv");
+    let mut radvance = Command::new("radvance")
+        .alias("radv")
+        .subcommand(Command::new("settle").executes(|ctx| exec_radvance(ctx, Goal::Settled)))
+        .subcommand(Command::new("stop").executes(|ctx| {
+            if ctx.plot_mut().stop_advancing() {
+                return Ok(());
+            }
+            ctx.reply("The plot isn't advancing.")
+        }));
     let ticks = radvance.required("ticks", IntegerParser::new(0, 1_000_000_000));
     registry.register(radvance.executes(move |ctx| {
-        let ticks = ctx.get(ticks);
-        exec_radvance(ctx, ticks)
+        let goal = Goal::Ticks(ctx.get(ticks) as u64);
+        exec_radvance(ctx, goal)
     }));
 
     let mut world_send_rate = Command::new("worldsendrate").alias("wsr");
@@ -163,12 +170,16 @@ fn exec_rtps_set(ctx: &mut ExecutionContext<'_>, tps: Tps) -> CommandResult<()> 
 }
 
 fn exec_rtps_report(ctx: &mut ExecutionContext<'_>) -> CommandResult<()> {
-    let report = ctx.plot().generate_timings_report();
+    let report = ctx.plot().tick_rate_report();
     let tps = ctx.plot().tps();
+    let rate = |rate: Option<f64>| rate.map_or("–".to_owned(), |rate| format!("{rate:.1}"));
     let message = match report {
         Some(report) => format!(
-            "&6RTPS from last 10s, 1m, 5m, 15m: &a{:.1}, {:.1}, {:.1}, {:.1} ({tps})",
-            report.ten_s, report.one_m, report.five_m, report.fifteen_m
+            "&6RTPS from last 10s, 1m, 5m, 15m: &a{}, {}, {}, {:.1} ({tps})",
+            rate(report.ten_seconds),
+            rate(report.one_minute),
+            rate(report.five_minutes),
+            report.fifteen_minutes
         ),
         None => format!("&6No timings data. &a({tps})"),
     };
@@ -181,16 +192,11 @@ fn exec_gamemode(ctx: &mut ExecutionContext<'_>, gamemode: Gamemode) -> CommandR
     Ok(())
 }
 
-fn exec_radvance(ctx: &mut ExecutionContext<'_>, ticks: i32) -> CommandResult<()> {
-    let start_time = Instant::now();
-    let plot = ctx.plot_mut();
-    plot.tickn(ticks as u64);
-    plot.publish_world();
-
-    ctx.reply(&format!(
-        "Plot has been advanced by {ticks} ticks ({:?})",
-        start_time.elapsed()
-    ))
+fn exec_radvance(ctx: &mut ExecutionContext<'_>, goal: Goal) -> CommandResult<()> {
+    let requester = PlayerPacketSender::new(&ctx.player()?.client);
+    ctx.plot_mut()
+        .start_advancing(goal, requester)
+        .map_err(|error| CommandError::runtime(error.to_string()))
 }
 
 fn exec_container(
