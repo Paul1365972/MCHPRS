@@ -109,11 +109,8 @@ pub fn state_id(reader: &mut Reader<'_>, expect: &mut Expect) -> Result<Block, S
     let id = text
         .parse::<u32>()
         .map_err(|_| expect.fail(start, format!("Invalid block state ID: ={text}")))?;
-    let block = Block::from_id(id);
-    if block.get_id() != id {
-        return Err(expect.fail(start, format!("Unsupported block state ID: {id}")));
-    }
-    Ok(block)
+    Block::from_id(id)
+        .ok_or_else(|| expect.fail(start, format!("Unsupported block state ID: {id}")))
 }
 
 fn read_states(

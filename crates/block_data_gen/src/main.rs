@@ -671,15 +671,15 @@ fn generate_from_id(blocks: &[ProcessedBlock]) -> TokenStream {
         quote! {
             #min..#max => {
                 id -= #min;
-                Block::#name_ident #props
+                Some(Block::#name_ident #props)
             },
         }
     });
     quote! {
-        pub fn from_id(mut id: u32) -> Block {
+        pub fn from_id(mut id: u32) -> Option<Block> {
             match id {
                 #( #match_arms )*
-                _ => Block::Air,
+                _ => None,
             }
         }
     }

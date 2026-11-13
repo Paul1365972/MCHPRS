@@ -3229,757 +3229,757 @@ impl Block {
             Block::EndPortalFrame { eye, facing } => 7407 + (!eye as u32) * 4 + (facing.get_id()),
         }
     }
-    pub fn from_id(mut id: u32) -> Block {
+    pub fn from_id(mut id: u32) -> Option<Block> {
         match id {
             0..1 => {
                 id -= 0;
-                Block::Air
+                Some(Block::Air)
             }
             1..2 => {
                 id -= 1;
-                Block::Stone
+                Some(Block::Stone)
             }
             519..520 => {
                 id -= 519;
-                Block::Glass
+                Some(Block::Glass)
             }
             5863..5864 => {
                 id -= 5863;
-                Block::Glowstone
+                Some(Block::Glowstone)
             }
             2978..4274 => {
                 id -= 2978;
-                Block::RedstoneWire(RedstoneWire {
+                Some(Block::RedstoneWire(RedstoneWire {
                     east: RedstoneWireSide::from_id(((id / 432) % 3)),
                     north: RedstoneWireSide::from_id(((id / 144) % 3)),
                     power: ((id / 9) % 16) as u8 + 0,
                     south: RedstoneWireSide::from_id(((id / 3) % 3)),
                     west: RedstoneWireSide::from_id(((id) % 3)),
-                })
+                }))
             }
             4762..4770 => {
                 id -= 4762;
-                Block::OakWallSign(WallSign {
+                Some(Block::OakWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4770..4778 => {
                 id -= 4770;
-                Block::SpruceWallSign(WallSign {
+                Some(Block::SpruceWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4778..4786 => {
                 id -= 4778;
-                Block::BirchWallSign(WallSign {
+                Some(Block::BirchWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4786..4794 => {
                 id -= 4786;
-                Block::AcaciaWallSign(WallSign {
+                Some(Block::AcaciaWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4802..4810 => {
                 id -= 4802;
-                Block::JungleWallSign(WallSign {
+                Some(Block::JungleWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4810..4818 => {
                 id -= 4810;
-                Block::DarkOakWallSign(WallSign {
+                Some(Block::DarkOakWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             19340..19348 => {
                 id -= 19340;
-                Block::CrimsonWallSign(WallSign {
+                Some(Block::CrimsonWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             19348..19356 => {
                 id -= 19348;
-                Block::WarpedWallSign(WallSign {
+                Some(Block::WarpedWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4826..4834 => {
                 id -= 4826;
-                Block::BambooWallSign(WallSign {
+                Some(Block::BambooWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4794..4802 => {
                 id -= 4794;
-                Block::CherryWallSign(WallSign {
+                Some(Block::CherryWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4818..4826 => {
                 id -= 4818;
-                Block::MangroveWallSign(WallSign {
+                Some(Block::MangroveWallSign(WallSign {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4302..4334 => {
                 id -= 4302;
-                Block::OakSign(StandingSign {
+                Some(Block::OakSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4334..4366 => {
                 id -= 4334;
-                Block::SpruceSign(StandingSign {
+                Some(Block::SpruceSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4366..4398 => {
                 id -= 4366;
-                Block::BirchSign(StandingSign {
+                Some(Block::BirchSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4398..4430 => {
                 id -= 4398;
-                Block::AcaciaSign(StandingSign {
+                Some(Block::AcaciaSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4462..4494 => {
                 id -= 4462;
-                Block::JungleSign(StandingSign {
+                Some(Block::JungleSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4494..4526 => {
                 id -= 4494;
-                Block::DarkOakSign(StandingSign {
+                Some(Block::DarkOakSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             19276..19308 => {
                 id -= 19276;
-                Block::CrimsonSign(StandingSign {
+                Some(Block::CrimsonSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             19308..19340 => {
                 id -= 19308;
-                Block::WarpedSign(StandingSign {
+                Some(Block::WarpedSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4558..4590 => {
                 id -= 4558;
-                Block::BambooSign(StandingSign {
+                Some(Block::BambooSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4430..4462 => {
                 id -= 4430;
-                Block::CherrySign(StandingSign {
+                Some(Block::CherrySign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             4526..4558 => {
                 id -= 4526;
-                Block::MangroveSign(StandingSign {
+                Some(Block::MangroveSign(StandingSign {
                     rotation: ((id / 2) % 16) as u8 + 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             5626..5650 => {
                 id -= 5626;
-                Block::Lever {
+                Some(Block::Lever {
                     face: LeverFace::from_id(((id / 8) % 3)),
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5748..5772 => {
                 id -= 5748;
-                Block::StoneButton {
+                Some(Block::StoneButton {
                     face: LeverFace::from_id(((id / 8) % 3)),
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5738..5740 => {
                 id -= 5738;
-                Block::RedstoneTorch {
+                Some(Block::RedstoneTorch {
                     lit: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5740..5748 => {
                 id -= 5740;
-                Block::RedstoneWallTorch {
+                Some(Block::RedstoneWallTorch {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     lit: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5881..5945 => {
                 id -= 5881;
-                Block::Repeater(Repeater {
+                Some(Block::Repeater(Repeater {
                     delay: ((id / 16) % 4) as u8 + 1,
                     facing: BlockDirection::from_id(((id / 4) % 4)),
                     locked: (((id / 2) % 2) & 1) == 0,
                     powered: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             7417..7419 => {
                 id -= 7417;
-                Block::RedstoneLamp {
+                Some(Block::RedstoneLamp {
                     lit: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             7521..7537 => {
                 id -= 7521;
-                Block::TripwireHook {
+                Some(Block::TripwireHook {
                     attached: (((id / 8) % 2) & 1) == 0,
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             9175..9191 => {
                 id -= 9175;
-                Block::Comparator(Comparator {
+                Some(Block::Comparator(Comparator {
                     facing: BlockDirection::from_id(((id / 4) % 4)),
                     mode: ComparatorMode::from_id(((id / 2) % 2)),
                     powered: (((id) % 2) & 1) == 0,
-                })
+                }))
             }
             9223..9224 => {
                 id -= 9223;
-                Block::RedstoneBlock
+                Some(Block::RedstoneBlock)
             }
             12550..12562 => {
                 id -= 12550;
-                Block::Observer {
+                Some(Block::Observer {
                     facing: BlockFacing::from_id(((id / 2) % 6)),
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             12933..12941 => {
                 id -= 12933;
-                Block::SeaPickle {
+                Some(Block::SeaPickle {
                     pickles: ((id / 2) % 4) as u8 + 1,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             19381..19397 => {
                 id -= 19381;
-                Block::Target {
+                Some(Block::Target {
                     power: ((id) % 16) as u8 + 0,
-                }
+                })
             }
             5716..5718 => {
                 id -= 5716;
-                Block::OakPressurePlate {
+                Some(Block::OakPressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5718..5720 => {
                 id -= 5718;
-                Block::SprucePressurePlate {
+                Some(Block::SprucePressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5720..5722 => {
                 id -= 5720;
-                Block::BirchPressurePlate {
+                Some(Block::BirchPressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5722..5724 => {
                 id -= 5722;
-                Block::JunglePressurePlate {
+                Some(Block::JunglePressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5724..5726 => {
                 id -= 5724;
-                Block::AcaciaPressurePlate {
+                Some(Block::AcaciaPressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5728..5730 => {
                 id -= 5728;
-                Block::DarkOakPressurePlate {
+                Some(Block::DarkOakPressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5730..5732 => {
                 id -= 5730;
-                Block::MangrovePressurePlate {
+                Some(Block::MangrovePressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5726..5728 => {
                 id -= 5726;
-                Block::CherryPressurePlate {
+                Some(Block::CherryPressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5732..5734 => {
                 id -= 5732;
-                Block::BambooPressurePlate {
+                Some(Block::BambooPressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             18680..18682 => {
                 id -= 18680;
-                Block::CrimsonPressurePlate {
+                Some(Block::CrimsonPressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             18682..18684 => {
                 id -= 18682;
-                Block::WarpedPressurePlate {
+                Some(Block::WarpedPressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             20372..20374 => {
                 id -= 20372;
-                Block::PolishedBlackstonePressurePlate {
+                Some(Block::PolishedBlackstonePressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5650..5652 => {
                 id -= 5650;
-                Block::StonePressurePlate {
+                Some(Block::StonePressurePlate {
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5874..5881 => {
                 id -= 5874;
-                Block::Cake {
+                Some(Block::Cake {
                     bites: ((id) % 7) as u8 + 0,
-                }
+                })
             }
             18408..18420 => {
                 id -= 18408;
-                Block::Barrel {
+                Some(Block::Barrel {
                     facing: BlockFacing::from_id(((id / 2) % 6)),
                     open: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             9225..9235 => {
                 id -= 9225;
-                Block::Hopper {
+                Some(Block::Hopper {
                     enabled: (((id / 5) % 2) & 1) == 0,
                     facing: HopperFacing::from_id(((id) % 5)),
-                }
+                })
             }
             535..536 => {
                 id -= 535;
-                Block::Sandstone
+                Some(Block::Sandstone)
             }
             10745..10746 => {
                 id -= 10745;
-                Block::CoalBlock
+                Some(Block::CoalBlock)
             }
             4294..4302 => {
                 id -= 4294;
-                Block::Furnace {
+                Some(Block::Furnace {
                     facing: BlockDirection::from_id(((id / 2) % 4)),
                     lit: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             9235..9236 => {
                 id -= 9235;
-                Block::QuartzBlock
+                Some(Block::QuartzBlock)
             }
             11308..11309 => {
                 id -= 11308;
-                Block::SmoothQuartz
+                Some(Block::SmoothQuartz)
             }
             11228..11234 => {
                 id -= 11228;
-                Block::SmoothStoneSlab {
+                Some(Block::SmoothStoneSlab {
                     ty: SlabType::from_id(((id / 2) % 3)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             11282..11288 => {
                 id -= 11282;
-                Block::QuartzSlab {
+                Some(Block::QuartzSlab {
                     ty: SlabType::from_id(((id / 2) % 3)),
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             7398..7399 => {
                 id -= 7398;
-                Block::Cauldron
+                Some(Block::Cauldron)
             }
             7399..7402 => {
                 id -= 7399;
-                Block::WaterCauldron {
+                Some(Block::WaterCauldron {
                     level: ((id) % 3) as u8 + 1,
-                }
+                })
             }
             19372..19381 => {
                 id -= 19372;
-                Block::Composter {
+                Some(Block::Composter {
                     level: ((id) % 9) as u8 + 0,
-                }
+                })
             }
             12728..12729 => {
                 id -= 12728;
-                Block::WhiteConcrete
+                Some(Block::WhiteConcrete)
             }
             12729..12730 => {
                 id -= 12729;
-                Block::OrangeConcrete
+                Some(Block::OrangeConcrete)
             }
             12730..12731 => {
                 id -= 12730;
-                Block::MagentaConcrete
+                Some(Block::MagentaConcrete)
             }
             12731..12732 => {
                 id -= 12731;
-                Block::LightBlueConcrete
+                Some(Block::LightBlueConcrete)
             }
             12732..12733 => {
                 id -= 12732;
-                Block::YellowConcrete
+                Some(Block::YellowConcrete)
             }
             12733..12734 => {
                 id -= 12733;
-                Block::LimeConcrete
+                Some(Block::LimeConcrete)
             }
             12734..12735 => {
                 id -= 12734;
-                Block::PinkConcrete
+                Some(Block::PinkConcrete)
             }
             12735..12736 => {
                 id -= 12735;
-                Block::GrayConcrete
+                Some(Block::GrayConcrete)
             }
             12736..12737 => {
                 id -= 12736;
-                Block::LightGrayConcrete
+                Some(Block::LightGrayConcrete)
             }
             12737..12738 => {
                 id -= 12737;
-                Block::CyanConcrete
+                Some(Block::CyanConcrete)
             }
             12738..12739 => {
                 id -= 12738;
-                Block::PurpleConcrete
+                Some(Block::PurpleConcrete)
             }
             12739..12740 => {
                 id -= 12739;
-                Block::BlueConcrete
+                Some(Block::BlueConcrete)
             }
             12740..12741 => {
                 id -= 12740;
-                Block::BrownConcrete
+                Some(Block::BrownConcrete)
             }
             12741..12742 => {
                 id -= 12741;
-                Block::GreenConcrete
+                Some(Block::GreenConcrete)
             }
             12742..12743 => {
                 id -= 12742;
-                Block::RedConcrete
+                Some(Block::RedConcrete)
             }
             12743..12744 => {
                 id -= 12743;
-                Block::BlackConcrete
+                Some(Block::BlackConcrete)
             }
             5945..5946 => {
                 id -= 5945;
-                Block::WhiteStainedGlass
+                Some(Block::WhiteStainedGlass)
             }
             5946..5947 => {
                 id -= 5946;
-                Block::OrangeStainedGlass
+                Some(Block::OrangeStainedGlass)
             }
             5947..5948 => {
                 id -= 5947;
-                Block::MagentaStainedGlass
+                Some(Block::MagentaStainedGlass)
             }
             5948..5949 => {
                 id -= 5948;
-                Block::LightBlueStainedGlass
+                Some(Block::LightBlueStainedGlass)
             }
             5949..5950 => {
                 id -= 5949;
-                Block::YellowStainedGlass
+                Some(Block::YellowStainedGlass)
             }
             5950..5951 => {
                 id -= 5950;
-                Block::LimeStainedGlass
+                Some(Block::LimeStainedGlass)
             }
             5951..5952 => {
                 id -= 5951;
-                Block::PinkStainedGlass
+                Some(Block::PinkStainedGlass)
             }
             5952..5953 => {
                 id -= 5952;
-                Block::GrayStainedGlass
+                Some(Block::GrayStainedGlass)
             }
             5953..5954 => {
                 id -= 5953;
-                Block::LightGrayStainedGlass
+                Some(Block::LightGrayStainedGlass)
             }
             5954..5955 => {
                 id -= 5954;
-                Block::CyanStainedGlass
+                Some(Block::CyanStainedGlass)
             }
             5955..5956 => {
                 id -= 5955;
-                Block::PurpleStainedGlass
+                Some(Block::PurpleStainedGlass)
             }
             5956..5957 => {
                 id -= 5956;
-                Block::BlueStainedGlass
+                Some(Block::BlueStainedGlass)
             }
             5957..5958 => {
                 id -= 5957;
-                Block::BrownStainedGlass
+                Some(Block::BrownStainedGlass)
             }
             5958..5959 => {
                 id -= 5958;
-                Block::GreenStainedGlass
+                Some(Block::GreenStainedGlass)
             }
             5959..5960 => {
                 id -= 5959;
-                Block::RedStainedGlass
+                Some(Block::RedStainedGlass)
             }
             5960..5961 => {
                 id -= 5960;
-                Block::BlackStainedGlass
+                Some(Block::BlackStainedGlass)
             }
             10744..10745 => {
                 id -= 10744;
-                Block::Terracotta
+                Some(Block::Terracotta)
             }
             9356..9357 => {
                 id -= 9356;
-                Block::WhiteTerracotta
+                Some(Block::WhiteTerracotta)
             }
             9357..9358 => {
                 id -= 9357;
-                Block::OrangeTerracotta
+                Some(Block::OrangeTerracotta)
             }
             9358..9359 => {
                 id -= 9358;
-                Block::MagentaTerracotta
+                Some(Block::MagentaTerracotta)
             }
             9359..9360 => {
                 id -= 9359;
-                Block::LightBlueTerracotta
+                Some(Block::LightBlueTerracotta)
             }
             9360..9361 => {
                 id -= 9360;
-                Block::YellowTerracotta
+                Some(Block::YellowTerracotta)
             }
             9361..9362 => {
                 id -= 9361;
-                Block::LimeTerracotta
+                Some(Block::LimeTerracotta)
             }
             9362..9363 => {
                 id -= 9362;
-                Block::PinkTerracotta
+                Some(Block::PinkTerracotta)
             }
             9363..9364 => {
                 id -= 9363;
-                Block::GrayTerracotta
+                Some(Block::GrayTerracotta)
             }
             9364..9365 => {
                 id -= 9364;
-                Block::LightGrayTerracotta
+                Some(Block::LightGrayTerracotta)
             }
             9365..9366 => {
                 id -= 9365;
-                Block::CyanTerracotta
+                Some(Block::CyanTerracotta)
             }
             9366..9367 => {
                 id -= 9366;
-                Block::PurpleTerracotta
+                Some(Block::PurpleTerracotta)
             }
             9367..9368 => {
                 id -= 9367;
-                Block::BlueTerracotta
+                Some(Block::BlueTerracotta)
             }
             9368..9369 => {
                 id -= 9368;
-                Block::BrownTerracotta
+                Some(Block::BrownTerracotta)
             }
             9369..9370 => {
                 id -= 9369;
-                Block::GreenTerracotta
+                Some(Block::GreenTerracotta)
             }
             9370..9371 => {
                 id -= 9370;
-                Block::RedTerracotta
+                Some(Block::RedTerracotta)
             }
             9371..9372 => {
                 id -= 9371;
-                Block::BlackTerracotta
+                Some(Block::BlackTerracotta)
             }
             2047..2048 => {
                 id -= 2047;
-                Block::WhiteWool
+                Some(Block::WhiteWool)
             }
             2048..2049 => {
                 id -= 2048;
-                Block::OrangeWool
+                Some(Block::OrangeWool)
             }
             2049..2050 => {
                 id -= 2049;
-                Block::MagentaWool
+                Some(Block::MagentaWool)
             }
             2050..2051 => {
                 id -= 2050;
-                Block::LightBlueWool
+                Some(Block::LightBlueWool)
             }
             2051..2052 => {
                 id -= 2051;
-                Block::YellowWool
+                Some(Block::YellowWool)
             }
             2052..2053 => {
                 id -= 2052;
-                Block::LimeWool
+                Some(Block::LimeWool)
             }
             2053..2054 => {
                 id -= 2053;
-                Block::PinkWool
+                Some(Block::PinkWool)
             }
             2054..2055 => {
                 id -= 2054;
-                Block::GrayWool
+                Some(Block::GrayWool)
             }
             2055..2056 => {
                 id -= 2055;
-                Block::LightGrayWool
+                Some(Block::LightGrayWool)
             }
             2056..2057 => {
                 id -= 2056;
-                Block::CyanWool
+                Some(Block::CyanWool)
             }
             2057..2058 => {
                 id -= 2057;
-                Block::PurpleWool
+                Some(Block::PurpleWool)
             }
             2058..2059 => {
                 id -= 2058;
-                Block::BlueWool
+                Some(Block::BlueWool)
             }
             2059..2060 => {
                 id -= 2059;
-                Block::BrownWool
+                Some(Block::BrownWool)
             }
             2060..2061 => {
                 id -= 2060;
-                Block::GreenWool
+                Some(Block::GreenWool)
             }
             2061..2062 => {
                 id -= 2061;
-                Block::RedWool
+                Some(Block::RedWool)
             }
             2062..2063 => {
                 id -= 2062;
-                Block::BlackWool
+                Some(Block::BlackWool)
             }
             10399..10463 => {
                 id -= 10399;
-                Block::IronTrapdoor {
+                Some(Block::IronTrapdoor {
                     facing: BlockDirection::from_id(((id / 16) % 4)),
                     half: TrapdoorHalf::from_id(((id / 8) % 2)),
                     open: (((id / 4) % 2) & 1) == 0,
                     powered: (((id / 2) % 2) & 1) == 0,
                     waterlogged: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             538..1688 => {
                 id -= 538;
-                Block::NoteBlock {
+                Some(Block::NoteBlock {
                     instrument: Instrument::from_id(((id / 50) % 23)),
                     note: ((id / 2) % 25) as u8 + 0,
                     powered: (((id) % 2) & 1) == 0,
-                }
+                })
             }
             5798..5799 => {
                 id -= 5798;
-                Block::Clay
+                Some(Block::Clay)
             }
             2091..2092 => {
                 id -= 2091;
-                Block::GoldBlock
+                Some(Block::GoldBlock)
             }
             10746..10747 => {
                 id -= 10746;
-                Block::PackedIce
+                Some(Block::PackedIce)
             }
             12546..12549 => {
                 id -= 12546;
-                Block::BoneBlock {
+                Some(Block::BoneBlock {
                     axis: BlockAxis::from_id(((id) % 3)),
-                }
+                })
             }
             2092..2093 => {
                 id -= 2092;
-                Block::IronBlock
+                Some(Block::IronBlock)
             }
             5850..5851 => {
                 id -= 5850;
-                Block::SoulSand
+                Some(Block::SoulSand)
             }
             6811..6812 => {
                 id -= 6811;
-                Block::Pumpkin
+                Some(Block::Pumpkin)
             }
             7665..7666 => {
                 id -= 7665;
-                Block::EmeraldBlock
+                Some(Block::EmeraldBlock)
             }
             10725..10728 => {
                 id -= 10725;
-                Block::HayBlock {
+                Some(Block::HayBlock {
                     axis: BlockAxis::from_id(((id) % 3)),
-                }
+                })
             }
             112..113 => {
                 id -= 112;
-                Block::Sand
+                Some(Block::Sand)
             }
             6537..6538 => {
                 id -= 6537;
-                Block::StoneBricks
+                Some(Block::StoneBricks)
             }
             7407..7415 => {
                 id -= 7407;
-                Block::EndPortalFrame {
+                Some(Block::EndPortalFrame {
                     eye: (((id / 4) % 2) & 1) == 0,
                     facing: BlockDirection::from_id(((id) % 4)),
-                }
+                })
             }
-            _ => Block::Air,
+            _ => None,
         }
     }
     pub fn is_wool(self) -> bool {

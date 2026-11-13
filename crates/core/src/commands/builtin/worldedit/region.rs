@@ -78,7 +78,8 @@ pub(super) fn register(registry: &mut CommandRegistry) {
             let clipboard = ctx.clipboard()?;
             let volume = clipboard.size_x * clipboard.size_y * clipboard.size_z;
             for i in 0..volume as usize {
-                let block = Block::from_id(clipboard.data.get_entry(i));
+                let block = Block::from_id(clipboard.data.get_entry(i))
+                    .expect("the clipboard holds known block states");
                 *block_counts.entry(block.get_name()).or_insert(0) += 1;
             }
         } else {

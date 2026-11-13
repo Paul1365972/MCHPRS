@@ -298,7 +298,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
     }
 
     fn search_node(&mut self, id: NodeIdx, (pos, block_id): (BlockPos, u32)) {
-        match Block::from_id(block_id) {
+        match Block::from_id(block_id).expect("plot chunks hold known block states") {
             Block::RedstoneTorch { .. } => {
                 let bottom_pos = pos.offset(BlockFace::Bottom);
                 let bottom_block = self.block_lookup_cache.get_block(bottom_pos);

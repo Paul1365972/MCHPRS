@@ -191,7 +191,7 @@ fn repeater_id_test() {
     let id = original.get_id();
     assert_eq!(id, 5922);
     let new = Block::from_id(id);
-    assert_eq!(new, original);
+    assert_eq!(new, Some(original));
 }
 
 #[test]
@@ -204,5 +204,5 @@ fn comparator_id_test() {
     let id = original.get_id();
     assert_eq!(id, 9186);
     let new = Block::from_id(id);
-    assert_eq!(new, original);
+    assert_eq!(new, Some(original));
 }

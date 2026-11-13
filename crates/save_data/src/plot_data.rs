@@ -3,8 +3,9 @@ mod v2_to_v3;
 use crate::replace_file;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
-use mchprs_world::storage::{Chunk, ChunkSection};
+use mchprs_world::storage::{Chunk, ChunkSection, PalettedBitBuffer, BLOCK_STATE_DIRECT_THRESHOLD};
 use mchprs_world::TickEntry;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,9 @@ pub enum PlotLoadError {
 
     #[error("conversion from plot data version {0} is unavailable")]
     ConversionUnavailable(u32),
+
+    #[error("plot data has unknown block state {0}")]
+    UnknownBlockState(u32),
 }
 
 #[derive(Error, Debug)]
@@ -79,6 +83,23 @@ impl<'a> ChunkSectionData<'a> {
             bits_per_block: self.bits_per_block,
             block_count: self.block_count,
         }
+    }
+
+    fn unknown_block_state(&self) -> Option<u32> {
+        let buffer = PalettedBitBuffer::load(
+            16 * 16 * 16,
+            self.bits_per_block,
+            self.data.to_vec(),
+            self.palette.to_vec(),
+            BLOCK_STATE_DIRECT_THRESHOLD,
+        );
+        let is_unknown = |id: &u32| Block::from_id(*id).is_none();
+        if buffer.uses_palette() {
+            return buffer.palette().iter().copied().find(is_unknown);
+        }
+        (0..buffer.entries())
+            .map(|idx| buffer.get_entry(idx))
+            .find(is_unknown)
     }
 
     fn load(self) -> ChunkSection {
@@ -185,12 +206,24 @@ impl PlotData<'_> {
         let version = read_version(&mut file)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
-        Ok(match version {
+        let data = match version {
             0..=1 => return Err(PlotLoadError::ConversionUnavailable(version)),
             2 => bincode::deserialize::<PlotDataV2>(&buf)?.upgrade(),
             VERSION => bincode::deserialize(&buf)?,
             _ => return Err(PlotLoadError::TooNew(version)),
-        })
+        };
+        match data.unknown_block_state() {
+            Some(id) => Err(PlotLoadError::UnknownBlockState(id)),
+            None => Ok(data),
+        }
+    }
+
+    fn unknown_block_state(&self) -> Option<u32> {
+        let mut sections = self
+            .chunk_data
+            .iter()
+            .flat_map(|chunk| chunk.sections.iter().flatten());
+        sections.find_map(ChunkSectionData::unknown_block_state)
     }
 
     pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), PlotSaveError> {
