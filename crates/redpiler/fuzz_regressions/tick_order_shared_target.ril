@@ -1,0 +1,10 @@
+# coalesce merged %first with %second, and %shared then ticked before %x and %y instead of after one of them
+circuit @tick_order_shared_target {
+  %lever = lever -> [%first:0, %second:0]
+  %shared = torch -> [%out:0]
+  %first = torch(powered) -> [%shared:0, %x:0]
+  %second = torch(powered) -> [%y:0, %shared:0]
+  %x = torch -> [%shared:0]
+  %y = torch -> [%shared:0]
+  %out = lamp
+}

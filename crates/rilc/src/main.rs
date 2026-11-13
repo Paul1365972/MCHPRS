@@ -1,6 +1,7 @@
 mod compile;
 mod diff;
 mod dot;
+mod fuzz;
 mod input;
 mod numbers;
 mod oracle;
@@ -26,6 +27,10 @@ const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"),
 /// Whether the command's claim holds
 type Outcome = Result<bool, Error>;
 
+/// Compiles, runs, compares, tests and fuzzes Redpiler setups.
+///
+/// Exits with 0 when the command's claim holds, 1 when it doesn't (a test fails, two setups
+/// differ, a fuzzed property fails or no case checked it), and 2 when it can't run.
 #[derive(Parser)]
 #[command(version = VERSION)]
 struct Cli {
@@ -101,6 +106,11 @@ enum Command {
         )]
         setups: Vec<Setup>,
     },
+    /// Check a property of Redpiler on random cases
+    Fuzz {
+        #[command(subcommand)]
+        property: fuzz::Property,
+    },
     /// Update every block of a schematic or plot, run it until no tick is pending and write it as
     /// a schematic
     Update {
@@ -155,7 +165,7 @@ fn main() -> ExitCode {
             let [first, second] = two_setups(setups);
             diff::command(&scenario, [&first, &second])
         }
-
+        Command::Fuzz { property } => fuzz::command(property),
         Command::Update {
             input,
             output,

@@ -1,5 +1,6 @@
 # rilc
 
+rilc compiles, runs, compares, tests and fuzzes Redpiler setups outside the server.
 It is a development tool:
 
 ```sh
@@ -16,6 +17,8 @@ cargo run --release -p rilc -- <command>
 
 `rilc <command> --help` lists the options of a command, and for `compile`, `run` and `diff` also the backends and their flags.
 
+rilc exits with 0 if the claim of the command holds, with 1 if it does not (a test fails, two setups differ, a fuzzed property fails or no case checked it), and with 2 if it cannot run.
+
 ## Inputs and Setups
 
 A world is a Sponge schematic (`.schem`, `.schematic`) or a plot file from `world/plots`, which includes its pending ticks.
@@ -23,6 +26,7 @@ A circuit is a [RIL](RIL.md) file (`.ril`).
 
 A setup is a backend followed by its flags, written as after `/redpiler compile`: `-b "direct -o -i"`, `-b vanilla`.
 
+- `reference` exists only in rilc, beside the order oracle. It runs the graph without passes of its own, directly on the [node behaviour](Circuits.md#node-behaviour).
 - `--passes=<names>` runs the named [passes](Circuits.md#passes) instead of the passes of the backend: `-b "direct --passes=fold,coalesce"`.
 
 ## Scenarios
@@ -66,6 +70,35 @@ run = 20
 
 A target in a world is a position `[x, y, z]`. A schematic is moved so that its lowest corner is at `[0, 0, 0]`.
 A target in a RIL circuit is a label such as `"reset"` or a position of the node.
+
+## Fuzzing
+
+`--seed <s>` sets the seed of the first case, 1 by default, and `--cases <n>` the number of cases, 1000 by default.
+A failing case prints the command that runs it alone and the failure: for a difference, what differs and the last input.
+A failing circuit is also written to `.scratch/fuzz` as `<seed>.ril` and `<seed>.toml`, for `rilc diff`.
+| Command | What runs | What it checks |
+| --- | --- | --- |
+| `fuzz engine` | `direct` on random circuits, or on the worlds and RIL circuits it is given. | After every input and every tick, the state of every node and the pending ticks are legal, and the reported changes bring the observed nodes to the state of the snapshot. |
+| `fuzz passes` | Passes on a small random circuit, or on the worlds and RIL circuits it is given: each pass alone, and each pass of `direct --optimize --io-only` after its predecessors, or the list given with `--passes`. | What the observed nodes of the result show on `reference` is legal for the circuit without the passes. |
+
+
+### The Order Oracle
+
+The order oracle in [`crates/rilc/src/oracle`](../crates/rilc/src/oracle/mod.rs) decides it: it runs the `reference` engine in every order that the tick order leaves unspecified.
+What was seen is legal if one of these runs shows it.
+
+- Ticks of one priority run in the order they were scheduled.
+- The ticks that one change schedules with one delay and priority, by updating the nodes it powers, run in every order. The order of those updates is unspecified.
+- Pending ticks are seen in the order they run in. That order must be one the oracle follows, and the oracle then follows no other.
+- Whether a note block played is seen after every tick, as one answer for all the times it became powered since the tick before.
+- A fuzzer skips a case in which the orders of one priority of one tick reach more states than the budget of the oracle.
+
+The oracle does not try every order in which a node updates the nodes it powers. These suffice:
+
+- Updates of different targets differ only in the order of the ticks they schedule, and the oracle runs the ticks that one change schedules in every order.
+- Links of one kind into one target move that input one way, so one order of them stands for all.
+- A comparator fed through both inputs schedules a tick in some order only if it does so rear first or side first, and schedules none only if it schedules none when updated once for both. So those three cover every order.
+- A repeater fed through both inputs, updated once, does as side first if its side input turns on and as rear first otherwise. It needs no third order.
 
 ## Tests
 

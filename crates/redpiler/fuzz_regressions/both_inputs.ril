@@ -1,0 +1,11 @@
+# coalesce merged the torches across the links that one of them has into both inputs of a comparator
+circuit @both_inputs {
+  %lever = lever(powered) -> [%torch_a:0, %torch_b:0, %torch_c:0]
+  %torch_a = torch -> [%second:0, side %first:0, %first:0, side %second:0]
+  %torch_b = torch -> [side %delayed:13, side %first:0, %first:0]
+  %torch_c = torch -> [%delayed:0, %first:0, %second:0, side %second:0]
+  %first = comparator(mode=subtract) -> [%out:0]
+  %second = comparator(mode=subtract) -> [%out:0]
+  %delayed = comparator(mode=subtract) -> [%out:0, %second:0, %first:0]
+  %out = wire output
+}

@@ -1,0 +1,10 @@
+# coalesce merged %first with %second, %x with %y and %late_x with %late_y, of which exactly one lights
+circuit @tick_order_cascade {
+  %lever = lever -> [%first:0, %second:0]
+  %first = torch(powered) -> [%x:0, %late_x:0]
+  %second = torch(powered) -> [%y:0, %late_y:0]
+  %x = torch -> [%late_y:0]
+  %y = torch -> [%late_x:0]
+  %late_x = torch
+  %late_y = torch
+}
