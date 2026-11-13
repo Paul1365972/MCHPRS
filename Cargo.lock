@@ -1283,6 +1283,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "thiserror",
+ "toml",
  "tracing-subscriber",
 ]
 

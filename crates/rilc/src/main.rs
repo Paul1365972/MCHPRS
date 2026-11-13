@@ -3,6 +3,9 @@ mod dot;
 mod input;
 mod numbers;
 mod oracle;
+mod run;
+mod runner;
+mod scenario;
 mod setup;
 mod test;
 
@@ -10,8 +13,10 @@ use anyhow::Error;
 use clap::{Parser, Subcommand};
 use setup::Setup;
 use std::io;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")");
 
@@ -59,6 +64,24 @@ enum Command {
         #[arg(short, long, value_name = "FILE")]
         output: Option<PathBuf>,
     },
+    /// Play a scenario of a world or a RIL circuit on a setup running by itself and time it
+    #[command(after_help = setup::help())]
+    Run {
+        /// The scenario, a TOML file
+        scenario: PathBuf,
+        /// The setup to run on, like "direct -o"
+        #[arg(short = 'b', long = "backend", value_name = "SETUP", value_parser = Setup::parse)]
+        setup: Setup,
+        /// Play the scenario this many times, each on a fresh engine
+        #[arg(long, value_name = "N", default_value = "1")]
+        repeat: NonZeroUsize,
+        /// After the scenario, run without a tick limit for SECONDS and print that rate too
+        #[arg(long, value_name = "SECONDS", value_parser = run::seconds)]
+        unlimited: Option<Duration>,
+        /// Write the final state of every output port to FILE
+        #[arg(long, value_name = "FILE")]
+        save_outputs: Option<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -84,6 +107,19 @@ fn main() -> ExitCode {
             print_after_all,
             dot,
             output.as_deref(),
+        ),
+        Command::Run {
+            scenario,
+            setup,
+            repeat,
+            unlimited,
+            save_outputs,
+        } => run::command(
+            &scenario,
+            &setup,
+            repeat,
+            unlimited,
+            save_outputs.as_deref(),
         ),
     };
     match outcome {

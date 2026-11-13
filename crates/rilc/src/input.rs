@@ -85,3 +85,9 @@ pub fn read_world(path: &Path) -> Result<World, Error> {
     let (volume, ticks) = plot.into_volume();
     Ok(Interpreter::new(volume, ticks))
 }
+
+pub fn settle(world: &mut World, limit: u64) -> Result<u64, Error> {
+    let region = world.blocks().region();
+    mchprs_redstone::settle(world, region, limit)
+        .ok_or_else(|| anyhow!("the world hasn't settled within {}", counted(limit, "tick")))
+}
