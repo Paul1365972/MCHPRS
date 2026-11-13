@@ -28,6 +28,7 @@ A circuit is a [RIL](RIL.md) file (`.ril`).
 A setup is a backend followed by its flags, written as after `/redpiler compile`: `-b "direct -o -i"`, `-b vanilla`.
 
 - `reference` exists only in rilc, beside the order oracle. It runs the graph without passes of its own, directly on the [node behaviour](Circuits.md#node-behaviour).
+- `vanilla` exists in rilc and in the [library](Library.md), not in the server. It runs worlds only.
 - `--passes=<names>` runs the named [passes](Circuits.md#passes) instead of the passes of the backend: `-b "direct --passes=fold,coalesce"`.
 
 ## Scenarios
