@@ -12,6 +12,8 @@ use mchprs_network::packets::{
     PacketEncoder, PalettedContainer,
 };
 
+pub const BLOCK_STATE_DIRECT_THRESHOLD: u64 = 9;
+
 #[derive(Clone)]
 pub struct BitBuffer {
     bits_per_entry: u64,
@@ -228,6 +230,10 @@ impl PalettedBitBuffer {
 
     pub fn bits_per_entry(&self) -> u8 {
         self.data.bits_per_entry as u8
+    }
+
+    pub fn uses_palette(&self) -> bool {
+        self.use_palette
     }
 
     #[cfg(feature = "networking")]

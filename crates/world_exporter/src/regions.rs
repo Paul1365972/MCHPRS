@@ -31,7 +31,7 @@ fn encode_section(section: &ChunkSection) -> HashMap<String, Value> {
 
     let mut palette = Vec::new();
     for block in buffer.palette() {
-        let block = Block::from_id(*block);
+        let block = Block::from_id(*block).expect("loaded plot data holds known block states");
         let name = block.get_name();
         let props = block.properties();
         let props = props

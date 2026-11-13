@@ -30,7 +30,7 @@ pub struct TickEntry {
 pub trait World: 'static {
     /// Returns the block located at `pos`
     fn get_block(&self, pos: BlockPos) -> Block {
-        Block::from_id(self.get_block_raw(pos))
+        Block::from_id(self.get_block_raw(pos)).expect("plot chunks hold known block states")
     }
 
     /// Returns the block state id of the block at `pos`

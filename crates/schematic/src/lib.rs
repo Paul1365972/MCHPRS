@@ -435,7 +435,7 @@ pub fn save_schematic(path: &Path, clipboard: &WorldEditClipboard, overwrite: bo
         for z_offset in (0..size_z).map(|z| z * size_x) {
             for x in 0..size_x {
                 let entry = blocks.get_entry((y_offset + z_offset + x) as usize);
-                let block = Block::from_id(entry);
+                let block = Block::from_id(entry).expect("the palette holds known block states");
 
                 let name = block.get_name();
                 let props = block.properties();

@@ -71,7 +71,7 @@ fn for_pos<W: World>(
     pos: BlockPos,
 ) {
     let id = world.get_block_raw(pos);
-    let block = Block::from_id(id);
+    let block = Block::from_id(id).expect("plot chunks hold known block states");
 
     if block.is_any_sign() {
         second_pass.insert(pos);

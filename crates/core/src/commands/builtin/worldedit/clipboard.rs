@@ -237,7 +237,8 @@ fn transform_clipboard(
                 let n = map_pos(BlockPos::new(x as i32, y as i32, z as i32));
                 let n_i = n.y as u32 * n_size_x * n_size_z + n.z as u32 * n_size_x + n.x as u32;
 
-                let mut block = Block::from_id(clipboard.data.get_entry(i as usize));
+                let mut block = Block::from_id(clipboard.data.get_entry(i as usize))
+                    .expect("the clipboard holds known block states");
                 map_block(&mut block);
                 data.set_entry(n_i as usize, block.get_id());
             }

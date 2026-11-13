@@ -176,7 +176,12 @@ pub fn compile(
             node.block
                 .iter()
                 .copied()
-                .map(|(pos, id)| (pos, Block::from_id(id)))
+                .map(|(pos, id)| {
+                    (
+                        pos,
+                        Block::from_id(id).expect("the graph holds known block states"),
+                    )
+                })
                 .collect()
         })
         .collect();
