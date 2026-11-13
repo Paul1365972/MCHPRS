@@ -4,7 +4,6 @@ name = "mchprs_world_exporter"
 authors.workspace = true
 description.workspace = true
 edition.workspace = true
-homepage.workspace = true
 keywords.workspace = true
 readme.workspace = true
 version.workspace = true
