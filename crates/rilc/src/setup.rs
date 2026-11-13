@@ -5,11 +5,15 @@ use anyhow::{anyhow, bail};
 use mchprs_backends::vanilla::VanillaBackend;
 use mchprs_backends::{Setup as BackendSetup, GRAPH_BACKENDS};
 use mchprs_redpiler::backend::{GraphBackend, GraphContext};
+use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler::graph::Graph;
 use mchprs_redpiler::graph_simulation;
+use mchprs_redpiler::nodes::Nodes;
 use mchprs_redpiler::ports::WireOutputs;
 use mchprs_ril::passes::{self, PASSES};
-use mchprs_simulation::backend::Backend;
+use mchprs_simulation::backend::{Backend, CompileContext};
+use mchprs_simulation::layout::Layout;
+use mchprs_simulation::{Blocks, Simulation};
 use mchprs_syntax::flag::FlagValues;
 use std::fmt;
 
@@ -56,6 +60,25 @@ impl Setup {
         self.backend.flags()
     }
 
+    pub fn compile(&self, world: &World) -> Result<(Box<dyn Simulation<Blocks>>, Layout), Error> {
+        let source = input::source(world);
+        if self.passes.is_none() {
+            return Ok(self
+                .backend
+                .compile(&source, &mut CompileContext::silent())?);
+        }
+        let context = &mut GraphContext::silent();
+        let graph = self.world_graph(world, context)?;
+        let backend = self.graph_backend()?;
+        Ok(graph_simulation::build(
+            backend,
+            graph,
+            &source,
+            self.flags(),
+            context,
+        )?)
+    }
+
     pub fn world_graph(
         &self,
         world: &World,
@@ -78,6 +101,17 @@ impl Setup {
         context.inspect("parsed", &graph);
         self.optimize(backend, &mut graph, context)?;
         Ok(graph)
+    }
+
+    pub fn build(&self, graph: Graph) -> Result<(Circuit, Box<dyn Simulation<Nodes>>), Error> {
+        let circuit = Circuit::new(self.circuit_graph(graph, &mut GraphContext::silent())?)?;
+        let simulation = self.build_circuit(&circuit)?;
+        Ok((circuit, simulation))
+    }
+
+    pub fn build_circuit(&self, circuit: &Circuit) -> Result<Box<dyn Simulation<Nodes>>, Error> {
+        let backend = self.circuit_backend()?;
+        Ok(backend.build(circuit, self.flags(), &mut GraphContext::silent())?)
     }
 
     fn circuit_backend(&self) -> Result<&dyn GraphBackend, Error> {
