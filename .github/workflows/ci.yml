@@ -17,6 +17,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_PROFILE_DEV_DEBUG: 0
+  RUSTUP_TOOLCHAIN: "1.100.0"
 
 jobs:
   check:
@@ -24,6 +25,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: rustup toolchain install ${{ env.RUSTUP_TOOLCHAIN }} --profile minimal --component clippy --component rustfmt
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -58,6 +62,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Install Rust
+        run: rustup toolchain install ${{ env.RUSTUP_TOOLCHAIN }} --profile minimal
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -86,6 +93,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: rustup toolchain install ${{ env.RUSTUP_TOOLCHAIN }} --profile minimal
 
       - name: Add the Intel target
         run: rustup target add x86_64-apple-darwin
