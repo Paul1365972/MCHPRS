@@ -47,6 +47,8 @@ Prebuilt releases have both enabled, and so does the image the `Dockerfile` buil
 
 The image runs the server in the volume `/data` and exposes port 25565.
 
+The redstone backends also run without the server: see [Library](docs/Library.md).
+
 ## Running
 
 The server reads and writes its files in the working directory.
@@ -141,6 +143,7 @@ direct = "--optimize --io-only"
 - [Commands](docs/Commands.md): every command. `/help` lists them in game.
 - [Circuits](docs/Circuits.md): the graph Redpiler compiles, the behaviour of its components and the passes.
 - [RIL](docs/RIL.md): the text format of a circuit.
+- [Library](docs/Library.md): running the backends from a Rust program, and writing one.
 - [rilc](docs/rilc.md): the development tool that compiles, runs and compares Redpiler setups.
 - [Adding a Block](docs/Adding_a_block.md): the block data generator.
 

@@ -2,7 +2,7 @@
 
 The `vanilla` backend runs a copy of the plot's blocks with the code that runs a plot without Redpiler.
 It builds no graph, runs no passes and takes no flags.
-The server does not offer it.
+The server does not offer it. [rilc](../rilc.md) and the [library](../Library.md) do.
 
 [Semantics](../Semantics.md) defines the other backends by how they differ from it.
 

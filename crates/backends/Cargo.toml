@@ -27,4 +27,9 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
+mchprs_schematic = { path = "../schematic" }
 mchprs_redstone = { path = "../redstone" }
+
+[[example]]
+name = "schematic"
+required-features = ["direct", "vanilla"]

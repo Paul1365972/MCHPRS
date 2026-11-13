@@ -835,6 +835,7 @@ dependencies = [
  "mchprs_redpiler",
  "mchprs_redpiler_direct",
  "mchprs_redstone",
+ "mchprs_schematic",
  "mchprs_simulation",
  "mchprs_syntax",
  "rustc-hash",
