@@ -205,3 +205,13 @@ impl From<Step> for StepFile {
         file
     }
 }
+
+pub fn to_toml(input: &Path, steps: Vec<Step>) -> Result<String, Error> {
+    let file = ScenarioFile {
+        input: input.to_owned(),
+        circuit: None,
+        settle: None,
+        step: steps.into_iter().map(StepFile::from).collect(),
+    };
+    Ok(toml::to_string(&file)?)
+}

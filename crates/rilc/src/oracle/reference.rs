@@ -1,10 +1,11 @@
+use super::trace::PendingTicks;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::backend::{GraphBackend, GraphContext};
 use mchprs_redpiler::behavior::AcceptedInput;
 use mchprs_redpiler::behavior::{InputStrengths, Outcome, Pending};
 use mchprs_redpiler::circuit::{Circuit, InputKinds, Link, NodeId};
 use mchprs_redpiler::extract::ExtractOptions;
-use mchprs_redpiler::graph::NodeState;
+use mchprs_redpiler::graph::{LinkKind, NodeState};
 use mchprs_redpiler::graph_simulation;
 use mchprs_redpiler::nodes::{Changes, Nodes, Snapshot};
 use mchprs_redstone::input::Input;
@@ -75,6 +76,25 @@ impl Delivery {
             links: vec![link],
         }
     }
+
+    pub(super) fn into_target(target: NodeId, links: &[Link]) -> Delivery {
+        Delivery {
+            target,
+            links: links
+                .iter()
+                .filter(|link| link.target == target)
+                .copied()
+                .collect(),
+        }
+    }
+
+    pub(super) fn target(&self) -> NodeId {
+        self.target
+    }
+
+    pub(super) fn feeds(&self, target: NodeId, kind: LinkKind) -> bool {
+        self.target == target && self.links.iter().any(|link| link.kind == kind)
+    }
 }
 
 /// Ticks that run in any order: those one change schedules into one queue by updating its targets,
@@ -83,6 +103,20 @@ pub(super) type Batch = Vec<NodeId>;
 
 /// The batches of a queue are in the order they were scheduled
 pub(super) type Queues = BTreeMap<(u64, TickPriority), Vec<Batch>>;
+
+pub(super) fn sorted(mut batch: Batch) -> Batch {
+    batch.sort_unstable();
+    batch
+}
+
+fn keeps_batch_order(order: &[Batch], batches: &[Batch]) -> bool {
+    let mut ticks = order.iter().flatten().copied();
+    let in_turn = batches.iter().all(|batch| {
+        let first: Batch = ticks.by_ref().take(batch.len()).collect();
+        sorted(first) == sorted(batch.clone())
+    });
+    in_turn && ticks.next().is_none()
+}
 
 #[derive(Debug, Clone)]
 pub struct ReferenceEngine {
@@ -141,6 +175,15 @@ impl ReferenceEngine {
             .unwrap_or_default()
     }
 
+    /// Equal for engines whose pending ticks run in the same orders
+    pub(super) fn queues(&self) -> Queues {
+        let mut queues = self.queues_by_due_tick.clone();
+        for batch in queues.values_mut().flatten() {
+            batch.sort_unstable();
+        }
+        queues
+    }
+
     pub fn complete_snapshot(&self) -> Snapshot {
         let queues = self.queues_by_due_tick.iter();
         let pending_ticks = queues.flat_map(|(&(due, priority), batches)| {
@@ -154,6 +197,23 @@ impl ReferenceEngine {
             states: self.states.clone(),
             pending_ticks: pending_ticks.collect(),
         }
+    }
+
+    /// Whether the pending ticks may run in the order of `seen`. If so, they do from now on.
+    pub(super) fn run_pending_as(&mut self, seen: &PendingTicks) -> bool {
+        let mut seen_queues = Queues::new();
+        for &(node, tick) in seen.iter() {
+            let due = self.tick + u64::from(tick.delay);
+            let queue = seen_queues.entry((due, tick.priority));
+            queue.or_default().push(vec![node]);
+        }
+        let mut queues = self.queues_by_due_tick.values().zip(seen_queues.values());
+        let may_run = self.queues_by_due_tick.keys().eq(seen_queues.keys())
+            && queues.all(|(batches, order)| keeps_batch_order(order, batches));
+        if may_run {
+            self.queues_by_due_tick = seen_queues;
+        }
+        may_run
     }
 
     /// `order` delivers every outgoing link of the node once

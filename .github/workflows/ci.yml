@@ -56,6 +56,14 @@ jobs:
       - name: Test redpiler
         run: cargo run --locked -p rilc test crates/redpiler/ril_tests
 
+      - name: Fuzz the direct engine against its circuit
+        run: cargo run --locked -p rilc fuzz engine --cases 10000
+
+      - name: Fuzz the passes against the unoptimized circuit
+        run: |
+          cargo run --locked -p rilc fuzz passes --cases 10000
+          cargo run --locked -p rilc fuzz passes crates/redpiler/fuzz_regressions/*.ril
+
   build:
     strategy:
       fail-fast: false
