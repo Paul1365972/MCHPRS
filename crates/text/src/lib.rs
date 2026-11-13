@@ -7,10 +7,6 @@ static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
-fn is_valid_hex(ch: char) -> bool {
-    ch.is_numeric() || ('a'..='f').contains(&ch) || ('A'..='F').contains(&ch)
-}
-
 #[derive(Serialize, Debug, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum ColorCode {
@@ -209,7 +205,7 @@ impl TextComponent {
                 for _ in 0..6 {
                     if let Some(c) = chars.next() {
                         hex.push(c);
-                        if !is_valid_hex(c) {
+                        if !c.is_ascii_hexdigit() {
                             cur_component.text += &hex;
                             continue 'main_loop;
                         }
