@@ -68,6 +68,12 @@ impl BlockMap {
         self.nodes_by_position.get(&pos).copied()
     }
 
+    /// The position of the node's first block. A node that takes input has one block.
+    pub fn position(&self, node: NodeId) -> Option<BlockPos> {
+        let blocks = self.blocks.get(node.index())?;
+        blocks.first().map(|&(pos, _)| pos)
+    }
+
     /// A block that changed and is back as it was sounds once.
     pub fn record(&mut self, changes: &Changes, block_changes: &mut BlockChanges) {
         for &(node, state) in &changes.states {

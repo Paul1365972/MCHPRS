@@ -133,9 +133,9 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
         let origin = BlockPos::zero();
         let clipboard = create_clipboard(ctx.world(), origin, first_pos, second_pos);
-        clear_area(ctx.world_mut(), first_pos, second_pos);
+        clear_area(ctx.world_mut()?, first_pos, second_pos);
         paste_clipboard(
-            ctx.world_mut(),
+            ctx.world_mut()?,
             &clipboard,
             origin + offset_amount,
             ignore_air,
@@ -162,11 +162,11 @@ pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(update.executes(move |ctx| {
         if ctx.get(whole_plot) {
             let region = ctx.plot().world.region();
-            update_region(ctx.world_mut(), region);
+            update_region(ctx.world_mut()?, region);
             ctx.worldedit_message("Updated entire plot.")
         } else {
             let (first_pos, second_pos) = ctx.selection()?;
-            update_region(ctx.world_mut(), Region::new(first_pos, second_pos));
+            update_region(ctx.world_mut()?, Region::new(first_pos, second_pos));
             ctx.worldedit_message("Updated selection.")
         }
     }));
@@ -212,7 +212,7 @@ fn exec_set(
     let start_time = Instant::now();
     let mut blocks_updated = 0;
 
-    let world = ctx.world_mut();
+    let world = ctx.world_mut()?;
     for pos in region.positions() {
         if mask.is_none_or(|mask| mask.matches(world, pos)) && pattern.place(world, pos) {
             blocks_updated += 1;
@@ -240,7 +240,7 @@ fn exec_replace_container(
 
     let new_block = to.block(BlockDirection::North, false);
 
-    let world = ctx.world_mut();
+    let world = ctx.world_mut()?;
     let mut unchanged = 0;
     for pos in Region::new(first_pos, second_pos).positions() {
         let Some(block_container) = world.block(pos).container_type() else {

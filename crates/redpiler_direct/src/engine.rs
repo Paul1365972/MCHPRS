@@ -15,8 +15,9 @@ use mchprs_redstone::tick_queue::{PendingTick, TickPriority};
 use mchprs_simulation::backend::CompileError;
 use mchprs_simulation::input::DriveError;
 use mchprs_simulation::readback::Readback;
+use mchprs_simulation::stepper;
 use mchprs_simulation::ticks::{Ran, SimulationError, Stop};
-use mchprs_simulation::{Capabilities, End, Simulation, View};
+use mchprs_simulation::{Capabilities, End, Running, Simulation, View};
 use std::mem;
 
 #[derive(Debug)]
@@ -223,6 +224,10 @@ impl Simulation<nodes::Nodes> for DirectEngine {
             changes,
             state: self.read()?,
         })
+    }
+
+    fn start(self: Box<Self>) -> Result<Box<dyn Running<nodes::Nodes>>, SimulationError> {
+        stepper::start(self, "direct")
     }
 }
 

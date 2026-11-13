@@ -1,4 +1,5 @@
 pub mod block_map;
+mod running;
 
 use crate::backend::{GraphBackend, GraphContext};
 use crate::circuit::{Circuit, InvalidCircuit};
@@ -15,8 +16,9 @@ use mchprs_simulation::layout::Layout;
 use mchprs_simulation::readback::Readback;
 use mchprs_simulation::ticks::{Ran, SimulationError};
 use mchprs_simulation::write_back::WriteBack;
-use mchprs_simulation::{Blocks, Capabilities, End, Simulation, View};
+use mchprs_simulation::{Blocks, Capabilities, End, Running, Simulation, View};
 use mchprs_syntax::flag::FlagValues;
+use running::GraphRunning;
 
 pub fn compile(
     backend: &dyn GraphBackend,
@@ -110,5 +112,12 @@ impl Simulation<Blocks> for GraphSimulation {
             mut blocks,
         } = *self;
         Ok(blocks.end(simulation.stop()?))
+    }
+
+    fn start(self: Box<Self>) -> Result<Box<dyn Running<Blocks>>, SimulationError> {
+        let GraphSimulation { simulation, blocks } = *self;
+        let ticks = simulation.ticks();
+        let running = simulation.start()?;
+        Ok(Box::new(GraphRunning::new(running, blocks, ticks)))
     }
 }

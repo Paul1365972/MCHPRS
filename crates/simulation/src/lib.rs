@@ -1,11 +1,14 @@
 pub mod backend;
 pub mod block_changes;
 pub mod component;
+pub mod handle;
 pub mod input;
 pub mod layout;
 pub mod ports;
 pub mod readback;
+pub mod schedule;
 pub mod simulated_world;
+pub mod stepper;
 pub mod ticks;
 pub mod write_back;
 
@@ -15,8 +18,9 @@ use crate::readback::Readback;
 use crate::ticks::{Ran, SimulationError};
 use crate::write_back::WriteBack;
 use mchprs_blocks::BlockPos;
-use mchprs_redstone::input::Input;
+use mchprs_redstone::input::{Input, InputError};
 use std::fmt::Debug;
+use std::time::Duration;
 
 /// What a simulation is addressed by and what it reports.
 pub trait Space: 'static {
@@ -35,6 +39,9 @@ impl Space for Blocks {
     type State = WriteBack;
 }
 
+/// A compiled circuit that the caller steps. Ticks run only inside `run` and `settle`, and it keeps
+/// no clock, so a build without threads can use it. Speed is never measured here: only the running
+/// form shows the speed the game sees.
 pub trait Simulation<S: Space>: Send {
     fn capabilities(&self) -> Capabilities;
 
@@ -54,6 +61,32 @@ pub trait Simulation<S: Space>: Send {
     fn read(&mut self) -> Result<Readback<S::State>, SimulationError>;
 
     fn stop(self: Box<Self>) -> Result<End<S>, SimulationError>;
+
+    fn start(self: Box<Self>) -> Result<Box<dyn Running<S>>, SimulationError>;
+}
+
+/// A compiled circuit that runs by itself. It owns its threads and its timing, and decides how
+/// many ticks run and when. One owner holds it, on any thread. An `Err` is final: the simulation
+/// is gone. Dropping it ends it without waiting. Speed is measured here, never on the stepped
+/// form.
+pub trait Running<S: Space>: Send {
+    /// What this simulation can do. The owner sends only what they allow.
+    fn capabilities(&self) -> Capabilities;
+
+    /// Never waits. Commands take effect in the order sent, each at a tick boundary. While paused
+    /// no tick runs: a drive followed by a run of n ticks runs exactly n ticks after the input, on
+    /// every backend.
+    fn send(&mut self, command: Command<S::Address>);
+
+    /// Never waits. Returns the updates that arrived since the last call, merged.
+    fn poll(&mut self) -> Result<Option<Update<S>>, SimulationError>;
+
+    /// Waits for the next update. Call it only when one is owed: after `Show`, or while a run with
+    /// a goal runs.
+    fn wait(&mut self) -> Result<Update<S>, SimulationError>;
+
+    /// Ends the simulation at the next tick boundary.
+    fn stop(self: Box<Self>) -> Result<End<S>, SimulationError>;
 }
 
 /// What a simulation leaves when it stops.
@@ -66,10 +99,34 @@ pub struct End<S: Space> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
+    /// It can tell when no tick is pending: `Run::UntilSettled` is supported.
     pub settling: bool,
     /// `read` and `stop` return the state it reached. Without it, the world keeps the state from
     /// before the compile.
     pub write_back: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Command<A> {
+    Pause,
+    /// How ticks run from now on. Replaces what ran before.
+    Run(Run),
+    /// While it runs, the input lands at whichever tick boundary the backend reaches next.
+    Drive(A, Input),
+    /// Answered by one update, read at one tick boundary.
+    Show(View),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Run {
+    /// One tick per interval.
+    Every(Duration),
+    /// As fast as the backend can.
+    Unlimited,
+    /// This many ticks as fast as the backend can. Then it pauses and reports `RunFinished`.
+    Ticks(u64),
+    /// As fast as the backend can until no tick is pending. Then it pauses and reports `RunFinished`.
+    UntilSettled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,4 +135,48 @@ pub enum View {
     Observed,
     /// Everything that changed since it was last shown, as far as the backend can read it.
     All,
+}
+
+/// What happened since the previous update. An update arrives in answer to `Show`, and unasked
+/// when it carries an event or an input landed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Update<S: Space> {
+    pub changes: S::Changes,
+    /// Ticks run since the simulation was compiled.
+    pub ticks: u64,
+    pub events: Vec<Event<S::Address>>,
+    /// A rate is not reached.
+    pub behind: bool,
+}
+
+impl<S: Space> Default for Update<S> {
+    fn default() -> Update<S> {
+        Update {
+            changes: S::Changes::default(),
+            ticks: 0,
+            events: Vec::new(),
+            behind: false,
+        }
+    }
+}
+
+impl<S: Space> Update<S> {
+    pub fn append(&mut self, mut later: Update<S>) {
+        self.changes.extend([later.changes]);
+        self.ticks = later.ticks;
+        self.events.append(&mut later.events);
+        self.behind = later.behind;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event<A> {
+    /// A run of `Ticks` or `UntilSettled` met its goal. Every such run ends with exactly one of
+    /// `RunFinished` and `RunInterrupted`, in the order the runs were sent.
+    RunFinished,
+    RunInterrupted,
+    /// The input at this address was not applied.
+    Refused(A, InputError),
+    /// This update answers a `Show`.
+    Shown(View),
 }

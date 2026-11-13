@@ -9,7 +9,9 @@ Flags go after all other arguments. Short flags can be combined, and `=false` tu
 | --- | --- | --- |
 | `/help [<command>]` | `//help` | List the commands, or show the syntax and flags of a command. |
 | `/rtps [<tps> \| unlimited]` | `/rtps u` | Show the measured tick rate, or set the redstone ticks per second. The default is 10, fractions are allowed, `0` pauses the plot and `unlimited` removes the limit. A redstone tick is two game ticks. |
-| `/radvance <ticks>` | `/radv` | Run the given number of redstone ticks without a rate limit. |
+| `/radvance <ticks>` | `/radv` | Run the given number of redstone ticks without a rate limit. The plot is paused afterwards. |
+| `/radvance settle` | `/radv settle` | Run redstone ticks without a rate limit until no tick is pending. The plot is paused afterwards. A backend that cannot tell when no tick is pending refuses it. |
+| `/radvance stop` | `/radv stop` | End the running `/radvance`. A plot runs one `/radvance` at a time, and none while Redpiler compiles. |
 | `/worldsendrate [<hertz>]` | `/wsr` | Show or set how often the plot sends block changes to players, from 0 to 1000 times per second. The default is 60, fractions are allowed and `0` disables periodic sends. |
 | `/teleport (<position> \| <player>)` | `/tp` | Teleport to coordinates or to a player. |
 | `/speed <speed>` | | Set your flying speed, from 0 to 10. |
