@@ -3,7 +3,6 @@ name = "mchprs_redstone"
 authors.workspace = true
 description.workspace = true
 edition.workspace = true
-homepage.workspace = true
 keywords.workspace = true
 readme.workspace = true
 version.workspace = true
