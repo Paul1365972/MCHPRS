@@ -125,7 +125,7 @@ How the ticks of one priority run, and when a change updates what it powers, is 
 ## Passes
 
 A pass rewrites the graph before the backend builds it.
-Passes are the types in the modules of `mchprs_redpiler::passes` that implement `Pass`.
+Passes are the types in the modules of `mchprs_redpiler::passes` that implement `Pass`, and the [`coalesce` of `phase`](backends/Phase.md#coalesce) in `mchprs_redpiler_phase::coalesce`.
 A backend chooses which passes it runs and in which order; its page lists them.
 A pass must not change the result of a build that is not locational.
 It may change the result of a locational build, the same way a recompile can, but only to a result that a valid tick order of the original graph gives.

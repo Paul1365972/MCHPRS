@@ -954,6 +954,7 @@ dependencies = [
  "mchprs_ril",
  "mchprs_simulation",
  "mchprs_syntax",
+ "rustc-hash",
 ]
 
 [[package]]

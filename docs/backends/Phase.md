@@ -35,8 +35,20 @@ With it, it runs these [passes](../Circuits.md#passes) in order:
 1. `fold`
 2. `unify-constants`
 3. `prune-orphans`
+4. its own [`coalesce`](#coalesce)
 
 `sort-links` is not among them: it only sets the order of updates, which `phase` does not depend on.
+
+### Coalesce
+
+Under `phase`, nodes that are in the same state and are powered the same way always change together.
+So `phase` has its own `coalesce` in place of [that of `direct`](Direct.md#coalesce), without the conditions on order.
+
+It merges nodes that agree in kind, port role, state, pending tick, whether they are observed, and incoming links.
+This includes nodes with a pending tick, nodes that are their own input and the nodes of identical loops.
+Inputs are not merged.
+
+The pass is only correct in the tick order of `phase`. `--passes` cannot name it, and `rilc fuzz passes` does not check it.
 
 ## Flags
 
