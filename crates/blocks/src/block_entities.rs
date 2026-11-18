@@ -22,7 +22,7 @@ pub struct InventoryEntry {
 impl InventoryEntry {
     pub fn get_item_stack(&self) -> ItemStack {
         ItemStack {
-            item_type: Item::from_id(self.id),
+            item_type: Item::from_id(self.id).unwrap_or(Item::Redstone),
             count: self.count as u8,
             nbt: self
                 .nbt
@@ -210,7 +210,7 @@ impl BlockEntity {
         let num_slots = ty.num_slots();
         let mut fullness_sum: f32 = 0.0;
         for item in &inventory {
-            let item_type = Item::from_id(item.id);
+            let item_type = Item::from_id(item.id).unwrap_or(Item::Redstone);
             fullness_sum += item.count as f32 / item_type.max_stack_size() as f32;
         }
         BlockEntity::Container {
@@ -342,9 +342,10 @@ impl BlockEntity {
             BlockEntity::Container { inventory, ty, .. } => Some({
                 let mut items = Vec::new();
                 for entry in inventory {
+                    let item_type = Item::from_id(entry.id).unwrap_or(Item::Redstone);
                     let nbt = map! {
                         "count" => nbt::Value::Int(entry.count as i32),
-                        "id" => nbt::Value::String(Item::from_id(entry.id).get_name().to_owned()),
+                        "id" => nbt::Value::String(item_type.get_name().to_owned()),
                         "Slot" => nbt::Value::Byte(entry.slot)
                     };
                     // TODO: item nbt data in containers
