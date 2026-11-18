@@ -27,6 +27,7 @@ pub trait ServerBoundPacketHandler {
         _player_idx: usize,
     ) {
     }
+    fn handle_click_container(&mut self, _packet: SClickContainer, _player_idx: usize) {}
     fn handle_plugin_message(&mut self, _packet: SPluginMessage, _player_idx: usize) {}
     fn handle_keep_alive(&mut self, _packet: SKeepAlive, _player_idx: usize) {}
     fn handle_set_player_position(&mut self, _packet: SSetPlayerPosition, _player_idx: usize) {}
@@ -333,6 +334,24 @@ impl ServerBoundPacket for SCommandSuggestionsRequest {
 
     fn handle(self: Box<Self>, handler: &mut dyn ServerBoundPacketHandler, player_idx: usize) {
         handler.handle_command_suggestions_request(*self, player_idx);
+    }
+}
+
+/// The click itself follows the window id
+#[derive(Debug)]
+pub struct SClickContainer {
+    pub window_id: i32,
+}
+
+impl ServerBoundPacket for SClickContainer {
+    fn decode<T: PacketDecoderExt>(decoder: &mut T) -> DecodeResult<Self> {
+        Ok(SClickContainer {
+            window_id: decoder.read_varint()?,
+        })
+    }
+
+    fn handle(self: Box<Self>, handler: &mut dyn ServerBoundPacketHandler, player_idx: usize) {
+        handler.handle_click_container(*self, player_idx);
     }
 }
 
