@@ -390,13 +390,22 @@ pub trait PacketDecoderExt: Read + Sized {
         let num_removed_components = self.read_varint()?;
 
         let mut container_items = Vec::new();
+        let mut block_entity_data = None;
         for _ in 0..num_components {
             let component_ty = self.read_varint()?;
             let value_len = self.read_varint()?;
             let mut value = Cursor::new(self.read_bytes(value_len as usize)?);
-            if component_ty == protocol_id!("minecraft:data_component_type", "minecraft:container")
-            {
-                container_items = value.read_container_items()?;
+            match component_ty {
+                protocol_id!("minecraft:data_component_type", "minecraft:container") => {
+                    container_items = value.read_container_items()?;
+                }
+                protocol_id!(
+                    "minecraft:data_component_type",
+                    "minecraft:block_entity_data"
+                ) => {
+                    block_entity_data = value.read_nbt_compound()?.map(nbt::Blob::with_content);
+                }
+                _ => {}
             }
         }
         for _ in 0..num_removed_components {
@@ -407,8 +416,8 @@ pub trait PacketDecoderExt: Read + Sized {
             item_type: Item::from_id(item_id as u32)
                 .ok_or(PacketDecodeError::UnknownItem(item_id))?,
             count: item_count as u8,
-            nbt: None,
             container_items,
+            block_entity_data,
         }))
     }
 
@@ -574,16 +583,13 @@ pub trait PacketEncoderExt: Write {
         {
             self.write_varint(slot.count as i32);
             self.write_varint(slot.item_type.get_id() as i32);
+            let has_container_items = !slot.container_items.is_empty();
             // Components to add
-            if !slot.container_items.is_empty() {
-                self.write_varint(1);
-            } else {
-                self.write_varint(0);
-            }
+            self.write_varint(has_container_items as i32 + slot.block_entity_data.is_some() as i32);
             // Components to remove
             self.write_varint(0);
 
-            if !slot.container_items.is_empty() {
+            if has_container_items {
                 self.write_varint(protocol_id!(
                     "minecraft:data_component_type",
                     "minecraft:container"
@@ -592,6 +598,13 @@ pub trait PacketEncoderExt: Write {
                 for item in &slot.container_items {
                     self.write_container_item(item);
                 }
+            }
+            if let Some(block_entity_data) = &slot.block_entity_data {
+                self.write_varint(protocol_id!(
+                    "minecraft:data_component_type",
+                    "minecraft:block_entity_data"
+                ));
+                self.write_nbt(block_entity_data);
             }
         } else {
             self.write_varint(0);

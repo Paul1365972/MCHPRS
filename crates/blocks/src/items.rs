@@ -20,9 +20,9 @@ impl<'de> Deserialize<'de> for Item {
 pub struct ItemStack {
     pub item_type: Item,
     pub count: u8,
-    #[serde(skip)]
-    pub nbt: Option<nbt::Blob>,
     pub container_items: Vec<Option<ContainedItem>>,
+    #[serde(with = "encoded_nbt")]
+    pub block_entity_data: Option<nbt::Blob>,
 }
 
 impl ItemStack {
@@ -30,15 +30,15 @@ impl ItemStack {
         ItemStack {
             item_type,
             count,
-            nbt: None,
             container_items: Vec::new(),
+            block_entity_data: None,
         }
     }
 
     pub fn is_same_item(&self, other: &ItemStack) -> bool {
         self.item_type == other.item_type
-            && self.nbt == other.nbt
             && self.container_items == other.container_items
+            && self.block_entity_data == other.block_entity_data
     }
 
     /// Create container item with specified signal strength
@@ -84,5 +84,31 @@ pub struct ContainedItem {
 impl ContainedItem {
     pub fn overrides_max_stack_size(&self) -> bool {
         self.max_stack_size != self.item_type.max_stack_size()
+    }
+}
+
+mod encoded_nbt {
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        nbt: &Option<nbt::Blob>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let encoded = nbt.as_ref().map(|nbt| {
+            let mut data = Vec::new();
+            nbt.to_writer(&mut data).unwrap();
+            data
+        });
+        encoded.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<nbt::Blob>, D::Error> {
+        let encoded = Option::<Vec<u8>>::deserialize(deserializer)?;
+        encoded
+            .map(|data| nbt::Blob::from_reader(&mut data.as_slice()).map_err(D::Error::custom))
+            .transpose()
     }
 }
