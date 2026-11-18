@@ -481,10 +481,10 @@ impl ServerBoundPacketHandler for Plot {
         {
             for slot in inventory {
                 let idx = slot.idx as usize;
-                if item_stack.container_slots.len() <= idx {
-                    item_stack.container_slots.resize(idx + 1, None);
+                if item_stack.container_items.len() <= idx {
+                    item_stack.container_items.resize(idx + 1, None);
                 }
-                item_stack.container_slots[idx] = slot.item();
+                item_stack.container_items[idx] = slot.item();
             }
         }
 

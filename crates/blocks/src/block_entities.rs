@@ -1,5 +1,5 @@
 use crate::blocks::Block;
-use crate::items::{Item, ItemStack};
+use crate::items::{ContainedItem, Item};
 use crate::json_text;
 use mchprs_proc_macros::protocol_id;
 use mchprs_text::{ColorCode, TextComponent};
@@ -22,20 +22,25 @@ pub struct ContainerSlot {
 }
 
 impl ContainerSlot {
-    pub fn new(idx: u8, item: &ItemStack) -> ContainerSlot {
+    pub fn new(idx: u8, item: &ContainedItem) -> ContainerSlot {
         ContainerSlot {
             idx,
             item_name: item.item_type.get_name().to_owned(),
             count: item.count,
-            components: None,
+            components: item.overrides_max_stack_size().then(|| {
+                encode_compound(map! {
+                    MAX_STACK_SIZE_COMPONENT => nbt::Value::Int(item.max_stack_size as i32)
+                })
+            }),
         }
     }
 
-    pub fn item(&self) -> Option<ItemStack> {
-        Some(ItemStack::new(
-            Item::from_name(&self.item_name)?,
-            self.count,
-        ))
+    pub fn item(&self) -> Option<ContainedItem> {
+        Some(ContainedItem {
+            item_type: Item::from_name(&self.item_name)?,
+            count: self.count,
+            max_stack_size: self.max_stack_size(),
+        })
     }
 
     pub fn max_stack_size(&self) -> u8 {
@@ -213,7 +218,7 @@ impl BlockEntity {
         }
     }
 
-    pub fn container_from_items(ty: ContainerType, items: &[Option<ItemStack>]) -> BlockEntity {
+    pub fn container_from_items(ty: ContainerType, items: &[Option<ContainedItem>]) -> BlockEntity {
         let inventory = (0..ty.num_slots())
             .zip(items)
             .filter_map(|(idx, item)| Some(ContainerSlot::new(idx, item.as_ref()?)))

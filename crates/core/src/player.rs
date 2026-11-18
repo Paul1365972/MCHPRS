@@ -4,7 +4,7 @@ use crate::plot::PLOT_SCALE;
 use crate::utils::HyphenatedUUID;
 use byteorder::{BigEndian, ReadBytesExt};
 use mchprs_blocks::block_entities::{ContainerSlot, ContainerType};
-use mchprs_blocks::items::ItemStack;
+use mchprs_blocks::items::{Item, ItemStack};
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::{PacketEncoder, PlayerProperty};
@@ -556,7 +556,8 @@ impl Player {
     ) {
         let mut slots: Vec<Option<ItemStack>> = vec![None; container_type.num_slots() as usize];
         for slot in inventory {
-            slots[slot.idx as usize] = slot.item();
+            let item = Item::from_name(&slot.item_name);
+            slots[slot.idx as usize] = item.map(|item| ItemStack::new(item, slot.count));
         }
         let main_inventory_then_hotbar = &self.inventory[9..45];
         slots.extend_from_slice(main_inventory_then_hotbar);

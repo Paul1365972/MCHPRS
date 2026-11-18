@@ -22,7 +22,7 @@ pub struct ItemStack {
     pub count: u8,
     #[serde(skip)]
     pub nbt: Option<nbt::Blob>,
-    pub container_slots: Vec<Option<ItemStack>>,
+    pub container_items: Vec<Option<ContainedItem>>,
 }
 
 impl ItemStack {
@@ -31,14 +31,14 @@ impl ItemStack {
             item_type,
             count,
             nbt: None,
-            container_slots: Vec::new(),
+            container_items: Vec::new(),
         }
     }
 
     pub fn is_same_item(&self, other: &ItemStack) -> bool {
         self.item_type == other.item_type
             && self.nbt == other.nbt
-            && self.container_slots == other.container_slots
+            && self.container_items == other.container_items
     }
 
     /// Create container item with specified signal strength
@@ -54,26 +54,35 @@ impl ItemStack {
             0 => 0,
             15 => slots * 64,
             _ => ((32 * slots * ss as u32) as f32 / 7.0 - 1.0).ceil() as u32,
-        } as usize;
+        };
 
-        let mut container_slots = Vec::new();
-        if items_needed > 0 {
-            for (_slot, items_added) in (0..items_needed).step_by(64).enumerate() {
-                let count = (items_needed - items_added).min(64);
-                container_slots.push(Some(ItemStack {
+        let container_items = (0..items_needed)
+            .step_by(64)
+            .map(|items_added| {
+                Some(ContainedItem {
                     item_type: Item::Redstone,
-                    count: count as u8,
-                    nbt: None,
-                    container_slots: Vec::new(),
-                }));
-            }
-        }
+                    count: (items_needed - items_added).min(64) as u8,
+                    max_stack_size: Item::Redstone.max_stack_size(),
+                })
+            })
+            .collect();
 
         ItemStack {
-            item_type: item,
-            count: 1,
-            nbt: None,
-            container_slots,
+            container_items,
+            ..ItemStack::new(item, 1)
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContainedItem {
+    pub item_type: Item,
+    pub count: u8,
+    pub max_stack_size: u8,
+}
+
+impl ContainedItem {
+    pub fn overrides_max_stack_size(&self) -> bool {
+        self.max_stack_size != self.item_type.max_stack_size()
     }
 }

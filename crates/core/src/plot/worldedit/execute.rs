@@ -1060,7 +1060,7 @@ pub(super) fn execute_replace_container(ctx: CommandExecuteContext<'_>) {
                         continue;
                     }
                     let item = ItemStack::container_with_ss(to, *comparator_override);
-                    let new_entity = BlockEntity::container_from_items(to, &item.container_slots);
+                    let new_entity = BlockEntity::container_from_items(to, &item.container_items);
                     ctx.plot.set_block_entity(pos, new_entity);
                     ctx.plot.set_block(pos, new_block);
                 }

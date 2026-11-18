@@ -2,7 +2,7 @@ use crate::config::CONFIG;
 use crate::player::Player;
 use crate::plot::{PlotWorld, PLOT_BLOCK_HEIGHT};
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType};
-use mchprs_blocks::items::{Item, ItemStack};
+use mchprs_blocks::items::{ContainedItem, Item, ItemStack};
 use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
@@ -285,7 +285,7 @@ pub fn place_in_world(
     world: &mut impl World,
     pos: BlockPos,
     nbt: &Option<nbt::Blob>,
-    container_items: &[Option<ItemStack>],
+    container_items: &[Option<ContainedItem>],
 ) {
     if !container_items.is_empty()
         && let Some(container_type) = ContainerType::for_block(&block)
@@ -510,7 +510,7 @@ pub fn use_item_on_block(
             ctx.player.client.send_packet(&open_sign_editor);
         }
 
-        place_in_world(block, world, block_pos, &item.nbt, &item.container_slots);
+        place_in_world(block, world, block_pos, &item.nbt, &item.container_items);
         false
     } else {
         true
