@@ -2,12 +2,12 @@ use super::Plot;
 use crate::config::CONFIG;
 use crate::player::{PacketSender, PlayerPos, SkinParts, CONTAINER_WINDOW_ID};
 use crate::server::Message;
-use crate::utils::{self, HyphenatedUUID};
+use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::{BlockEntity, SignBlockEntityText};
-use mchprs_blocks::items::{Item, ItemStack};
+use mchprs_blocks::items::ItemStack;
 use mchprs_blocks::BlockPos;
+use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::*;
-use mchprs_network::packets::{clientbound::*, SlotData};
 use mchprs_world::World;
 use std::fs;
 use std::path::PathBuf;
@@ -116,8 +116,7 @@ impl ServerBoundPacketHandler for Plot {
 
         match creative_inventory_action.clicked_item {
             Ok(clicked_item) => {
-                self.players[player].inventory[slot as usize] =
-                    clicked_item.as_ref().map(item_stack_from_slot_data);
+                self.players[player].inventory[slot as usize] = clicked_item;
                 if slot == self.players[player].selected_slot + 36 || slot == 45 {
                     self.send_hand_items_to_others(player);
                 }
@@ -395,9 +394,7 @@ impl ServerBoundPacketHandler for Plot {
             entity_id: self.players[player].entity_id as i32,
             equipment: vec![CSetEquipmentEquipment {
                 slot: 0, // Main hand
-                item: self.players[player].inventory[held_item_change.slot as usize + 36]
-                    .as_ref()
-                    .map(utils::encode_slot_data),
+                item: self.players[player].inventory[held_item_change.slot as usize + 36].clone(),
             }],
         }
         .encode();
@@ -498,22 +495,6 @@ impl ServerBoundPacketHandler for Plot {
 
         self.players[player_idx].pick_item(item_stack);
         self.send_hand_items_to_others(player_idx);
-    }
-}
-
-fn item_stack_from_slot_data(slot_data: &SlotData) -> ItemStack {
-    ItemStack {
-        item_type: Item::from_id(slot_data.item_id as u32),
-        count: slot_data.item_count as u8,
-        nbt: None,
-        container_slots: slot_data
-            .container_items
-            .iter()
-            .map(|slot| {
-                slot.as_ref()
-                    .map(|slot_data| item_stack_from_slot_data(slot_data))
-            })
-            .collect(),
     }
 }
 

@@ -1,4 +1,5 @@
-use super::{DecodeResult, PacketDecoderExt, PlayerProperty, SlotData};
+use super::{DecodeResult, PacketDecoderExt, PlayerProperty};
+use mchprs_blocks::items::ItemStack;
 
 pub trait ServerBoundPacketHandler {
     // Handshaking
@@ -670,7 +671,7 @@ impl ServerBoundPacket for SSetHeldItem {
 #[derive(Debug)]
 pub struct SSetCreativeModeSlot {
     pub slot: i16,
-    pub clicked_item: DecodeResult<Option<SlotData>>,
+    pub clicked_item: DecodeResult<Option<ItemStack>>,
 }
 
 impl ServerBoundPacket for SSetCreativeModeSlot {

@@ -8,6 +8,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use flate2::bufread::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use mchprs_blocks::items::{Item, ItemStack};
 use mchprs_proc_macros::{packet_id, protocol_id};
 use mchprs_text::TextComponent;
 use serde::Serialize;
@@ -19,13 +20,6 @@ use std::sync::Arc;
 use tracing::{error, trace};
 
 pub const COMPRESSION_THRESHOLD: usize = 256;
-
-#[derive(Debug)]
-pub struct SlotData {
-    pub item_id: i32,
-    pub item_count: i32,
-    pub container_items: Vec<Option<SlotData>>,
-}
 
 #[derive(Debug, Clone)]
 pub struct PlayerProperty {
@@ -384,7 +378,7 @@ pub trait PacketDecoderExt: Read + Sized {
 
     /// Reads an item stack as the client sends it for creative inventory slots: its own
     /// component values are prefixed with their length in bytes, those of nested items are not.
-    fn read_untrusted_slot_data(&mut self) -> DecodeResult<Option<SlotData>> {
+    fn read_untrusted_slot_data(&mut self) -> DecodeResult<Option<ItemStack>> {
         let item_count = self.read_varint()?;
         if item_count <= 0 {
             return Ok(None);
@@ -394,28 +388,29 @@ pub trait PacketDecoderExt: Read + Sized {
         let num_components = self.read_varint()?;
         let num_removed_components = self.read_varint()?;
 
-        let mut container_items = Vec::new();
+        let mut container_slots = Vec::new();
         for _ in 0..num_components {
             let component_ty = self.read_varint()?;
             let value_len = self.read_varint()?;
             let mut value = Cursor::new(self.read_bytes(value_len as usize)?);
             if component_ty == protocol_id!("minecraft:data_component_type", "minecraft:container")
             {
-                container_items = value.read_container_slots()?;
+                container_slots = value.read_container_slots()?;
             }
         }
         for _ in 0..num_removed_components {
             self.read_varint()?;
         }
 
-        Ok(Some(SlotData {
-            item_count,
-            item_id,
-            container_items,
+        Ok(Some(ItemStack {
+            item_type: Item::from_id(item_id as u32),
+            count: item_count as u8,
+            nbt: None,
+            container_slots,
         }))
     }
 
-    fn read_container_slots(&mut self) -> DecodeResult<Vec<Option<SlotData>>> {
+    fn read_container_slots(&mut self) -> DecodeResult<Vec<Option<ItemStack>>> {
         let num_slots = self.read_varint()?;
         let mut slots = Vec::new();
         for _ in 0..num_slots {
@@ -424,7 +419,7 @@ pub trait PacketDecoderExt: Read + Sized {
         Ok(slots)
     }
 
-    fn read_slot_data(&mut self) -> DecodeResult<Option<SlotData>> {
+    fn read_slot_data(&mut self) -> DecodeResult<Option<ItemStack>> {
         let item_count = self.read_varint()?;
         if item_count <= 0 {
             return Ok(None);
@@ -434,7 +429,7 @@ pub trait PacketDecoderExt: Read + Sized {
         let num_components = self.read_varint()?;
         let num_removed_components = self.read_varint()?;
 
-        let mut container_items = Vec::new();
+        let mut container_slots = Vec::new();
         for _ in 0..num_components {
             let component_ty = self.read_varint()?;
             match component_ty {
@@ -513,7 +508,7 @@ pub trait PacketDecoderExt: Read + Sized {
                     let _ = self.read_varint()?;
                 }
                 protocol_id!("minecraft:data_component_type", "minecraft:container") => {
-                    container_items = self.read_container_slots()?;
+                    container_slots = self.read_container_slots()?;
                 }
                 // If there's a component we can't handle, then there's no way to know how many bytes to skip to the next component
                 _ => return Err(PacketDecodeError::UnsupportedSlotComponent(component_ty)),
@@ -522,10 +517,11 @@ pub trait PacketDecoderExt: Read + Sized {
         for _ in 0..num_removed_components {
             self.read_varint()?;
         }
-        Ok(Some(SlotData {
-            item_count,
-            item_id,
-            container_items,
+        Ok(Some(ItemStack {
+            item_type: Item::from_id(item_id as u32),
+            count: item_count as u8,
+            nbt: None,
+            container_slots,
         }))
     }
 }
@@ -640,17 +636,17 @@ pub trait PacketEncoderExt: Write {
         }
     }
 
-    fn write_slot_data(&mut self, slot_data: &Option<SlotData>)
+    fn write_slot_data(&mut self, slot_data: &Option<ItemStack>)
     where
         Self: Sized,
     {
         if let Some(slot) = slot_data
-            && slot.item_count > 0
+            && slot.count > 0
         {
-            self.write_varint(slot.item_count);
-            self.write_varint(slot.item_id);
+            self.write_varint(slot.count as i32);
+            self.write_varint(slot.item_type.get_id() as i32);
             // Components to add
-            if !slot.container_items.is_empty() {
+            if !slot.container_slots.is_empty() {
                 self.write_varint(1);
             } else {
                 self.write_varint(0);
@@ -658,13 +654,13 @@ pub trait PacketEncoderExt: Write {
             // Components to remove
             self.write_varint(0);
 
-            if !slot.container_items.is_empty() {
+            if !slot.container_slots.is_empty() {
                 self.write_varint(protocol_id!(
                     "minecraft:data_component_type",
                     "minecraft:container"
                 ));
-                self.write_varint(slot.container_items.len() as i32);
-                for item in &slot.container_items {
+                self.write_varint(slot.container_slots.len() as i32);
+                for item in &slot.container_slots {
                     self.write_slot_data(item);
                 }
             }
