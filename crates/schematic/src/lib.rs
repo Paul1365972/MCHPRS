@@ -167,6 +167,7 @@ pub fn load_schematic(path: &Path) -> Result<WorldEditClipboard> {
 fn read_block_container(
     nbt: &nbt::Map<String, nbt::Value>,
     version: i32,
+    data_version: i32,
     size_x: u32,
     size_y: u32,
     size_z: u32,
@@ -227,7 +228,7 @@ fn read_block_container(
             3 => nbt_as!(&val["Data"], Value::Compound),
             _ => unreachable!(),
         };
-        if let Some(parsed) = BlockEntity::from_nbt(id, data) {
+        if let Some(parsed) = BlockEntity::from_nbt(id, data, data_version) {
             parsed_block_entities.insert(pos, parsed);
         }
     }
@@ -277,6 +278,10 @@ fn load_schematic_sponge(
         _ => unreachable!(),
     };
 
+    let data_version = match nbt.get("DataVersion") {
+        Some(Value::Int(data_version)) => *data_version,
+        _ => 0,
+    };
     let (data, block_entities) = read_block_container(
         match version {
             2 => nbt,
@@ -284,6 +289,7 @@ fn load_schematic_sponge(
             _ => unreachable!(),
         },
         version,
+        data_version,
         size_x,
         size_y,
         size_z,
