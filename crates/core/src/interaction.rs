@@ -1,7 +1,7 @@
 use crate::config::CONFIG;
 use crate::player::Player;
 use crate::plot::{PlotWorld, PLOT_BLOCK_HEIGHT};
-use mchprs_blocks::block_entities::{BlockEntity, ContainerType, InventoryEntry};
+use mchprs_blocks::block_entities::{BlockEntity, ContainerType};
 use mchprs_blocks::items::{Item, ItemStack};
 use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
@@ -290,17 +290,7 @@ pub fn place_in_world(
     if !container_items.is_empty()
         && let Some(container_type) = ContainerType::for_block(&block)
     {
-        let container = BlockEntity::make_container(
-            container_type,
-            container_items
-                .iter()
-                .enumerate()
-                .flat_map(|(slot, item)| {
-                    item.as_ref()
-                        .map(|item| InventoryEntry::from_item_stack(slot as i8, item))
-                })
-                .collect(),
-        );
+        let container = BlockEntity::container_from_items(container_type, container_items);
         world.set_block_entity(pos, container);
     }
     if block.has_block_entity()

@@ -40,7 +40,7 @@ pub fn try_fix(path: impl AsRef<Path>, info: FixInfo) -> Result<Option<PlotData>
     debug!("Trying to fix plot with {:?}", info);
     let result: Option<PlotData> = match info {
         FixInfo::OldVersion {
-            version: version @ 0..=3,
+            version: version @ 0..=4,
         } => return Err(PlotLoadError::ConversionUnavailable(version)),
         _ => None,
     };

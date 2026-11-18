@@ -474,22 +474,17 @@ impl ServerBoundPacketHandler for Plot {
             warn!("Could not pick item from block: `{}`.", block.get_name());
             return;
         };
-        let mut item_stack = ItemStack {
-            item_type: item,
-            count: 1,
-            nbt: None,
-            container_slots: Default::default(),
-        };
+        let mut item_stack = ItemStack::new(item, 1);
         if packet.include_data
             && let Some(BlockEntity::Container { inventory, .. }) =
                 self.world.get_block_entity(block_pos)
         {
-            for entry in inventory {
-                let slot = entry.slot as usize;
-                if item_stack.container_slots.len() <= slot {
-                    item_stack.container_slots.resize(slot + 1, None);
+            for slot in inventory {
+                let idx = slot.idx as usize;
+                if item_stack.container_slots.len() <= idx {
+                    item_stack.container_slots.resize(idx + 1, None);
                 }
-                item_stack.container_slots[slot] = Some(entry.get_item_stack());
+                item_stack.container_slots[idx] = slot.item();
             }
         }
 
