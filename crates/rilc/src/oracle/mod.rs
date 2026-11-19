@@ -1,3 +1,15 @@
+//! The oracle does not try every order in which a node updates the nodes it powers. These suffice:
+//!
+//! - Updates of different targets differ only in the order of the ticks they schedule, and the
+//!   oracle runs the ticks that one change schedules in every order.
+//! - Links of one kind into one target move that input one way, so one order of them stands for
+//!   all.
+//! - A comparator fed through both inputs schedules a tick in some order only if it does so rear
+//!   first or side first, and schedules none only if it schedules none when updated once for both.
+//!   So those three cover every order.
+//! - A repeater fed through both inputs, updated once, does as side first if its side input turns
+//!   on and as rear first otherwise. It needs no third order.
+
 pub mod reference;
 #[cfg(test)]
 mod tests;

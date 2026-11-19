@@ -78,6 +78,7 @@ A target in a RIL circuit is a label such as `"reset"` or a position of the node
 `--seed <s>` sets the seed of the first case, 1 by default, and `--cases <n>` the number of cases, 1000 by default.
 A failing case prints the command that runs it alone and the failure: for a difference, what differs and the last input.
 A failing circuit is also written to `.scratch/fuzz` as `<seed>.ril` and `<seed>.toml`, for `rilc diff`.
+
 | Command | What runs | What it checks |
 | --- | --- | --- |
 | `fuzz engine` | `direct` on random circuits, or on the worlds and RIL circuits it is given. | After every input and every tick, the state of every node and the pending ticks are legal, and the reported changes bring the observed nodes to the state of the snapshot. |
@@ -97,13 +98,6 @@ What was seen is legal if one of these runs shows it.
 - Pending ticks are seen in the order they run in. That order must be one the oracle follows, and the oracle then follows no other.
 - Whether a note block played is seen after every tick, as one answer for all the times it became powered since the tick before.
 - A fuzzer skips a case in which the orders of one priority of one tick reach more states than the budget of the oracle.
-
-The oracle does not try every order in which a node updates the nodes it powers. These suffice:
-
-- Updates of different targets differ only in the order of the ticks they schedule, and the oracle runs the ticks that one change schedules in every order.
-- Links of one kind into one target move that input one way, so one order of them stands for all.
-- A comparator fed through both inputs schedules a tick in some order only if it does so rear first or side first, and schedules none only if it schedules none when updated once for both. So those three cover every order.
-- A repeater fed through both inputs, updated once, does as side first if its side input turns on and as rear first otherwise. It needs no third order.
 
 ## Tests
 

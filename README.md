@@ -143,7 +143,8 @@ direct = "--optimize --io-only"
 - [Commands](docs/Commands.md): every command. `/help` lists them in game.
 - [Circuits](docs/Circuits.md): the graph Redpiler compiles, the behaviour of its components and the passes.
 - [RIL](docs/RIL.md): the text format of a circuit.
-- [Library](docs/Library.md): running the backends from a Rust program, and writing one.
+- [Library](docs/Library.md): running the backends from a Rust program.
+- [Writing a Backend](docs/Writing_a_backend.md): the crates and traits of a backend, and how the server lists it.
 - [rilc](docs/rilc.md): the development tool that compiles, runs and compares Redpiler setups.
 - [Adding a Block](docs/Adding_a_block.md): the block data generator.
 

@@ -5,7 +5,7 @@ Its nodes are redstone components and its links carry signal strength between th
 Extraction and the passes work on a `mchprs_redpiler::graph::Graph`. `Circuit::new` checks it and turns it into the `mchprs_redpiler::circuit::Circuit` that a backend builds from.
 The behaviour of each node kind is defined in `mchprs_redpiler::behavior`.
 
-[Semantics](Semantics.md) relates this behaviour to vanilla. [RIL](RIL.md) is the text format of a circuit. [Library](Library.md#writing-a-backend) lists the crates and the traits of a backend.
+[Semantics](Semantics.md) relates this behaviour to vanilla. [RIL](RIL.md) is the text format of a circuit. [Writing a Backend](Writing_a_backend.md) lists the crates and the traits of a backend.
 
 ## Nodes
 
