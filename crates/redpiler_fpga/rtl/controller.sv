@@ -42,8 +42,12 @@ module controller (
     localparam int SHOWN_BYTES = (circuit_pkg::SHOWN_BITS + 7) / 8;
     localparam int REPLY_BYTES = TICK_COUNT_BYTES + STATE_BYTES;
     localparam int POSITION_BITS = $clog2(REPLY_BYTES + 1);
-    // The clocks `position` takes through `fetch_position` into `fetched_byte`.
-    localparam int REPLY_FETCH_CLOCKS = 2;
+    // The clocks `position` takes through `fetch_position` and a bank's byte into `fetched_byte`.
+    localparam int REPLY_FETCH_CLOCKS = 3;
+    // Banks of 64 bytes keep both stages narrow for a reply of a few kilobytes.
+    localparam int BANK_OFFSET_BITS = 6;
+    localparam int BANK_BYTES = 1 << BANK_OFFSET_BITS;
+    localparam int BANKS = (REPLY_BYTES + BANK_BYTES - 1) / BANK_BYTES;
 
     typedef struct packed {
         logic [6:0] unused;
@@ -88,7 +92,11 @@ module controller (
     logic fetch = 0;
     logic [1:0] fetch_crossing = 0;
     logic [REPLY_FETCH_CLOCKS-1:0] fetch_age = 0;
-    logic [POSITION_BITS-1:0] fetch_position = 0;
+    logic [POSITION_BITS+BANK_OFFSET_BITS-1:0] fetch_position = 0;
+    logic [BANK_OFFSET_BITS-1:0] fetch_offset;
+    logic [POSITION_BITS-1:0] fetch_bank;
+    logic [BANKS*BANK_BYTES*8-1:0] banked_reply;
+    logic [BANKS*8-1:0] bank_bytes;
     logic [7:0] fetched_byte = 0;
     logic fetched = 0;
     logic [1:0] fetched_crossing = 0;
@@ -239,8 +247,19 @@ module controller (
     always_ff @(posedge circuit_clock) begin
         fetch_crossing <= {fetch_crossing[0], fetch};
         fetch_age <= fetch_crossing[1] ? {fetch_age[REPLY_FETCH_CLOCKS-2:0], 1'b1} : '0;
-        fetch_position <= position;
-        fetched_byte <= reply[fetch_position*8 +: 8];
+        fetch_position <= (POSITION_BITS + BANK_OFFSET_BITS)'(position);
+        fetched_byte <= bank_bytes[fetch_bank*8 +: 8];
         fetched <= fetch_crossing[1] && fetch_age[REPLY_FETCH_CLOCKS-1];
+    end
+
+    assign fetch_offset = fetch_position[BANK_OFFSET_BITS-1:0];
+    assign fetch_bank = fetch_position[BANK_OFFSET_BITS +: POSITION_BITS];
+    assign banked_reply = (BANKS*BANK_BYTES*8)'(reply);
+
+    for (genvar bank = 0; bank < BANKS; bank++) begin : banks
+        logic [7:0] bank_byte = 0;
+        assign bank_bytes[bank*8 +: 8] = bank_byte;
+        always_ff @(posedge circuit_clock)
+            bank_byte <= banked_reply[(bank*BANK_BYTES + int'(fetch_offset))*8 +: 8];
     end
 endmodule
