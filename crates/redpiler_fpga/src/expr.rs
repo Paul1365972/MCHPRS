@@ -1,5 +1,6 @@
 use crate::analysis::{strengths_of, CircuitAnalysis};
 use crate::lower::{Instance, Register};
+use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::analysis::ss_sets::SSSet;
 use mchprs_redpiler::circuit::{Circuit, Link, NodeId};
 use mchprs_redpiler::graph::LinkKind;
@@ -51,12 +52,14 @@ impl<'a> Expressions<'a> {
 
     pub fn strength(&mut self, node: NodeId, kind: LinkKind) -> String {
         let links: Vec<_> = self.links(node, kind).collect();
-        let carried = links.iter().map(|link| self.carried_set(link));
-        let strengths = strengths_of(carried.fold(SSSet::ZERO, SSSet::combine));
-        if let &[low, high] = strengths.as_slice()
-            && let Term::Signal(reached) = self.any_link_reaches(node, kind, high.get())
-        {
-            return format!("({reached} ? 4'd{high} : 4'd{low})");
+        let carried: Vec<SSSet> = links.iter().map(|link| self.carried_set(link)).collect();
+        let strengths = strengths_of(carried.iter().copied().fold(SSSet::ZERO, SSSet::combine));
+        let changing: Vec<SSSet> = carried.into_iter().filter(|set| !set.is_single()).collect();
+        let levels: usize = changing.iter().map(|&set| nonzero_strengths(set)).sum();
+        // Built from its thresholds, a maximum is smaller and faster than a tree of 4-bit maxima
+        // while its terms have at most two nonzero strengths each on average (BatPU-1).
+        if strengths.len() == 2 || changing.len() >= 2 && levels <= 2 * changing.len() {
+            return self.highest_reached(node, kind, &strengths);
         }
         let mut fixed = 0;
         let mut signals = Vec::new();
@@ -70,6 +73,26 @@ impl<'a> Expressions<'a> {
             signals.push(format!("4'd{fixed}"));
         }
         maximum(&signals)
+    }
+
+    fn highest_reached(
+        &mut self,
+        node: NodeId,
+        kind: LinkKind,
+        strengths: &[SignalStrength],
+    ) -> String {
+        let (lowest, higher) = strengths
+            .split_first()
+            .expect("a node's input has a strength");
+        let mut highest = format!("4'd{lowest}");
+        for strength in higher {
+            highest = match self.any_link_reaches(node, kind, strength.get()) {
+                Term::Fixed(true) => format!("4'd{strength}"),
+                Term::Fixed(false) => highest,
+                Term::Signal(reached) => format!("({reached} ? 4'd{strength} : {highest})"),
+            };
+        }
+        highest
     }
 
     fn links(&self, node: NodeId, kind: LinkKind) -> impl Iterator<Item = &'a Link> + use<'a> {
@@ -156,6 +179,13 @@ impl<'a> Expressions<'a> {
 
 pub fn output_wire(node: usize) -> String {
     format!("next_{node}")
+}
+
+fn nonzero_strengths(set: SSSet) -> usize {
+    strengths_of(set)
+        .iter()
+        .filter(|strength| !strength.is_zero())
+        .count()
 }
 
 fn maximum(strengths: &[String]) -> String {
