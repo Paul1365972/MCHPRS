@@ -33,6 +33,7 @@ It leaves out `sort-links`, which only sets the order of updates.
 Under `phase`, nodes in the same state that are powered the same way always change together.
 So its `coalesce` merges nodes that agree in kind, port role, state, pending tick, whether they are observed, and incoming links, without the conditions on order of [that of `direct`](Direct.md#coalesce).
 It also merges nodes with a pending tick, nodes that are their own input and identical loops. It does not merge inputs.
+Comparators whose only changing input is one source of two strengths also merge when both strengths give them the same outputs.
 
 The pass is only correct in the tick order of `phase`, so `--passes` cannot name it.
 [`rilc fuzz agreement`](../rilc.md#fuzzing) checks it with `-b phase -b "phase -o"`.

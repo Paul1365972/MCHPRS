@@ -1,7 +1,12 @@
-use mchprs_redpiler::graph::{Direction, Graph, NodeIdx};
+use mchprs_blocks::signal_strength::SignalStrength;
+use mchprs_redpiler::analysis::ss_sets::{self, ss_sets, SSSet};
+use mchprs_redpiler::behavior::InputStrengths;
+use mchprs_redpiler::circuit::{inputs_in, is_stale};
+use mchprs_redpiler::graph::{Direction, Graph, NodeIdx, NodeKind, NodeState};
 use mchprs_redpiler::passes::coalesce::twins::{merge, Signature};
 use mchprs_redpiler::passes::Pass;
 use mchprs_redstone::tick_queue::PendingTick;
+use mchprs_simulation::ports::Role;
 use rustc_hash::FxHashMap;
 use std::cmp::Reverse;
 
@@ -14,11 +19,100 @@ impl Pass for Coalesce {
     }
 
     fn run(&self, graph: &mut Graph) {
-        for members in twin_classes(graph) {
-            if let Some(&class) = members.first() {
-                merge(graph, class, &members);
-            }
+        merge_all(graph, twin_classes(graph));
+        let alike = alike_comparators(graph);
+        if !alike.is_empty() {
+            merge_all(graph, alike);
+            merge_all(graph, twin_classes(graph));
         }
+    }
+}
+
+fn merge_all(graph: &mut Graph, classes: Vec<Vec<NodeIdx>>) {
+    for members in classes {
+        if let Some(&class) = members.first() {
+            merge(graph, class, &members);
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct SingleSourceComparator {
+    source: NodeIdx,
+    outputs_at_min_max: [SignalStrength; 2],
+    prioritized: bool,
+    state: NodeState,
+    pending_tick: Option<PendingTick>,
+    port: Option<Role>,
+    observed: bool,
+}
+
+fn alike_comparators(graph: &Graph) -> Vec<Vec<NodeIdx>> {
+    let sets = ss_sets(graph);
+    let mut classes: FxHashMap<SingleSourceComparator, Vec<NodeIdx>> = FxHashMap::default();
+    for idx in graph.node_indices() {
+        if let Some(key) = SingleSourceComparator::of(graph, &sets, idx) {
+            classes.entry(key).or_default().push(idx);
+        }
+    }
+    classes
+        .into_values()
+        .filter(|members| members.len() > 1)
+        .collect()
+}
+
+impl SingleSourceComparator {
+    fn of(graph: &Graph, sets: &ss_sets::SSSets, idx: NodeIdx) -> Option<Self> {
+        let node = &graph[idx];
+        let NodeKind::Comparator { prioritized, .. } = node.kind else {
+            return None;
+        };
+        if node.is_input() || node.pending_tick.is_none() && is_stale(node, inputs_in(graph, idx)) {
+            return None;
+        }
+        let links: Vec<_> = graph.edges(idx, Direction::Incoming).collect();
+        let mut changing = links
+            .iter()
+            .filter(|edge| {
+                !sets
+                    .of(edge.source())
+                    .decay(edge.weight().weight)
+                    .is_single()
+            })
+            .map(|edge| edge.source());
+        let source = changing.next()?;
+        if changing.any(|other| other != source) {
+            return None;
+        }
+        let strengths = sets.of(source);
+        let ends = [strengths.min(), strengths.max()];
+        if strengths != SSSet::singleton(ends[0]).union(SSSet::singleton(ends[1])) {
+            return None;
+        }
+        let outputs_at_min_max = ends.map(|end| {
+            let end = SignalStrength::try_from(end).expect("a strength set holds strengths");
+            let mut inputs = InputStrengths::default();
+            for edge in &links {
+                let power = match edge.source() == source {
+                    true => end,
+                    false => graph[edge.source()].state.power,
+                };
+                inputs.raise(
+                    edge.weight().kind,
+                    power.saturating_sub(edge.weight().weight),
+                );
+            }
+            node.kind.tick(node.state, inputs).state.power
+        });
+        Some(Self {
+            source,
+            outputs_at_min_max,
+            prioritized,
+            state: node.state,
+            pending_tick: node.pending_tick.map(|queued| queued.tick),
+            port: node.port,
+            observed: node.observed,
+        })
     }
 }
 
