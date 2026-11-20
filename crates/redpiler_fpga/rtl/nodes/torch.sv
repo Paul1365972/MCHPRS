@@ -1,7 +1,8 @@
 module torch #(
     parameter int DELAY,
     parameter logic POWERED,
-    parameter int PENDING_DELAY
+    parameter int PENDING_DELAY,
+    parameter int FIRES
 ) (
     input logic clock,
     input logic tick_start,
@@ -18,7 +19,7 @@ module torch #(
     assign mismatch = powered == default_on;
     assign schedule = !pending && mismatch;
 
-    timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
+    timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY), .FIRES(FIRES)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
         .countdown(countdown), .fire(fire), .pending(pending)
     );

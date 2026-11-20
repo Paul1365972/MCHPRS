@@ -35,6 +35,7 @@ pub enum Parameter {
     Subtract,
     FarValid,
     Far,
+    Fires,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]

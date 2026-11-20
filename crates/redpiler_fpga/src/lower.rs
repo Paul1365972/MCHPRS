@@ -237,6 +237,7 @@ fn instance(
         CompileError::Unsupported(format!("node {index} {problem}"))
     };
     let node = circuit.node(id);
+    let fires = [(Parameter::Fires, analysis.firing(id) as u32)];
     let binary_input =
         || Instance::new(NodeModule::BinaryInput, Powered).with_drive(id, CircuitSignal::DRIVE);
     let can_lock = circuit
@@ -262,6 +263,7 @@ fn instance(
             .with_register(Touched)
             .with_timer(plate::PRESS_TICKS, Fixed(plate::RECHECK_PRIORITY)),
         NodeKind::Torch => Instance::new(NodeModule::Torch, Powered)
+            .with_parameters(&fires)
             .with_timer(torch::DELAY_TICKS, Fixed(torch::PRIORITY)),
         NodeKind::Repeater {
             delay,
@@ -309,6 +311,7 @@ fn instance(
             let priority = Fixed(comparator::tick_priority(prioritized));
             comparator
                 .with_parameters(&rule)
+                .with_parameters(&fires)
                 .with_timer(comparator::DELAY_TICKS, priority)
         }
         NodeKind::Lamp => Instance::new(NodeModule::Lamp, Powered)

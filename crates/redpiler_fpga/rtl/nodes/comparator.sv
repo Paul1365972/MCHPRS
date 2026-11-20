@@ -4,7 +4,8 @@ module comparator #(
     parameter logic FAR_VALID,
     parameter logic [3:0] FAR,
     parameter logic [3:0] STRENGTH,
-    parameter int PENDING_DELAY
+    parameter int PENDING_DELAY,
+    parameter int FIRES
 ) (
     input logic clock,
     input logic tick_start,
@@ -26,7 +27,7 @@ module comparator #(
     assign mismatch = desired != strength;
     assign schedule = !pending && mismatch;
 
-    timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
+    timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY), .FIRES(FIRES)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
         .countdown(countdown), .fire(fire), .pending(pending)
     );

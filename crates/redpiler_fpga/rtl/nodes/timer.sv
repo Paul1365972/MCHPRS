@@ -5,6 +5,7 @@
 module timer #(
     parameter int DELAY,
     parameter int PENDING_DELAY,
+    parameter int FIRES = pkg::FIRES_WHEN_DUE,
     localparam logic [DELAY:0] PENDING_TICK = (DELAY + 1)'(1) << PENDING_DELAY
 ) (
     input logic clock,
@@ -19,13 +20,15 @@ module timer #(
     logic due = 0;
     logic [DELAY-1:0] next_countdown;
 
-    assign fire = firing && due;
-    assign pending = |countdown || due;
-
     always_comb begin
+        case (FIRES)
+            pkg::FIRES_IN_PRIORITY: fire = firing;
+            default: fire = firing && due;
+        endcase
         next_countdown = countdown;
         if (schedule) next_countdown[DELAY-1] = 1'b1;
     end
+    assign pending = |countdown || due;
 
     always_ff @(posedge clock) begin
         if (tick_start) begin
