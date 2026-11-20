@@ -125,7 +125,7 @@ How the ticks of one priority run, and when a change updates what it powers, is 
 ## Passes
 
 A pass rewrites the graph before the backend builds it.
-Passes are the types in the modules of `mchprs_redpiler::passes` that implement `Pass`.
+Passes are the types in the modules of `mchprs_redpiler::passes` that implement `Pass`, and the [`coalesce` of `phase`](backends/Phase.md#coalesce) in `mchprs_redpiler_phase::coalesce`.
 A backend chooses which passes it runs and in which order; its page lists them.
 A pass must not change the result of a build that is not locational.
 It may change the result of a locational build, the same way a recompile can, but only to a result that the backend's tick order allows for the original graph.
@@ -137,6 +137,7 @@ It may change the result of a locational build, the same way a recompile can, bu
 | `prune-orphans` | Removes every node that is not observed, has no pending tick and does not lead to such a node through links. |
 | `sort-links` | Sorts the links of every node by the kind of their target, then by weight. This changes only the order in which a node updates what it powers. |
 | `coalesce` | Merges nodes that agree in kind, port role, state, incoming links and whether they are observed into one node that stands for the blocks of all of them. The weight of a link that carries only on or off into a node that reads only on or off is not compared. Inputs, nodes with a pending tick and nodes that are their own input are not merged. Two links into the same input of a target become one. Nodes are merged only if the merged node [keeps the order](backends/Direct.md#coalesce) in which they schedule ticks, which the tick order of `direct` needs. |
+| `coalesce` of `phase` | Merges nodes as [`phase`](backends/Phase.md#coalesce) describes, also in loops and with pending ticks. Only `phase` and `fpga` run it. |
 
 `fold` uses the analysis in `mchprs_redpiler::analysis::ss_sets`, which computes for every node a set that contains every strength the node can reach.
 

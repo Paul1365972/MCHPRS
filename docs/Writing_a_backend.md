@@ -7,7 +7,7 @@ A backend turns a region of blocks into a simulation that the server, rilc and t
 | `mchprs_simulation` | What every backend shares: the `Backend`, `Simulation` and `Running` traits, `Space` and `Blocks`, the components of a world, the `SimulatedWorld`, breakpoints, and `stepper::start`, which runs a `Simulation` on a thread |
 | `mchprs_redpiler` | The `GraphBackend` trait, `Nodes`, the graph, the passes, the node behaviour and the block map |
 | `mchprs_redpiler_direct` | The `direct` backend |
-| `mchprs_redpiler_phase` | The `phase` backend |
+| `mchprs_redpiler_phase` | The `phase` backend and its `coalesce` |
 | `mchprs_redpiler_fpga` | The `fpga` backend |
 | `mchprs_backends` | `Setup`, the list of backends the server offers, and `vanilla` |
 | `mchprs_redstone` | The block-by-block simulation that runs a plot without Redpiler |

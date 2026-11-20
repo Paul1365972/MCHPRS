@@ -1,3 +1,4 @@
+use crate::coalesce::Coalesce;
 use crate::engine::PhaseEngine;
 use mchprs_redpiler::backend::{GraphBackend, GraphContext};
 use mchprs_redpiler::circuit::Circuit;
@@ -67,6 +68,7 @@ impl GraphBackend for PhaseBackend {
             Box::new(Fold),
             Box::new(UnifyConstants),
             Box::new(PruneOrphans),
+            Box::new(Coalesce),
         ]
     }
 

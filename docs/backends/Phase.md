@@ -24,8 +24,18 @@ Under `direct` it pulses only if its tick was scheduled first.
 ## Passes
 
 Without `--optimize`, `phase` runs none.
-With it, it runs `fold`, `unify-constants` and `prune-orphans`, in this order.
+With it, it runs `fold`, `unify-constants`, `prune-orphans` and its own [`coalesce`](#coalesce), in this order.
 It leaves out `sort-links`, which only sets the order of updates.
+`phase` has `--optimize` because `fpga` runs the same passes, so comparing `phase` with `phase -o` checks them without a board.
+
+### Coalesce
+
+Under `phase`, nodes in the same state that are powered the same way always change together.
+So its `coalesce` merges nodes that agree in kind, port role, state, pending tick, whether they are observed, and incoming links, without the conditions on order of [that of `direct`](Direct.md#coalesce).
+It also merges nodes with a pending tick, nodes that are their own input and identical loops. It does not merge inputs.
+
+The pass is only correct in the tick order of `phase`, so `--passes` cannot name it.
+[`rilc fuzz agreement`](../rilc.md#fuzzing) checks it with `-b phase -b "phase -o"`.
 
 ## Flags
 

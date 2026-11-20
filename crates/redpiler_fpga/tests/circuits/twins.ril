@@ -1,0 +1,16 @@
+# Two clocks that are twins node for node, and two repeaters that are about to turn on.
+circuit @twins {
+  %lever = lever -> [%first_clock:0, %second_clock:0]
+  %first_clock = torch(powered) -> [%first_repeater:0, %first_lamp:0]
+  %first_repeater = repeater(delay=1) tick(delay=1, priority=high, order=0) -> [%first_clock:0]
+  %first_lamp = lamp(powered)
+  %second_clock = torch(powered) -> [%second_repeater:0, %second_lamp:0]
+  %second_repeater = repeater(delay=1) tick(delay=1, priority=high, order=1) -> [%second_clock:0]
+  %second_lamp = lamp(powered)
+
+  %supply = constant(power=15) -> [%first_starting:0, %second_starting:0]
+  %first_starting = repeater(delay=2) tick(delay=1, priority=high, order=2) -> [%first_trapdoor:0]
+  %first_trapdoor = trapdoor
+  %second_starting = repeater(delay=2) tick(delay=1, priority=high, order=3) -> [%second_trapdoor:0]
+  %second_trapdoor = trapdoor
+}
