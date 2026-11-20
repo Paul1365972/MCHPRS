@@ -2,7 +2,9 @@
 // then apply their updates together at the end of the clock.
 // A drive from the host only loads registers, so no path leads from the handshake into a node.
 // At least one clock passes before the first tick or drive, so saved inputs can start at zero.
-module sequencer (
+module sequencer #(
+    parameter int COPIES
+) (
     input logic clock,
     input logic hold,
     input logic run_start,
@@ -14,11 +16,14 @@ module sequencer (
     output logic idle,
     output logic [63:0] ticks = 0,
     output logic paused,
-    output logic [pkg::PRIORITIES-1:0] firing = 0,
+    output logic [COPIES*pkg::PRIORITIES-1:0] firing,
     output logic taken_valid = 0,
     output logic [pkg::NODE_BITS-1:0] taken_node = 0,
     output pkg::drive_input_t taken_input = 0
 );
+    // One-hot: bit p is high in the clock in which priority p fires,
+    // and all bits are low while no tick runs.
+    logic [pkg::PRIORITIES-1:0] phase = 0;
     logic last_phase;
     pkg::mode_t mode = pkg::PAUSED;
     logic [pkg::COUNT_BITS-1:0] remaining = 0;
@@ -28,13 +33,13 @@ module sequencer (
     logic beginning;
     logic applying = 0;
 
-    assign last_phase = firing[pkg::PRIORITIES-1];
-    assign idle = firing == 0 && !taken_valid && !applying;
+    assign last_phase = phase[pkg::PRIORITIES-1];
+    assign idle = phase == 0 && !taken_valid && !applying;
     assign paused = mode == pkg::PAUSED;
-    assign beginning = !hold && ready && (firing == 0 || last_phase);
+    assign beginning = !hold && ready && (phase == 0 || last_phase);
 
     always_ff @(posedge clock) begin
-        firing <= {firing[pkg::PRIORITIES-2:0], beginning};
+        phase <= {phase[pkg::PRIORITIES-2:0], beginning};
 
         if (last_phase) ticks <= ticks + 1'b1;
 
@@ -69,5 +74,12 @@ module sequencer (
             taken_input <= drive_input;
         end
         applying <= taken_valid;
+    end
+
+    for (genvar copy = 0; copy < COPIES; copy++) begin : copies
+        firing_copy firing_copy (
+            .clock(clock), .beginning(beginning),
+            .firing(firing[copy*pkg::PRIORITIES +: pkg::PRIORITIES])
+        );
     end
 endmodule

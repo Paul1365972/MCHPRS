@@ -23,6 +23,7 @@ const CIRCUIT: &str = "circuit.sv";
 const CIRCUIT_PORTS: SourceFile = source!("circuit_ports.svh");
 const DESIGN: &[SourceFile] = &[
     source!("sequencer.sv"),
+    source!("firing_copy.sv"),
     source!("nodes/timer.sv"),
     source!("nodes/binary_input.sv"),
     source!("nodes/strength_input.sv"),

@@ -12,6 +12,9 @@ use std::collections::BTreeSet;
 use std::fmt::Display;
 use strum::VariantArray;
 
+// Measured on BatPU-1: other group sizes cost size or clock.
+const NODES_PER_FIRING_COPY: usize = 64;
+
 #[derive(Debug, Clone)]
 pub struct Design {
     pub source: CircuitSource,
@@ -56,9 +59,12 @@ fn module(
     let mut outputs = Vec::new();
     let mut unread_registers = Vec::new();
     let mut used = BTreeSet::new();
+    let mut ticking = 0;
     for (index, instance) in instances.iter().enumerate() {
         let Some(instance) = instance else { continue };
-        let strobes = strobe_ports(instance);
+        let copy = ticking / NODES_PER_FIRING_COPY;
+        ticking += usize::from(!instance.firing_ports.is_empty());
+        let strobes = strobe_ports(instance, copy);
         used.extend(strobes.iter().map(|(_, signal)| signal.clone()));
         let mut ports = vec![("clock".to_owned(), "clock".to_owned())];
         ports.extend(strobes);
@@ -82,7 +88,8 @@ fn module(
         ));
     }
 
-    let firing_bits = TickPriority::ALL.len();
+    let copies = ticking.div_ceil(NODES_PER_FIRING_COPY).max(1);
+    let firing_bits = copies * TickPriority::ALL.len();
     let output_wires = outputs
         .iter()
         .map(|&(node, width)| (output_wire(node), width));
@@ -113,7 +120,7 @@ fn module(
          logic [pkg::NODE_BITS-1:0] {taken_node};\n    \
          pkg::drive_input_t {taken_input};\n\
          {declarations}{unused}{state_tie_off}    \
-         sequencer sequencer (.clock(clock), .hold(hold), \
+         sequencer #(.COPIES({copies})) sequencer (.clock(clock), .hold(hold), \
          .run_start(run_start), .run_mode(run_mode), .run_count(run_count), \
          .drive_valid(drive_valid), .drive_node(drive_node), .drive_input(drive_input), \
          .idle(idle), .ticks(tick_count), .paused(paused), .firing(firing), \
@@ -124,12 +131,12 @@ fn module(
     )
 }
 
-fn strobe_ports(instance: &Instance) -> Vec<(String, String)> {
+fn strobe_ports(instance: &Instance, copy: usize) -> Vec<(String, String)> {
     let circuit_signals = instance.circuit_signals.iter();
     let circuit_signals = circuit_signals.map(|signal| (signal.to_string(), signal.to_string()));
     let firing_ports = instance.firing_ports.iter();
     let firing_ports = firing_ports.map(|&(port, priority)| {
-        let bit = priority as usize;
+        let bit = copy * TickPriority::ALL.len() + priority as usize;
         (port.to_string(), firing(bit))
     });
     circuit_signals.chain(firing_ports).collect()
