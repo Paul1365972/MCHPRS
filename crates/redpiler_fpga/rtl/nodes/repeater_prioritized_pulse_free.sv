@@ -1,5 +1,5 @@
 // CircuitAnalysis::is_pulse_free selects this module.
-// A pending tick implies that the input still differs from the output.
+// At the tick boundary an unlocked repeater has a pending tick exactly when its input differs.
 module repeater_prioritized_pulse_free #(
     parameter int DELAY,
     parameter logic POWERED,
@@ -15,21 +15,10 @@ module repeater_prioritized_pulse_free #(
     output logic locked = LOCKED,
     output logic [DELAY-1:0] countdown = PENDING_TICK[DELAY:1]
 );
-    logic schedule;
-    logic [DELAY-1:0] next_countdown;
-    logic fire;
-
-    assign schedule = !side_on && countdown == 0 && powered != default_on;
-
-    always_comb begin
-        next_countdown = countdown;
-        if (schedule) next_countdown[DELAY-1] = 1'b1;
-        fire = tick_start && next_countdown[0];
-    end
-
     always_ff @(posedge clock) begin
-        if (fire && !side_on) powered <= !powered;
+        if (tick_start && !side_on) powered <= default_on;
         locked <= side_on;
-        countdown <= tick_start ? (next_countdown >> 1) : next_countdown;
+        if (tick_start) countdown <= '0;
+        else if (!side_on && powered != default_on) countdown[DELAY-1] <= 1'b1;
     end
 endmodule
