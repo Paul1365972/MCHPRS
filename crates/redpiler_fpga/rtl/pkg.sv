@@ -78,6 +78,7 @@ package pkg;
     // When a node fires, numbered as `analysis::Firing`.
     localparam int FIRES_WHEN_DUE = 0;
     localparam int FIRES_IN_PRIORITY = 1;
+    localparam int FIRES_ON_TICK_START_MISMATCH = 2;
 
     function automatic logic [3:0] attenuated(logic [3:0] strength, logic [3:0] weight);
         attenuated = strength > weight ? strength - weight : '0;

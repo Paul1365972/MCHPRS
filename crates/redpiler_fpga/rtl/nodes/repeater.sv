@@ -30,7 +30,7 @@ module repeater #(
 
     timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
-        .countdown(countdown), .fire(fire), .pending(pending)
+        .mismatch(1'b0), .countdown(countdown), .fire(fire), .pending(pending)
     );
 
     always_ff @(posedge clock) begin

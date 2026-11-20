@@ -13,16 +13,19 @@ module timer #(
     input logic schedule,
     // High in the clock of the node's priority; `fire` is high when the node itself fires.
     input logic firing,
+    input logic mismatch,
     output logic [DELAY-1:0] countdown = PENDING_TICK[DELAY:1],
     output logic fire,
     output logic pending
 );
     logic due = 0;
+    logic tick_start_mismatch = 0;
     logic [DELAY-1:0] next_countdown;
 
     always_comb begin
         case (FIRES)
             pkg::FIRES_IN_PRIORITY: fire = firing;
+            pkg::FIRES_ON_TICK_START_MISMATCH: fire = firing && tick_start_mismatch;
             default: fire = firing && due;
         endcase
         next_countdown = countdown;
@@ -34,6 +37,7 @@ module timer #(
         if (tick_start) begin
             countdown <= next_countdown >> 1;
             due <= next_countdown[0];
+            tick_start_mismatch <= mismatch;
         end else begin
             countdown <= next_countdown;
             // Keeping `due` in the condition avoids a shared control set across distant nodes.

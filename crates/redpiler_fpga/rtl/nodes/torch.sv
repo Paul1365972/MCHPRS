@@ -21,7 +21,7 @@ module torch #(
 
     timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY), .FIRES(FIRES)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
-        .countdown(countdown), .fire(fire), .pending(pending)
+        .mismatch(mismatch), .countdown(countdown), .fire(fire), .pending(pending)
     );
 
     always_ff @(posedge clock) if (fire) powered <= !default_on;

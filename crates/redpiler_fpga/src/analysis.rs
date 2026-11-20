@@ -2,7 +2,7 @@ use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::analysis::ss_sets::{ss_sets, SSSet};
 use mchprs_redpiler::behavior::{InputStrengths, Pending};
 use mchprs_redpiler::circuit::{inputs_in, Circuit, NodeId};
-use mchprs_redpiler::graph::{LinkKind, NodeKind};
+use mchprs_redpiler::graph::{LinkKind, Node, NodeKind};
 use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_redstone::{comparator, repeater, torch};
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ impl CircuitAnalysis {
         let tick_priorities: Vec<_> = tick_priorities.collect();
         let is_pulse_free =
             |id: NodeId| is_pulse_free(circuit, id, inputs_in(circuit, id), &tick_priorities);
-        let firing = |id: NodeId| firing(circuit, id, &tick_priorities);
+        let firing = |id: NodeId| firing(circuit, id, inputs_in(circuit, id), &tick_priorities);
         CircuitAnalysis {
             strengths: circuit.ids().map(|id| sets.at(id.index())).collect(),
             pulse_free: circuit.ids().map(is_pulse_free).collect(),
@@ -63,6 +63,7 @@ impl CircuitAnalysis {
 pub enum Firing {
     WhenDue = 0,
     InPriority = 1,
+    OnTickStartMismatch = 2,
 }
 
 pub(crate) fn strengths_of(set: SSSet) -> Vec<SignalStrength> {
@@ -111,15 +112,20 @@ fn is_pulse_free(
         .all(|own| changes.iter().all(|change| own <= change));
     let mut unlocks = sources(LinkKind::Side).flat_map(priorities);
     let unlock_last = unlocks.all(|unlock| changes.iter().all(|&change| change <= unlock));
-    let pending = node.pending_tick.map(|queued| queued.tick);
-    let scheduled = node.kind.update(node.state, inputs, Pending::None).schedule;
-    let starts_as_scheduled = pending.is_none() || pending == scheduled;
+    let starts_as_scheduled = starts_as_scheduled(node, inputs);
     !is_driven && change_at_once && own_tick_first && unlock_last && starts_as_scheduled
 }
 
 // In priority: the sources change no earlier than the node's priority, so whenever its output
 // differs from what its inputs ask for, its tick is due.
-fn firing(circuit: &Circuit, id: NodeId, tick_priorities: &[Vec<TickPriority>]) -> Firing {
+// On a tick-start mismatch: the sources change only before the node's priority and at once, so
+// its tick is due exactly when its output differed from its inputs at the tick start.
+fn firing(
+    circuit: &Circuit,
+    id: NodeId,
+    inputs: InputStrengths,
+    tick_priorities: &[Vec<TickPriority>],
+) -> Firing {
     let node = circuit.node(id);
     let own = match node.kind {
         _ if node.is_input() => return Firing::WhenDue,
@@ -139,9 +145,23 @@ fn firing(circuit: &Circuit, id: NodeId, tick_priorities: &[Vec<TickPriority>]) 
         .filter(|changes| !changes.is_empty())
         .collect();
     let all_changes = changes.concat();
-    if !is_driven && all_changes.iter().all(|&change| own <= change) {
+    let change_at_once =
+        changes.len() <= 1 || all_changes.iter().all(|&change| change == all_changes[0]);
+    let changes_in_or_after_priority = all_changes.iter().all(|&change| own <= change);
+    let changes_before_priority = all_changes.iter().all(|&change| change < own);
+    if is_driven {
+        Firing::WhenDue
+    } else if changes_in_or_after_priority {
         Firing::InPriority
+    } else if changes_before_priority && change_at_once && starts_as_scheduled(node, inputs) {
+        Firing::OnTickStartMismatch
     } else {
         Firing::WhenDue
     }
+}
+
+fn starts_as_scheduled(node: &Node, inputs: InputStrengths) -> bool {
+    let pending = node.pending_tick.map(|queued| queued.tick);
+    let scheduled = node.kind.update(node.state, inputs, Pending::None).schedule;
+    pending.is_none() || pending == scheduled
 }
