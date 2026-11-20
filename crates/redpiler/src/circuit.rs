@@ -1,6 +1,7 @@
 use crate::behavior::{AcceptedInput, InputStrengths, Outcome, Pending};
 use crate::graph::{self, Direction, Graph, LinkKind, Node, NodeIdx, NodeKind, QueuedTick};
 use crate::nodes::Snapshot;
+use crate::wiring::{IncomingLink, Wiring};
 use mchprs_blocks::blocks::Block;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redstone::attached::BUTTON_PRESS_TICKS;
@@ -164,12 +165,16 @@ pub enum InvalidCircuit {
     TooManyNodes(usize),
 }
 
-pub fn inputs_in(graph: &Graph, node: NodeIdx) -> InputStrengths {
+pub fn inputs_in<W: Wiring>(wiring: &W, id: W::Id) -> InputStrengths {
     let mut inputs = InputStrengths::default();
-    for edge in graph.edges(node, Direction::Incoming) {
-        let link = edge.weight();
-        let carried = graph[edge.source()].state.power.saturating_sub(link.weight);
-        inputs.raise(link.kind, carried);
+    for IncomingLink {
+        source,
+        kind,
+        weight,
+    } in wiring.links_into(id)
+    {
+        let carried = wiring.node(source).state.power.saturating_sub(weight);
+        inputs.raise(kind, carried);
     }
     inputs
 }

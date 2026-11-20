@@ -84,7 +84,10 @@ pub fn run(cases: &Cases, check: impl Fn(u64) -> Result<Verdict, Failure> + Sync
             checked.push((index, check(seed)));
         }
     };
-    let threads = thread::available_parallelism().map_or(1, usize::from);
+    let threads = match cases.jobs {
+        Some(jobs) => jobs.get(),
+        None => thread::available_parallelism().map_or(1, usize::from),
+    };
     let mut checked: Vec<_> = thread::scope(|scope| {
         let workers: Vec<_> = (0..threads).map(|_| scope.spawn(check_cases)).collect();
         let checked = workers.into_iter().flat_map(|worker| {

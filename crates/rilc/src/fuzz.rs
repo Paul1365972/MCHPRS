@@ -17,6 +17,7 @@ use mchprs_redpiler::backend::GraphContext;
 use mchprs_redpiler::circuit::Circuit;
 use mchprs_redpiler::graph::Graph;
 use rng::Rng;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 #[derive(Subcommand)]
@@ -61,6 +62,9 @@ pub struct Cases {
     /// How many cases to run
     #[arg(long = "cases", value_name = "N", default_value = "1000")]
     count: u64,
+    /// How many cases to check at once; defaults to one per processor
+    #[arg(long, value_name = "N")]
+    jobs: Option<NonZeroUsize>,
 }
 
 pub fn command(property: Property) -> Outcome {

@@ -76,6 +76,7 @@ A target in a RIL circuit is a label such as `"reset"` or a position of the node
 ## Fuzzing
 
 `--seed <s>` sets the seed of the first case, 1 by default, and `--cases <n>` the number of cases, 1000 by default.
+`--jobs <n>` sets how many cases are checked at once, one per processor by default.
 A failing case prints the command that runs it alone and the failure: for a difference, what differs and the last input.
 A failing circuit is also written to `.scratch/fuzz` as `<seed>.ril` and `<seed>.toml`, for `rilc diff`.
 

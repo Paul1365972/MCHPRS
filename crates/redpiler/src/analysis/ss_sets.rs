@@ -4,7 +4,8 @@
 //! keeps its output, even where that disagrees with its inputs.
 
 use crate::behavior::{AcceptedInput, InputStrengths, Outcome, Pending};
-use crate::graph::{Direction, Graph, LinkKind, Node, NodeIdx, NodeKind};
+use crate::graph::{Graph, LinkKind, Node, NodeIdx, NodeKind};
+use crate::wiring::{IncomingLink, Wiring};
 use itertools::iproduct;
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redstone::input::Input;
@@ -69,7 +70,11 @@ pub struct SSSets(Vec<Option<SSSet>>);
 
 impl SSSets {
     pub fn of(&self, node_idx: NodeIdx) -> SSSet {
-        self.0[node_idx.index()].expect("every node of the analyzed graph has a set")
+        self.at(node_idx.index())
+    }
+
+    pub fn at(&self, index: usize) -> SSSet {
+        self.0[index].expect("every node of the analyzed wiring has a set")
     }
 
     pub fn inputs(&self, graph: &Graph, node_idx: NodeIdx) -> InputSets {
@@ -97,43 +102,44 @@ impl InputSets {
     }
 }
 
-pub fn ss_sets(graph: &Graph) -> SSSets {
-    let nodes: Vec<NodeIdx> = graph.node_indices().collect();
-    let mut sets = vec![None; graph.node_bound()];
-    let mut dirty = vec![true; graph.node_bound()];
-    for &node_idx in &nodes {
-        let node = &graph[node_idx];
+pub fn ss_sets<W: Wiring>(wiring: &W) -> SSSets {
+    let nodes: Vec<W::Id> = wiring.ids().collect();
+    let mut sets = vec![None; wiring.index_bound()];
+    let mut dirty = vec![true; wiring.index_bound()];
+    for &id in &nodes {
+        let node = wiring.node(id);
         let initial = match node.is_input() {
             true => drivable(node),
             false => SSSet::singleton(node.state.power.get()),
         };
-        sets[node_idx.index()] = Some(initial);
+        sets[W::index(id)] = Some(initial);
     }
 
     let mut changed = true;
     while changed {
         changed = false;
-        for &node_idx in &nodes {
-            if !dirty[node_idx.index()] {
+        for &id in &nodes {
+            let index = W::index(id);
+            if !dirty[index] {
                 continue;
             }
-            dirty[node_idx.index()] = false;
+            dirty[index] = false;
 
-            let inputs = collect_inputs(graph, &sets, node_idx);
-            let node = &graph[node_idx];
+            let inputs = collect_inputs(wiring, &sets, id);
+            let node = wiring.node(id);
             if inputs.never_update(node) {
                 continue;
             }
-            let old = sets[node_idx.index()].unwrap();
+            let old = sets[index].unwrap();
             let new = old.union(evaluate(node, &inputs));
             if new == old {
                 continue;
             }
-            sets[node_idx.index()] = Some(new);
+            sets[index] = Some(new);
             changed = true;
 
-            for neighbor in graph.neighbors(node_idx, Direction::Outgoing) {
-                dirty[neighbor.index()] = true;
+            for target in wiring.targets_of(id) {
+                dirty[W::index(target)] = true;
             }
         }
     }
@@ -141,17 +147,21 @@ pub fn ss_sets(graph: &Graph) -> SSSets {
     SSSets(sets)
 }
 
-fn collect_inputs(graph: &Graph, sets: &[Option<SSSet>], node_idx: NodeIdx) -> InputSets {
+fn collect_inputs<W: Wiring>(wiring: &W, sets: &[Option<SSSet>], id: W::Id) -> InputSets {
     let mut inputs = InputSets {
         default: SSSet::ZERO,
         side: SSSet::ZERO,
         each_link_fixed: true,
     };
-    for edge in graph.edges(node_idx, Direction::Incoming) {
-        let link = edge.weight();
-        let carried = sets[edge.source().index()].unwrap().decay(link.weight);
+    for IncomingLink {
+        source,
+        kind,
+        weight,
+    } in wiring.links_into(id)
+    {
+        let carried = sets[W::index(source)].unwrap().decay(weight);
         inputs.each_link_fixed &= carried.is_single();
-        match link.kind {
+        match kind {
             LinkKind::Default => inputs.default = inputs.default.combine(carried),
             LinkKind::Side => inputs.side = inputs.side.combine(carried),
         }

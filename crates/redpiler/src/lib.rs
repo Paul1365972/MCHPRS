@@ -9,3 +9,4 @@ pub mod graph_simulation;
 pub mod nodes;
 pub mod passes;
 pub mod ports;
+pub mod wiring;
