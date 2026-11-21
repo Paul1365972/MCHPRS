@@ -1,5 +1,6 @@
 use crate::blocks::Block;
 use crate::items::{Item, ItemStack};
+use crate::json_text;
 use mchprs_proc_macros::protocol_id;
 use mchprs_text::{ColorCode, TextComponent};
 use mchprs_utils::{map, nbt_unwrap_val};
@@ -264,7 +265,11 @@ impl BlockEntity {
         Some(Self::make_container(ty, inventory))
     }
 
-    pub fn from_nbt(id: &str, nbt: &HashMap<String, nbt::Value>) -> Option<BlockEntity> {
+    pub fn from_nbt(
+        id: &str,
+        nbt: &HashMap<String, nbt::Value>,
+        data_version: i32,
+    ) -> Option<BlockEntity> {
         use nbt::Value;
         match id.trim_start_matches("minecraft:") {
             "comparator" => Some(BlockEntity::Comparator {
@@ -285,42 +290,20 @@ impl BlockEntity {
             "sign" => {
                 let sign = if nbt.contains_key("Text1") {
                     // This is the pre-1.20 encoding
-                    let rows = [
-                        &nbt.get("Text1"),
-                        &nbt.get("Text2"),
-                        &nbt.get("Text3"),
-                        &nbt.get("Text4"),
-                    ]
-                    .map(|row| {
-                        match row {
-                            Some(Value::String(row)) => Some(row),
-                            _ => None,
-                        }
-                        .and_then(|row| serde_json::from_str(row).ok())
-                        .unwrap_or_default()
+                    let rows = ["Text1", "Text2", "Text3", "Text4"].map(|row| match nbt.get(row) {
+                        Some(Value::String(row)) => row.as_str(),
+                        _ => "",
                     });
-                    let front_text = SignBlockEntityText {
-                        messages: rows,
-                        ..Default::default()
-                    };
-
+                    let rows = rows.map(json_text::component_from_json);
+                    let front_text = map! { "messages" => Value::List(rows.into()) };
                     SignBlockEntity {
-                        front_text: front_text.encode(),
+                        front_text: encode_sign_side(front_text),
                         back_text: SignBlockEntityText::default().encode(),
                     }
                 } else {
-                    let get_side = |side| {
-                        let side = &nbt[side];
-                        if !matches!(side, nbt::Value::Compound(_)) {
-                            return None;
-                        }
-                        let mut data = Vec::new();
-                        side.to_writer(&mut data).unwrap();
-                        Some(data)
-                    };
                     SignBlockEntity {
-                        front_text: get_side("front_text")?,
-                        back_text: get_side("back_text")?,
+                        front_text: load_sign_side(nbt.get("front_text"), data_version),
+                        back_text: load_sign_side(nbt.get("back_text"), data_version),
                     }
                 };
                 Some(BlockEntity::Sign(Box::new(sign)))
@@ -390,4 +373,29 @@ fn nbt_get_int(compound: &HashMap<String, nbt::Value>, name: &str) -> Option<i32
         nbt::Value::Int(val) => Some(*val),
         _ => None,
     }
+}
+
+fn encode_sign_side(side: HashMap<String, nbt::Value>) -> Vec<u8> {
+    let mut data = Vec::new();
+    nbt::Value::Compound(side).to_writer(&mut data).unwrap();
+    data
+}
+
+fn load_sign_side(side: Option<&nbt::Value>, data_version: i32) -> Vec<u8> {
+    let Some(nbt::Value::Compound(side)) = side else {
+        return SignBlockEntityText::default().encode();
+    };
+    let mut side = side.clone();
+    if data_version < json_text::NBT_TEXT_DATA_VERSION {
+        for key in ["messages", "filtered_messages"] {
+            if let Some(nbt::Value::List(lines)) = side.remove(key) {
+                let components = lines.into_iter().map(|line| match line {
+                    nbt::Value::String(json) => json_text::component_from_json(&json),
+                    component => component,
+                });
+                side.insert(key.to_owned(), nbt::Value::List(components.collect()));
+            }
+        }
+    }
+    encode_sign_side(side)
 }

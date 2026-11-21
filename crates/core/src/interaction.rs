@@ -8,7 +8,7 @@ use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
 use mchprs_redstone as redstone;
 use mchprs_utils::nbt_unwrap_val;
-use mchprs_world::World;
+use mchprs_world::{World, MC_DATA_VERSION};
 
 pub fn on_use(
     block: Block,
@@ -274,7 +274,7 @@ fn read_block_entity_tag(nbt: &nbt::Blob, block_id: &str) -> Option<BlockEntity>
             Some(id) => nbt_unwrap_val!(id, nbt::Value::String),
             None => block_id,
         };
-        return BlockEntity::from_nbt(id, compound);
+        return BlockEntity::from_nbt(id, compound, MC_DATA_VERSION);
     }
 
     None
