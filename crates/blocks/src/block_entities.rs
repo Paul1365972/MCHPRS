@@ -295,7 +295,13 @@ impl BlockEntity {
                         _ => "",
                     });
                     let rows = rows.map(json_text::component_from_json);
-                    let front_text = map! { "messages" => Value::List(rows.into()) };
+                    let mut front_text = map! { "messages" => Value::List(rows.into()) };
+                    if let Some(color) = nbt.get("Color") {
+                        front_text.insert("color".to_owned(), color.clone());
+                    }
+                    if let Some(glowing) = nbt.get("GlowingText") {
+                        front_text.insert("has_glowing_text".to_owned(), glowing.clone());
+                    }
                     SignBlockEntity {
                         front_text: encode_sign_side(front_text),
                         back_text: SignBlockEntityText::default().encode(),
