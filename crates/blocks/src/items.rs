@@ -1,15 +1,66 @@
 use crate::block_entities::ContainerType;
 pub use crate::generated::Item;
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Clone, Debug, PartialEq)]
+impl Serialize for Item {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.get_name())
+    }
+}
+
+impl<'de> Deserialize<'de> for Item {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Item::from_name(&name).ok_or_else(|| D::Error::custom(format!("unknown item {name}")))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ItemStack {
     pub item_type: Item,
     pub count: u8,
+    #[serde(skip)]
     pub nbt: Option<nbt::Blob>,
     pub container_slots: Vec<Option<ItemStack>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContainedItem {
+    pub item_type: Item,
+    pub count: u8,
+    pub max_stack_size: u8,
+}
+
+impl ContainedItem {
+    pub fn new(item_type: Item, count: u8, max_stack_size: Option<i32>) -> ContainedItem {
+        // Minecraft allows stack sizes from 1 to 99
+        let max_stack_size = match max_stack_size {
+            Some(max_stack_size @ 1..=99) => max_stack_size as u8,
+            _ => item_type.max_stack_size(),
+        };
+        ContainedItem {
+            item_type,
+            count,
+            max_stack_size,
+        }
+    }
+
+    pub fn overrides_max_stack_size(&self) -> bool {
+        self.max_stack_size != self.item_type.max_stack_size()
+    }
+}
+
 impl ItemStack {
+    pub fn new(item_type: Item, count: u8) -> ItemStack {
+        ItemStack {
+            item_type,
+            count,
+            nbt: None,
+            container_slots: Vec::new(),
+        }
+    }
+
     pub fn is_same_item(&self, other: &ItemStack) -> bool {
         self.item_type == other.item_type
             && self.nbt == other.nbt

@@ -21,7 +21,8 @@ use thiserror::Error;
 /// 2: Update to MC 1.20.4
 /// 3: Change Tps and WorldSendRate to support real values (f32)
 /// 4: Update to MC 1.21.8
-pub const VERSION: u32 = 4;
+/// 5: Store container items by name with their stack size
+pub const VERSION: u32 = 5;
 
 #[derive(Error, Debug)]
 pub enum PlotLoadError {

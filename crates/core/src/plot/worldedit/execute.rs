@@ -3,7 +3,6 @@ use crate::config::CONFIG;
 use crate::player::PacketSender;
 use crate::plot::PLOT_BLOCK_HEIGHT;
 use crate::utils::HyphenatedUUID;
-use mchprs_blocks::block_entities::InventoryEntry;
 use mchprs_blocks::blocks::{Block, FlipDirection, HopperFacing, RotateAmt};
 use mchprs_blocks::items::{Item, ItemStack};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockFacing, BlockPos};
@@ -15,12 +14,7 @@ use std::time::Instant;
 use tracing::error;
 
 pub(super) fn execute_wand(ctx: CommandExecuteContext<'_>) {
-    let item = ItemStack {
-        count: 1,
-        item_type: Item::WoodenAxe,
-        nbt: None,
-        container_slots: Vec::new(),
-    };
+    let item = ItemStack::new(Item::WoodenAxe, 1);
     ctx.player.inventory[(ctx.player.selected_slot + 36) as usize] = Some(item);
     let entity_equipment = CSetEquipment {
         entity_id: ctx.player.entity_id as i32,
@@ -1041,7 +1035,6 @@ pub(super) fn execute_replace_container(ctx: CommandExecuteContext<'_>) {
             facing: HopperFacing::Down,
         },
     };
-    let slots = to.num_slots() as u32;
 
     let operation = worldedit_start_operation(ctx.player);
     for x in operation.x_range() {
@@ -1066,30 +1059,8 @@ pub(super) fn execute_replace_container(ctx: CommandExecuteContext<'_>) {
                     if *ty != from {
                         continue;
                     }
-                    let ss = *comparator_override;
-
-                    let items_needed = match ss {
-                        0 => 0,
-                        15 => slots * 64,
-                        _ => ((32 * slots * ss as u32) as f32 / 7.0 - 1.0).ceil() as u32,
-                    } as usize;
-                    let mut inventory = Vec::new();
-                    for (slot, items_added) in (0..items_needed).step_by(64).enumerate() {
-                        let count = (items_needed - items_added).min(64);
-                        inventory.push(InventoryEntry {
-                            id: Item::Redstone {}.get_id(),
-                            slot: slot as i8,
-                            count: count as i8,
-                            nbt: None,
-                            container_items: Vec::new(),
-                        });
-                    }
-
-                    let new_entity = BlockEntity::Container {
-                        comparator_override: ss,
-                        inventory,
-                        ty: to,
-                    };
+                    let item = ItemStack::container_with_ss(to, *comparator_override);
+                    let new_entity = BlockEntity::container_from_items(to, &item.container_slots);
                     ctx.plot.set_block_entity(pos, new_entity);
                     ctx.plot.set_block(pos, new_block);
                 }

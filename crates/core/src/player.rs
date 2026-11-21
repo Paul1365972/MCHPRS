@@ -2,7 +2,7 @@ use crate::plot::worldedit::WorldEditUndo;
 use crate::plot::PLOT_SCALE;
 use crate::utils::HyphenatedUUID;
 use byteorder::{BigEndian, ReadBytesExt};
-use mchprs_blocks::block_entities::{ContainerType, InventoryEntry};
+use mchprs_blocks::block_entities::{ContainerSlot, ContainerType};
 use mchprs_blocks::items::ItemStack;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
@@ -23,6 +23,11 @@ use tracing::{error, warn};
 use crate::permissions::PlayerPermissionsCache;
 
 pub const CONTAINER_WINDOW_ID: i32 = 1;
+
+static PLAYER_MAGIC: &[u8; 8] = b"\x86MCHPRS\x01";
+/// Version History:
+/// 1: Player data file with header (MC 1.21.8)
+const PLAYER_DATA_VERSION: u32 = 1;
 
 pub type EntityId = u32;
 static ENTITY_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -51,7 +56,7 @@ pub struct PlayerData {
     motion: [f64; 3],
     position: [f64; 3],
     rotation: [f32; 2],
-    inventory: Vec<InventoryEntry>,
+    inventory: Vec<Option<ItemStack>>,
     selected_item_slot: i32,
     fly_speed: f32,
     walk_speed: f32,
@@ -207,11 +212,8 @@ impl Player {
     }
 
     fn from_data(player_data: PlayerData, info: LoadPlayerInfo) -> Player {
-        // Load inventory
-        let mut inventory: Vec<Option<ItemStack>> = vec![None; 46];
-        for entry in player_data.inventory {
-            inventory[entry.slot as usize] = Some(entry.get_item_stack());
-        }
+        let mut inventory = player_data.inventory;
+        inventory.resize(46, None);
         let pos = PlayerPos {
             x: player_data.position[0],
             y: player_data.position[1],
@@ -262,15 +264,17 @@ impl Player {
             return Player::from_data(Default::default(), info);
         };
 
-        let player_data: PlayerData = match bincode::deserialize(&data) {
-            Ok(data) => data,
-            Err(_) => {
-                warn!("There was an error loading the player data for {}, player data will be backed up and reset.", info.username);
-                if let Err(err) = fs::rename(&filename, filename.clone() + ".bak") {
-                    error!("Failed to back up player data: {}", err);
-                }
-                return Player::from_data(Default::default(), info);
+        let player_data = data
+            .strip_prefix(PLAYER_MAGIC)
+            .and_then(|data| data.split_first_chunk())
+            .filter(|(version, _)| u32::from_le_bytes(**version) == PLAYER_DATA_VERSION)
+            .and_then(|(_, data)| bincode::deserialize(data).ok());
+        let Some(player_data) = player_data else {
+            warn!("There was an error loading the player data for {}, player data will be backed up and reset.", info.username);
+            if let Err(err) = fs::rename(&filename, filename.clone() + ".bak") {
+                error!("Failed to back up player data: {}", err);
             }
+            return Player::from_data(Default::default(), info);
         };
 
         Player::from_data(player_data, info)
@@ -279,25 +283,21 @@ impl Player {
     /// Saves the player to `./world/players/{uuid}`. This will create
     /// the file if it does not already exist.
     pub fn save(&self) {
-        let mut inventory: Vec<InventoryEntry> = Vec::new();
-        for (slot, item_option) in self.inventory.iter().enumerate() {
-            if let Some(item) = item_option {
-                inventory.push(InventoryEntry::from_item_stack(slot as i8, item));
-            }
-        }
-        let data = bincode::serialize(&PlayerData {
+        let mut data = PLAYER_MAGIC.to_vec();
+        data.extend(PLAYER_DATA_VERSION.to_le_bytes());
+        let player_data = PlayerData {
             fly_speed: self.fly_speed,
             flying: self.flying,
             gamemode: self.gamemode,
-            inventory,
+            inventory: self.inventory.clone(),
             motion: [0f64, 0f64, 0f64],
             on_ground: self.on_ground,
             position: [self.pos.x, self.pos.y, self.pos.z],
             rotation: [self.pitch, self.yaw],
             selected_item_slot: self.selected_slot as i32,
             walk_speed: self.walk_speed,
-        })
-        .unwrap();
+        };
+        bincode::serialize_into(&mut data, &player_data).unwrap();
         let path = format!("./world/players/{:032x}", self.uuid);
         if let Err(error) = mchprs_save_data::replace_file(&path, |file| file.write_all(&data)) {
             error!("Failed to save player data for {}: {error}", self.username);
@@ -530,7 +530,7 @@ impl Player {
     pub fn open_container(
         &mut self,
         pos: BlockPos,
-        inventory: &[InventoryEntry],
+        inventory: &[ContainerSlot],
         container_type: ContainerType,
     ) {
         let open_window = COpenScreen {
@@ -546,12 +546,12 @@ impl Player {
 
     pub fn send_container_content(
         &self,
-        inventory: &[InventoryEntry],
+        inventory: &[ContainerSlot],
         container_type: ContainerType,
     ) {
         let mut slots: Vec<Option<ItemStack>> = vec![None; container_type.num_slots() as usize];
-        for entry in inventory {
-            slots[entry.slot as usize] = Some(entry.get_item_stack());
+        for slot in inventory {
+            slots[slot.idx as usize] = Some(slot.item());
         }
         let main_inventory_then_hotbar = &self.inventory[9..45];
         slots.extend_from_slice(main_inventory_then_hotbar);

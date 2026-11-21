@@ -1,5 +1,5 @@
 use crate::blocks::Block;
-use crate::items::{Item, ItemStack};
+use crate::items::{ContainedItem, Item, ItemStack};
 use crate::json_text;
 use mchprs_proc_macros::protocol_id;
 use mchprs_text::{ColorCode, TextComponent};
@@ -9,53 +9,30 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::str::FromStr;
 
-/// A single item in an inventory
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InventoryEntry {
-    pub id: u32,
-    pub slot: i8,
-    pub count: i8,
-    pub nbt: Option<Vec<u8>>,
-    pub container_items: Vec<Option<InventoryEntry>>,
+const MAX_STACK_SIZE_COMPONENT: &str = "minecraft:max_stack_size";
+/// Minecraft 1.20.5, which introduced item components
+const ITEM_COMPONENTS_DATA_VERSION: i32 = 3837;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct ContainerSlot {
+    pub idx: u8,
+    pub item: ContainedItem,
 }
 
-impl InventoryEntry {
-    pub fn get_item_stack(&self) -> ItemStack {
-        ItemStack {
-            item_type: Item::from_id(self.id).unwrap_or(Item::Redstone),
-            count: self.count as u8,
-            nbt: self
-                .nbt
-                .as_ref()
-                .map(|data| nbt::Blob::from_reader(&mut Cursor::new(data)).unwrap()),
-            container_slots: self
-                .container_items
-                .iter()
-                .map(|entry| entry.as_ref().map(|entry| entry.get_item_stack()))
-                .collect(),
+impl ContainerSlot {
+    pub fn new(idx: u8, item: &ItemStack) -> ContainerSlot {
+        ContainerSlot {
+            idx,
+            item: ContainedItem {
+                item_type: item.item_type,
+                count: item.count,
+                max_stack_size: item.item_type.max_stack_size(),
+            },
         }
     }
 
-    pub fn from_item_stack(slot: i8, item_stack: &ItemStack) -> Self {
-        Self {
-            id: item_stack.item_type.get_id(),
-            slot,
-            count: item_stack.count as i8,
-            nbt: item_stack.nbt.clone().map(|blob| {
-                let mut data = Vec::new();
-                blob.to_writer(&mut data).unwrap();
-                data
-            }),
-            container_items: item_stack
-                .container_slots
-                .iter()
-                .enumerate()
-                .map(|(slot, item)| {
-                    item.as_ref()
-                        .map(|item| InventoryEntry::from_item_stack(slot as i8, item))
-                })
-                .collect(),
-        }
+    pub fn item(&self) -> ItemStack {
+        ItemStack::new(self.item.item_type, self.item.count)
     }
 }
 
@@ -94,8 +71,7 @@ impl SignBlockEntityText {
     }
 
     pub fn decode(data: &[u8]) -> nbt::Value {
-        let mut cur = Cursor::new(data);
-        nbt::Value::from_reader(0xa, &mut cur).unwrap()
+        decode_compound(data)
     }
 }
 
@@ -181,7 +157,7 @@ pub enum BlockEntity {
     },
     Container {
         comparator_override: u8,
-        inventory: Vec<InventoryEntry>,
+        inventory: Vec<ContainerSlot>,
         ty: ContainerType,
     },
     Sign(Box<SignBlockEntity>),
@@ -206,60 +182,62 @@ impl BlockEntity {
         }
     }
 
-    pub fn make_container(ty: ContainerType, inventory: Vec<InventoryEntry>) -> BlockEntity {
+    pub fn make_container(ty: ContainerType, inventory: Vec<ContainerSlot>) -> BlockEntity {
         let num_slots = ty.num_slots();
-        let mut fullness_sum: f32 = 0.0;
-        for item in &inventory {
-            let item_type = Item::from_id(item.id).unwrap_or(Item::Redstone);
-            fullness_sum += item.count as f32 / item_type.max_stack_size() as f32;
-        }
+        let fullness_sum: f32 = inventory
+            .iter()
+            .map(|slot| slot.item.count as f32 / slot.item.max_stack_size as f32)
+            .sum();
         BlockEntity::Container {
-            comparator_override: (if fullness_sum > 0.0 { 1.0 } else { 0.0 }
-                + (fullness_sum / num_slots as f32) * 14.0)
-                .floor() as u8,
+            comparator_override: (((fullness_sum / num_slots as f32) * 14.0).floor() as u8)
+                .saturating_add((fullness_sum > 0.0) as u8),
             inventory,
             ty,
         }
     }
 
-    fn load_container(slots_nbt: &[nbt::Value], ty: ContainerType) -> Option<BlockEntity> {
+    pub fn container_from_items(ty: ContainerType, items: &[Option<ItemStack>]) -> BlockEntity {
+        let inventory = (0..ty.num_slots())
+            .zip(items)
+            .filter_map(|(idx, item)| Some(ContainerSlot::new(idx, item.as_ref()?)))
+            .collect();
+        Self::make_container(ty, inventory)
+    }
+
+    fn load_container(
+        slots_nbt: &[nbt::Value],
+        ty: ContainerType,
+        data_version: i32,
+    ) -> Option<BlockEntity> {
         use nbt::Value;
         let mut inventory = Vec::new();
         for item in slots_nbt {
             let item_compound = nbt_unwrap_val!(item, Value::Compound);
-            let count = nbt_get_int(item_compound, "Count")? as i8;
-            let slot = nbt_get_int(item_compound, "Slot")? as i8;
-            let namespaced_name =
-                nbt_unwrap_val!(nbt_case_insensitive(item_compound, "Id")?, Value::String);
-            let item_type = Item::from_name(namespaced_name);
-
-            let mut blob = nbt::Blob::new();
-            for (k, v) in item_compound {
-                blob.insert(k, v.clone()).unwrap();
+            // Like vanilla's `ContainerHelper.loadAllItems`, drop what this version can't hold
+            let count = nbt_get_int(item_compound, "Count").unwrap_or(1);
+            let idx = nbt_get_int(item_compound, "Slot").unwrap_or(0);
+            if count <= 0 || !(0..ty.num_slots() as i32).contains(&idx) {
+                continue;
             }
-            let mut data = Vec::new();
-            blob.to_writer(&mut data).unwrap();
-
-            let tag = match item_compound.get("tag") {
-                Some(nbt::Value::Compound(map)) => {
-                    let mut blob = nbt::Blob::new();
-                    for (k, v) in map {
-                        blob.insert(k, v.clone()).unwrap();
-                    }
-
-                    let mut data = Vec::new();
-                    blob.to_writer(&mut data).unwrap();
-                    Some(data)
+            let Some(Value::String(item_name)) = nbt_case_insensitive(item_compound, "Id") else {
+                continue;
+            };
+            let item_type = Item::from_name(item_name)
+                .or_else(|| Item::from_name(&format!("minecraft:{item_name}")));
+            let Some(item_type) = item_type else {
+                continue;
+            };
+            let max_stack_size = match item_compound.get("components") {
+                Some(Value::Compound(components))
+                    if data_version >= ITEM_COMPONENTS_DATA_VERSION =>
+                {
+                    nbt_get_int(components, MAX_STACK_SIZE_COMPONENT)
                 }
                 _ => None,
             };
-            inventory.push(InventoryEntry {
-                slot,
-                count,
-                id: item_type.unwrap_or(Item::Redstone).get_id(),
-                nbt: tag,
-                // TODO: Containers containing containers
-                container_items: Vec::new(),
+            inventory.push(ContainerSlot {
+                idx: idx as u8,
+                item: ContainedItem::new(item_type, count as u8, max_stack_size),
             });
         }
         Some(Self::make_container(ty, inventory))
@@ -278,14 +256,17 @@ impl BlockEntity {
             "furnace" => BlockEntity::load_container(
                 nbt_unwrap_val!(&nbt["Items"], Value::List),
                 ContainerType::Furnace,
+                data_version,
             ),
             "barrel" => BlockEntity::load_container(
                 nbt_unwrap_val!(&nbt["Items"], Value::List),
                 ContainerType::Barrel,
+                data_version,
             ),
             "hopper" => BlockEntity::load_container(
                 nbt_unwrap_val!(&nbt["Items"], Value::List),
                 ContainerType::Hopper,
+                data_version,
             ),
             "sign" => {
                 let sign = if nbt.contains_key("Text1") {
@@ -303,7 +284,7 @@ impl BlockEntity {
                         front_text.insert("has_glowing_text".to_owned(), glowing.clone());
                     }
                     SignBlockEntity {
-                        front_text: encode_sign_side(front_text),
+                        front_text: encode_compound(front_text),
                         back_text: SignBlockEntityText::default().encode(),
                     }
                 } else {
@@ -341,18 +322,18 @@ impl BlockEntity {
             }),
             BlockEntity::Container { inventory, ty, .. } => Some({
                 let mut items = Vec::new();
-                for entry in inventory {
-                    let item_type = Item::from_id(entry.id).unwrap_or(Item::Redstone);
-                    let nbt = map! {
-                        "count" => nbt::Value::Int(entry.count as i32),
-                        "id" => nbt::Value::String(item_type.get_name().to_owned()),
-                        "Slot" => nbt::Value::Byte(entry.slot)
+                for slot in inventory {
+                    let mut nbt: HashMap<String, Value> = map! {
+                        "count" => Value::Int(slot.item.count as i32),
+                        "id" => Value::String(slot.item.item_type.get_name().to_owned()),
+                        "Slot" => Value::Byte(slot.idx as i8)
                     };
-                    // TODO: item nbt data in containers
-                    // if let Some(tag) = &entry.nbt {
-                    //     let blob = nbt::Blob::from_reader(&mut Cursor::new(tag)).unwrap();
-                    // }
-                    items.push(nbt::Value::Compound(nbt));
+                    if slot.item.overrides_max_stack_size() {
+                        let max_stack_size = Value::Int(slot.item.max_stack_size as i32);
+                        let components = map! { MAX_STACK_SIZE_COMPONENT => max_stack_size };
+                        nbt.insert("components".to_owned(), Value::Compound(components));
+                    }
+                    items.push(Value::Compound(nbt));
                 }
                 nbt::Blob::with_content(map! {
                     "id" => Value::String(ty.to_string()),
@@ -382,10 +363,14 @@ fn nbt_get_int(compound: &HashMap<String, nbt::Value>, name: &str) -> Option<i32
     }
 }
 
-fn encode_sign_side(side: HashMap<String, nbt::Value>) -> Vec<u8> {
+fn encode_compound(compound: HashMap<String, nbt::Value>) -> Vec<u8> {
     let mut data = Vec::new();
-    nbt::Value::Compound(side).to_writer(&mut data).unwrap();
+    nbt::Value::Compound(compound).to_writer(&mut data).unwrap();
     data
+}
+
+fn decode_compound(data: &[u8]) -> nbt::Value {
+    nbt::Value::from_reader(0xa, &mut Cursor::new(data)).unwrap()
 }
 
 fn load_sign_side(side: Option<&nbt::Value>, data_version: i32) -> Vec<u8> {
@@ -404,5 +389,5 @@ fn load_sign_side(side: Option<&nbt::Value>, data_version: i32) -> Vec<u8> {
             }
         }
     }
-    encode_sign_side(side)
+    encode_compound(side)
 }
