@@ -1,5 +1,5 @@
 use crate::blocks::Block;
-use crate::items::{ContainedItem, Item, ItemStack};
+use crate::items::{ContainedItem, Item};
 use crate::json_text;
 use mchprs_proc_macros::protocol_id;
 use mchprs_text::{ColorCode, TextComponent};
@@ -17,23 +17,6 @@ const ITEM_COMPONENTS_DATA_VERSION: i32 = 3837;
 pub struct ContainerSlot {
     pub idx: u8,
     pub item: ContainedItem,
-}
-
-impl ContainerSlot {
-    pub fn new(idx: u8, item: &ItemStack) -> ContainerSlot {
-        ContainerSlot {
-            idx,
-            item: ContainedItem {
-                item_type: item.item_type,
-                count: item.count,
-                max_stack_size: item.item_type.max_stack_size(),
-            },
-        }
-    }
-
-    pub fn item(&self) -> ItemStack {
-        ItemStack::new(self.item.item_type, self.item.count)
-    }
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -196,10 +179,15 @@ impl BlockEntity {
         }
     }
 
-    pub fn container_from_items(ty: ContainerType, items: &[Option<ItemStack>]) -> BlockEntity {
+    pub fn container_from_items(ty: ContainerType, items: &[Option<ContainedItem>]) -> BlockEntity {
         let inventory = (0..ty.num_slots())
             .zip(items)
-            .filter_map(|(idx, item)| Some(ContainerSlot::new(idx, item.as_ref()?)))
+            .filter_map(|(idx, item)| {
+                Some(ContainerSlot {
+                    idx,
+                    item: (*item)?,
+                })
+            })
             .collect();
         Self::make_container(ty, inventory)
     }

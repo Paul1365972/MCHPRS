@@ -551,7 +551,7 @@ impl Player {
     ) {
         let mut slots: Vec<Option<ItemStack>> = vec![None; container_type.num_slots() as usize];
         for slot in inventory {
-            slots[slot.idx as usize] = Some(slot.item());
+            slots[slot.idx as usize] = Some(ItemStack::new(slot.item.item_type, slot.item.count));
         }
         let main_inventory_then_hotbar = &self.inventory[9..45];
         slots.extend_from_slice(main_inventory_then_hotbar);

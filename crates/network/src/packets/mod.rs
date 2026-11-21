@@ -8,7 +8,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use flate2::bufread::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use mchprs_blocks::items::{Item, ItemStack};
+use mchprs_blocks::items::{ContainedItem, Item, ItemStack};
 use mchprs_proc_macros::{packet_id, protocol_id};
 use mchprs_text::TextComponent;
 use serde::Serialize;
@@ -389,14 +389,14 @@ pub trait PacketDecoderExt: Read + Sized {
         let num_components = self.read_varint()?;
         let num_removed_components = self.read_varint()?;
 
-        let mut container_slots = Vec::new();
+        let mut container_items = Vec::new();
         for _ in 0..num_components {
             let component_ty = self.read_varint()?;
             let value_len = self.read_varint()?;
             let mut value = Cursor::new(self.read_bytes(value_len as usize)?);
             if component_ty == protocol_id!("minecraft:data_component_type", "minecraft:container")
             {
-                container_slots = value.read_container_slots()?;
+                container_items = value.read_container_items()?;
             }
         }
         for _ in 0..num_removed_components {
@@ -408,124 +408,50 @@ pub trait PacketDecoderExt: Read + Sized {
                 .ok_or(PacketDecodeError::UnknownItem(item_id))?,
             count: item_count as u8,
             nbt: None,
-            container_slots,
+            container_items,
         }))
     }
 
-    fn read_container_slots(&mut self) -> DecodeResult<Vec<Option<ItemStack>>> {
-        let num_slots = self.read_varint()?;
-        let mut slots = Vec::new();
-        for _ in 0..num_slots {
-            slots.push(self.read_slot_data()?);
+    fn read_container_items(&mut self) -> DecodeResult<Vec<Option<ContainedItem>>> {
+        let num_items = self.read_varint()?;
+        let mut items = Vec::new();
+        for _ in 0..num_items {
+            items.push(self.read_container_item()?);
         }
-        Ok(slots)
+        Ok(items)
     }
 
-    fn read_slot_data(&mut self) -> DecodeResult<Option<ItemStack>> {
+    fn read_container_item(&mut self) -> DecodeResult<Option<ContainedItem>> {
         let item_count = self.read_varint()?;
         if item_count <= 0 {
             return Ok(None);
         }
 
         let item_id = self.read_varint()?;
+        let item_type =
+            Item::from_id(item_id as u32).ok_or(PacketDecodeError::UnknownItem(item_id))?;
         let num_components = self.read_varint()?;
         let num_removed_components = self.read_varint()?;
 
-        let mut container_slots = Vec::new();
+        let mut max_stack_size = None;
         for _ in 0..num_components {
             let component_ty = self.read_varint()?;
-            match component_ty {
-                protocol_id!("minecraft:data_component_type", "minecraft:custom_data")
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:debug_stick_state"
-                )
-                | protocol_id!("minecraft:data_component_type", "minecraft:entity_data")
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:bucket_entity_data"
-                )
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:block_entity_data"
-                ) => {
-                    let _ = self.read_nbt_compound()?;
-                }
-                protocol_id!("minecraft:data_component_type", "minecraft:max_stack_size")
-                | protocol_id!("minecraft:data_component_type", "minecraft:max_damage")
-                | protocol_id!("minecraft:data_component_type", "minecraft:damage")
-                | protocol_id!("minecraft:data_component_type", "minecraft:rarity")
-                | protocol_id!("minecraft:data_component_type", "minecraft:repair_cost")
-                | protocol_id!("minecraft:data_component_type", "minecraft:enchantable")
-                | protocol_id!("minecraft:data_component_type", "minecraft:map_id")
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:map_post_processing"
-                )
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:ominous_bottle_amplifier"
-                )
-                | protocol_id!("minecraft:data_component_type", "minecraft:base_color")
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:villager/variant"
-                )
-                | protocol_id!("minecraft:data_component_type", "minecraft:wolf/variant")
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:wolf/sound_variant"
-                )
-                | protocol_id!("minecraft:data_component_type", "minecraft:wolf/collar")
-                | protocol_id!("minecraft:data_component_type", "minecraft:fox/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:salmon/size")
-                | protocol_id!("minecraft:data_component_type", "minecraft:parrot/variant")
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:tropical_fish/pattern"
-                )
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:tropical_fish/base_color"
-                )
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:tropical_fish/pattern_color"
-                )
-                | protocol_id!(
-                    "minecraft:data_component_type",
-                    "minecraft:mooshroom/variant"
-                )
-                | protocol_id!("minecraft:data_component_type", "minecraft:rabbit/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:pig/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:cow/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:frog/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:horse/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:llama/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:axolotl/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:cat/variant")
-                | protocol_id!("minecraft:data_component_type", "minecraft:cat/collar")
-                | protocol_id!("minecraft:data_component_type", "minecraft:sheep/color")
-                | protocol_id!("minecraft:data_component_type", "minecraft:shulker/color") => {
-                    let _ = self.read_varint()?;
-                }
-                protocol_id!("minecraft:data_component_type", "minecraft:container") => {
-                    container_slots = self.read_container_slots()?;
-                }
-                // If there's a component we can't handle, then there's no way to know how many bytes to skip to the next component
-                _ => return Err(PacketDecodeError::UnsupportedSlotComponent(component_ty)),
+            // If there's a component we can't handle, then there's no way to know how many bytes to skip to the next component
+            if component_ty
+                != protocol_id!("minecraft:data_component_type", "minecraft:max_stack_size")
+            {
+                return Err(PacketDecodeError::UnsupportedSlotComponent(component_ty));
             }
+            max_stack_size = Some(self.read_varint()?);
         }
         for _ in 0..num_removed_components {
             self.read_varint()?;
         }
-        Ok(Some(ItemStack {
-            item_type: Item::from_id(item_id as u32)
-                .ok_or(PacketDecodeError::UnknownItem(item_id))?,
-            count: item_count as u8,
-            nbt: None,
-            container_slots,
-        }))
+        Ok(Some(ContainedItem::new(
+            item_type,
+            item_count as u8,
+            max_stack_size,
+        )))
     }
 }
 
@@ -649,7 +575,7 @@ pub trait PacketEncoderExt: Write {
             self.write_varint(slot.count as i32);
             self.write_varint(slot.item_type.get_id() as i32);
             // Components to add
-            if !slot.container_slots.is_empty() {
+            if !slot.container_items.is_empty() {
                 self.write_varint(1);
             } else {
                 self.write_varint(0);
@@ -657,15 +583,36 @@ pub trait PacketEncoderExt: Write {
             // Components to remove
             self.write_varint(0);
 
-            if !slot.container_slots.is_empty() {
+            if !slot.container_items.is_empty() {
                 self.write_varint(protocol_id!(
                     "minecraft:data_component_type",
                     "minecraft:container"
                 ));
-                self.write_varint(slot.container_slots.len() as i32);
-                for item in &slot.container_slots {
-                    self.write_slot_data(item);
+                self.write_varint(slot.container_items.len() as i32);
+                for item in &slot.container_items {
+                    self.write_container_item(item);
                 }
+            }
+        } else {
+            self.write_varint(0);
+        }
+    }
+
+    fn write_container_item(&mut self, item: &Option<ContainedItem>) {
+        if let Some(item) = item
+            && item.count > 0
+        {
+            self.write_varint(item.count as i32);
+            self.write_varint(item.item_type.get_id() as i32);
+            self.write_varint(item.overrides_max_stack_size() as i32);
+            self.write_varint(0);
+
+            if item.overrides_max_stack_size() {
+                self.write_varint(protocol_id!(
+                    "minecraft:data_component_type",
+                    "minecraft:max_stack_size"
+                ));
+                self.write_varint(item.max_stack_size as i32);
             }
         } else {
             self.write_varint(0);
