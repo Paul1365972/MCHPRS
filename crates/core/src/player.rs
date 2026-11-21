@@ -1,12 +1,12 @@
 use crate::plot::worldedit::WorldEditUndo;
 use crate::plot::PLOT_SCALE;
-use crate::utils::{self, HyphenatedUUID};
+use crate::utils::HyphenatedUUID;
 use byteorder::{BigEndian, ReadBytesExt};
 use mchprs_blocks::block_entities::{ContainerType, InventoryEntry};
 use mchprs_blocks::items::ItemStack;
 use mchprs_blocks::{BlockDirection, BlockFacing, BlockPos};
 use mchprs_network::packets::clientbound::*;
-use mchprs_network::packets::{PacketEncoder, PlayerProperty, SlotData};
+use mchprs_network::packets::{PacketEncoder, PlayerProperty};
 use mchprs_network::{PlayerConn, PlayerPacketSender};
 use mchprs_proc_macros::protocol_id;
 use mchprs_schematic::WorldEditClipboard;
@@ -549,18 +549,12 @@ impl Player {
         inventory: &[InventoryEntry],
         container_type: ContainerType,
     ) {
-        let mut slots: Vec<Option<SlotData>> =
-            (0..container_type.num_slots()).map(|_| None).collect();
+        let mut slots: Vec<Option<ItemStack>> = vec![None; container_type.num_slots() as usize];
         for entry in inventory {
-            let item_stack = entry.get_item_stack();
-            slots[entry.slot as usize] = Some(utils::encode_slot_data(&item_stack));
+            slots[entry.slot as usize] = Some(entry.get_item_stack());
         }
         let main_inventory_then_hotbar = &self.inventory[9..45];
-        slots.extend(
-            main_inventory_then_hotbar
-                .iter()
-                .map(|item| item.as_ref().map(utils::encode_slot_data)),
-        );
+        slots.extend_from_slice(main_inventory_then_hotbar);
 
         let window_items = CSetContainerContent {
             window_id: CONTAINER_WINDOW_ID,
@@ -576,7 +570,7 @@ impl Player {
             window_id: 0,
             state_id: 0,
             slot: 45,
-            slot_data: self.inventory[45].as_ref().map(utils::encode_slot_data),
+            slot_data: self.inventory[45].clone(),
         }
         .encode();
         self.client.send_packet(&off_hand);
@@ -587,7 +581,7 @@ impl Player {
             window_id: 0,
             state_id: 0,
             slot: slot as i16,
-            slot_data: item.as_ref().map(utils::encode_slot_data),
+            slot_data: item.clone(),
         }
         .encode();
         self.client.send_packet(&set_slot);
@@ -696,7 +690,7 @@ impl Player {
     }
 
     pub fn equippment_packet(&self) -> CSetEquipment {
-        let hand = |slot: usize| self.inventory[slot].as_ref().map(utils::encode_slot_data);
+        let hand = |slot: usize| self.inventory[slot].clone();
         CSetEquipment {
             entity_id: self.entity_id as i32,
             equipment: vec![

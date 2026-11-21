@@ -1,5 +1,3 @@
-use mchprs_blocks::items::ItemStack;
-use mchprs_network::packets::SlotData;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::num::ParseIntError;
@@ -62,17 +60,5 @@ impl<'de> Deserialize<'de> for HyphenatedUUID {
         D: serde::Deserializer<'de>,
     {
         deserializer.deserialize_str(HyphenatedUUIDVisitor)
-    }
-}
-
-pub fn encode_slot_data(item: &ItemStack) -> SlotData {
-    SlotData {
-        item_count: item.count as i32,
-        item_id: item.item_type.get_id() as i32,
-        container_items: item
-            .container_slots
-            .iter()
-            .map(|slot| slot.as_ref().map(encode_slot_data))
-            .collect(),
     }
 }

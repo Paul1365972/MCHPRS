@@ -2,7 +2,7 @@ use super::*;
 use crate::config::CONFIG;
 use crate::player::PacketSender;
 use crate::plot::PLOT_BLOCK_HEIGHT;
-use crate::utils::{self, HyphenatedUUID};
+use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::InventoryEntry;
 use mchprs_blocks::blocks::{Block, FlipDirection, HopperFacing, RotateAmt};
 use mchprs_blocks::items::{Item, ItemStack};
@@ -26,9 +26,7 @@ pub(super) fn execute_wand(ctx: CommandExecuteContext<'_>) {
         entity_id: ctx.player.entity_id as i32,
         equipment: vec![CSetEquipmentEquipment {
             slot: 0,
-            item: ctx.player.inventory[(ctx.player.selected_slot + 36) as usize]
-                .as_ref()
-                .map(utils::encode_slot_data),
+            item: ctx.player.inventory[(ctx.player.selected_slot + 36) as usize].clone(),
         }],
     }
     .encode();

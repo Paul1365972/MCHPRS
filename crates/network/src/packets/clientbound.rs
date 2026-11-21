@@ -1,7 +1,8 @@
-use super::{PacketEncoder, PacketEncoderExt, PalettedContainer, PlayerProperty, SlotData};
+use super::{PacketEncoder, PacketEncoderExt, PalettedContainer, PlayerProperty};
 use crate::nbt_util::NBTCompound;
 use bitvec::bits;
 use bitvec::prelude::Lsb0;
+use mchprs_blocks::items::ItemStack;
 use mchprs_proc_macros::{packet_id, protocol_id};
 use mchprs_text::TextComponent;
 use std::collections::HashMap;
@@ -480,8 +481,8 @@ impl ClientBoundPacket for CCommands {
 pub struct CSetContainerContent {
     pub window_id: i32,
     pub state_id: i32,
-    pub slot_data: Vec<Option<SlotData>>,
-    pub carried_item: Option<SlotData>,
+    pub slot_data: Vec<Option<ItemStack>>,
+    pub carried_item: Option<ItemStack>,
 }
 
 impl ClientBoundPacket for CSetContainerContent {
@@ -505,7 +506,7 @@ pub struct CSetContainerSlot {
     pub window_id: i32,
     pub state_id: i32,
     pub slot: i16,
-    pub slot_data: Option<SlotData>,
+    pub slot_data: Option<ItemStack>,
 }
 
 impl ClientBoundPacket for CSetContainerSlot {
@@ -1252,7 +1253,7 @@ impl ClientBoundPacket for CSetEntityMetadata {
 
 pub struct CSetEquipmentEquipment {
     pub slot: i8,
-    pub item: Option<SlotData>,
+    pub item: Option<ItemStack>,
 }
 
 pub struct CSetEquipment {

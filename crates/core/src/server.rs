@@ -2,7 +2,7 @@ use crate::config::CONFIG;
 use crate::player::{Gamemode, LoadPlayerInfo, PacketSender, Player};
 use crate::plot::commands::DECLARE_COMMANDS;
 use crate::plot::{self, database, Plot, PLOT_BLOCK_HEIGHT};
-use crate::utils::{self, HyphenatedUUID};
+use crate::utils::HyphenatedUUID;
 use backtrace::Backtrace;
 use hmac::{Hmac, Mac};
 use mchprs_network::packets::clientbound::{
@@ -16,7 +16,7 @@ use mchprs_network::packets::serverbound::{
     SAcknowledgeFinishConfiguration, SHandshake, SLoginAcknowledged, SLoginPluginResponse,
     SLoginStart, SPing, SRequest, ServerBoundPacketHandler, VelocityResponseData,
 };
-use mchprs_network::packets::{PacketEncoderExt, PlayerProperty, SlotData, COMPRESSION_THRESHOLD};
+use mchprs_network::packets::{PacketEncoderExt, PlayerProperty, COMPRESSION_THRESHOLD};
 use mchprs_network::{HandshakingConn, NetworkServer, NetworkState, PlayerPacketSender};
 use mchprs_text::TextComponent;
 use mchprs_utils::map;
@@ -432,15 +432,10 @@ impl MinecraftServer {
         player.client.send_packet(&player_info);
 
         // Send the player's inventory
-        let slot_data: Vec<Option<SlotData>> = player
-            .inventory
-            .iter()
-            .map(|op| op.as_ref().map(utils::encode_slot_data))
-            .collect();
         let window_items = CSetContainerContent {
             window_id: 0,
             state_id: 0,
-            slot_data,
+            slot_data: player.inventory.clone(),
             carried_item: None,
         }
         .encode();
