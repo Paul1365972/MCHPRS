@@ -2,13 +2,12 @@ use crate::config::CONFIG;
 use crate::player::Player;
 use crate::plot::{PlotWorld, PLOT_BLOCK_HEIGHT};
 use mchprs_blocks::block_entities::{BlockEntity, ContainerType};
-use mchprs_blocks::items::{ContainedItem, Item, ItemStack};
+use mchprs_blocks::items::{Item, ItemStack};
 use mchprs_blocks::{blocks::*, BlockDirection, BlockFacing};
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::{COpenSignEditor, ClientBoundPacket};
 use mchprs_redstone as redstone;
-use mchprs_utils::nbt_unwrap_val;
-use mchprs_world::{World, MC_DATA_VERSION};
+use mchprs_world::World;
 
 pub fn on_use(
     block: Block,
@@ -268,37 +267,17 @@ pub fn get_state_for_placement(
     }
 }
 
-fn read_block_entity_tag(nbt: &nbt::Blob, block_id: &str) -> Option<BlockEntity> {
-    if let nbt::Value::Compound(compound) = &nbt["BlockEntityTag"] {
-        let id = match nbt.get("Id").or_else(|| nbt.get("id")) {
-            Some(id) => nbt_unwrap_val!(id, nbt::Value::String),
-            None => block_id,
-        };
-        return BlockEntity::from_nbt(id, compound, MC_DATA_VERSION);
-    }
-
-    None
-}
-
-pub fn place_in_world(
-    block: Block,
-    world: &mut impl World,
-    pos: BlockPos,
-    nbt: &Option<nbt::Blob>,
-    container_items: &[Option<ContainedItem>],
-) {
-    if !container_items.is_empty()
+pub fn place_in_world(block: Block, world: &mut impl World, pos: BlockPos, item: &ItemStack) {
+    if !item.container_items.is_empty()
         && let Some(container_type) = ContainerType::for_block(&block)
     {
-        let container = BlockEntity::container_from_items(container_type, container_items);
+        let container = BlockEntity::container_from_items(container_type, &item.container_items);
         world.set_block_entity(pos, container);
-    }
-    if block.has_block_entity()
-        && let Some(nbt) = nbt
-        && let Some(block_entity) = read_block_entity_tag(nbt, block.get_name())
+    } else if (block.is_sign() || block.is_wall_sign())
+        && let Some(sign) = &item.sign
     {
-        world.set_block_entity(pos, block_entity);
-    };
+        world.set_block_entity(pos, BlockEntity::Sign(sign.clone()));
+    }
     world.set_block(pos, block);
     change_surrounding_blocks(world, pos);
     if let Block::RedstoneWire { .. } = block {
@@ -493,12 +472,7 @@ pub fn use_item_on_block(
     if can_place && (0..PLOT_BLOCK_HEIGHT).contains(&block_pos.y) {
         let block = get_state_for_placement(world, block_pos, item.item_type, &ctx);
 
-        if (block.is_sign() || block.is_wall_sign())
-            && !item
-                .nbt
-                .as_ref()
-                .is_some_and(|blob| blob.content.contains_key("BlockEntityTag"))
-        {
+        if (block.is_sign() || block.is_wall_sign()) && item.sign.is_none() {
             let open_sign_editor = COpenSignEditor {
                 pos_x: block_pos.x,
                 pos_y: block_pos.y,
@@ -510,7 +484,7 @@ pub fn use_item_on_block(
             ctx.player.client.send_packet(&open_sign_editor);
         }
 
-        place_in_world(block, world, block_pos, &item.nbt, &item.container_items);
+        place_in_world(block, world, block_pos, item);
         false
     } else {
         true

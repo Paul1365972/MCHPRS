@@ -1,4 +1,4 @@
-use crate::block_entities::ContainerType;
+use crate::block_entities::{ContainerType, SignBlockEntity};
 pub use crate::generated::Item;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -20,9 +20,8 @@ impl<'de> Deserialize<'de> for Item {
 pub struct ItemStack {
     pub item_type: Item,
     pub count: u8,
-    #[serde(skip)]
-    pub nbt: Option<nbt::Blob>,
     pub container_items: Vec<Option<ContainedItem>>,
+    pub sign: Option<Box<SignBlockEntity>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,15 +55,15 @@ impl ItemStack {
         ItemStack {
             item_type,
             count,
-            nbt: None,
             container_items: Vec::new(),
+            sign: None,
         }
     }
 
     pub fn is_same_item(&self, other: &ItemStack) -> bool {
         self.item_type == other.item_type
-            && self.nbt == other.nbt
             && self.container_items == other.container_items
+            && self.sign == other.sign
     }
 
     /// Create container item with specified signal strength

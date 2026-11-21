@@ -58,11 +58,32 @@ impl SignBlockEntityText {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SignBlockEntity {
     // Use the `encode` and `decode` methods on `SignBlockEntityText` to read and write these.
     pub front_text: Vec<u8>,
     pub back_text: Vec<u8>,
+}
+
+impl SignBlockEntity {
+    /// Reads both sides of a sign written by this Minecraft version
+    pub fn from_current_nbt(nbt: &HashMap<String, nbt::Value>) -> Option<SignBlockEntity> {
+        let data_version = json_text::NBT_TEXT_DATA_VERSION;
+        Some(SignBlockEntity {
+            front_text: load_sign_side(Some(nbt.get("front_text")?), data_version),
+            back_text: load_sign_side(Some(nbt.get("back_text")?), data_version),
+        })
+    }
+
+    pub fn to_nbt(&self) -> nbt::Blob {
+        use nbt::Value;
+        nbt::Blob::with_content(map! {
+            "is_waxed" => Value::Byte(0),
+            "front_text" => SignBlockEntityText::decode(&self.front_text),
+            "back_text" => SignBlockEntityText::decode(&self.back_text),
+            "id" => Value::String("minecraft:sign".to_owned())
+        })
+    }
 }
 
 impl Default for SignBlockEntity {
@@ -294,14 +315,7 @@ impl BlockEntity {
 
         use nbt::Value;
         match self {
-            BlockEntity::Sign(sign) => Some({
-                nbt::Blob::with_content(map! {
-                    "is_waxed" => Value::Byte(0),
-                    "front_text" => SignBlockEntityText::decode(&sign.front_text),
-                    "back_text" => SignBlockEntityText::decode(&sign.back_text),
-                    "id" => Value::String("minecraft:sign".to_owned())
-                })
-            }),
+            BlockEntity::Sign(sign) => Some(sign.to_nbt()),
             BlockEntity::Comparator { output_strength } => Some({
                 nbt::Blob::with_content(map! {
                     "OutputSignal" => Value::Int(*output_strength as i32),

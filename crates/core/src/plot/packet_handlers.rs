@@ -485,15 +485,20 @@ impl ServerBoundPacketHandler for Plot {
         };
         let mut item_stack = ItemStack::new(item, 1);
         if packet.include_data
-            && let Some(BlockEntity::Container { inventory, .. }) =
-                self.world.get_block_entity(block_pos)
+            && let Some(block_entity) = self.world.get_block_entity(block_pos)
         {
-            for slot in inventory {
-                let idx = slot.idx as usize;
-                if item_stack.container_items.len() <= idx {
-                    item_stack.container_items.resize(idx + 1, None);
+            match block_entity {
+                BlockEntity::Container { inventory, .. } => {
+                    for slot in inventory {
+                        let idx = slot.idx as usize;
+                        if item_stack.container_items.len() <= idx {
+                            item_stack.container_items.resize(idx + 1, None);
+                        }
+                        item_stack.container_items[idx] = Some(slot.item);
+                    }
                 }
-                item_stack.container_items[idx] = Some(slot.item);
+                BlockEntity::Sign(sign) => item_stack.sign = Some(sign.clone()),
+                BlockEntity::Comparator { .. } => {}
             }
         }
 
