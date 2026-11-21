@@ -43,6 +43,7 @@ pub enum PacketDecodeError {
     FromUtf8(std::string::FromUtf8Error),
     Nbt(nbt::Error),
     UnsupportedSlotComponent(i32),
+    UnknownItem(i32),
     VarIntTooBig,
 }
 
@@ -403,7 +404,8 @@ pub trait PacketDecoderExt: Read + Sized {
         }
 
         Ok(Some(ItemStack {
-            item_type: Item::from_id(item_id as u32),
+            item_type: Item::from_id(item_id as u32)
+                .ok_or(PacketDecodeError::UnknownItem(item_id))?,
             count: item_count as u8,
             nbt: None,
             container_slots,
@@ -518,7 +520,8 @@ pub trait PacketDecoderExt: Read + Sized {
             self.read_varint()?;
         }
         Ok(Some(ItemStack {
-            item_type: Item::from_id(item_id as u32),
+            item_type: Item::from_id(item_id as u32)
+                .ok_or(PacketDecodeError::UnknownItem(item_id))?,
             count: item_count as u8,
             nbt: None,
             container_slots,
