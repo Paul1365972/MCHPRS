@@ -1,7 +1,6 @@
-// Nodes fire from inputs as they stood at the start of their priority,
-// then apply their updates together at the end of the clock.
+// Nodes read source registers, so updates from one clock take effect in the next:
+// `settling` holds `idle` low for the clock after the last phase and after a drive applies.
 // A drive from the host only loads registers, so no path leads from the handshake into a node.
-// At least one clock passes before the first tick or drive, so saved inputs can start at zero.
 module sequencer #(
     parameter int COPIES
 ) (
@@ -32,9 +31,10 @@ module sequencer #(
     logic ready = 0;
     logic beginning;
     logic applying = 0;
+    logic settling = 0;
 
     assign last_phase = phase[pkg::PRIORITIES-1];
-    assign idle = phase == 0 && !taken_valid && !applying;
+    assign idle = phase == 0 && !taken_valid && !applying && !settling;
     assign paused = mode == pkg::PAUSED;
     assign beginning = !hold && ready && (phase == 0 || last_phase);
 
@@ -74,6 +74,7 @@ module sequencer #(
             taken_input <= drive_input;
         end
         applying <= taken_valid;
+        settling <= last_phase || applying;
     end
 
     for (genvar copy = 0; copy < COPIES; copy++) begin : copies

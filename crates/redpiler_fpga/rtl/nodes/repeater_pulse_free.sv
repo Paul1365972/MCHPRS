@@ -14,8 +14,7 @@ module repeater_pulse_free #(
     input logic side_on,
     output logic powered = POWERED,
     output logic locked = LOCKED,
-    output logic [DELAY-1:0] countdown,
-    output logic powered_next
+    output logic [DELAY-1:0] countdown
 );
     logic firing;
     logic fire;
@@ -23,8 +22,7 @@ module repeater_pulse_free #(
     logic schedule;
 
     assign firing = powered ? firing_on : firing_off;
-    assign powered_next = powered ^ (fire && !locked);
-    assign schedule = !side_on && !pending && powered_next != default_on;
+    assign schedule = !side_on && !pending && powered != default_on;
 
     timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
@@ -32,7 +30,7 @@ module repeater_pulse_free #(
     );
 
     always_ff @(posedge clock) begin
-        powered <= powered_next;
+        if (fire && !side_on) powered <= !powered;
         locked <= side_on;
     end
 endmodule

@@ -14,8 +14,7 @@ module plate #(
     input pkg::drive_input_t taken_input,
     output logic powered = POWERED,
     output logic touched = TOUCHED,
-    output logic [DELAY-1:0] countdown,
-    output logic powered_next
+    output logic [DELAY-1:0] countdown
 );
     logic driven = 0;
     logic touched_next;
@@ -36,7 +35,6 @@ module plate #(
     assign released = fire && !touched;
     assign rechecked_touched = fire && powered && touched;
     assign schedule = (pressed && !pending) || rechecked_touched;
-    assign powered_next = pressed || (powered && !released);
 
     timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
@@ -45,7 +43,7 @@ module plate #(
 
     always_ff @(posedge clock) begin
         driven <= taken_valid && taken_node == INDEX;
-        powered <= powered_next;
+        powered <= pressed || (powered && !released);
         touched <= touched_next;
     end
 endmodule

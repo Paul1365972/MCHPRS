@@ -16,34 +16,33 @@ module repeater_prioritized #(
     output logic powered = POWERED,
     output logic locked = LOCKED,
     output logic [DELAY-1:0] countdown = PENDING_TICK[DELAY:1],
-    output logic pulsing = PULSING,
-    output logic powered_next
+    output logic pulsing = PULSING
 );
-    logic default_on_previous = 0;
+    logic pending;
+    logic schedule;
+    logic [DELAY-1:0] next_countdown;
     logic fire;
     logic unlocked_fire;
-    logic pending;
     logic pulse;
-    logic schedule;
+
+    assign pending = |countdown || pulsing;
+    assign schedule = !side_on && !pending && powered != default_on;
 
     always_comb begin
+        next_countdown = countdown;
+        if (schedule) next_countdown[DELAY-1] = 1'b1;
         if (pulsing) fire = firing_pulse && countdown == 0;
-        else fire = tick_start && countdown[0];
+        else fire = tick_start && next_countdown[0];
     end
 
-    assign unlocked_fire = fire && !locked;
-    assign pending = |countdown && !fire;
-    assign powered_next =
-        unlocked_fire ? pkg::repeater_ticked(powered, default_on_previous) : powered;
-    assign pulse = unlocked_fire && pkg::repeater_pulses(powered, default_on_previous);
-    assign schedule = pulse || (!side_on && !pending && powered_next != default_on);
+    assign unlocked_fire = fire && !side_on;
+    assign pulse = unlocked_fire && pkg::repeater_pulses(powered, default_on);
 
     always_ff @(posedge clock) begin
-        powered <= powered_next;
+        if (unlocked_fire) powered <= pkg::repeater_ticked(powered, default_on);
         locked <= side_on;
-        default_on_previous <= default_on;
-        if (tick_start) countdown <= countdown >> 1;
-        if (schedule) countdown[DELAY-1] <= 1'b1;
+        countdown <= tick_start ? (next_countdown >> 1) : next_countdown;
+        if (pulse) countdown[DELAY-1] <= 1'b1;
         if (fire) pulsing <= pulse;
     end
 endmodule

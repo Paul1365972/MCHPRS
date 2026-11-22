@@ -1,0 +1,7 @@
+# The lamp and prioritized repeater schedule across the last priority of a tick.
+circuit @lamp_pending {
+  %clock = torch(powered) tick(delay=1) -> [%clock:0, %pulse:0, %lamp:0, %early:0]
+  %pulse = repeater(delay=3, prioritized) tick(delay=3, priority=highest) -> [%lamp:0, %early:0]
+  %lamp = lamp(powered)
+  %early = repeater(delay=1, prioritized, powered)
+}

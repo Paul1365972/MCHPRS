@@ -8,24 +8,20 @@ module torch #(
     input logic firing,
     input logic default_on,
     output logic powered = POWERED,
-    output logic [DELAY-1:0] countdown,
-    output logic powered_next
+    output logic [DELAY-1:0] countdown
 );
-    logic default_on_previous = 0;
+    logic mismatch;
     logic fire;
     logic pending;
     logic schedule;
 
-    assign powered_next = fire ? !default_on_previous : powered;
-    assign schedule = !pending && powered_next == default_on;
+    assign mismatch = powered == default_on;
+    assign schedule = !pending && mismatch;
 
     timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
         .countdown(countdown), .fire(fire), .pending(pending)
     );
 
-    always_ff @(posedge clock) begin
-        powered <= powered_next;
-        default_on_previous <= default_on;
-    end
+    always_ff @(posedge clock) if (fire) powered <= !default_on;
 endmodule

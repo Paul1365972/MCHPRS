@@ -11,8 +11,7 @@ module button #(
     input logic taken_valid,
     input logic [pkg::NODE_BITS-1:0] taken_node,
     output logic powered = POWERED,
-    output logic [DELAY-1:0] countdown,
-    output logic powered_next
+    output logic [DELAY-1:0] countdown
 );
     logic pressed = 0;
     logic fire;
@@ -20,7 +19,6 @@ module button #(
     logic schedule;
 
     assign schedule = pressed && !pending;
-    assign powered_next = pressed || (powered && !fire);
 
     timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
@@ -29,6 +27,6 @@ module button #(
 
     always_ff @(posedge clock) begin
         pressed <= taken_valid && taken_node == INDEX;
-        powered <= powered_next;
+        powered <= pressed || (powered && !fire);
     end
 endmodule

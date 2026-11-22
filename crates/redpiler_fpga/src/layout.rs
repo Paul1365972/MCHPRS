@@ -95,8 +95,10 @@ impl StateLayout {
         self.registers.iter().all(Vec::is_empty)
     }
 
-    pub fn registers(&self, node: NodeId) -> &[(Register, usize)] {
-        &self.registers[node.index()]
+    pub fn offset(&self, node: NodeId, register: Register) -> Option<usize> {
+        let mut placed = self.registers[node.index()].iter();
+        let (_, offset) = placed.find(|&&(placed, _)| placed == register)?;
+        Some(*offset)
     }
 
     pub fn bits(&self, contents: Contents) -> usize {

@@ -150,7 +150,6 @@ pub struct Instance {
     pub circuit_signals: Vec<CircuitSignal>,
     pub firing_ports: Vec<(FiringPort, TickPriority)>,
     pub inputs: Vec<(LinkKind, SignalKind)>,
-    pub has_output: bool,
     pub power: Register,
     pub registers: Vec<Register>,
 }
@@ -167,7 +166,6 @@ impl Instance {
             circuit_signals: Vec::new(),
             firing_ports: Vec::new(),
             inputs: Vec::new(),
-            has_output: false,
             power,
             registers: Vec::new(),
         }
@@ -348,7 +346,6 @@ fn instance(
     Ok(Some(Instance {
         parameters: parameters.collect(),
         inputs: inputs.collect(),
-        has_output: traits.emits.is_some(),
         ..instance
     }))
 }

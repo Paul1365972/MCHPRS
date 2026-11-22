@@ -13,22 +13,23 @@ module repeater_prioritized_pulse_free #(
     input logic side_on,
     output logic powered = POWERED,
     output logic locked = LOCKED,
-    output logic [DELAY-1:0] countdown = PENDING_TICK[DELAY:1],
-    output logic powered_next
+    output logic [DELAY-1:0] countdown = PENDING_TICK[DELAY:1]
 );
-    logic fire;
-    logic pending;
     logic schedule;
+    logic [DELAY-1:0] next_countdown;
+    logic fire;
 
-    assign fire = tick_start && countdown[0];
-    assign pending = |countdown && !fire;
-    assign powered_next = powered ^ (fire && !locked);
-    assign schedule = !side_on && !pending && powered_next != default_on;
+    assign schedule = !side_on && countdown == 0 && powered != default_on;
+
+    always_comb begin
+        next_countdown = countdown;
+        if (schedule) next_countdown[DELAY-1] = 1'b1;
+        fire = tick_start && next_countdown[0];
+    end
 
     always_ff @(posedge clock) begin
-        powered <= powered_next;
+        if (fire && !side_on) powered <= !powered;
         locked <= side_on;
-        if (tick_start) countdown <= countdown >> 1;
-        if (schedule) countdown[DELAY-1] <= 1'b1;
+        countdown <= tick_start ? (next_countdown >> 1) : next_countdown;
     end
 endmodule

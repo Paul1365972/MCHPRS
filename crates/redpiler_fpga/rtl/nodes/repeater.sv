@@ -14,10 +14,8 @@ module repeater #(
     input logic side_on,
     output logic powered = POWERED,
     output logic locked = LOCKED,
-    output logic [DELAY-1:0] countdown,
-    output logic powered_next
+    output logic [DELAY-1:0] countdown
 );
-    logic default_on_previous = 0;
     logic firing;
     logic fire;
     logic unlocked_fire;
@@ -26,11 +24,9 @@ module repeater #(
     logic schedule;
 
     assign firing = powered ? firing_on : firing_off;
-    assign unlocked_fire = fire && !locked;
-    assign powered_next =
-        unlocked_fire ? pkg::repeater_ticked(powered, default_on_previous) : powered;
-    assign pulse = unlocked_fire && pkg::repeater_pulses(powered, default_on_previous);
-    assign schedule = pulse || (!side_on && !pending && powered_next != default_on);
+    assign unlocked_fire = fire && !side_on;
+    assign pulse = unlocked_fire && pkg::repeater_pulses(powered, default_on);
+    assign schedule = pulse || (!side_on && !pending && powered != default_on);
 
     timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
@@ -38,8 +34,7 @@ module repeater #(
     );
 
     always_ff @(posedge clock) begin
-        powered <= powered_next;
+        if (unlocked_fire) powered <= pkg::repeater_ticked(powered, default_on);
         locked <= side_on;
-        default_on_previous <= default_on;
     end
 endmodule

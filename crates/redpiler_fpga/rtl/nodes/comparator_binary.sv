@@ -14,28 +14,24 @@ module comparator_binary #(
     input logic [3:0] default_strength,
     input logic [3:0] side_strength,
     output logic high = STRENGTH == HIGH,
-    output logic [DELAY-1:0] countdown,
-    output logic high_next
+    output logic [DELAY-1:0] countdown
 );
-    logic [3:0] rear_strength;
     logic desired_high;
-    logic desired_high_previous = 0;
+    logic mismatch;
     logic fire;
     logic pending;
     logic schedule;
 
-    assign rear_strength = pkg::comparator_rear(FAR_VALID, FAR, default_strength);
-    assign desired_high = HIGH == pkg::comparator_output(SUBTRACT, rear_strength, side_strength);
-    assign high_next = fire ? desired_high_previous : high;
-    assign schedule = !pending && desired_high != high_next;
+    assign desired_high = HIGH == pkg::comparator_output(
+        SUBTRACT, pkg::comparator_rear(FAR_VALID, FAR, default_strength), side_strength
+    );
+    assign mismatch = desired_high != high;
+    assign schedule = !pending && mismatch;
 
     timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
         .countdown(countdown), .fire(fire), .pending(pending)
     );
 
-    always_ff @(posedge clock) begin
-        high <= high_next;
-        desired_high_previous <= desired_high;
-    end
+    always_ff @(posedge clock) if (fire) high <= desired_high;
 endmodule

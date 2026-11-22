@@ -1,4 +1,5 @@
 use crate::analysis::{strengths_of, CircuitAnalysis};
+use crate::layout::StateLayout;
 use crate::lower::{Instance, Register};
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::analysis::ss_sets::SSSet;
@@ -22,7 +23,7 @@ pub struct Expressions<'a> {
     circuit: &'a Circuit,
     analysis: &'a CircuitAnalysis,
     instances: &'a [Option<Instance>],
-    output_is_read: Vec<bool>,
+    layout: &'a StateLayout,
 }
 
 impl<'a> Expressions<'a> {
@@ -30,27 +31,24 @@ impl<'a> Expressions<'a> {
         circuit: &'a Circuit,
         analysis: &'a CircuitAnalysis,
         instances: &'a [Option<Instance>],
+        layout: &'a StateLayout,
     ) -> Expressions<'a> {
         Expressions {
             circuit,
             analysis,
             instances,
-            output_is_read: vec![false; circuit.len()],
+            layout,
         }
     }
 
-    pub fn into_read_outputs(self) -> Vec<bool> {
-        self.output_is_read
-    }
-
-    pub fn on(&mut self, node: NodeId, kind: LinkKind) -> String {
+    pub fn on(&self, node: NodeId, kind: LinkKind) -> String {
         match self.any_link_reaches(node, kind, 1) {
             Term::Fixed(on) => format!("1'b{}", u8::from(on)),
             Term::Signal(signal) => signal,
         }
     }
 
-    pub fn strength(&mut self, node: NodeId, kind: LinkKind) -> String {
+    pub fn strength(&self, node: NodeId, kind: LinkKind) -> String {
         let links: Vec<_> = self.links(node, kind).collect();
         let carried: Vec<SSSet> = links.iter().map(|link| self.carried_set(link)).collect();
         let strengths = strengths_of(carried.iter().copied().fold(SSSet::ZERO, SSSet::combine));
@@ -76,7 +74,7 @@ impl<'a> Expressions<'a> {
     }
 
     fn highest_reached(
-        &mut self,
+        &self,
         node: NodeId,
         kind: LinkKind,
         strengths: &[SignalStrength],
@@ -122,12 +120,13 @@ impl<'a> Expressions<'a> {
         }
     }
 
-    fn read_output_wire(&mut self, node: NodeId) -> String {
-        self.output_is_read[node.index()] = true;
-        output_wire(node.index())
+    fn read(&self, node: NodeId) -> String {
+        let instance = self.instances[node.index()].as_ref();
+        let power = instance.expect("a node without an instance is fixed").power;
+        register_wire(self.layout, node, power)
     }
 
-    fn any_link_reaches(&mut self, node: NodeId, kind: LinkKind, threshold: u8) -> Term<bool> {
+    fn any_link_reaches(&self, node: NodeId, kind: LinkKind, threshold: u8) -> Term<bool> {
         let mut signals = Vec::new();
         for link in self.links(node, kind) {
             match self.link_reaches(link, threshold) {
@@ -142,46 +141,48 @@ impl<'a> Expressions<'a> {
         }
     }
 
-    fn link_reaches(&mut self, link: &Link, threshold: u8) -> Term<bool> {
+    fn link_reaches(&self, link: &Link, threshold: u8) -> Term<bool> {
         let floor = threshold + link.weight;
         let strengths = self.analysis.strengths(link.source);
         match self.output(link.source) {
             Output::Fixed(strength) => Term::Fixed(strength >= floor),
             Output::Binary { low, .. } if low >= floor => Term::Fixed(true),
             Output::Binary { high, .. } if high < floor => Term::Fixed(false),
-            Output::Binary { .. } => Term::Signal(self.read_output_wire(link.source)),
+            Output::Binary { .. } => Term::Signal(self.read(link.source)),
             Output::Strength if strengths.min() >= floor => Term::Fixed(true),
             Output::Strength if strengths.max() < floor => Term::Fixed(false),
-            Output::Strength if (1..floor).any(|weak| strengths.contains(weak)) => Term::Signal(
-                format!("{} >= 4'd{floor}", self.read_output_wire(link.source)),
-            ),
-            Output::Strength => Term::Signal(format!("|{}", self.read_output_wire(link.source))),
+            Output::Strength if (1..floor).any(|weak| strengths.contains(weak)) => {
+                Term::Signal(format!("{} >= 4'd{floor}", self.read(link.source)))
+            }
+            Output::Strength => Term::Signal(format!("|{}", self.read(link.source))),
         }
     }
 
-    fn carried_term(&mut self, link: &Link) -> Term<u8> {
+    fn carried_term(&self, link: &Link) -> Term<u8> {
         let carried = |strength: u8| strength.saturating_sub(link.weight);
         match self.output(link.source) {
             Output::Fixed(strength) => Term::Fixed(carried(strength)),
             _ if self.carried_set(link).max() == 0 => Term::Fixed(0),
             Output::Binary { low, high } => {
                 let (low, high) = (carried(low), carried(high));
-                let wire = self.read_output_wire(link.source);
+                let wire = self.read(link.source);
                 Term::Signal(format!("({wire} ? 4'd{high} : 4'd{low})"))
             }
-            Output::Strength if link.weight == 0 => {
-                Term::Signal(self.read_output_wire(link.source))
-            }
+            Output::Strength if link.weight == 0 => Term::Signal(self.read(link.source)),
             Output::Strength => {
-                let (wire, weight) = (self.read_output_wire(link.source), link.weight);
+                let (wire, weight) = (self.read(link.source), link.weight);
                 Term::Signal(format!("pkg::attenuated({wire}, 4'd{weight})"))
             }
         }
     }
 }
 
-pub fn output_wire(node: usize) -> String {
-    format!("next_{node}")
+pub fn register_wire(layout: &StateLayout, node: NodeId, register: Register) -> String {
+    match (layout.offset(node, register), register.width()) {
+        (Some(offset), 1) => format!("state[{offset}]"),
+        (Some(offset), width) => format!("state[{offset} +: {width}]"),
+        (None, _) => format!("{}_{}", register.port(), node.index()),
+    }
 }
 
 fn nonzero_strengths(set: SSSet) -> usize {

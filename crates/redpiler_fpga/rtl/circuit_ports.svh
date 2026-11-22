@@ -8,8 +8,8 @@ input logic run_start,
 // the circuit reads each in the clock of its strobe alone.
 input pkg::mode_t run_mode,
 input logic [pkg::COUNT_BITS-1:0] run_count,
-// Low from the clock after `drive_valid` until the input has changed its node,
-// and while a tick runs.
+// Low from the clock after `drive_valid` until the drive has settled,
+// and while a tick runs or settles.
 output logic idle,
 output logic [63:0] tick_count,
 output logic paused,
