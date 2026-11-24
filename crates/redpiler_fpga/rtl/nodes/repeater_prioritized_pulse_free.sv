@@ -1,5 +1,6 @@
 // CircuitAnalysis::is_pulse_free selects this module.
-// At the tick boundary an unlocked repeater has a pending tick exactly when its input differs.
+// A tick sets an unlocked pulse-free repeater to its rear input, and without a pending tick the
+// two are equal already.
 module repeater_prioritized_pulse_free #(
     parameter int DELAY,
     parameter logic POWERED,

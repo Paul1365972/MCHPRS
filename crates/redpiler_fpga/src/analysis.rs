@@ -75,19 +75,17 @@ pub(crate) fn strengths_of(set: SSSet) -> Vec<SignalStrength> {
         .collect()
 }
 
-// A pulse-free repeater's rear input remains different from its output until its tick fires.
+// A prioritized repeater of delay 1 pulses if its tick finds it off with its rear input off: a
+// rear source fell after the tick was scheduled, in the same tick. A source changes at most once
+// per tick, so it was on before, and the repeater was locked until a side source changed earlier
+// in that tick. `no_rear_change_after_side` leaves no such tick.
 fn is_pulse_free(circuit: &Circuit, id: NodeId, tick_priorities: &[Vec<TickPriority>]) -> bool {
     let prioritized_repeater = NodeKind::Repeater {
         delay: 1,
         prioritized: true,
     };
-    let rear = source_changes(circuit, id, LinkKind::Default, tick_priorities);
-    let rear: Vec<&Vec<TickPriority>> = rear.filter(|source| !source.is_empty()).collect();
-    let mut rear_changes = rear.iter().copied().flatten();
-    let change_at_once = rear.len() <= 1 || rear_changes.all(|change| *change == rear[0][0]);
     circuit.node(id).kind == prioritized_repeater
         && !is_rear_driven(circuit, id)
-        && change_at_once
         && no_rear_change_after_side(circuit, id, tick_priorities)
         && starts_as_scheduled(circuit, id)
 }
