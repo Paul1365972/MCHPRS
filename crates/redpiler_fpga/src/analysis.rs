@@ -19,7 +19,11 @@ impl CircuitAnalysis {
         let sets = ss_sets(circuit);
         let mut priorities_by_kind: HashMap<NodeKind, Vec<TickPriority>> = HashMap::new();
         let tick_priorities = circuit.ids().map(|id| {
-            let kind = circuit.node(id).kind;
+            let node = circuit.node(id);
+            if !node.can_tick() {
+                return Vec::new();
+            }
+            let kind = node.kind;
             let scheduled = || {
                 let ticks = kind.schedulable_ticks();
                 ticks.iter().map(|tick| tick.priority).collect()

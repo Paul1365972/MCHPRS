@@ -1,5 +1,5 @@
 circuit @inputs {
-  %lever = lever -> [%lever_lamp:0, %lever_wire:3]
+  %lever = lever -> [%lever_lamp:0, %lever_wire:3, %port_rear:0]
   %lever_lamp = lamp
   %lever_wire = wire
   %lit_lever = lever(powered) -> [%lit_trapdoor:0]
@@ -27,8 +27,13 @@ circuit @inputs {
   %waiting = pressure_plate tick(delay=5) -> [%waiting_trapdoor:0]
   %waiting_trapdoor = trapdoor
 
-  %repeater = repeater(delay=1) input -> [%repeater_wire:1]
+  %repeater = repeater(delay=1) input -> [%repeater_wire:1, side %port_locked:0, side %port_locked_prioritized:0]
   %repeater_wire = wire
+  %port_rear = repeater(delay=1) -> [%port_locked:0, %port_locked_prioritized:0]
+  %port_locked = repeater(delay=1) -> [%port_locked_trapdoor:0]
+  %port_locked_trapdoor = trapdoor
+  %port_locked_prioritized = repeater(delay=1, prioritized) -> [%port_locked_prioritized_trapdoor:0]
+  %port_locked_prioritized_trapdoor = trapdoor
   %locked = repeater(delay=2, locked, powered) input -> [%locked_trapdoor:0]
   %locked_trapdoor = trapdoor(powered)
   %torch = torch(powered) input -> [%torch_lamp:0]
