@@ -4,7 +4,8 @@ module repeater #(
     parameter int DELAY,
     parameter logic POWERED,
     parameter logic LOCKED = 0,
-    parameter int PENDING_DELAY
+    parameter int PENDING_DELAY,
+    parameter int FIRES
 ) (
     input logic clock,
     input logic tick_start,
@@ -21,16 +22,18 @@ module repeater #(
     logic unlocked_fire;
     logic pending;
     logic pulse;
+    logic mismatch;
     logic schedule;
 
     assign firing = powered ? firing_on : firing_off;
     assign unlocked_fire = fire && !side_on;
     assign pulse = unlocked_fire && pkg::repeater_pulses(powered, default_on);
-    assign schedule = pulse || (!side_on && !pending && powered != default_on);
+    assign mismatch = !side_on && powered != default_on;
+    assign schedule = pulse || (!pending && mismatch);
 
-    timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY)) timer (
+    timer #(.DELAY(DELAY), .PENDING_DELAY(PENDING_DELAY), .FIRES(FIRES)) timer (
         .clock(clock), .tick_start(tick_start), .schedule(schedule), .firing(firing),
-        .mismatch(1'b0), .countdown(countdown), .fire(fire), .pending(pending)
+        .mismatch(mismatch), .countdown(countdown), .fire(fire), .pending(pending)
     );
 
     always_ff @(posedge clock) begin

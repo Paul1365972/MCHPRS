@@ -1,8 +1,8 @@
 use mchprs_blocks::signal_strength::SignalStrength;
 use mchprs_redpiler::analysis::ss_sets::{ss_sets, SSSet};
-use mchprs_redpiler::behavior::{InputStrengths, Pending};
+use mchprs_redpiler::behavior::Pending;
 use mchprs_redpiler::circuit::{inputs_in, Circuit, NodeId};
-use mchprs_redpiler::graph::{LinkKind, Node, NodeKind};
+use mchprs_redpiler::graph::{LinkKind, NodeKind};
 use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_redstone::{comparator, repeater, torch};
 use std::collections::HashMap;
@@ -32,9 +32,8 @@ impl CircuitAnalysis {
             priorities.or_insert_with(scheduled).clone()
         });
         let tick_priorities: Vec<_> = tick_priorities.collect();
-        let is_pulse_free =
-            |id: NodeId| is_pulse_free(circuit, id, inputs_in(circuit, id), &tick_priorities);
-        let firing = |id: NodeId| firing(circuit, id, inputs_in(circuit, id), &tick_priorities);
+        let is_pulse_free = |id: NodeId| is_pulse_free(circuit, id, &tick_priorities);
+        let firing = |id: NodeId| firing(circuit, id, &tick_priorities);
         CircuitAnalysis {
             strengths: circuit.ids().map(|id| sets.at(id.index())).collect(),
             pulse_free: circuit.ids().map(is_pulse_free).collect(),
@@ -77,64 +76,37 @@ pub(crate) fn strengths_of(set: SSSet) -> Vec<SignalStrength> {
 }
 
 // A pulse-free repeater's rear input remains different from its output until its tick fires.
-fn is_pulse_free(
-    circuit: &Circuit,
-    id: NodeId,
-    inputs: InputStrengths,
-    tick_priorities: &[Vec<TickPriority>],
-) -> bool {
-    let node = circuit.node(id);
-    let NodeKind::Repeater {
+fn is_pulse_free(circuit: &Circuit, id: NodeId, tick_priorities: &[Vec<TickPriority>]) -> bool {
+    let prioritized_repeater = NodeKind::Repeater {
         delay: 1,
-        prioritized,
-    } = node.kind
-    else {
-        return false;
+        prioritized: true,
     };
-    let sources = |kind: LinkKind| {
-        let links = circuit.inputs(id).iter();
-        let links = links.filter(move |link| link.kind == kind);
-        links.map(|link| link.source)
-    };
-    let priorities = |source: NodeId| tick_priorities[source.index()].iter().copied();
-    let defaults: Vec<NodeId> = sources(LinkKind::Default).collect();
-    let is_driven = defaults
-        .iter()
-        .any(|&source| circuit.node(source).is_input());
-    let changing = defaults
-        .iter()
-        .filter(|&&source| priorities(source).next().is_some());
-    let changes: Vec<TickPriority> = defaults
-        .iter()
-        .flat_map(|&source| priorities(source))
-        .collect();
-    let change_at_once =
-        changing.count() <= 1 || changes.iter().all(|&change| change == changes[0]);
-    let own_ticks = [false, true].map(|powered| repeater::tick_priority(prioritized, powered));
-    let own_tick_first = own_ticks
-        .iter()
-        .all(|own| changes.iter().all(|change| own <= change));
-    let mut unlocks = sources(LinkKind::Side).flat_map(priorities);
-    let unlock_last = unlocks.all(|unlock| changes.iter().all(|&change| change <= unlock));
-    let starts_as_scheduled = starts_as_scheduled(node, inputs);
-    !is_driven && change_at_once && own_tick_first && unlock_last && starts_as_scheduled
+    let rear = source_changes(circuit, id, LinkKind::Default, tick_priorities);
+    let rear: Vec<&Vec<TickPriority>> = rear.filter(|source| !source.is_empty()).collect();
+    let mut rear_changes = rear.iter().copied().flatten();
+    let change_at_once = rear.len() <= 1 || rear_changes.all(|change| *change == rear[0][0]);
+    circuit.node(id).kind == prioritized_repeater
+        && !is_rear_driven(circuit, id)
+        && change_at_once
+        && no_rear_change_after_side(circuit, id, tick_priorities)
+        && starts_as_scheduled(circuit, id)
 }
 
+// For a torch or a comparator:
 // In priority: the sources change no earlier than the node's priority, so whenever its output
 // differs from what its inputs ask for, its tick is due.
 // On a tick-start mismatch: the sources change only before the node's priority and at once, so
 // its tick is due exactly when its output differed from its inputs at the tick start.
-fn firing(
-    circuit: &Circuit,
-    id: NodeId,
-    inputs: InputStrengths,
-    tick_priorities: &[Vec<TickPriority>],
-) -> Firing {
+fn firing(circuit: &Circuit, id: NodeId, tick_priorities: &[Vec<TickPriority>]) -> Firing {
     let node = circuit.node(id);
     let own = match node.kind {
         _ if node.is_input() => return Firing::WhenDue,
         NodeKind::Torch => torch::PRIORITY,
         NodeKind::Comparator { prioritized, .. } => comparator::tick_priority(prioritized),
+        NodeKind::Repeater {
+            delay: 1,
+            prioritized: false,
+        } => return repeater_firing(circuit, id, tick_priorities),
         _ => return Firing::WhenDue,
     };
     let mut sources: Vec<NodeId> = circuit.inputs(id).iter().map(|link| link.source).collect();
@@ -157,15 +129,81 @@ fn firing(
         Firing::WhenDue
     } else if changes_in_or_after_priority {
         Firing::InPriority
-    } else if changes_before_priority && change_at_once && starts_as_scheduled(node, inputs) {
+    } else if changes_before_priority && change_at_once && starts_as_scheduled(circuit, id) {
         Firing::OnTickStartMismatch
     } else {
         Firing::WhenDue
     }
 }
 
-fn starts_as_scheduled(node: &Node, inputs: InputStrengths) -> bool {
-    let pending = node.pending_tick.map(|queued| queued.tick);
+// An unprioritized repeater of delay 1 fires exactly when it was unlocked and differed from its
+// rear input at the tick start, unless a scheduled tick loses its reason before the tick start
+// and still acts. A tick that finds the repeater locked, or on with its rear input on, does
+// nothing, which leaves three cases:
+// - `no_rear_change_after_side`: no unlock schedules a tick to turn on before the rear input
+//   falls, which would start a pulse.
+// - `rear_stays`: a rear source that can turn on after a tick to turn off was scheduled is still
+//   on when that tick fires.
+// - `lock_stays`: a side source that can lock the repeater after a tick was scheduled still
+//   locks it when that tick fires.
+fn repeater_firing(circuit: &Circuit, id: NodeId, tick_priorities: &[Vec<TickPriority>]) -> Firing {
+    let [off, on] = [false, true].map(|powered| repeater::tick_priority(false, powered));
+    let (first, last) = (off.min(on), off.max(on));
+    let changes = |kind: LinkKind| source_changes(circuit, id, kind, tick_priorities);
+    let is_before = |source: &[TickPriority]| source.iter().all(|&change| change < first);
+    let is_from = |priority: TickPriority, source: &[TickPriority]| {
+        source.iter().all(|&change| priority <= change)
+    };
+    let rear_stays = changes(LinkKind::Default).all(|rear| is_before(rear) || is_from(first, rear));
+    let lock_stays = changes(LinkKind::Side).all(|side| is_before(side) || is_from(last, side));
+    let fires_on_mismatch = !is_rear_driven(circuit, id)
+        && no_rear_change_after_side(circuit, id, tick_priorities)
+        && rear_stays
+        && lock_stays
+        && starts_as_scheduled(circuit, id);
+    match fires_on_mismatch {
+        true => Firing::OnTickStartMismatch,
+        false => Firing::WhenDue,
+    }
+}
+
+// A driven rear source can change and change back between two ticks, which leaves a tick without
+// its reason. A driven side source does no harm: the lock it leaves is the one the tick start
+// sees.
+fn is_rear_driven(circuit: &Circuit, repeater: NodeId) -> bool {
+    sources(circuit, repeater, LinkKind::Default).any(|source| circuit.node(source).is_input())
+}
+
+fn no_rear_change_after_side(
+    circuit: &Circuit,
+    id: NodeId,
+    tick_priorities: &[Vec<TickPriority>],
+) -> bool {
+    let changes = |kind: LinkKind| source_changes(circuit, id, kind, tick_priorities).flatten();
+    changes(LinkKind::Side).all(|unlock| changes(LinkKind::Default).all(|change| change <= unlock))
+}
+
+fn source_changes<'a>(
+    circuit: &'a Circuit,
+    id: NodeId,
+    kind: LinkKind,
+    tick_priorities: &'a [Vec<TickPriority>],
+) -> impl Iterator<Item = &'a Vec<TickPriority>> {
+    sources(circuit, id, kind).map(|source| &tick_priorities[source.index()])
+}
+
+fn sources(circuit: &Circuit, id: NodeId, kind: LinkKind) -> impl Iterator<Item = NodeId> + '_ {
+    let links = circuit.inputs(id).iter();
+    let links = links.filter(move |link| link.kind == kind);
+    links.map(|link| link.source)
+}
+
+fn starts_as_scheduled(circuit: &Circuit, id: NodeId) -> bool {
+    let node = circuit.node(id);
+    let Some(pending) = node.pending_tick else {
+        return true;
+    };
+    let inputs = inputs_in(circuit, id);
     let scheduled = node.kind.update(node.state, inputs, Pending::None).schedule;
-    pending.is_none() || pending == scheduled
+    scheduled == Some(pending.tick)
 }

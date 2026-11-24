@@ -42,6 +42,7 @@ module timer #(
             tick_start_mismatch <= mismatch;
         end else begin
             countdown <= next_countdown;
+            // A repeater that turns off must not fire again in the priority in which it turns on.
             if (firing) begin
                 due <= 1'b0;
                 tick_start_mismatch <= 1'b0;

@@ -9,7 +9,6 @@ pub enum NodeModule {
     Plate,
     Torch,
     Repeater,
-    RepeaterPulseFree,
     RepeaterPrioritized,
     RepeaterPrioritizedPulseFree,
     ComparatorBinary,

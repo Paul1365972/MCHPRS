@@ -278,11 +278,9 @@ fn instance(
             prioritized: false,
         } => {
             let [off, on] = [false, true].map(|powered| repeater::tick_priority(false, powered));
-            let module = match analysis.is_pulse_free(id) {
-                true => NodeModule::RepeaterPulseFree,
-                false => NodeModule::Repeater,
-            };
-            repeater(module).with_timer(delay.into(), ByOutput { off, on })
+            repeater(NodeModule::Repeater)
+                .with_parameters(&fires)
+                .with_timer(delay.into(), ByOutput { off, on })
         }
         NodeKind::Repeater {
             delay,
