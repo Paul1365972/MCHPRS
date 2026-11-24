@@ -15,7 +15,6 @@ use std::iter;
 use strum::{Display, VariantArray};
 
 const TICK_START_PRIORITY: TickPriority = TickPriority::Highest;
-const PULSE_END_PRIORITY: TickPriority = TickPriority::Higher;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display, VariantArray)]
 #[strum(serialize_all = "snake_case")]
@@ -107,7 +106,8 @@ impl Register {
                 ),
             ],
             Register::Pulsing => {
-                let pulsing = pending.is_some_and(|tick| tick.priority == PULSE_END_PRIORITY);
+                let pulsing =
+                    pending.is_some_and(|tick| tick.priority == repeater::PULSE_END_PRIORITY);
                 vec![(Parameter::Pulsing, pulsing.into())]
             }
         }
@@ -134,7 +134,7 @@ impl PriorityRule {
                 }
             }
             PriorityRule::AtStart => TICK_START_PRIORITY,
-            PriorityRule::ByPulsing if pulsing => PULSE_END_PRIORITY,
+            PriorityRule::ByPulsing if pulsing => repeater::PULSE_END_PRIORITY,
             PriorityRule::ByPulsing => TICK_START_PRIORITY,
         }
     }
@@ -146,7 +146,9 @@ impl PriorityRule {
                 vec![(FiringPort::FiringOff, off), (FiringPort::FiringOn, on)]
             }
             PriorityRule::AtStart => Vec::new(),
-            PriorityRule::ByPulsing => vec![(FiringPort::FiringPulse, PULSE_END_PRIORITY)],
+            PriorityRule::ByPulsing => {
+                vec![(FiringPort::FiringPulse, repeater::PULSE_END_PRIORITY)]
+            }
         }
     }
 }
@@ -331,7 +333,10 @@ fn instance(
     let pending = node.pending_tick.map(|queued| queued.tick);
     for register in instance.all_registers() {
         if let (Register::Countdown { priority, .. }, Some(tick)) = (register, pending) {
-            let held = priority.of(node.state.is_powered(), tick.priority == PULSE_END_PRIORITY);
+            let held = priority.of(
+                node.state.is_powered(),
+                tick.priority == repeater::PULSE_END_PRIORITY,
+            );
             if held != tick.priority {
                 return Err(refused(format!(
                     "has a pending tick of priority {}, which only an edit produces: fpga would \

@@ -141,7 +141,9 @@ impl NodeKind {
                         power: SignalStrength::Zero,
                         ..state
                     }),
-                    (false, false) => Outcome::scheduled(on, delay.into(), TickPriority::Higher),
+                    (false, false) => {
+                        Outcome::scheduled(on, delay.into(), repeater::PULSE_END_PRIORITY)
+                    }
                     (false, true) => Outcome::of(on),
                     (true, true) => Outcome::of(state),
                 }

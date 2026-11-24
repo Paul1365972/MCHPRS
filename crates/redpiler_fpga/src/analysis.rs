@@ -31,12 +31,36 @@ impl CircuitAnalysis {
             let priorities = priorities_by_kind.entry(kind);
             priorities.or_insert_with(scheduled).clone()
         });
-        let tick_priorities: Vec<_> = tick_priorities.collect();
-        let is_pulse_free = |id: NodeId| is_pulse_free(circuit, id, &tick_priorities);
+        let mut tick_priorities: Vec<_> = tick_priorities.collect();
+        let ticks_at_start = |id: &NodeId| {
+            let prioritized_repeater = NodeKind::Repeater {
+                delay: 1,
+                prioritized: true,
+            };
+            let node = circuit.node(*id);
+            node.can_tick() && node.kind == prioritized_repeater
+        };
+        let mut unproven: Vec<NodeId> = circuit.ids().filter(ticks_at_start).collect();
+        let mut pulse_free = vec![false; circuit.len()];
+        // A repeater proven pulse-free changes only at the tick start, which can prove another.
+        loop {
+            let (proven, rest): (Vec<NodeId>, Vec<NodeId>) = unproven
+                .into_iter()
+                .partition(|&id| is_pulse_free(circuit, id, &tick_priorities));
+            for &id in &proven {
+                pulse_free[id.index()] = true;
+                let pulse_end = repeater::PULSE_END_PRIORITY;
+                tick_priorities[id.index()].retain(|&priority| priority != pulse_end);
+            }
+            unproven = rest;
+            if proven.is_empty() {
+                break;
+            }
+        }
         let firing = |id: NodeId| firing(circuit, id, &tick_priorities);
         CircuitAnalysis {
             strengths: circuit.ids().map(|id| sets.at(id.index())).collect(),
-            pulse_free: circuit.ids().map(is_pulse_free).collect(),
+            pulse_free,
             firing: circuit.ids().map(firing).collect(),
         }
     }
@@ -80,12 +104,7 @@ pub(crate) fn strengths_of(set: SSSet) -> Vec<SignalStrength> {
 // per tick, so it was on before, and the repeater was locked until a side source changed earlier
 // in that tick. `no_rear_change_after_side` leaves no such tick.
 fn is_pulse_free(circuit: &Circuit, id: NodeId, tick_priorities: &[Vec<TickPriority>]) -> bool {
-    let prioritized_repeater = NodeKind::Repeater {
-        delay: 1,
-        prioritized: true,
-    };
-    circuit.node(id).kind == prioritized_repeater
-        && !is_rear_driven(circuit, id)
+    !is_rear_driven(circuit, id)
         && no_rear_change_after_side(circuit, id, tick_priorities)
         && starts_as_scheduled(circuit, id)
 }

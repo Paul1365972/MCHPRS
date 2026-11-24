@@ -1,0 +1,11 @@
+# A repeater that a prioritized repeater unlocks at the tick start while its rear torch is on.
+# The torch turns off later in that tick, so the tick that the unlock scheduled starts a pulse.
+circuit @unlock_then_fall {
+  %lever = lever -> [%lock_torch:0, %delay:0]
+  %lock_torch = torch(powered) -> [%lock:0]
+  %lock = repeater(delay=1, prioritized, powered) -> [side %unlocked:0]
+  %delay = comparator -> [%rear:0]
+  %rear = torch(powered) -> [%unlocked:0]
+  %unlocked = repeater(delay=1, locked) -> [%out:0]
+  %out = trapdoor
+}

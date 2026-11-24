@@ -1,0 +1,10 @@
+# A repeater whose tick is scheduled before an unprioritized repeater locks it for one tick.
+# The lock is released again before the tick fires, so the tick still acts.
+circuit @lock_then_release {
+  %lever = lever -> [%torch:0]
+  %torch = torch(powered) -> [%rear:0, %lock:0]
+  %rear = repeater(delay=1, prioritized, powered) -> [%locked:0]
+  %lock = repeater(delay=1, powered) -> [side %locked:0]
+  %locked = repeater(delay=1, locked) -> [%out:0]
+  %out = trapdoor
+}

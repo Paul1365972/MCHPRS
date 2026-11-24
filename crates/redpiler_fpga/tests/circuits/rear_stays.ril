@@ -1,0 +1,10 @@
+# A repeater whose tick to turn off is scheduled before a second rear source turns on in that tick.
+# The next tick starts with the repeater and its rear input on, but the second source turns off
+# before the scheduled tick fires, so the tick still acts.
+circuit @rear_stays {
+  %early = repeater(delay=1, prioritized, powered) tick(delay=1, priority=highest) -> [%target:0]
+  %feed = repeater(delay=1, powered) tick(delay=1, priority=higher, order=0) -> [%late:0]
+  %late = repeater(delay=1, prioritized) tick(delay=1, priority=higher, order=1) -> [%target:0]
+  %target = repeater(delay=1, powered) -> [%out:0]
+  %out = trapdoor(powered)
+}

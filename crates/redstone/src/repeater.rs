@@ -33,6 +33,8 @@ pub(crate) fn neighbor_changed(world: &mut impl RedstoneWorld, pos: BlockPos, re
     }
 }
 
+pub const PULSE_END_PRIORITY: TickPriority = TickPriority::Higher;
+
 pub fn tick_priority(prioritized: bool, powered: bool) -> TickPriority {
     match (prioritized, powered) {
         (true, _) => TickPriority::Highest,
@@ -62,7 +64,7 @@ pub(crate) fn tick(world: &mut impl RedstoneWorld, pos: BlockPos, repeater: Repe
             world.schedule_tick(
                 pos,
                 repeater.delay as u32,
-                TickPriority::Higher,
+                PULSE_END_PRIORITY,
                 Block::Repeater(repeater),
             );
         }
