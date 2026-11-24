@@ -60,12 +60,16 @@ struct Net {
 #[derive(Debug, Deserialize)]
 struct Attributes {
     init: Option<String>,
+    /// A register with it gets no flip-flop here: every tick and every clock between two ticks
+    /// leaves it at its initial value.
+    within_tick: Option<String>,
 }
 
 struct Register<'a> {
     name: &'a str,
     width: usize,
     initial: String,
+    is_within_tick: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,6 +150,7 @@ fn tick_module(step: &Step) -> anyhow::Result<String> {
         name,
         width,
         initial,
+        is_within_tick,
     } in &registers
     {
         let range = format!("[{}:0]", width - 1);
@@ -155,11 +160,19 @@ fn tick_module(step: &Step) -> anyhow::Result<String> {
         let next = format!("run ? {ticked} : {between_ticks}");
         let results: Vec<_> = Stage::all().map(after).collect();
         let results = results.join(", ");
-        tick += &format!(
-            "    logic {range} {results};\n    \
-             logic {range} {name} = {width}'b{initial};\n    \
-             always_ff @(posedge clock) {name} <= {next};\n"
-        );
+        tick += &format!("    logic {range} {results};\n");
+        tick += &match is_within_tick {
+            true => format!(
+                "    wire {range} {name} = {width}'b{initial};\n\
+                 `ifndef SYNTHESIS\n    \
+                 always_ff @(posedge clock) assert (({next}) == {name});\n\
+                 `endif\n"
+            ),
+            false => format!(
+                "    logic {range} {name} = {width}'b{initial};\n    \
+                 always_ff @(posedge clock) {name} <= {next};\n"
+            ),
+        };
     }
     for stage in Stage::all() {
         tick += &stage.instance(&host, &registers);
@@ -237,10 +250,15 @@ impl Stage {
 
 fn registers(step: &Step) -> anyhow::Result<Vec<Register<'_>>> {
     let mut initial = HashMap::new();
+    let mut within_tick = HashSet::new();
     for Net { bits, attributes } in step.netnames.values() {
         if let Some(digits) = &attributes.init {
             let digits = bits.iter().zip(digits.chars().rev());
             initial.extend(digits.filter(|(_, digit)| ['0', '1'].contains(digit)));
+        }
+        let is_within_tick = |value: &String| value.contains('1');
+        if attributes.within_tick.as_ref().is_some_and(is_within_tick) {
+            within_tick.extend(bits);
         }
     }
     let inputs = step.ports.iter();
@@ -260,7 +278,36 @@ fn registers(step: &Step) -> anyhow::Result<Vec<Register<'_>>> {
             name,
             width: bits.len(),
             initial: digits.with_context(|| format!("{name} has no initial value"))?,
+            is_within_tick: bits.iter().all(|bit| within_tick.contains(bit)),
         })
     });
     registers.collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_register_that_lasts_between_ticks_is_a_flip_flop() {
+        let step = r#"{
+            "ports": {
+                "clock": {"direction": "input", "bits": [2]},
+                "register_0_Q": {"direction": "input", "bits": [3, 4]},
+                "register_0_D": {"direction": "output", "bits": [5, 6]},
+                "register_1_Q": {"direction": "input", "bits": [7]},
+                "register_1_D": {"direction": "output", "bits": [8]}
+            },
+            "netnames": {
+                "node_0.countdown": {"bits": [3, 4], "attributes": {"init": "10"}},
+                "node_0.timer.due": {"bits": [7], "attributes": {"init": "0", "within_tick": "1"}}
+            }
+        }"#;
+        let step = serde_json::from_str(step).expect("the netlist parses");
+        let tick = tick_module(&step).expect("every register has an initial value");
+        assert!(tick.contains("logic [1:0] register_0 = 2'b10;"));
+        assert!(tick.contains("always_ff @(posedge clock) register_0 <="));
+        assert!(tick.contains("wire [0:0] register_1 = 1'b0;"));
+        assert!(!tick.contains("always_ff @(posedge clock) register_1 <="));
+    }
 }

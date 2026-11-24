@@ -18,8 +18,10 @@ module timer #(
     output logic fire,
     output logic pending
 );
-    logic due = 0;
-    logic tick_start_mismatch = 0;
+    // A tick loads both at its start and clears them when the node's priority fires, so
+    // `within_tick` lets `tick.rs` keep them as wires.
+    (* within_tick *) logic due = 0;
+    (* within_tick *) logic tick_start_mismatch = 0;
     logic [DELAY-1:0] next_countdown;
 
     always_comb begin
@@ -40,7 +42,10 @@ module timer #(
             tick_start_mismatch <= mismatch;
         end else begin
             countdown <= next_countdown;
-            if (firing) due <= 1'b0;
+            if (firing) begin
+                due <= 1'b0;
+                tick_start_mismatch <= 1'b0;
+            end
         end
     end
 endmodule

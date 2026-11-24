@@ -73,7 +73,7 @@ fn verilate(
     let mut verilator = Command::new("verilator");
     verilator
         .current_dir(directory)
-        .args(["--binary", "-j", "0", "-Wno-PROCASSINIT"])
+        .args(["--binary", "-j", "0", "--assert", "-Wno-PROCASSINIT"])
         .args(["--preproc-token-limit", LINE_TOKEN_LIMIT])
         .args(["--top-module", "top", "-Mdir", OUTPUT, "-o", EXECUTABLE])
         .args(sources.files());
