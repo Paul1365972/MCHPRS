@@ -1,9 +1,8 @@
-// Nodes read source registers, so updates from one clock take effect in the next:
-// `settling` holds `idle` low for the clock after the last phase and after a drive applies.
+// A tick runs in one clock, as one step per priority. Each step reads what the step before left,
+// so what the last one changes reaches the other nodes only in the next clock: `settling` holds
+// `idle` low for the clock after a tick and after a drive applies.
 // A drive from the host only loads registers, so no path leads from the handshake into a node.
-module sequencer #(
-    parameter int COPIES
-) (
+module sequencer (
     input logic clock,
     input logic hold,
     input logic run_start,
@@ -15,15 +14,11 @@ module sequencer #(
     output logic idle,
     output logic [63:0] ticks = 0,
     output logic paused,
-    output logic [COPIES*pkg::PRIORITIES-1:0] firing,
+    output logic ticking = 0,
     output logic taken_valid = 0,
     output logic [pkg::NODE_BITS-1:0] taken_node = 0,
     output pkg::drive_input_t taken_input = 0
 );
-    // One-hot: bit p is high in the clock in which priority p fires,
-    // and all bits are low while no tick runs.
-    logic [pkg::PRIORITIES-1:0] phase = 0;
-    logic last_phase;
     pkg::mode_t mode = pkg::PAUSED;
     logic [pkg::COUNT_BITS-1:0] remaining = 0;
     logic [pkg::COUNT_BITS-1:0] period = 0;
@@ -33,21 +28,20 @@ module sequencer #(
     logic applying = 0;
     logic settling = 0;
 
-    assign last_phase = phase[pkg::PRIORITIES-1];
-    assign idle = phase == 0 && !taken_valid && !applying && !settling;
+    assign idle = !ticking && !taken_valid && !applying && !settling;
     assign paused = mode == pkg::PAUSED;
-    assign beginning = !hold && ready && (phase == 0 || last_phase);
+    assign beginning = !hold && ready;
 
     always_ff @(posedge clock) begin
-        phase <= {phase[pkg::PRIORITIES-2:0], beginning};
+        ticking <= beginning;
 
-        if (last_phase) ticks <= ticks + 1'b1;
+        if (ticking) ticks <= ticks + 1'b1;
 
         unique case (mode)
             pkg::PAUSED: ready <= 0;
             pkg::UNLIMITED: ready <= 1;
             pkg::COUNTED: begin
-                ready <= remaining != 0;
+                ready <= beginning ? remaining > 1 : remaining != 0;
                 if (beginning) remaining <= remaining - 1'b1;
                 if (remaining == 0) mode <= pkg::PAUSED;
             end
@@ -74,13 +68,6 @@ module sequencer #(
             taken_input <= drive_input;
         end
         applying <= taken_valid;
-        settling <= last_phase || applying;
-    end
-
-    for (genvar copy = 0; copy < COPIES; copy++) begin : copies
-        firing_copy firing_copy (
-            .clock(clock), .beginning(beginning),
-            .firing(firing[copy*pkg::PRIORITIES +: pkg::PRIORITIES])
-        );
+        settling <= ticking || applying;
     end
 endmodule

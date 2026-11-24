@@ -2,7 +2,6 @@ use crate::engine::FpgaEngine;
 use crate::protocol::{Mode, MAX_COUNT};
 use mchprs_redpiler::circuit::NodeId;
 use mchprs_redpiler::nodes::Nodes;
-use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_simulation::handle::{self, Request, Updates};
 use mchprs_simulation::input::DriveError;
 use mchprs_simulation::ticks::SimulationError;
@@ -130,7 +129,8 @@ impl Worker {
             Run::Every(interval) => {
                 let clocks = interval.as_secs_f64() * self.engine.clock_hertz();
                 let clocks_per_tick = (clocks.round() as u64).clamp(1, MAX_COUNT);
-                self.set_mode(Mode::Periodic { clocks_per_tick })?;
+                let is_behind_schedule = clocks < 1.0;
+                self.set_pace(Mode::Periodic { clocks_per_tick }, is_behind_schedule)?;
                 self.replace_goal();
             }
             Run::Unlimited => {
@@ -158,10 +158,12 @@ impl Worker {
     }
 
     fn set_mode(&mut self, mode: Mode) -> Result<(), SimulationError> {
+        self.set_pace(mode, false)
+    }
+
+    fn set_pace(&mut self, mode: Mode, is_behind_schedule: bool) -> Result<(), SimulationError> {
         self.engine.set_mode(mode)?;
-        let tick_clocks = TickPriority::ALL.len() as u64;
-        self.is_behind_schedule =
-            matches!(mode, Mode::Periodic { clocks_per_tick } if clocks_per_tick < tick_clocks);
+        self.is_behind_schedule = is_behind_schedule;
         Ok(())
     }
 

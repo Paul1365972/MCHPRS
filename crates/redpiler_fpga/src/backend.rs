@@ -110,11 +110,10 @@ fn simulate(
     build_nonce: u32,
     context: &mut GraphContext<'_>,
 ) -> Result<FpgaEngine, CompileError> {
-    let mut progress = Progress::new(context, 3);
+    let mut progress = Progress::new(context, 4);
     progress.start("Writing circuit")?;
     let design = Design::new(circuit, scope, build_nonce)?;
-    progress.start("Building simulation")?;
-    let executable = VerilatorExecutable::build(&design.source, &progress)?;
+    let executable = VerilatorExecutable::build(&design.source, &mut progress)?;
     let link = executable.start();
     let link = link.map_err(|error| CompileError::Failed(error.into()))?;
     progress.start("Checking circuit")?;

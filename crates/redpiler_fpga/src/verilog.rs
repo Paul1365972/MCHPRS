@@ -8,12 +8,8 @@ use mchprs_redpiler::circuit::{Circuit, NodeId};
 use mchprs_redpiler::graph::{LinkKind, SignalKind};
 use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_simulation::backend::CompileError;
-use std::collections::BTreeSet;
 use std::fmt::Display;
 use strum::VariantArray;
-
-// Measured on BatPU-1: other group sizes cost size or clock.
-const NODES_PER_FIRING_COPY: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct Design {
@@ -41,32 +37,26 @@ impl Design {
              endpackage\n"
         );
         let expressions = Expressions::new(circuit, &analysis, &instances, &layout);
-        let module = module(&instances, &layout, &expressions);
+        let nodes = nodes_module(&instances, &layout, &expressions);
         Ok(Design {
-            source: CircuitSource { package, module },
+            source: CircuitSource { package, nodes },
             layout,
             build_nonce,
         })
     }
 }
 
-fn module(
+fn nodes_module(
     instances: &[Option<Instance>],
     layout: &StateLayout,
     expressions: &Expressions,
 ) -> String {
     let mut nodes = String::new();
     let mut unread_registers = Vec::new();
-    let mut used = BTreeSet::new();
-    let mut ticking = 0;
     for (index, instance) in instances.iter().enumerate() {
         let Some(instance) = instance else { continue };
-        let copy = ticking / NODES_PER_FIRING_COPY;
-        ticking += usize::from(!instance.firing_ports.is_empty());
-        let strobes = strobe_ports(instance, copy);
-        used.extend(strobes.iter().map(|(_, signal)| signal.clone()));
         let mut ports = vec![("clock".to_owned(), "clock".to_owned())];
-        ports.extend(strobes);
+        ports.extend(strobe_ports(instance));
         ports.extend(input_ports(instance, NodeId::new(index), expressions));
         ports.extend(register_ports(
             instance,
@@ -82,51 +72,35 @@ fn module(
         ));
     }
 
-    let copies = ticking.div_ceil(NODES_PER_FIRING_COPY).max(1);
-    let firing_bits = copies * TickPriority::ALL.len();
-    let declarations = declarations(unread_registers.iter().cloned());
-    let driven = CircuitSignal::VARIANTS.iter().map(CircuitSignal::to_string);
-    let driven = driven.chain((0..firing_bits).map(firing));
-    let unused = driven
-        .filter(|signal| !used.contains(signal))
-        .chain(unread_registers.into_iter().map(|(register, _)| register));
-    let unused = unused_sink(unused.collect());
+    let declarations = declarations(unread_registers.into_iter());
     let state_tie_off = match layout.holds_no_register() {
         true => "    assign state = 1'b0;\n",
         false => "",
     };
-    let taken_valid = CircuitSignal::TakenValid;
-    let taken_node = CircuitSignal::TakenNode;
-    let taken_input = CircuitSignal::TakenInput;
-    let firing_end = firing_bits - 1;
+    let circuit_signals = CircuitSignal::VARIANTS.iter();
+    let circuit_signals = circuit_signals.map(|signal| {
+        let port_type = signal.port_type();
+        format!("    input {port_type} {signal},\n")
+    });
+    let circuit_signals: String = circuit_signals.collect();
+    let firing_end = TickPriority::ALL.len() - 1;
     format!(
-        "module circuit (\n\
-         `include \"circuit_ports.svh\"\n\
-         );\n    \
-         logic [{firing_end}:0] firing;\n    \
-         logic {taken_valid};\n    \
-         logic [pkg::NODE_BITS-1:0] {taken_node};\n    \
-         pkg::drive_input_t {taken_input};\n\
-         {declarations}{unused}{state_tie_off}    \
-         sequencer #(.COPIES({copies})) sequencer (.clock(clock), .hold(hold), \
-         .run_start(run_start), .run_mode(run_mode), .run_count(run_count), \
-         .drive_valid(drive_valid), .drive_node(drive_node), .drive_input(drive_input), \
-         .idle(idle), .ticks(tick_count), .paused(paused), .firing(firing), \
-         .{taken_valid}({taken_valid}), \
-         .{taken_node}({taken_node}), .{taken_input}({taken_input}));\n\
-         {nodes}\
+        "module nodes (\n    \
+         input logic clock,\n    \
+         input logic [{firing_end}:0] firing,\n\
+         {circuit_signals}    \
+         output logic [circuit_pkg::STATE_BITS-1:0] state\n\
+         );\n\
+         {declarations}{state_tie_off}{nodes}\
          endmodule\n"
     )
 }
 
-fn strobe_ports(instance: &Instance, copy: usize) -> Vec<(String, String)> {
+fn strobe_ports(instance: &Instance) -> Vec<(String, String)> {
     let circuit_signals = instance.circuit_signals.iter();
     let circuit_signals = circuit_signals.map(|signal| (signal.to_string(), signal.to_string()));
     let firing_ports = instance.firing_ports.iter();
-    let firing_ports = firing_ports.map(|&(port, priority)| {
-        let bit = copy * TickPriority::ALL.len() + priority as usize;
-        (port.to_string(), firing(bit))
-    });
+    let firing_ports = firing_ports.map(|&(port, priority)| (port.to_string(), firing(priority)));
     circuit_signals.chain(firing_ports).collect()
 }
 
@@ -175,18 +149,8 @@ fn declarations(signals: impl Iterator<Item = (String, usize)>) -> String {
     declarations.collect()
 }
 
-fn unused_sink(unused: Vec<String>) -> String {
-    match unused.is_empty() {
-        true => String::new(),
-        false => format!(
-            "    wire unused = &{{\n        1'b0,\n        {}\n    }};\n",
-            unused.join(",\n        ")
-        ),
-    }
-}
-
-fn firing(bit: usize) -> String {
-    format!("firing[{bit}]")
+fn firing(priority: TickPriority) -> String {
+    format!("firing[{}]", priority as usize)
 }
 
 fn connections<N: Display, V: Display>(pairs: &[(N, V)]) -> String {

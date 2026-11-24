@@ -8,12 +8,12 @@ It translates the graph to SystemVerilog, builds and programs a bitstream, and c
 ## Setup
 
 The backend is behind the `fpga` feature, which is off by default: `cargo build --release --features fpga`.
-With `--simulate` it only needs Verilator, `make` and a C++ compiler on the `PATH`.
+With `--simulate` it needs Yosys, Verilator, `make` and a C++ compiler on the `PATH`.
 On a board it runs these tools from the `PATH`:
 
 | Tool | For |
 | --- | --- |
-| Yosys | Synthesis |
+| Yosys | Composing the tick, synthesis |
 | `nextpnr-himbaechel` of [openXC7](https://github.com/openXC7) | Place and route |
 | `fasm2frames` and `xc7frames2bit` of prjxray | The bitstream |
 | openFPGALoader | Programming the board |
@@ -21,7 +21,7 @@ On a board it runs these tools from the `PATH`:
 `PRJXRAY_DB_DIR` names the directory of the prjxray database.
 `NEXTPNR_XILINX_CHIPDB_DIR` names the directory of nextpnr's chip database `chipdb-xc7a50t.bin`, if nextpnr was installed without it.
 The Basys 3's XC7A35T is a die of the XC7A50T.
-A small plot compiles for the board in about a minute, a CPU of a few thousand components in about ten.
+A small plot compiles for the board in about a quarter of a minute, a CPU of five thousand components in four to five minutes.
 
 ## Tick Order
 
@@ -29,7 +29,9 @@ The same as [`phase`](Phase.md#tick-order): after every redstone tick the circui
 
 ## Running
 
-A redstone tick takes one clock cycle per tick priority, at the fastest clock the routed circuit allows.
+A redstone tick takes one clock cycle, at the fastest clock the routed circuit allows.
+The nodes are written to run one tick priority per clock cycle.
+Yosys turns each of their flip-flops into an input and an output, which leaves what one clock cycle does to the state, and the build chains one copy of that per priority.
 The board runs its ticks by itself: at a rate, without a limit, or for a number of ticks.
 At a rate, a tick that falls due while the board is busy starts late, and the board does not catch up.
 Inputs and reads take effect between two ticks.
@@ -56,6 +58,7 @@ The same as [`phase`](Phase.md#passes).
 - The board is read at intervals, so a component that changes and changes back between two reads is not shown. A player does not hear an iron trapdoor that opens and closes between two reads.
 - A settle can run past the tick at which the circuit settles.
 - With `--simulate`, the simulation clocks the circuit only while it answers a request and for a short while after, so a run without a tick count advances only as requests arrive and is slow.
+- With `--simulate`, Verilator gets 30 minutes to build the simulation. On eight cores with 16 GB of memory that is enough for about 40,000 components.
 
 ## Tests
 
@@ -69,3 +72,4 @@ rilc fuzz agreement crates/redpiler_fpga/tests/circuits/*.ril -b "phase -o -i" -
 ```
 
 On a board, leave out `--simulate` and add `--jobs 1`.
+`--simulate` runs the circuit as it is before synthesis, so only a run on a board checks what synthesis made of it.

@@ -28,6 +28,3 @@ tracing = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.31", features = ["process", "signal"] }
-
-[dev-dependencies]
-mchprs_ril = { path = "../ril" }

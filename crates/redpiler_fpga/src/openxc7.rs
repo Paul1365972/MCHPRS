@@ -118,7 +118,7 @@ pub fn build(
     let database = Path::new(&database).join(board.prjxray_family);
     fs::write(
         directory.join(SCRIPT),
-        synthesis_script(&sources.files, board),
+        synthesis_script(&sources.files().collect::<Vec<_>>(), board),
     )
     .and_then(|()| rtl::write(directory, [board.constraints]))
     .map_err(|source| inaccessible(directory, source))?;

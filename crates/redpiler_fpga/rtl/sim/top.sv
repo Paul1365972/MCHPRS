@@ -2,7 +2,7 @@ module top;
     // The descriptors that IEEE 1800 opens before the simulation starts.
     localparam int STDIN = 32'h8000_0000;
     localparam int STDOUT = 32'h8000_0001;
-    // About 1,500 redstone ticks, so a short counted run ends before the next request is read.
+    // About 6,000 redstone ticks, so a short counted run ends before the next request is read.
     localparam int RUN_ON_CLOCKS = 4096;
 
     logic board_clock = 0;

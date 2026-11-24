@@ -6,6 +6,7 @@ use crate::link::{Controller, SerialLink};
 use crate::openxc7;
 use crate::pll::PllSetting;
 use crate::progress::Progress;
+use crate::tick;
 use crate::verilog::Design;
 use anyhow::Context;
 use mchprs_redpiler::backend::GraphContext;
@@ -14,7 +15,7 @@ use mchprs_simulation::backend::CompileError;
 use std::path::Path;
 use tracing::info;
 
-const STAGES: usize = 9;
+const STAGES: usize = 10;
 
 pub fn run_on_board(
     circuit: &Circuit,
@@ -65,6 +66,8 @@ impl BoardBuild<'_> {
         let mut link = link.map_err(CompileError::Failed)?;
         openxc7::detect(board, &port, directory, &progress)?;
 
+        progress.start("Composing tick")?;
+        let sources = tick::compose(sources, &progress)?;
         let bitstream = openxc7::build(&sources, board, &mut progress)?;
         info!(
             "{} nodes take {} LUTs and {} flip-flops in {} slices, of which the {} has {}",

@@ -8,7 +8,6 @@ use mchprs_redpiler::circuit::{Circuit, InputKinds, NodeId};
 use mchprs_redpiler::graph::NodeState;
 use mchprs_redpiler::nodes::{Changes, Nodes, Snapshot};
 use mchprs_redstone::input::Input;
-use mchprs_redstone::tick_queue::TickPriority;
 use mchprs_simulation::input::DriveError;
 use mchprs_simulation::readback::Readback;
 use mchprs_simulation::ticks::{Ran, SimulationError, Stop};
@@ -103,8 +102,7 @@ impl FpgaEngine {
         if self.clock_pace == ClockPace::Simulated {
             return Duration::ZERO;
         }
-        let clocks = ticks as f64 * TickPriority::ALL.len() as f64;
-        Duration::try_from_secs_f64(clocks / self.clock_hertz).unwrap_or(Duration::MAX)
+        Duration::try_from_secs_f64(ticks as f64 / self.clock_hertz).unwrap_or(Duration::MAX)
     }
 
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), SimulationError> {

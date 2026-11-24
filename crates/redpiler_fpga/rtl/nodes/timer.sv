@@ -1,5 +1,5 @@
 // Countdown bit k falls due on the (k+1)th tick boundary.
-// Scheduling on `tick_start` comes from the previous tick's last phase,
+// Scheduling on `tick_start` comes from what the previous tick's last priority changed,
 // so it enters the top bit before the shift.
 // Snapshots read the countdown between ticks.
 module timer #(
@@ -40,8 +40,7 @@ module timer #(
             tick_start_mismatch <= mismatch;
         end else begin
             countdown <= next_countdown;
-            // Keeping `due` in the condition avoids a shared control set across distant nodes.
-            if (firing && due) due <= 1'b0;
+            if (firing) due <= 1'b0;
         end
     end
 endmodule

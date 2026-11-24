@@ -1011,7 +1011,6 @@ dependencies = [
  "mchprs_redpiler",
  "mchprs_redpiler_phase",
  "mchprs_redstone",
- "mchprs_ril",
  "mchprs_simulation",
  "mchprs_syntax",
  "nix 0.31.2",

@@ -1,0 +1,3 @@
+// Yosys writes steps.v, so its style is not ours.
+`verilator_config
+lint_off -file "steps.v"

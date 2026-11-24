@@ -19,11 +19,8 @@ pub(crate) use source;
 
 const PACKAGE: SourceFile = source!("pkg.sv");
 const CIRCUIT_PACKAGE: &str = "circuit_pkg.sv";
-const CIRCUIT: &str = "circuit.sv";
-const CIRCUIT_PORTS: SourceFile = source!("circuit_ports.svh");
-const DESIGN: &[SourceFile] = &[
-    source!("sequencer.sv"),
-    source!("firing_copy.sv"),
+const NODES: &str = "nodes.sv";
+const NODE_MODULES: &[SourceFile] = &[
     source!("nodes/timer.sv"),
     source!("nodes/binary_input.sv"),
     source!("nodes/strength_input.sv"),
@@ -40,13 +37,17 @@ const DESIGN: &[SourceFile] = &[
     source!("nodes/trapdoor.sv"),
     source!("nodes/redstone_wire.sv"),
     source!("nodes/note_block.sv"),
+];
+const DESIGN: &[SourceFile] = &[
+    source!("circuit.sv"),
+    source!("sequencer.sv"),
     source!("controller.sv"),
     source!("controlled_circuit.sv"),
     source!("handshake.sv"),
     source!("link/frame_rx.sv"),
     source!("link/frame_tx.sv"),
 ];
-pub const SIMULATION: [SourceFile; 1] = [source!("sim/top.sv")];
+pub const SIMULATION: [SourceFile; 2] = [source!("sim/top.sv"), source!("sim/steps.vlt")];
 pub const BOARD: [SourceFile; 4] = [
     source!("link/uart_rx.sv"),
     source!("link/uart_tx.sv"),
@@ -57,14 +58,17 @@ pub const BOARD: [SourceFile; 4] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CircuitSource {
     pub package: String,
-    pub module: String,
+    pub nodes: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sources {
     pub directory: PathBuf,
-    /// In the order in which a tool must read them: a package before the modules that name it.
-    pub files: Vec<&'static str>,
+    pub packages: Vec<&'static str>,
+    /// What runs the nodes: the `nodes` module and the modules it instantiates, until
+    /// `tick::compose` puts the tick in their place.
+    pub nodes: Vec<&'static str>,
+    pub design: Vec<&'static str>,
 }
 
 impl Sources {
@@ -73,21 +77,32 @@ impl Sources {
         circuit: &'a CircuitSource,
         top: impl IntoIterator<Item = SourceFile<'a>>,
     ) -> io::Result<Sources> {
-        let generated = [
-            (CIRCUIT_PACKAGE, &circuit.package),
-            (CIRCUIT, &circuit.module),
-        ];
-        let generated = generated.map(|(path, text)| SourceFile { path, text });
-        let design = [PACKAGE]
+        let generated = [(CIRCUIT_PACKAGE, &circuit.package), (NODES, &circuit.nodes)];
+        let [circuit_package, nodes_module] =
+            generated.map(|(path, text)| SourceFile { path, text });
+        let packages = vec![PACKAGE, circuit_package];
+        let nodes: Vec<_> = [nodes_module]
             .into_iter()
-            .chain(generated)
-            .chain(DESIGN.iter().copied());
-        let read: Vec<_> = design.chain(top).collect();
-        write(directory, read.iter().copied().chain([CIRCUIT_PORTS]))?;
+            .chain(NODE_MODULES.iter().copied())
+            .collect();
+        let design: Vec<_> = DESIGN.iter().copied().chain(top).collect();
+        write(
+            directory,
+            [&packages, &nodes, &design].into_iter().flatten().copied(),
+        )?;
+        let paths = |sources: Vec<SourceFile>| sources.iter().map(|source| source.path).collect();
         Ok(Sources {
             directory: directory.to_owned(),
-            files: read.into_iter().map(|source| source.path).collect(),
+            packages: paths(packages),
+            nodes: paths(nodes),
+            design: paths(design),
         })
+    }
+
+    /// In the order in which a tool must read them: a package before the modules that name it.
+    pub fn files(&self) -> impl Iterator<Item = &'static str> + '_ {
+        let files = [&self.packages, &self.nodes, &self.design];
+        files.into_iter().flatten().copied()
     }
 }
 

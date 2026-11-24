@@ -6,6 +6,7 @@ use crate::link::ByteLink;
 use crate::process;
 use crate::progress::Progress;
 use crate::rtl::{self, CircuitSource, Sources};
+use crate::tick;
 use anyhow::Context;
 use mchprs_simulation::backend::CompileError;
 use std::io::{self, Read, Write};
@@ -17,6 +18,8 @@ use tempfile::TempDir;
 const OUTPUT: &str = "verilated";
 const EXECUTABLE: &str = "simulation";
 const BUILD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// Yosys writes all of `state` on one line of `steps.v`, whatever its length.
+const LINE_TOKEN_LIMIT: &str = "2147483647";
 
 /// `sim/top.sv` clocks the circuit three times for every two clocks of the 100 MHz board clock.
 pub const CIRCUIT_CLOCK_HERTZ: f64 = 150e6;
@@ -30,7 +33,7 @@ pub struct VerilatorExecutable {
 impl VerilatorExecutable {
     pub fn build(
         circuit: &CircuitSource,
-        progress: &Progress,
+        progress: &mut Progress,
     ) -> Result<VerilatorExecutable, CompileError> {
         let mut directory = build_directory::create()?;
         let verilated = verilate(circuit, directory.path(), progress);
@@ -58,18 +61,22 @@ impl VerilatorExecutable {
 fn verilate(
     circuit: &CircuitSource,
     directory: &Path,
-    progress: &Progress,
+    progress: &mut Progress,
 ) -> Result<(), CompileError> {
     let sources = Sources::write(directory, circuit, rtl::SIMULATION);
     let sources = sources
         .context("could not write the sources")
         .map_err(CompileError::Failed)?;
+    progress.start("Composing tick")?;
+    let sources = tick::compose(sources, progress)?;
+    progress.start("Building simulation")?;
     let mut verilator = Command::new("verilator");
     verilator
         .current_dir(directory)
-        .args(["--binary", "-j", "0", "-Wno-PROCASSINIT", "-Wno-PINMISSING"])
+        .args(["--binary", "-j", "0", "-Wno-PROCASSINIT"])
+        .args(["--preproc-token-limit", LINE_TOKEN_LIMIT])
         .args(["--top-module", "top", "-Mdir", OUTPUT, "-o", EXECUTABLE])
-        .args(sources.files);
+        .args(sources.files());
     let log = directory.join("verilator.log");
     Ok(process::run(&mut verilator, &log, BUILD_TIMEOUT, progress)?)
 }

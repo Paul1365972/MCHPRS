@@ -29,6 +29,14 @@ pub enum CircuitSignal {
 impl CircuitSignal {
     const DRIVE: &'static [Self] = &[Self::TakenValid, Self::TakenNode, Self::TakenInput];
     const PRESS: &'static [Self] = &[Self::TakenValid, Self::TakenNode];
+
+    pub fn port_type(self) -> &'static str {
+        match self {
+            Self::TakenValid | Self::ShownRead => "logic",
+            Self::TakenNode => "logic [pkg::NODE_BITS-1:0]",
+            Self::TakenInput => "pkg::drive_input_t",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

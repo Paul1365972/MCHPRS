@@ -73,8 +73,6 @@ package pkg;
     } pll_access_t;
     localparam int PLL_ACCESS_BITS = 7 + 16;
 
-    localparam int PRIORITIES = 4;
-
     // When a node fires, numbered as `analysis::Firing`.
     localparam int FIRES_WHEN_DUE = 0;
     localparam int FIRES_IN_PRIORITY = 1;
