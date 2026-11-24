@@ -197,13 +197,16 @@ pub fn program(
 
 fn synthesis_script(files: &[&str], board: &Board) -> String {
     let synthesize = format!(
-        "synth_xilinx -flatten -abc9 -nosrl -nodsp -top {}",
+        "synth_xilinx -flatten -abc9 -dff -nosrl -nodsp -top {}",
         board.top_module
     );
     format!(
         "read_verilog -sv {}\n\
          # nextpnr times no path through a DSP block (-nodsp), and its shift register cells read\n\
-         # back as zeros (-nosrl).\n\
+         # back as zeros (-nosrl). With -dff, ABC also merges the flip-flops it proves to always\n\
+         # equal another signal; abc9.verify is off because that check of its own result takes\n\
+         # minutes even for some circuits of three nodes.\n\
+         scratchpad -set abc9.verify false\n\
          {synthesize} -run :map_ffs\n\
          # The flip-flops of a slice share one enable and one reset. A node enables its own few,\n\
          # which would take a slice per node: below {flip_flops} flip-flops an enable or reset\n\
